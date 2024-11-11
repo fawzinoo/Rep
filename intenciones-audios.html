@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Asignaciones de Vocabulario</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+            max-width: 600px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.3s ease-in-out;
+        }
+        .container:hover {
+            transform: translateY(-5px);
+        }
+        h1 {
+            font-size: 26px;
+            margin-bottom: 15px;
+            color: #003f91;
+            font-family: 'Georgia', serif;
+        }
+        button {
+            background-color: #007BFF;
+            color: white;
+            padding: 10px 25px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        audio {
+            margin-top: 20px;
+            outline: none;
+            border-radius: 8px;
+            width: 100%;
+        }
+        .questions {
+            margin-top: 20px;
+            text-align: left;
+            font-size: 16px;
+        }
+        .questions p {
+            margin: 8px 0;
+        }
+        .counter {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #555;
+            display: none; /* Contador inicialmente oculto */
+        }
+        .transcription {
+            display: none;
+            margin-top: 15px;
+            text-align: left;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Asignación de Vocabulario</h1>
+        <button onclick="asignar()">Generar Asignación</button>
+        <audio id="audioPlayer" controls style="display: none;"></audio>
+        <div class="questions" id="questionsContainer">
+            <!-- Preguntas aparecerán aquí -->
+        </div>
+        <button id="transcriptionButton" onclick="iniciarContador()" style="display: none;">Pide el texto</button>
+        <div class="counter" id="counter">Tiempo restante para pedir el texto: 10:00</div>
+        <div class="transcription" id="transcriptionContainer">
+            <center><h3>Transcripción del audio :</h3></center>
+            <p id="transcriptionText"></p>
+            
+            
+        </div>
+    </div>
+
+    <script>
+        const audios = [
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKlacvmg65p_El-domingo-por-la-ma-1-.m4a", 
+        transcripcion: "El domingo, por la mañana, mis amigos quieren visitar una feria para divertirse; el lunes, por la tarde, quiero leer cuentos con mis sobrinos para entretenerlos; y el martes, por la mañana, mi madre quiere cocinar huevos revueltos conmigo en la cocina para desayunar juntos.", 
+        traduccion: "يوم الأحد في الصباح، أصدقائي يريدون زيارة معرض للاستمتاع؛ يوم الاثنين بعد الظهر، أريد قراءة القصص مع أبناء إخوتي للترفيه عنهم؛ ويوم الثلاثاء في الصباح، تريد والدتي طهي البيض المخفوق معي في المطبخ لتناول الإفطار معًا."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKlabwqE2up_El-domingo-por-la-ma-2-.m4a", 
+        transcripcion: "El domingo, por la mañana, mi primo quiere hacer un rompecabezas conmigo en casa para entretenernos; el lunes, por la tarde, quiero practicar danza solo en mi habitación para mejorar; y el martes, por la mañana, mi madre quiere cocinar pan conmigo en la cocina para aprender.", 
+        traduccion: "يوم الأحد في الصباح، ابن عمي يريد أن يحل لغزًا معي في المنزل للترفيه؛ يوم الاثنين بعد الظهر، أريد أن أمارس الرقص بمفردي في غرفتي للتحسن؛ ويوم الثلاثاء في الصباح، تريد والدتي خبز الخبز معي في المطبخ للتعلم."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKlaaVkci4p_El-domingo-por-la-ma.m4a", 
+        transcripcion: "El domingo, por la mañana, mis compañeros quieren montar en bicicleta por la ciudad para explorar; el lunes, por la tarde, quiero hornear un pastel con mi hermana en casa para celebrar su cumpleaños; y el martes, por la mañana, mis tíos quieren estudiar español en la biblioteca para mejorar.", 
+        traduccion: "يوم الأحد في الصباح، زملائي يريدون ركوب الدراجات في المدينة لاستكشافها؛ يوم الاثنين بعد الظهر، أريد خبز كعكة مع أختي في المنزل للاحتفال بعيد ميلادها؛ ويوم الثلاثاء في الصباح، يريد أعمامي دراسة اللغة الإسبانية في المكتبة لتحسين مستواهم."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx7si5x5p_El-jueves-por-la-tar-1-.m4a", 
+        transcripcion: "El jueves, por la tarde, mis padres quieren ver el atardecer en la playa para disfrutar del paisaje; el viernes, por la mañana, quiero practicar natación en la piscina para mejorar mi estilo; y el sábado, por la tarde, mis primas quieren tocar la guitarra conmigo en casa para aprender canciones nuevas.", 
+        traduccion: "يوم الخميس بعد الظهر، والداي يريدان مشاهدة غروب الشمس على الشاطئ للاستمتاع بالمنظر؛ يوم الجمعة في الصباح، أريد ممارسة السباحة في المسبح لتحسين أسلوبي؛ ويوم السبت بعد الظهر، تريد بنات عمي عزف الغيتار معي في المنزل لتعلم أغاني جديدة."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx6QbhBhp_El-jueves-por-la-tar-2-.m4a", 
+        transcripcion: "El jueves, por la tarde, mi padre quiere llevarme al parque para jugar; el viernes, por la mañana, quiero escribir un cuento en mi habitación para practicar mi creatividad; y el sábado, por la tarde, mis amigos quieren jugar al escondite en el jardín para divertirnos.", 
+        traduccion: "يوم الخميس بعد الظهر، والدي يريد أن يأخذني إلى الحديقة للعب؛ يوم الجمعة في الصباح، أريد كتابة قصة في غرفتي لممارسة إبداعي؛ ويوم السبت بعد الظهر، أصدقائي يريدون لعب الغميضة في الحديقة للترفيه."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx4BSUuDp_El-jueves-por-la-tar.m4a", 
+        transcripcion: "El jueves, por la tarde, mi prima y yo queremos hacer manualidades en casa para crear decoraciones; el viernes, por la mañana, quiero correr en el parque para mantenerme en forma; y el sábado, por la tarde, mis padres quieren visitar un museo para aprender sobre historia.", 
+        traduccion: "يوم الخميس بعد الظهر، ابنة عمي وأنا نريد صنع الحرف اليدوية في المنزل لعمل زينة؛ يوم الجمعة في الصباح، أريد الجري في الحديقة للحفاظ على لياقتي؛ ويوم السبت بعد الظهر، يريد والداي زيارة متحف لتعلم التاريخ."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx3GNPBZp_El-lunes-por-la-man%CC%83a-1-.m4a", 
+        transcripcion: "El lunes, por la mañana, mi prima quiere explorar un museo de ciencias conmigo para aprender; el martes, por la tarde, quiero escribir una carta a mi abuelo en casa para contarle mis novedades; y el miércoles, por la mañana, mis hermanos quieren visitar a los abuelos en su casa para pasar tiempo con ellos.", 
+        traduccion: "يوم الاثنين في الصباح، ابنة عمي تريد استكشاف متحف العلوم معي للتعلم؛ يوم الثلاثاء بعد الظهر، أريد كتابة رسالة إلى جدي في المنزل لأخبره بأخباري؛ ويوم الأربعاء في الصباح، يريد إخوتي زيارة الأجداد في منزلهم لقضاء الوقت معهم."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx2WRgbUp_El-lunes-por-la-man%CC%83a-2-.m4a", 
+        transcripcion: "El lunes, por la mañana, mi abuela quiere enseñarme a tejer en casa para hacer bufandas; el martes, por la tarde, quiero ver fotos antiguas con mi familia en casa para recordar momentos especiales; y el miércoles, por la mañana, mi hermana quiere preparar jugos frescos conmigo para el desayuno.", 
+        traduccion: "يوم الاثنين في الصباح، جدتي تريد تعليمي الحياكة في المنزل لصنع الأوشحة؛ يوم الثلاثاء بعد الظهر، أريد مشاهدة الصور القديمة مع عائلتي في المنزل لاستذكار اللحظات الخاصة؛ ويوم الأربعاء في الصباح، تريد أختي تحضير العصائر الطازجة معي للإفطار."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkx1H4U2hp_El-lunes-por-la-man%CC%83a.m4a", 
+        transcripcion: "El lunes, por la mañana, quiero hacer yoga en casa solo para relajarme; el martes, por la tarde, mis amigos quieren cantar karaoke en mi casa para divertirnos; y el miércoles, por la mañana, mi padre quiere preparar un desayuno especial con mi madre para sorprendernos.", 
+        traduccion: "يوم الاثنين في الصباح، أريد ممارسة اليوغا في المنزل بمفردي للاسترخاء؛ يوم الثلاثاء بعد الظهر، أصدقائي يريدون الغناء في الكاريوكي في منزلي للترفيه؛ ويوم الأربعاء في الصباح، يريد والدي تحضير فطور خاص مع والدتي لمفاجأتنا."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxYXRB1Ap_El-martes-por-la-man%CC%83-1-.m4a", 
+        transcripcion: "El martes, por la mañana, quiero practicar vocabulario de inglés con mi hermano para mejorar en la escuela; el miércoles, por la tarde, mis amigos quieren caminar por el bosque para respirar aire puro; y el jueves, por la mañana, mi madre quiere preparar un regalo en casa para mi padre para su aniversario.", 
+        traduccion: "يوم الثلاثاء في الصباح، أريد ممارسة مفردات اللغة الإنجليزية مع أخي لتحسين أدائي في المدرسة؛ يوم الأربعاء بعد الظهر، أصدقائي يريدون المشي في الغابة لاستنشاق الهواء النقي؛ ويوم الخميس في الصباح، تريد والدتي تحضير هدية لوالدي في المنزل بمناسبة ذكرى زواجهما."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxX4UocPp_El-martes-por-la-man%CC%83-2-.m4a", 
+        transcripcion: "El martes, por la mañana, mis amigos quieren jugar al baloncesto en la cancha para divertirse; el miércoles, por la tarde, quiero dar una caminata por la playa solo para despejar mi mente; y el jueves, por la mañana, mi hermana quiere hacer un dibujo conmigo para regalárselo a un amigo.", 
+        traduccion: "يوم الثلاثاء في الصباح، أصدقائي يريدون لعب كرة السلة في الملعب للترفيه؛ يوم الأربعاء بعد الظهر، أريد المشي على الشاطئ بمفردي لتنقية ذهني؛ ويوم الخميس في الصباح، تريد أختي رسم صورة معي لإهدائها إلى صديقة."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxW32PVOp_El-martes-por-la-man%CC%83.m4a", 
+        transcripcion: "El martes, por la mañana, mi hermano quiere practicar baloncesto en la cancha del barrio con sus amigos para mejorar su técnica; el miércoles, por la tarde, quiero visitar un refugio de animales solo para ayudar; y el jueves, por la mañana, mis padres quieren organizar un picnic en el parque para pasar tiempo en familia.", 
+        traduccion: "يوم الثلاثاء في الصباح، يريد أخي ممارسة كرة السلة في ملعب الحي مع أصدقائه لتحسين مهاراته؛ يوم الأربعاء بعد الظهر، أريد زيارة مأوى للحيوانات بمفردي للمساعدة؛ ويوم الخميس في الصباح، يريد والداي تنظيم نزهة في الحديقة لقضاء وقت مع العائلة."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxWjVqrRp_El-mie%CC%81rcoles-por-la-1-.m4a", 
+        transcripcion: "El miércoles, por la tarde, mi prima quiere pintar un cuadro conmigo en casa para decorar su habitación; el jueves, por la mañana, mi tía quiere que la ayude en el jardín para plantar flores; y el viernes, por la tarde, mis amigos quieren correr una carrera en el parque para divertirse.", 
+        traduccion: "يوم الأربعاء بعد الظهر، ابنة عمي تريد رسم لوحة معي في المنزل لتزيين غرفتها؛ يوم الخميس في الصباح، تريد عمتي مساعدتي لها في الحديقة لزراعة الزهور؛ ويوم الجمعة بعد الظهر، أصدقائي يريدون الجري في سباق في الحديقة للترفيه."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxVvD7w7p_El-mie%CC%81rcoles-por-la-.m4a", 
+        transcripcion: "El miércoles, por la tarde, mis compañeros de clase quieren organizar una limpieza de la playa para cuidar el medio ambiente; el jueves, por la mañana, quiero escuchar música relajante con mi prima en casa para descansar; y el viernes, por la tarde, mi madre quiere plantar flores en el jardín conmigo para embellecerlo.", 
+        traduccion: "يوم الأربعاء بعد الظهر، زملائي في الصف يريدون تنظيم حملة تنظيف للشاطئ لحماية البيئة؛ يوم الخميس في الصباح، أريد الاستماع إلى موسيقى مريحة مع ابنة عمي في المنزل للاسترخاء؛ ويوم الجمعة بعد الظهر، تريد والدتي زراعة الزهور في الحديقة معي لتجميلها."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxUs5l7gp_El-sa%CC%81bado-por-la-man%CC%83-1-.m4a", 
+        transcripcion: "El sábado, por la mañana, quiero nadar en la piscina con mi hermana para aprender a flotar; el domingo, por la tarde, mis abuelos quieren jugar a las cartas conmigo en casa para pasar tiempo juntos; y el lunes, por la mañana, mi padre quiere preparar una sopa conmigo en la cocina para compartir su receta.", 
+        traduccion: "يوم السبت في الصباح، أريد السباحة في المسبح مع أختي لتعلم الطفو؛ يوم الأحد بعد الظهر، يريد أجدادي لعب الورق معي في المنزل لقضاء وقت ممتع معًا؛ ويوم الاثنين في الصباح، يريد والدي تحضير الحساء معي في المطبخ لمشاركة وصفته."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxQW0Bkip_El-sa%CC%81bado-por-la-man%CC%83-2-.m4a", 
+        transcripcion: "El sábado, por la mañana, quiero hacer helados caseros con mi prima en casa para refrescarnos; el domingo, por la tarde, mis padres quieren ver una película con nosotros en casa para relajarnos; y el lunes, por la mañana, mi primo quiere estudiar matemáticas conmigo para preparar un examen.", 
+        traduccion: "يوم السبت في الصباح، أريد صنع آيس كريم منزلي مع ابنة عمي في المنزل لننعش أنفسنا؛ يوم الأحد بعد الظهر، يريد والداي مشاهدة فيلم معنا في المنزل للاسترخاء؛ ويوم الاثنين في الصباح، يريد ابن عمي دراسة الرياضيات معي للتحضير لامتحان."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxOUiPhDp_El-sa%CC%81bado-por-la-man%CC%83.m4a", 
+        transcripcion: "El sábado, por la mañana, mis amigos quieren hacer senderismo en una montaña para disfrutar de la naturaleza; el domingo, por la tarde, quiero dibujar en el parque con mi hermana para relajarnos; y el lunes, por la mañana, mi madre quiere enseñarme a hacer pan en casa para aprender una receta familiar.", 
+        traduccion: "يوم السبت في الصباح، يريد أصدقائي القيام برحلة تسلق جبل للاستمتاع بالطبيعة؛ يوم الأحد بعد الظهر، أريد الرسم في الحديقة مع أختي للاسترخاء؛ ويوم الاثنين في الصباح، تريد والدتي تعليمي صنع الخبز في المنزل لتعلم وصفة عائلية."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxNtHBn5p_El-viernes-por-la-ta-1-.m4a", 
+        transcripcion: "El viernes, por la tarde, quiero jugar videojuegos con mis amigos en casa para divertirnos; el sábado, por la mañana, mi perro y yo queremos pasear en el parque para que él corra; y el domingo, por la tarde, mis padres quieren preparar postres para compartir con la familia.", 
+        traduccion: "يوم الجمعة بعد الظهر، أريد لعب ألعاب الفيديو مع أصدقائي في المنزل للترفيه؛ يوم السبت في الصباح، كلبي وأنا نريد التنزه في الحديقة ليركض؛ ويوم الأحد بعد الظهر، يريد والداي تحضير الحلويات لمشاركتها مع العائلة."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxIAETbdp_El-viernes-por-la-ta-2-.m4a", 
+        transcripcion: "El viernes, por la tarde, mi abuelo quiere contarme una historia en casa para compartir su vida; el sábado, por la mañana, mis primos quieren montar en bicicleta por el barrio conmigo para explorar; y el domingo, por la tarde, quiero hacer una tarta en la cocina con mi madre para sorprenderla.", 
+        traduccion: "يوم الجمعة بعد الظهر، جدي يريد أن يحكي لي قصة في المنزل ليشاركني حياته؛ يوم السبت في الصباح، يريد أبناء عمي ركوب الدراجة في الحي معي للاستكشاف؛ ويوم الأحد بعد الظهر، أريد تحضير كعكة في المطبخ مع والدتي لمفاجأتها."
+    },
+    { 
+        url: "https://www.cjoint.com/doc/24_11/NKkxwGz0SNp_El-viernes-por-la-ta.m4a", 
+        transcripcion: "El viernes, por la tarde, quiero leer un libro en voz alta con mi primo en casa para practicar; el sábado, por la mañana, mis abuelos quieren pasear por el bosque para relajarse; y el domingo, por la tarde, mi prima quiere visitar un mercado local conmigo para comprar frutas frescas.", 
+        traduccion: "يوم الجمعة بعد الظهر، أريد قراءة كتاب بصوت عالٍ مع ابن عمي في المنزل للتدرب؛ يوم السبت في الصباح، يريد أجدادي التنزه في الغابة للاسترخاء؛ ويوم الأحد بعد الظهر، تريد ابنة عمي زيارة سوق محلي معي لشراء الفواكه الطازجة."
+    }
+];
+
+
+        const preguntasAleatorias = [
+            "¿Qué día hace/n la primera actividad?",
+            "¿Qué día hace/n la segunda actividad?",
+            "¿Qué día hace/n la tercera actividad?"
+        ];
+
+        const preguntasFijas = [
+            "¿En qué momento del día?",
+            "¿Qué actividad hace/n?",
+            "¿Con quién?",
+            "¿Dónde o adónde?",
+            "¿Por qué?"
+        ];
+        let contador = 10; // Tiempo inicial en segundos para demostración (puedes cambiar a 900 para 15 minutos)
+let intervalo;
+let transcripcionActual = "";
+let traduccionActual = ""; // Nueva variable para la traducción
+
+function asignar() {
+    // Seleccionar audio aleatorio
+    const audioPlayer = document.getElementById('audioPlayer');
+    const audioSeleccionado = audios[Math.floor(Math.random() * audios.length)];
+    audioPlayer.src = audioSeleccionado.url;
+    audioPlayer.style.display = 'block';
+    transcripcionActual = audioSeleccionado.transcripcion;
+    traduccionActual = audioSeleccionado.traduccion; // Asignar traducción
+    console.log("Audio seleccionado:", audioSeleccionado.url); // Debug: Verificar que el enlace es correcto
+
+    // Mostrar preguntas
+    const preguntaAleatoria = preguntasAleatorias[Math.floor(Math.random() * preguntasAleatorias.length)];
+    let preguntasHTML = `<p><strong></strong> ${preguntaAleatoria}</p>`;
+    preguntasHTML += preguntasFijas.map(pregunta => `<p>${pregunta}</p>`).join('');
+    document.getElementById('questionsContainer').innerHTML = preguntasHTML;
+
+    // Mostrar el botón "Pide el texto"
+    document.getElementById('transcriptionButton').style.display = 'block';
+}
+
+function iniciarContador() {
+    const counterElement = document.getElementById('counter');
+    const transcriptionContainer = document.getElementById('transcriptionContainer');
+    const transcriptionText = document.getElementById('transcriptionText');
+
+    // Mostrar el contador
+    counterElement.style.display = 'block';
+
+    // Iniciar el contador de tiempo
+    intervalo = setInterval(() => {
+        const minutos = Math.floor(contador / 60);
+        const segundos = contador % 60;
+        counterElement.textContent = `Tiempo restante para pedir el texto: ${minutos}:${segundos < 10 ? '0' : ''}${segundos}`;
+        contador--;
+
+        if (contador < 0) {
+            clearInterval(intervalo);
+            // Mostrar la transcripción y traducción cuando el tiempo expira
+            counterElement.style.display = 'none';
+            transcriptionText.innerHTML = `<strong></strong> ${transcripcionActual}<br><hr><center><h3>Traducción:</h3></center> ${traduccionActual}`;
+            transcriptionContainer.style.display = 'block';
+        }
+    }, 1000);
+}
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 99%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            border: 3px solid #2980b9;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; object-fit: cover; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    background: linear-gradient(to bottom, rgba(223, 233, 243, 0.8), rgba(93, 158, 163, 0.8)); /* Fondo refinado con transparencia */
+    color: #ffffff;
+    transform: rotateY(180deg);
+    padding: 20px; /* Ajuste de padding para un margen más elegante */
+    text-align: center;
+    font-size: 70px; /* Tamaño de fuente ajustado */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para un efecto moderno */
+    text-shadow: -1px -1px 2px rgba(0, 0, 0, 0.5), 
+                 1px -1px 2px rgba(0, 0, 0, 0.5),
+                 -1px 1px 2px rgba(0, 0, 0, 0.5),
+                 1px 1px 2px rgba(0, 0, 0, 0.5); /* Sombra para crear contorno */
+    position: relative; /* Necesario para los elementos absolutos */
+    overflow: hidden; /* Oculta los elementos que sobresalen */
+   
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+/* Opcional: agregar textura sutil al fondo */
+.back {
+    background-image: url('https://i.ibb.co/LtCZr1t/tile-background-1.png')
+    
+}
+
+
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+        /* Botones de acción */
+        .button-container {
+            width: 100%;
+            max-width: 370px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px 0;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 50px;
+            background-color: #3498db;
+            color: #fff;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .button.yes { background-color: #27ae60; }
+        .button.no { background-color: #e74c3c; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+        #completion-message {
+            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: rgba(255, 255, 255, 0.9);
+            color: #2c3e50;
+            font-size: 2em;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+    
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+    <div id="flashcard-container-wrapper">
+        <div id="flashcard-container">
+            <!-- Tarjetas de imágenes -->
+            <div class="flashcard is-visible">
+                <div class="front">
+                    <img src="https://i.ibb.co/mBtwQnz/DALL-E-2024-11-13-02-51-02-A-detailed-photo-of-a-book-placed-on-a-classroom-desk-with-the-book-opene.webp" alt="Imagen 1">
+                </div>
+                <div class="back">El libro</div>
+            </div>
+            
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/Jctv1pD/DALL-E-2024-11-13-02-51-34-A-detailed-photo-of-a-pencil-placed-on-a-classroom-desk-sharpened-and-rea.webp" alt="Imagen 2">
+                </div>
+                <div class="back">El lápiz</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/Xb7rG9r/DALL-E-2024-11-13-03-06-49-A-detailed-photo-of-a-chalkboard-in-a-classroom-setting-with-written-math.webp" alt="Imagen 3">
+                </div>
+                <div class="back">La pizarra</div>
+            </div>
+<!--------------------------------------------------------------------->
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/h268pGW/DALL-E-2024-11-13-03-07-06-A-detailed-photo-of-a-classroom-chair-made-of-metal-and-wood-with-a-woode.webp" alt="Imagen 4">
+                </div>
+                <div class="back">La silla</div>
+            </div>
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/Yj4WCL5/DALL-E-2024-11-18-02-25-34-A-realistic-photo-of-a-single-school-notebook-with-a-colorful-cover-lying.webp" alt="Imagen 4">
+                </div>
+                <div class="back">El cuaderno</div>
+            </div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Yj4WCL5/DALL-E-2024-11-18-02-25-34-A-realistic-photo-of-a-single-school-notebook-with-a-colorful-cover-lying.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El bolígrafo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/TYFmyDm/DALL-E-2024-11-18-02-25-48-A-realistic-photo-of-a-single-eraser-rectangular-in-shape-with-one-half-w.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La goma</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/4ZWp59T/DALL-E-2024-11-18-02-26-02-A-realistic-photo-of-a-single-pair-of-scissors-with-red-and-black-plastic.webp" alt="Imagen 4">
+    </div>
+    <div class="back">Las tijeras</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/KmC36Gj/DALL-E-2024-11-18-02-25-54-A-realistic-photo-of-a-single-ruler-made-of-transparent-plastic-with-both.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La regla</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/K9jN066/DALL-E-2024-11-18-02-28-40-A-realistic-photo-of-a-single-binder-clip-in-black-standing-upright-on-a.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El clip</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/nfZNxDK/DALL-E-2024-11-18-02-26-55-A-realistic-photo-of-a-single-colorful-highlighter-pen-with-a-bright-yell.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El rotulador</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/qCQtRPN/DALL-E-2024-11-19-15-32-24-A-realistic-photo-of-a-single-dry-erase-marker-used-for-writing-on-whiteb.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El marcador</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/PcyMPzJ/DALL-E-2024-11-18-02-26-09-A-realistic-photo-of-a-single-stapler-with-a-sleek-black-and-silver-desig.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La grapadora</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/rMRMSwD/DALL-E-2024-11-18-02-26-04-A-realistic-photo-of-a-single-glue-stick-with-a-white-body-and-a-purple-c.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El pegamento</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/6mWTXDG/DALL-E-2024-11-19-14-58-15-A-realistic-photo-of-a-single-sheet-of-paper-placed-on-a-clean-neutral-ba.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La hoja de papel</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/6mWTXDG/DALL-E-2024-11-19-14-58-15-A-realistic-photo-of-a-single-sheet-of-paper-placed-on-a-clean-neutral-ba.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El estuche</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1GXzGGn/DALL-E-2024-11-19-15-03-03-A-realistic-photo-of-a-single-desk-isolated-on-a-clean-neutral-background.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El escritorio</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/gZV901v/DALL-E-2024-11-19-15-06-12-A-realistic-photo-of-a-single-classroom-lamp-that-can-be-mounted-or-attac.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La lámpara</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Wn4ZgKR/DALL-E-2024-11-19-15-08-30-A-realistic-photo-of-a-modern-projector-typically-used-in-classrooms-plac.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El proyector</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/CQbwD3g/DALL-E-2024-11-19-15-10-31-A-realistic-photo-of-a-single-modern-desk-placed-on-a-clean-neutral-backg.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La mesa</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/rt2BnW2/DALL-E-2024-11-19-15-12-26-A-realistic-photo-of-a-modern-desktop-computer-with-a-separate-central-pr.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El ordenador</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/vmDqj5r/DALL-E-2024-11-19-15-15-33-A-realistic-photo-of-a-single-classroom-trash-bin-papelera-isolated-on-a.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La papelera</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/HnnXhgb/DALL-E-2024-11-19-15-18-28-A-realistic-photo-of-a-single-pencil-sharpener-commonly-used-in-classroom.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El sacapuntas</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/VJ4PQz6/DALL-E-2024-11-19-15-21-41-A-realistic-photo-of-a-single-compass-compa-s-used-for-drawing-circles-pl.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El compás</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/YZp176G/DALL-E-2024-11-19-15-22-49-A-realistic-photo-of-a-single-backpack-mochila-used-for-carrying-school-s.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La mochila</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/0DdK9ZQ/DALL-E-2024-11-19-15-23-38-A-realistic-photo-of-a-single-briefcase-or-school-case-cartera-used-for-c.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La cartera</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/ckTN1ff/DALL-E-2024-11-19-15-24-43-A-realistic-photo-of-a-single-folder-carpeta-used-for-organizing-papers-a.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La carpeta</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/XzYhKt8/DALL-E-2024-11-19-15-37-59-A-realistic-photo-of-a-single-roll-of-adhesive-tape-in-a-dispenser-placed.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La cinta adhesiva</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/9rpdLGL/DALL-E-2024-11-19-15-38-53-A-realistic-photo-of-a-set-of-colored-markers-isolated-on-a-clean-neutral.webp" alt="Imagen 4">
+    </div>
+    <div class="back">Los lápices de colores</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/9qTvc9C/DALL-E-2024-11-19-15-41-35-A-realistic-photo-of-a-whiteboard-eraser-used-for-cleaning-whiteboards-pl.webp" alt="Imagen 4">
+    </div>
+    <div class="back">El borrador de pizarra</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/zHfK5tj/DALL-E-2024-11-19-15-42-57-A-realistic-photo-of-a-classroom-door-isolated-on-a-clean-neutral-backgro.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La puerta</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/VMN0yPb/DALL-E-2024-11-19-15-43-48-A-realistic-photo-of-a-classroom-window-isolated-on-a-clean-neutral-backg.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La ventana</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/jh22j1v/DALL-E-2024-11-19-15-45-43-A-realistic-photo-of-a-modern-classroom-chair-with-a-writing-tablet-pala.webp" alt="Imagen 4">
+    </div>
+    <div class="back">La silla de pala</div>
+</div>
+
+
+
+        
+
+
+
+
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" id="reset-button">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+        // Seleccionar solo las tarjetas de imágenes
+        const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+        const yesButton = document.querySelector('.button.yes');
+        const noButton = document.querySelector('.button.no');
+        const resetButton = document.getElementById('reset-button');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        // Acción de voltear la tarjeta al hacer clic
+        flashcards.forEach((card) => {
+            card.addEventListener('click', () => {
+                card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+            });
+        });
+    
+        noButton.addEventListener('click', () => {
+            if (postponedCards.has(currentCardIndex)) {
+                // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+                if (lastPostponedCard === currentCardIndex) {
+                    showCompletionMessage();
+                    setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                    disableButtons();
+                } else {
+                    moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+                }
+            } else {
+                noCounter++;
+                noCounterSpan.textContent = noCounter;
+                postponedCards.add(currentCardIndex);
+                lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+                moveToNextCard();
+            }
+        });
+    
+        yesButton.addEventListener('click', () => {
+            yesCounter++;
+            yesCounterSpan.textContent = yesCounter;
+    
+            if (postponedCards.has(currentCardIndex)) {
+                postponedCards.delete(currentCardIndex);
+                noCounter--;
+                noCounterSpan.textContent = noCounter;
+            }
+    
+            completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+            updateTotalCardsCounter(); // Actualizar el total de tarjetas
+            moveToNextCard();
+        });
+    
+        resetButton.addEventListener('click', () => {
+            yesCounter = 0;
+            noCounter = 0;
+            yesCounterSpan.textContent = yesCounter;
+            noCounterSpan.textContent = noCounter;
+            postponedCards.clear();
+            completedCards.clear();
+            currentCardIndex = 0;
+            lastPostponedCard = null;
+            showCard(currentCardIndex);
+            enableButtons();
+            resultsCard.style.display = 'none';
+            completionMessage.style.display = 'none';
+            updateTotalCardsCounter(); // Restablecer el total de tarjetas
+        });
+    
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+            resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+            totalCardsInfo.textContent = flashcards.length;
+            cardsRemembered.textContent = noCounter;
+            cardsNotRemembered.textContent = yesCounter;
+    
+            // Calcular porcentaje y actualizar el progreso circular
+            const percentage = (yesCounter / flashcards.length) * 100;
+            progressPercentage.textContent = `${Math.round(percentage)}%`;
+            progressCircle.style.setProperty('--progress', `${percentage}deg`);
+        }
+    
+        function showCompletionMessage() {
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

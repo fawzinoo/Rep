@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 99%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            border: 3px solid #afb3b6;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    background: linear-gradient(to bottom, rgba(223, 233, 243, 0.8), rgba(93, 158, 163, 0.8)); /* Fondo refinado con transparencia */
+    color: #ffffff;
+    transform: rotateY(180deg);
+    padding: 20px; /* Ajuste de padding para un margen más elegante */
+    text-align: center;
+    font-size: 50px; /* Tamaño de fuente ajustado */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para un efecto moderno */
+    text-shadow: -1px -1px 2px rgba(0, 0, 0, 0.5), 
+                 1px -1px 2px rgba(0, 0, 0, 0.5),
+                 -1px 1px 2px rgba(0, 0, 0, 0.5),
+                 1px 1px 2px rgba(0, 0, 0, 0.5); /* Sombra para crear contorno */
+    position: relative; /* Necesario para los elementos absolutos */
+    overflow: hidden; /* Oculta los elementos que sobresalen */
+   
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+/* Opcional: agregar textura sutil al fondo */
+.back {
+    background-image: url('https://i.ibb.co/27gxG06/pexels-pixabay-207300.jpg')
+
+    
+    
+}
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+        /* Botones de acción */
+        .button-container {
+            width: 100%;
+            max-width: 370px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px 0;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 50px;
+            background-color: #3498db;
+            color: #fff;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .button.yes { background-color: #27ae60; }
+        .button.no { background-color: #e74c3c; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+        #completion-message {
+            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: white;
+            color: #2c3e50;
+            font-size: 2em;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+ 
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+    <div id="flashcard-container-wrapper">
+
+        <div id="flashcard-container">
+            <!-- Tarjetas de imágenes -->
+            <div class="flashcard is-visible">
+                <div class="front">                 
+                    <img src="https://i.ibb.co/fd6ZLkM/Escuchar-musica.jpg" alt="Imagen 1">
+                </div>
+                <div class="back">Escuchar música</div>
+            </div>
+            
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/kJzkxWz/escuchar-la-radio.jpg" alt="Imagen 2">
+                </div>
+                <div class="back">Escuchar la radio</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/yWLpxYn/escuchar-un-podcast.jpg" alt="Imagen 3">
+                </div>
+                <div class="back">Escuchar un podcast</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/y45dqqG/escuchar-las-noticias.jpg" alt="Imagen 4">
+    </div>
+    <div class="back">Escuchar las noticias</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/cgcGtrN/escuchar-un-cuento.jpg" alt="Imagen 5">
+    </div>
+    <div class="back">Escuchar un cuento</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/zmv4y97/ir-a-conciertos.jpg" alt="Imagen 6">
+                </div>
+                <div class="back">Ir a conciertos</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+         <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/MVgLFkT/ir-a-museos.jpg" alt="Imagen 7">
+                </div>
+                <div class="back">Ir a un museo</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Hnyk38F/ir-a-la-playa.jpg" alt="Imagen 8">
+    </div>
+    <div class="back">Ir a la playa</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/q7Qg48D/ir-al-cine.jpg" alt="Imagen 9">
+    </div>
+    <div class="back">Ir al cine</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/TW6JfL8/ir-al-teatro.jpg" alt="Imagen 10">
+    </div>
+    <div class="back">Ir al teatro</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1LVMZ13/ir-de-compras.jpg" alt="Imagen 11">
+    </div>
+    <div class="back">Ir de compras</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/pbZtVmb/ir-a-la-montan-a.jpg" alt="Imagen 12">
+    </div>
+    <div class="back">Ir a la montaña</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/k8BVfQ8/ir-a-la-biblioteca.jpg" alt="Imagen 13">
+    </div>
+    <div class="back">Ir a la biblioteca</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/6N8nrQ4/ir-al-parque.jpg" alt="Imagen 14">
+    </div>
+    <div class="back">Ir al parque</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/H2xjNWm/ir-a-la-feria.jpg" alt="Imagen 15">
+    </div>
+    <div class="back">Ir a la feria</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/N78GqpN/ir-a-una-exposicion.jpg" alt="Imagen 16">
+    </div>
+    <div class="back">Ir a una exposición de coches</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/pxTMPnR/ir-la-piscina.jpg" alt="Imagen 17">
+    </div>
+    <div class="back">Ir a la piscina</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/mDf1HYt/ir-al-campo.jpg" alt="Imagen 18">
+    </div>
+    <div class="back">Ir al campo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Sc6KJC6/ir-al-bosque.jpg" alt="Imagen 19">
+    </div>
+    <div class="back">Ir al bosque</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/mhZdYMR/ir-al-gimnasio.jpg" alt="Imagen 20">
+    </div>
+    <div class="back">Ir al gimnasio</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/0Yk2Kz4/salir-a-cenar.jpg" alt="Imagen 21">
+    </div>
+    <div class="back">Salir a cenar</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/qYBNctN/salir-a-bailar.jpg" alt="Imagen 22">
+    </div>
+    <div class="back">Salir a bailar</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/cF0BCfY/salir-de-noche.jpg" alt="Imagen 23">
+    </div>
+    <div class="back">Salir de noche</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/ZSXCkJy/salir-con-amigos.jpg" alt="Imagen 24">
+    </div>
+    <div class="back">Salir con amigos</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/WyPL1B5/salir-a-caminar.jpg" alt="Imagen 25">
+    </div>
+    <div class="back">Salir a caminar</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/pdRPXxh/salir-de-paseo.jpg" alt="Imagen 26">
+    </div>
+    <div class="back">Salir de paseo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/FbRC5X0/salir-de-casa.jpg" alt="Imagen 27">
+    </div>
+    <div class="back">Salir de casa</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/fprrq8t/salir-del-trabajo.jpg" alt="Imagen 28">
+    </div>
+    <div class="back">Salir del trabajo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Xp8gbfn/hacer-un-curso-de-teatro.jpg" alt="Imagen 29">
+    </div>
+    <div class="back">Hacer un curso de teatro</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/TK70WS5/hacer-un-intercambio.jpg" alt="Imagen 30">
+    </div>
+    <div class="back">Hacer un intercambio con un nativo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1GqLb6k/DALL-E-2024-11-28-15-44-30-A-photorealistic-depiction-of-practicing-grammar-exercises-The-image-show.jpg" alt="Imagen 31">
+    </div>
+    <div class="back">Hacer ejercicios de gramática</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/9q0jD3Z/hacer-fotos.jpg" alt="Imagen 32">
+    </div>
+    <div class="back">Hacer fotos</div>
+</div>
+
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/MBbszYB/hacer-deporte.jpg" alt="Imagen 33">
+    </div>
+    <div class="back">Hacer deporte</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/94L4xDL/hacer-limpieza.jpg" alt="Imagen 34">
+    </div>
+    <div class="back">Hacer limpieza</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Xt9b47V/hacer-la-compra.jpg" alt="Imagen 35">
+    </div>
+    <div class="back">Hacer la compra</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/QkB1mjR/hacer-una-tarta.jpg" alt="Imagen 36">
+    </div>
+    <div class="back">Hacer una tarta</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/CbG2rXt/hacer-la-siesta.jpg" alt="Imagen 37">
+    </div>
+    <div class="back">Hacer la siesta</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/FJxZfrD/leer-el-periodico.jpg" alt="Imagen 38">
+    </div>
+    <div class="back">Leer el periódico</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/sPmFNBs/leer-una-revista.jpg" alt="Imagen 39">
+    </div>
+    <div class="back">Leer una revista</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/59s5BwL/leer-un-libro.jpg" alt="Imagen 40">
+    </div>
+    <div class="back">Leer un libro</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/mSxJ6B7/leer-un-email.jpg" alt="Imagen 41">
+    </div>
+    <div class="back">Leer un e-mail</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Zc8vXsf/leer-una-novela.jpg" alt="Imagen 42">
+    </div>
+    <div class="back">Leer una novela</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/2kyWBg6/leer-un-menu.jpg" alt="Imagen 43">
+    </div>
+    <div class="back">Leer un menú</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/DbrkWjf/escribir-un-mensaje.jpg" alt="Imagen 44">
+    </div>
+    <div class="back">Escribir un mensaje</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/PG4mSZb/escribir-un-diario.jpg" alt="Imagen 45">
+    </div>
+    <div class="back">Escribir un diario</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/K2FkFhV/escribir-un-correo-electronico.jpg" alt="Imagen 46">
+    </div>
+    <div class="back">Escribir un correo electrónico</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Js8wmCT/escribir-una-carta.jpg" alt="Imagen 47">
+    </div>
+    <div class="back">Escribir una carta</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/4tG4DK5/escribir-una-nota.jpg" alt="Imagen 48">
+    </div>
+    <div class="back">Escribir una nota</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/r3WGHLF/hablar-espan-ol.jpg" alt="Imagen 49">
+    </div>
+    <div class="back">Hablar español</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1XWqXxw/hablar-con-la-familia.jpg" alt="Imagen 50">
+    </div>
+    <div class="back">Hablar con la familia</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/MgdVPsr/hablar-por-telefono.jpg" alt="Imagen 51">
+    </div>
+    <div class="back">Hablar por teléfono</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/c3CxxbB/visitar-paginas-web.jpg" alt="Imagen 52">
+    </div>
+    <div class="back">Visitar páginas web</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/wrs9dJb/visitar-lugares-historicos.jpg" alt="Imagen 53">
+    </div>
+    <div class="back">Visitar lugares históricos</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/6BZ9P4h/visitar-la-abuela.jpg" alt="Imagen 54">
+    </div>
+    <div class="back">Visitar a mi abuela</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/MMq57zd/visitar-los-monumentos.jpg" alt="Imagen 55">
+    </div>
+    <div class="back">Visitar los monumentos</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/dJCqDQY/el-casco-historico.jpg" alt="Imagen 56">
+    </div>
+    <div class="back">Visitar el casco antiguo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/DW3q2FM/practicar-la-pronunciacion.jpg" alt="Imagen 57">
+    </div>
+    <div class="back">Practicar la pronunciación</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/bBcwhnY/practicar-el-espan-ol.jpg" alt="Imagen 58">
+    </div>
+    <div class="back">Practicar español</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/T4FGk4G/hacer-yoga.jpg" alt="Imagen 59">
+    </div>
+    <div class="back">Practicar yoga</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/5cCx1Yw/practicar-senderismo.jpg" alt="Imagen 60">
+    </div>
+    <div class="back">Practicar el senderismo</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/5v6bpVg/practicar-la-equitacion.jpg" alt="Imagen 61">
+    </div>
+    <div class="back">Practicar la equitación</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/h1ZmTFq/practicar-la-natacion.jpg" alt="Imagen 62">
+    </div>
+    <div class="back">Practicar la natación</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/tQ11JgS/jugar-a-los-videojuegos.jpg" alt="Imagen 63">
+    </div>
+    <div class="back">Jugar a videojuegos</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1M5tD5w/jugar-al-futbol.jpg" alt="Imagen 64">
+    </div>
+    <div class="back">Jugar al fútbol</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Fggv8kC/jugar-al-tenis.jpg" alt="Imagen 65">
+    </div>
+    <div class="back">Jugar al tenis</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/2YvffqD/jugar-a-las-cartas.jpg" alt="Imagen 66">
+    </div>
+    <div class="back">Jugar a las cartas</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/ydW1Ynb/jugar-a-los-dados.jpg" alt="Imagen 67">
+    </div>
+    <div class="back">Jugar a los dados</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/BBy8PFQ/jugar-ajedrez.jpg" alt="Imagen 68">
+    </div>
+    <div class="back">Jugar al ajedrez</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/M21XWkc/jugar-con-rompecabezas.jpg" alt="Imagen 69">
+    </div>
+    <div class="back">Jugar con rompecabezas</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/G3TrxbM/Aprender-espan-ol.jpg" alt="Imagen 70">
+    </div>
+    <div class="back">Aprender español</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/hHVSGP0/Aprender-a-bailar.jpg" alt="Imagen 71">
+    </div>
+    <div class="back">Aprender a bailar</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/MNMWTTy/Aprender-a-tocar-la-guitarra.jpg" alt="Imagen 72">
+    </div>
+    <div class="back">Aprender a tocar la guitarra</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/J3G31WG/aprender-a-conducir.jpg" alt="Imagen 73">
+    </div>
+    <div class="back">Aprender a conducir</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/RY7j9MM/ver-una-pelicula.jpg" alt="Imagen 74">
+    </div>
+    <div class="back">Ver una película</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/PzR9X29/ver-la-television.jpg" alt="Imagen 75">
+    </div>
+    <div class="back">Ver la televisión</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/9TxhTHc/ver-un-partido.jpg" alt="Imagen 76">
+    </div>
+    <div class="back">Ver un partido de fútbol</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/p06sxbV/Ver-las-fotos.jpg" alt="Imagen 77">
+    </div>
+    <div class="back">Ver las fotos</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/GkFXzf8/Ver-los-paisajes.jpg" alt="Imagen 78">
+    </div>
+    <div class="back">Ver los paisajes</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/qsnQtz0/ver-las-cataratas.jpg" alt="Imagen 79">
+    </div>
+    <div class="back">Ver las cataratas</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/CKRdDHv/cocinar-un-plato.jpg" alt="Imagen 80">
+    </div>
+    <div class="back">Cocinar un plato</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/HVb6fjq/cocinar-galletas.jpg" alt="Imagen 81">
+    </div>
+    <div class="back">Cocinar galletas</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/r0GGZMY/cocinar-pizza.jpg" alt="Imagen 82">
+    </div>
+    <div class="back">Cocinar una pizza</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/gR1qxv7/cocinar-una-tortilla.jpg" alt="Imagen 83">
+    </div>
+    <div class="back">Cocinar una tortilla</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/wd4x4Y2/cocinar-con-mi-madre.jpg" alt="Imagen 84">
+    </div>
+    <div class="back">Cocinar con mi madre</div>
+</div>
+
+<!--------------------------------------------------------------------->
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+     let hasShownInitialMessage = false; // Bandera para el mensaje inicial
+let initialMessageInterval; // Variable para el ID del intervalo
+let isMessageVisible = true; // Bandera para alternar la visibilidad del mensaje
+let initialDelayTimeout; // Variable para el ID del retardo inicial
+    
+    const audios = [
+        // 1
+        new Audio('https://www.cjoint.com/doc/24_11/NKybGPtlLzr_escuchar-musica-.mp3'),
+        // 2
+        new Audio('https://www.cjoint.com/doc/24_11/NKylkinfP3r_escuchar-la-radio.mp3'),
+        // 3
+        new Audio('https://www.cjoint.com/doc/24_11/NKylk2YAMIr_escuchar-un-podcast.mp3'), 
+       // 4
+        new Audio('https://www.cjoint.com/doc/24_11/NKEpDYSheYX_-Escuchar-las-notici.mp3'),
+       // 5
+        new Audio('https://www.cjoint.com/doc/24_11/NKEpEJZPPvX_Escuchar-un-cuento.mp3'),
+        // 6
+        new Audio('https://www.cjoint.com/doc/24_11/NKybHm85bEr_ir-a-conciertos.mp3'),
+        // 7
+        new Audio('https://www.cjoint.com/doc/24_11/NKybHQq4UIr_ir-a-un-museo.mp3'),     
+        // 8  
+        new Audio('https://www.cjoint.com/doc/24_11/NKybItqDYdr_ir-a-la-playa.mp3'),
+        // 9
+        new Audio('https://www.cjoint.com/doc/24_11/NKybJfvGnTr_ir-al-cine.mp3'),
+        // 10
+        new Audio('https://www.cjoint.com/doc/24_11/NKylfqzVEer_ir-al-teatro.mp3'),
+        // 11
+        new Audio('https://www.cjoint.com/doc/24_11/NKylfVEi4Or_ir-de-compras.mp3'),       
+       // 12
+        new Audio('https://www.cjoint.com/doc/24_11/NKEpGVOoqKX_ir-a-la-montan%CC%83a.mp3'),
+       // 13
+       new Audio('https://www.cjoint.com/doc/24_11/NKEs1BLMvZW_ir-a-la-biblioteca.mp3'),
+       // 14
+       new Audio('https://www.cjoint.com/doc/24_11/NKEs2B54BmW_ir-al-parque.mp3'),
+       // 15
+       new Audio('https://www.cjoint.com/doc/24_11/NKEs3jyVBLI_ir-a-la-feria.mp3'),
+       // 16
+       new Audio('https://www.cjoint.com/doc/24_11/NKEs3W2WAuW_ir-a-una-exposicion-de-coches.mp3'),
+       // 17
+       new Audio('https://www.cjoint.com/doc/24_11/NKEtoYIn5OW_ir-a-la-piscina.mp3'),
+       // 18
+       new Audio('https://www.cjoint.com/doc/24_11/NKEtpL2xGRW_ir-al-campo.mp3'),
+      // 19
+      new Audio('https://www.cjoint.com/doc/24_11/NKEtrRlXxtW_ir-al-bosque.mp3'),
+      // 20
+      new Audio('https://www.cjoint.com/doc/24_11/NKEtqqxfpiI_ir-al-gimnasio.mp3'),
+        // 21
+     new Audio('https://www.cjoint.com/doc/24_11/NKymJBuQdZi_salir-a-cenar.mp3'), 
+        // 22
+     new Audio('https://www.cjoint.com/doc/24_11/NKylgsEiG7r_salir-a-bailar.mp3'),
+        // 23
+        new Audio('https://www.cjoint.com/doc/24_11/NKymIe0U1Hi_salir-de-noche.mp3'),
+        // 24
+        new Audio('https://www.cjoint.com/doc/24_11/NKylgU7eY6r_salir-con-amigos.mp3'),
+        // 25
+        new Audio('https://www.cjoint.com/doc/24_11/NKEtRJ62qSI_salir-a-caminar.mp3'),
+       // 26
+        new Audio('https://www.cjoint.com/doc/24_11/NKEtSwU6OPW_salir-de-paseo.mp3'),
+       // 27
+        new Audio('https://www.cjoint.com/doc/24_11/NKEtTs7Yj6W_salir-de-casa.mp3'),
+       // 28
+        new Audio('https://www.cjoint.com/doc/24_11/NKEtT0CEVAW_salir-del-trabajo.mp3'),
+        // 29
+        new Audio('https://www.cjoint.com/doc/24_11/NKylhnoYBKr_hacer-un-curso-de-teatro.mp3'),
+        // 30
+        new Audio('https://www.cjoint.com/doc/24_11/NKylhTDpUyr_hacer-un-intercambio-con-un-nativo.mp3'),
+        // 31
+        new Audio('https://www.cjoint.com/doc/24_11/NKyliozvdmr_hacer-ejercicios-de-gramatica.mp3'),
+        // 32
+        new Audio('https://www.cjoint.com/doc/24_11/NKyliVGL6Or_hacer-fotos.mp3'),
+        // 33
+        new Audio('https://www.cjoint.com/doc/24_11/NKEt7J2qfxI_hacer-deporte.mp3'),
+        // 34
+        new Audio('https://www.cjoint.com/doc/24_11/NKEuaiOHH8W_Hacer-limpieza.mp3'),
+        // 35
+        new Audio('https://www.cjoint.com/doc/24_11/NKExySdMggX_hacer-la-compra.mp3'),
+        // 36
+        new Audio('https://www.cjoint.com/doc/24_11/NKExAtxAUqX_hacer-una-tarta.mp3'),
+        // 37
+        new Audio('https://www.cjoint.com/doc/24_11/NKExCMyzKvX_hacer-la-siesta.mp3'),
+        // 38
+        new Audio('https://www.cjoint.com/doc/24_11/NKyllAoWS1r_leer-el-periodico.mp3'),
+        // 39
+        new Audio('https://www.cjoint.com/doc/24_11/NKyll0Lhk8r_leer-una-revista.mp3'),
+        // 40
+        new Audio('https://www.cjoint.com/doc/24_11/NKylmxIbnDr_leer-un-libro.mp3'),
+        // 41
+        new Audio('https://www.cjoint.com/doc/24_11/NKExGGZEUeX_leer-un-email.mp3'),
+        // 42
+        new Audio('https://www.cjoint.com/doc/24_11/NKExHDUuvvX_leer-una-novela.mp3'),
+        // 43
+        new Audio('https://www.cjoint.com/doc/24_11/NKExH6jlczX_leer-un-menu%CC%81.mp3'),
+        // 44
+        new Audio('https://www.cjoint.com/doc/24_11/NKylm3FEn1r_escribir-un-mensaje.mp3'),  
+        // 45
+        new Audio('https://www.cjoint.com/doc/24_11/NKyloklej5r_escribir-un-diario.mp3'),
+        // 46
+        new Audio('https://www.cjoint.com/doc/24_11/NKExKcpBAFX_Escribir-un-correo-electri-.mp3'),
+        // 47
+        new Audio('https://www.cjoint.com/doc/24_11/NKExLtnamvX_Escribir-una-carta-.mp3'),
+        // 48
+        new Audio('https://www.cjoint.com/doc/24_11/NKExMc1BzDX_Escribir-una-nota-.mp3'),
+        // 49
+        new Audio('https://www.cjoint.com/doc/24_11/NKymlUt7hri_hablar-espan%CC%83ol.mp3'),
+        // 50
+        new Audio('https://www.cjoint.com/doc/24_11/NKExRm6dAXX_hablar-con-la-familia.mp3'),
+        // 51
+        new Audio('https://www.cjoint.com/doc/24_11/NKExYUnEGCX_hablar-por-telefono.mp3'),    
+        // 52
+        new Audio('https://www.cjoint.com/doc/24_11/NKymnb2qGbi_visitar-paginas-web.mp3'),
+        // 53
+        new Audio('https://www.cjoint.com/doc/24_11/NKymIK3kA1i_visitar-lugares-historicos.mp3'),
+        // 54
+        new Audio('https://www.cjoint.com/doc/24_11/NKEx5l6VHiX_Visitar-a-mi-abuela.mp3'),
+        // 55
+        new Audio('https://www.cjoint.com/doc/24_11/NKEx7skATXX_Visitar-los-monumentos.mp3'),
+        // 56
+        new Audio('https://www.cjoint.com/doc/24_11/NKEx7V1tRJX_visitar-al-casco-.mp3'),
+        // 57
+        new Audio('https://www.cjoint.com/doc/24_11/NKymnD0Nmii_practicar-la-pronunciacion.mp3'),
+        // 58
+        new Audio('https://www.cjoint.com/doc/24_11/NKymoaeabDi_practicar-espan%CC%83ol.mp3'),
+        // 59
+        new Audio('https://www.cjoint.com/doc/24_12/NLbagubsUmX_Practicar-yoga-.mp3'),
+        // 60
+        new Audio('https://www.cjoint.com/doc/24_12/NLbag4ot1bX_practicar-el-senderismo.mp3'),
+        // 61
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaivJABcX_practicar-la-equitacion.mp3'),
+        // 62
+        new Audio('https://www.cjoint.com/doc/24_12/NLbajFbzOeX_practicar-la-natacion.mp3'),
+        // 63
+        new Audio('https://www.cjoint.com/doc/24_11/NKymNNJNini_jugar-a-videojuegos.mp3'),
+        // 64
+        new Audio('https://www.cjoint.com/doc/24_11/NKympcKFrUi_jugar-al-futbol.mp3'),
+        // 65
+        new Audio('https://www.cjoint.com/doc/24_11/NKympUU7x1i_jugar-al-tenis.mp3'),
+       // 66
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaqvIM3EX_jugar-a-las-cartas.mp3'),
+        // 67
+        new Audio('https://www.cjoint.com/doc/24_12/NLbavNcts1X_jugar-a-los-dados.mp3'),
+        // 68
+        new Audio('https://www.cjoint.com/doc/24_12/NLbax5tND5X_jugar-al-ajedrez.mp3'),
+        // 69
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaxjyyMRX_jugar-con-rompecabezas-.mp3'),
+        // 70
+        new Audio('https://www.cjoint.com/doc/24_11/NKymDgxVyti_aprender-espan%CC%83ol.mp3'),
+        // 71
+        new Audio('https://www.cjoint.com/doc/24_11/NKymDI26ACi_aprender-a-bailar.mp3'),
+        // 72
+        new Audio('https://www.cjoint.com/doc/24_11/NKymF7cH2Yi_aprender-a-tocar-la-guitarra.mp3'),
+        // 73
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaBXHWjpX_Aprender-a-conducir.mp3'),
+        // 74
+        new Audio('https://www.cjoint.com/doc/24_11/NKymHhXHeLi_ver-una-pelicula.mp3'),
+        // 75
+        new Audio('https://www.cjoint.com/doc/24_11/NKymHPqLmvi_ver-la-television.mp3'),
+        // 76
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaDCqRZoX_ver-un-partido-de-fu.mp3'),
+        // 77
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaEafZbCX_ver-las-fotos.mp3'),
+        // 78
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaEIK6OsX_Ver-los-paisajes.mp3'),
+        // 79
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaE6IdxiX_ver-las-cataratas-.mp3'),
+        // 80
+        new Audio('https://www.cjoint.com/doc/24_11/NKymNnPbmmi_cocinar-un-plato.mp3'),
+        // 81
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaItOz8qX_cocinar-galletas.mp3'),
+        // 82
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaKK2dF8X_cocinar-una-pizza-.mp3'),
+        // 83
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaLbtwMNX_cocinar-una-tortilla-.mp3'),
+        // 84
+        new Audio('https://www.cjoint.com/doc/24_12/NLbaLCWUTSX_cocinar-con-mi-madre.mp3'),
+        
+    ];
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    // Acción de voltear la tarjeta al hacer clic
+    flashcards.forEach((card, index) => {
+        let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+        card.addEventListener('click', () => {
+            card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+            if (card.classList.contains('flipped')) {
+                // Reproducir el audio correspondiente después de 1 segundo si la tarjeta se está volteando
+                if (audios[index]) {
+                    stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                    setTimeout(() => {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                    }, 1000); // 1000 ms = 1 segundo
+                }
+            } else {
+                // Detener el audio si la tarjeta se voltea de nuevo
+                if (isAudioPlaying && audios[index]) {
+                    audios[index].pause();
+                    audios[index].currentTime = 0; // Reiniciar el audio
+                    isAudioPlaying = false;
+                }
+            }
+        });
+    });
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    // Continuación de tu lógica para los botones y tarjetas...
+
+        const resetButton = document.getElementById('reset-button');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+
+        noButton.addEventListener('click', () => {
+    processedCards++; // Incrementa tarjetas procesadas
+    checkCustomMessage(); // Verifica y muestra mensaje personalizado
+
+    if (postponedCards.has(currentCardIndex)) {
+        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+        if (lastPostponedCard === currentCardIndex) {
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            disableButtons();
+        } else {
+            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        moveToNextCard();
+    }
+});
+
+    
+yesButton.addEventListener('click', () => {
+    processedCards++; // Incrementa tarjetas procesadas
+    checkCustomMessage(); // Verifica y muestra mensaje personalizado
+
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    }
+
+    completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+    updateTotalCardsCounter(); // Actualizar el total de tarjetas
+    moveToNextCard(); // Mover a la siguiente tarjeta
+});
+
+        resetButton.addEventListener('click', () => {
+            yesCounter = 0;
+            noCounter = 0;
+            yesCounterSpan.textContent = yesCounter;
+            noCounterSpan.textContent = noCounter;
+            postponedCards.clear();
+            completedCards.clear();
+            currentCardIndex = 0;
+            lastPostponedCard = null;
+            showCard(currentCardIndex);
+            enableButtons();
+            resultsCard.style.display = 'none';
+            completionMessage.style.display = 'none';
+            updateTotalCardsCounter(); // Restablecer el total de tarjetas
+        });
+    
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+            resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+            totalCardsInfo.textContent = flashcards.length;
+            cardsRemembered.textContent = noCounter;
+            cardsNotRemembered.textContent = yesCounter;
+    
+            // Calcular porcentaje y actualizar el progreso circular
+            const percentage = (yesCounter / flashcards.length) * 100;
+            progressPercentage.textContent = `${Math.round(percentage)}%`;
+            progressCircle.style.setProperty('--progress', `${percentage}deg`);
+        }
+    
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+                       
+  // Mensajes personalizados según el número de tarjetas procesadas
+const customMessages = {
+    0: "Escuchar",
+    5: "Ir a",
+   20: "Salir",
+   28: "Hacer",
+   37: "Leer",
+   43: "Escribir",
+   48: "Hablar",
+   51: "Visitar",
+   56: "Practicar",
+   62: "Jugar",
+   69: "Aprender",
+   73: "Ver",
+   79: "Cocinar",
+
+};
+
+// Función para verificar si mostrar un mensaje personalizado
+function checkCustomMessage() {
+    if (customMessages[processedCards]) {
+        showCustomMessage(customMessages[processedCards]);
+        delete customMessages[processedCards]; // Asegura que no se repita
+    }
+}
+
+// Función para mostrar un mensaje personalizado con efecto de círculo
+function showCustomMessage(message) {
+    const customMessageElement = document.createElement('div');
+    customMessageElement.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    `;
+
+    const messageContent = document.createElement('div');
+    messageContent.textContent = message;
+    messageContent.style.cssText = `
+        position: relative;      
+        color: blue;
+        padding: 20px 40px;
+        border-radius: 10px;
+        font-size: 3em;
+        font-family: Georgia, sans-serif;
+        text-align: center;
+        overflow: hidden;
+        
+    `;
+
+    // Crear el efecto de círculo
+    const circleElement = document.createElement('div');
+    circleElement.style.cssText = `
+      position: fixed;
+        width: 100px;
+        height: 100px;
+        border: 5px solid #f1c40f;
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        animation: grow-circle 1s ease-in-out forwards;
+        z-index: -1; /* Coloca detrás del texto */
+    `;
+
+    // Agregar el círculo al mensaje
+    messageContent.appendChild(circleElement);
+    customMessageElement.appendChild(messageContent);
+    document.body.appendChild(customMessageElement);
+
+    // Eliminar el mensaje después de 3 segundos
+    setTimeout(() => {
+        if (customMessageElement.parentElement) {
+            document.body.removeChild(customMessageElement);
+        }
+    }, 3000);
+}
+
+// Función para mostrar el mensaje inicial con un retardo inicial
+function showInitialMessage() {
+    if (!hasShownInitialMessage) {
+        initialDelayTimeout = setTimeout(() => {
+            // Mostrar el mensaje inicial por primera vez
+            showCustomMessage(customMessages[0]);
+            hasShownInitialMessage = true; // Marca como mostrado
+            isMessageVisible = false; // Alternar a oculto
+
+            // Configura un intervalo para alternar el mensaje
+            initialMessageInterval = setInterval(() => {
+                if (isMessageVisible) {
+                    showCustomMessage(customMessages[0]); // Mostrar el mensaje
+                }
+                isMessageVisible = !isMessageVisible; // Alternar visibilidad
+            }, 4000); // Intervalo de 2 segundos
+        }, 4000); // Retardo inicial de 4 segundos
+    }
+}
+
+// Función para cancelar el mensaje inicial repetido
+function cancelInitialMessage() {
+    clearTimeout(initialDelayTimeout); // Detiene el retardo inicial
+    clearInterval(initialMessageInterval); // Detiene el intervalo repetido
+    hasShownInitialMessage = true; // Marca como mostrado
+}
+
+// Llama a la función al cargar la página
+document.addEventListener('DOMContentLoaded', () => {
+    showInitialMessage();
+});
+
+// Manejar clics en los botones para cancelar el mensaje inicial
+yesButton.addEventListener('click', cancelInitialMessage);
+noButton.addEventListener('click', cancelInitialMessage);
+
+// Botón "Reiniciar" para reiniciar la lógica
+resetButton.addEventListener('click', () => {
+    clearTimeout(initialDelayTimeout); // Detener el retardo inicial
+    clearInterval(initialMessageInterval); // Detener el intervalo repetido
+    hasShownInitialMessage = false; // Resetea la bandera
+    isMessageVisible = true; // Resetea la visibilidad
+    showInitialMessage(); // Reinicia la lógica del mensaje inicial
+});
+// Agregar animación para el círculo con CSS
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes grow-circle {
+        0% {
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0.8;
+        }
+        50% {
+            transform: translate(-50%, -50%) scale(1.5);
+            opacity: 1;
+        }
+        100% {
+            transform: translate(-50%, -50%) scale(3);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// Inicializar contadores
+let processedCards = 0; // Asegúrate de inicializar correctamente
+updateTotalCardsCounter(); // Actualiza el contador total
+showCard(currentCardIndex); // Muestra la primera tarjeta
+
+
+    </script>
+    
+    
+</body>
+</html>

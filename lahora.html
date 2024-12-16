@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 99%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #505255, #00020a);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            background: linear-gradient(to bottom, rgba(223, 233, 243, 0.8), rgba(17, 189, 97, 0.8)); /* Fondo */
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    background: linear-gradient(to right, rgba(189, 186, 21, 0.8), rgba(198, 152, 14, 0.8)); /* Fondo */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 4rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra del texto */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 90%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+        /* Botones de acción */
+        .button-container {
+            width: 100%;
+            max-width: 370px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px 0;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 50px;
+            background-color: #3498db;
+            color: #fff;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .button.yes { background-color: #27ae60; }
+        .button.no { background-color: #e74c3c; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+        #completion-message {
+            display: none;
+            position: absolute;
+            width: 100%;                                     
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: white;
+            color: #2c3e50;
+            font-size: 2em;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+        .overlay-text {
+    position: absolute; /* Se posiciona dentro de .front */
+    bottom: 140px; /* Se ajusta a 10px desde la parte inferior */ 
+    transform: translate(0, 0); /* Elimina el desplazamiento */
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: #ffffff; /* Color del texto */
+    font-size: 9rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra para mejor legibilidad */
+    text-align: left; /* Alinea el texto a la izquierda */
+    pointer-events: none; /* El texto no interferirá con los clics */
+}
+.overlay-text1 {
+    position: absolute; /* Se posiciona dentro de .front */
+    bottom: 300px; /* Se ajusta a 10px desde la parte inferior */
+    transform: translate(0, 0); /* Elimina el desplazamiento */
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: bisque; /* Color del texto */
+    font-size: 2.5rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 4px 5px 6px rgba(0, 0, 0, 0.7); /* Sombra para mejor legibilidad */
+    text-align: center; /* Alinea el texto a la izquierda */
+    pointer-events: none; /* El texto no interferirá con los clics */
+}
+    </style>
+ 
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+ <div id="flashcard-container-wrapper">
+
+
+<div id="flashcard-container">
+    <!-- Tarjetas de imágenes -->
+    <div class="flashcard is-visible">
+        <div class="front">
+            <div class="overlay-text1">¿Qué hora es?</div>
+            <div class="overlay-text">1:00</div>
+        </div>
+        <div class="back">
+            <span><span style="color: red;">La</span> una</span> en punto
+        </div>
+    </div>
+
+            
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora tienes?</div>
+        <div class="overlay-text">1:05</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y cinco
+    </div>
+</div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Tienes hora?</div>
+        <div class="overlay-text">1:10</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y diez
+    </div>
+</div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:15</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y cuarto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:20</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y veinte
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:25</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y veinticinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:30</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">La</span> una</span> y media
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:35</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> menos veinticinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:40</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> menos veinte
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:45</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> menos cuarto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:50</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> menos diez
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">1:55</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> menos cinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:05</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y cinco
+    </div>
+</div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Tienes hora?</div>
+        <div class="overlay-text">2:10</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y diez
+    </div>
+</div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:15</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y cuarto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:20</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y veinte
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:25</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y veinticinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:30</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> dos</span> y media
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:35</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> menos veinticinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:40</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> menos veinte
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:45</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> menos cuarto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:50</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> menos diez
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">2:55</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> menos cinco
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">3:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> tres</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">4:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> cuatro</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">5:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> cinco</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">6:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> seis</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">7:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> siete</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">8:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> ocho</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">9:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> nueve</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">10:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> diez</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">11:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> once</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text1">¿Qué hora es?</div>
+        <div class="overlay-text">12:00</div>
+    </div>
+    <div class="back">
+        <span><span style="color: red;">Las</span> doce</span> en punto
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+    
+    const baseUrl = 'https://fawzinoo.github.io/audios/';
+const audios = [
+    '111.mp3', '222.mp3', '333.mp3', '444.mp3', '555.mp3',
+    '666.mp3', '777.mp3', '888.mp3', '999.mp3', '1010.mp3',
+    '1111.mp3', '1212.mp3', '1313.mp3', '1414.mp3',
+    '1515.mp3', '1616.mp3', '1717.mp3', '1818.mp3', '1919.mp3', '2020.mp3',
+    '2121.mp3', '2222.mp3', '2323.mp3', '2424.mp3', '2525.mp3', '2626.mp3', '2727.mp3', '2828.mp3', '2929.mp3', '3030.mp3', '3131.mp3', '3232.mp3', '3333.mp3', '3434.mp3'
+].map(file => new Audio(baseUrl + file));
+
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    // Acción de voltear la tarjeta al hacer clic
+    flashcards.forEach((card, index) => {
+        let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+        card.addEventListener('click', () => {
+            card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+            if (card.classList.contains('flipped')) {
+                // Reproducir el audio correspondiente después de 1 segundo si la tarjeta se está volteando
+                if (audios[index]) {
+                    stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                    setTimeout(() => {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                    }, 1000); // 1000 ms = 1 segundo
+                }
+            } else {
+                // Detener el audio si la tarjeta se voltea de nuevo
+                if (isAudioPlaying && audios[index]) {
+                    audios[index].pause();
+                    audios[index].currentTime = 0; // Reiniciar el audio
+                    isAudioPlaying = false;
+                }
+            }
+        });
+    });
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    // Continuación de tu lógica para los botones y tarjetas...
+
+
+
+
+
+
+
+
+        const resetButton = document.getElementById('reset-button');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+            if (postponedCards.has(currentCardIndex)) {
+                // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+                if (lastPostponedCard === currentCardIndex) {
+                    showCompletionMessage();
+                    setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                    disableButtons();
+                } else {
+                    moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+                }
+            } else {
+                noCounter++;
+                noCounterSpan.textContent = noCounter;
+                postponedCards.add(currentCardIndex);
+                lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+                moveToNextCard();
+            }
+        });
+    
+        yesButton.addEventListener('click', () => {
+            yesCounter++;
+            yesCounterSpan.textContent = yesCounter;
+    
+            if (postponedCards.has(currentCardIndex)) {
+                postponedCards.delete(currentCardIndex);
+                noCounter--;
+                noCounterSpan.textContent = noCounter;
+            }
+    
+            completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+            updateTotalCardsCounter(); // Actualizar el total de tarjetas
+            moveToNextCard();
+        });
+    
+        resetButton.addEventListener('click', () => {
+            yesCounter = 0;
+            noCounter = 0;
+            yesCounterSpan.textContent = yesCounter;
+            noCounterSpan.textContent = noCounter;
+            postponedCards.clear();
+            completedCards.clear();
+            currentCardIndex = 0;
+            lastPostponedCard = null;
+            showCard(currentCardIndex);
+            enableButtons();
+            resultsCard.style.display = 'none';
+            completionMessage.style.display = 'none';
+            updateTotalCardsCounter(); // Restablecer el total de tarjetas
+        });
+    
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+            resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+            totalCardsInfo.textContent = flashcards.length;
+            cardsRemembered.textContent = noCounter;
+            cardsNotRemembered.textContent = yesCounter;
+    
+            // Calcular porcentaje y actualizar el progreso circular
+            const percentage = (yesCounter / flashcards.length) * 100;
+            progressPercentage.textContent = `${Math.round(percentage)}%`;
+            progressCircle.style.setProperty('--progress', `${percentage}deg`);
+        }
+    
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

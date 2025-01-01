@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 99%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #f0f2f5, #c9d6ff);
+            border: 3px solid #2980b9;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    background: linear-gradient(to bottom, rgba(223, 233, 243, 0.8), rgba(93, 158, 163, 0.8)); /* Fondo refinado con transparencia */
+    color: #ffffff;
+    transform: rotateY(180deg);
+    padding: 20px; /* Ajuste de padding para un margen más elegante */
+    text-align: center;
+    font-size: 50px; /* Tamaño de fuente ajustado */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para un efecto moderno */
+    text-shadow: -1px -1px 2px rgba(0, 0, 0, 0.5), 
+                 1px -1px 2px rgba(0, 0, 0, 0.5),
+                 -1px 1px 2px rgba(0, 0, 0, 0.5),
+                 1px 1px 2px rgba(0, 0, 0, 0.5); /* Sombra para crear contorno */
+    position: relative; /* Necesario para los elementos absolutos */
+    overflow: hidden; /* Oculta los elementos que sobresalen */
+   
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+/* Opcional: agregar textura sutil al fondo */
+.back {
+    background-image: url('https://i.ibb.co/27gxG06/pexels-pixabay-207300.jpg')
+
+    
+    
+}
+
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+        /* Botones de acción */
+        .button-container {
+            width: 100%;
+            max-width: 370px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px 0;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 50px;
+            background-color: #3498db;
+            color: #fff;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .button.yes { background-color: #27ae60; }
+        .button.no { background-color: #e74c3c; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+        #completion-message {
+            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: white;
+            color: #2c3e50;
+            font-size: 2em;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+ 
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+    <div id="flashcard-container-wrapper">
+
+<div id="flashcard-container">
+            <!-- Tarjetas de imágenes -->
+            <div class="flashcard is-visible">
+                <div class="front">                 
+                    <img src="https://i.ibb.co/26QfBrG/image.jpg" alt="Imagen 1">
+                </div>
+                <div class="back">cero</div>
+            </div>
+            
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/VNNsMtf/1.jpg" alt="Imagen 2">
+    </div>
+    <div class="back">Uno</div>
+</div>
+
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/fG6ZFwr/2.jpg" alt="Imagen 3">
+                </div>
+                <div class="back">Dos</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/PcvGzXM/3.jpg" alt="Imagen 4">
+                </div>
+                <div class="back">Tres</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+            <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/Jz5dLcF/4.jpg" alt="Imagen 5">
+                </div>
+                <div class="back">Cuatro</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+         <div class="flashcard">
+                <div class="front">
+                    <img src="https://i.ibb.co/5jmbxys/5.jpg" alt="Imagen 5">
+                </div>
+                <div class="back">Cinco</div>
+            </div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/17nKp9G/6.jpg" alt="Imagen 6">
+    </div>
+    <div class="back">Seis</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/5hnZBSV/7.jpg" alt="Imagen 7">
+    </div>
+    <div class="back">Siete</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/kg599mw/8.jpg" alt="Imagen 8">
+    </div>
+    <div class="back">Ocho</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/8djvMLT/9.jpg" alt="Imagen 9">
+    </div>
+    <div class="back">Nueve</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/JRXqSKR/10.jpg" alt="Imagen 10">
+    </div>
+    <div class="back">Diez</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/VDYG22B/11.jpg" alt="Imagen 11">
+    </div>
+    <div class="back">Once</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/Vv1k7ss/12.jpg" alt="Imagen 12">
+    </div>
+    <div class="back">Doce</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/1nXvmwR/13.jpg" alt="Imagen 13">
+    </div>
+    <div class="back">Trece</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/QXCbW8C/14.jpg" alt="Imagen 14">
+    </div>
+    <div class="back">Catorce</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/wR7zv6k/15.jpg" alt="Imagen 15">
+    </div>
+    <div class="back">Quince</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/F5zpnQ2/16.jpg" alt="Imagen 16">
+    </div>
+    <div class="back">Dieciséis</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/7vGGxqX/17.jpg" alt="Imagen 17">
+    </div>
+    <div class="back">Diecisiete</div>
+</div>
+
+
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/j4xrdtg/18.jpg" alt="Imagen 18">
+    </div>
+    <div class="back">Dieciocho</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/0c1W9Sr/19.jpg" alt="Imagen 19">
+    </div>
+    <div class="back">Diecinueve</div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <img src="https://i.ibb.co/qdHYBbb/20.jpg" alt="Imagen 20">
+    </div>
+    <div class="back">Veinte</div>
+</div>
+
+<!--------------------------------------------------------------------->
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+    
+    const audios = [
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvl3ZOnin_Cero.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvnMhXmYn_uno.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvqiBM3YL_2.mp3'),  
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvoCtk6XL_3.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvtCcR4Kn_4.mp3'),       
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvuuesefn_5.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvvwHsSWL_6.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvwiJbXCL_7.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvwVRh1Pn_8.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvBKhKsdL_9.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvDRb5CWn_10.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvGHw2LQL_11.mp3'),     
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvHK35mFL_12.mp3'), 
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvIiFJfmn_13.mp3'), 
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvI7SSUJn_14.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvJES21jL_15.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvKLS463n_16.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvLfWHRpL_17.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvMqKphyL_18.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvOnbFarn_19.mp3'),
+        new Audio('https://www.cjoint.com/doc/24_12/NLbvOOYW0vL_20.mp3')
+
+    ];
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    // Acción de voltear la tarjeta al hacer clic
+    flashcards.forEach((card, index) => {
+        let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+        card.addEventListener('click', () => {
+            card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+            if (card.classList.contains('flipped')) {
+                // Reproducir el audio correspondiente después de 1 segundo si la tarjeta se está volteando
+                if (audios[index]) {
+                    stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                    setTimeout(() => {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                    }, 1000); // 1000 ms = 1 segundo
+                }
+            } else {
+                // Detener el audio si la tarjeta se voltea de nuevo
+                if (isAudioPlaying && audios[index]) {
+                    audios[index].pause();
+                    audios[index].currentTime = 0; // Reiniciar el audio
+                    isAudioPlaying = false;
+                }
+            }
+        });
+    });
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    // Continuación de tu lógica para los botones y tarjetas...
+
+
+
+
+
+
+
+
+        const resetButton = document.getElementById('reset-button');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+            if (postponedCards.has(currentCardIndex)) {
+                // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+                if (lastPostponedCard === currentCardIndex) {
+                    showCompletionMessage();
+                    setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                    disableButtons();
+                } else {
+                    moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+                }
+            } else {
+                noCounter++;
+                noCounterSpan.textContent = noCounter;
+                postponedCards.add(currentCardIndex);
+                lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+                moveToNextCard();
+            }
+        });
+    
+        yesButton.addEventListener('click', () => {
+            yesCounter++;
+            yesCounterSpan.textContent = yesCounter;
+    
+            if (postponedCards.has(currentCardIndex)) {
+                postponedCards.delete(currentCardIndex);
+                noCounter--;
+                noCounterSpan.textContent = noCounter;
+            }
+    
+            completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+            updateTotalCardsCounter(); // Actualizar el total de tarjetas
+            moveToNextCard();
+        });
+    
+        resetButton.addEventListener('click', () => {
+            yesCounter = 0;
+            noCounter = 0;
+            yesCounterSpan.textContent = yesCounter;
+            noCounterSpan.textContent = noCounter;
+            postponedCards.clear();
+            completedCards.clear();
+            currentCardIndex = 0;
+            lastPostponedCard = null;
+            showCard(currentCardIndex);
+            enableButtons();
+            resultsCard.style.display = 'none';
+            completionMessage.style.display = 'none';
+            updateTotalCardsCounter(); // Restablecer el total de tarjetas
+        });
+    
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+            resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+            totalCardsInfo.textContent = flashcards.length;
+            cardsRemembered.textContent = noCounter;
+            cardsNotRemembered.textContent = yesCounter;
+    
+            // Calcular porcentaje y actualizar el progreso circular
+            const percentage = (yesCounter / flashcards.length) * 100;
+            progressPercentage.textContent = `${Math.round(percentage)}%`;
+            progressCircle.style.setProperty('--progress', `${percentage}deg`);
+        }
+    
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #1f3658, #3558e3);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    width: 100%;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8), rgba(135, 185, 234, 0.255)); /* Fondo */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 3rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra del texto */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 100%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+/* Contenedor de botones */
+.button-container {
+    width: 100%;
+    max-width: 370px;
+    display: flex;
+    justify-content: space-evenly; /* Espacio uniforme entre todos los botones */
+    align-items: center;
+    padding: 10px 0px;
+    background-color: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+
+/* Contenedor en pantalla completa */
+.button-container.fullscreen {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 90%; /* Ancho ajustado para fullscreen */
+}
+
+/* Botones individuales */
+.button {
+    padding: 10px 15px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 50px;
+    background-color: #3498db;
+    color: #fff;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+     
+        .button.yes { background-color: #27ae60; margin-right: 25px;}
+        .button.no { background-color: #e74c3c;margin-right: 10px; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+
+#completion-message {
+    display: none; /* Inicialmente ocultos */
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+#final-review-message {
+    display: none; /* Inicialmente oculto */
+    position: absolute;
+    width: 100%;                                     
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+        #start-exposure-button {
+  border-radius: 50%;  /* Hacer el botón redondo */
+  padding: 10px;         /* Ajustar el padding para que el icono se vea bien */
+  margin-left: 15px;
+  
+}
+
+.button.disabled {
+    background-color: #bdc3c7;  /* Gris */
+    cursor: not-allowed; 
+    opacity: 0.5;  /* Opcional: Si deseas dar un toque más opaco */
+}
+
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+        color: black; /* color negro al inicio */
+    }
+    50% {
+        opacity: 0.5;
+        color: orange; /* color naranja en la mitad del parpadeo */
+    }
+    100% {
+        opacity: 1;
+        color: black; /* color negro al final */
+    }
+}
+
+.playing {
+    animation: blink 1s infinite;
+}
+
+
+        .overlay-text {
+    position: absolute; /* Se posiciona dentro de .front */
+    bottom: 100px; /* Se ajusta a 10px desde la parte inferior */
+    transform: translate(0, 0); /* Elimina el desplazamiento */
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: white; /* Color del texto */
+    font-size: 16rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra para mejor legibilidad */
+    text-align: center; /* Alinea el texto a la izquierda */
+    pointer-events: none; /* El texto no interferirá con los clics */
+}
+    </style>
+ 
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+ <div id="flashcard-container-wrapper">
+
+
+<div id="flashcard-container">
+    <!-- Tarjetas de imágenes -->
+    <div class="flashcard is-visible">
+        <div class="front">
+            <div class="overlay-text">A</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">a</span>
+        </div>
+    </div>
+
+            
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text">B</div>
+    </div>
+    <div class="back">
+        <span style="color: red; font-size: 4em;">be</span>
+    </div>
+</div>
+<!--------------------------------------------------------------------->
+
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text">C</div>
+    </div>
+    <div class="back">
+        <span style="color: red; font-size: 4em;">ce</span>
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+<div class="flashcard">
+    <div class="front">
+        <div class="overlay-text">Ch</div>
+    </div>
+    <div class="back">
+        <span style="color: red; font-size: 3.5em;">tche</span>
+    </div>
+</div>
+
+<!--------------------------------------------------------------------->
+    <!-- D -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">D</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">de</span>
+        </div>
+    </div>
+    
+    <!-- E -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">E</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">e</span>
+        </div>
+    </div>
+    
+    <!-- F -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">F</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">efe</span>
+        </div>
+    </div>
+    
+    <!-- G -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">G</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">ge</span>
+        </div>
+    </div>
+    
+    <!-- H -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">H</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 2.5em;">hache</span>
+        </div>
+    </div>
+    
+    <!-- I -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text" style="left: 150px;">I</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">i</span>
+        </div>
+    </div>
+    
+    <!-- J -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">J</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 2.5em;">jota</span>
+        </div>
+    </div>
+    
+    <!-- K -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">K</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">ka</span>
+        </div>
+    </div>
+    
+    <!-- L -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">L</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">ele</span>
+        </div>
+    </div>
+
+        <!-- LL -->
+        <div class="flashcard">
+            <div class="front">
+                <div class="overlay-text" style="left: 50px;">LL</div>
+            </div>
+            <div class="back">
+                <span style="color: red; font-size: 4em;">elle</span>
+            </div>
+        </div>
+    
+    <!-- M -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text" style="left: 90px;">M</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">eme</span>
+        </div>
+    </div>
+    
+    <!-- N -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">N</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">ene</span>
+        </div>
+    </div>
+    
+    <!-- Ñ -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">Ñ</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">eñe</span>
+        </div>
+    </div>
+    
+    <!-- O -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">O</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">o</span>
+        </div>
+    </div>
+    
+    <!-- P -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">P</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">pe</span>
+        </div>
+    </div>
+    
+    <!-- Q -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">Q</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">cu</span>
+        </div>
+    </div>
+    
+    <!-- R -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text" style="left: 100px;">R</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">erre</span>
+        </div>
+    </div>
+
+        <!-- RR -->
+        <div class="flashcard">
+            <div class="front">
+                <div class="overlay-text" style="left: 50px;font-size: 13em;bottom: 120px;">RR</div>
+            </div>
+            <div class="back">
+                <span style="color: red; font-size: 4em;">erre doble</span>
+            </div>
+        </div>
+        
+    
+    <!-- S -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">S</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">ese</span>
+        </div>
+    </div>
+    
+    <!-- T -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">T</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">te</span>
+        </div>
+    </div>
+    
+    <!-- U -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">U</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">u</span>
+        </div>
+    </div>
+    
+    <!-- V -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">V</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">uve</span>
+        </div>
+    </div>
+    
+    <!-- W -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text" style="left: 60px;">W</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 2em;">uve doble</span>
+        </div>
+    </div>
+    
+    <!-- X -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">X</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 2.5em;">equis</span>
+        </div>
+    </div>
+    
+    <!-- Y -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">Y</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 4em;">ye</span>
+        </div>
+    </div>
+    
+    <!-- Z -->
+    <div class="flashcard">
+        <div class="front">
+            <div class="overlay-text">Z</div>
+        </div>
+        <div class="back">
+            <span style="color: red; font-size: 3em;">zeta</span>
+        </div>
+    </div>
+</div>
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="final-review-message" style="display: none; text-align: center; font-size: 2em; font-weight: bold; color: #fff; background-color: #27ae60; padding: 20px; border-radius: 15px;">
+        ¡Repaso Finalizado! 🎉
+    </div>
+    
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="soundResetButton" src="ttps://www.cjoint.com/doc/24_12/NLFvBMPFH3k_bellding-254774.mp3" preload="auto"></audio>
+    <audio id="startExposureSound" src="https://www.cjoint.com/doc/24_12/NLFsmCkAHKi_start.mp3" preload="auto"></audio>
+
+
+    <audio id="soundYesButton" src="https://www.cjoint.com/doc/24_12/NLFrv5yAbgr_click-124467.mp3" preload="auto"></audio>
+    <audio id="soundNoButton" src="https://www.cjoint.com/doc/24_12/NLFryRqSAhr_bubble-popping-229138.mp3" preload="auto"></audio>
+
+
+   
+    <audio id="finalMessageSound" src="https://www.cjoint.com/doc/24_12/NLFqVDn2rfi_level-win-6416.mp3" preload="auto"></audio>
+
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" style="background-color: rgb(161, 117, 4);" id="start-exposure-button">
+            <i class="fas fa-play"></i> 
+        </button> 
+        <button class="button" id="enlarge-button" style="background-color: #3498db;">
+            <i class="fas fa-expand"></i>
+        </button>             
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+    
+    const baseUrl = 'https://fawzinoo.github.io/audios/';
+const audios = [
+    'A.mp3',
+    'B.mp3',
+    'C.mp3',
+    'Ch.mp3',
+    'D.mp3',
+    'E.mp3',
+    'F.mp3',
+    'G.mp3',
+    'H.mp3',
+    'I.mp3',
+    'J.mp3',
+    'K.mp3',
+    'L.mp3',
+    'Ll.mp3',
+    'M.mp3',
+    'N.mp3',
+    'Ñ.mp3',
+    'O.mp3',
+    'P.mp3',
+    'q.mp3',
+    'R.mp3',
+    'Rr.mp3',
+    'S.mp3',
+    'T.mp3',
+    'U.mp3',
+    'V.mp3',
+    'W.mp3',
+    'X.mp3',
+    'Y.mp3',
+    'Z.mp3'
+].map(file => new Audio(baseUrl + file));
+
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    // Acción de voltear la tarjeta al hacer clic
+    flashcards.forEach((card, index) => {
+        let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+        card.addEventListener('click', () => {
+            card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+            if (card.classList.contains('flipped')) {
+                // Reproducir el audio correspondiente después de 1 segundo si la tarjeta se está volteando
+                if (audios[index]) {
+                    stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                    setTimeout(() => {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                    }, 1000); // 1000 ms = 1 segundo
+                }
+            } else {
+                // Detener el audio si la tarjeta se voltea de nuevo
+                if (isAudioPlaying && audios[index]) {
+                    audios[index].pause();
+                    audios[index].currentTime = 0; // Reiniciar el audio
+                    isAudioPlaying = false;
+                }
+            }
+        });
+    });
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    
+
+
+    const flashcardContainer = document.getElementById('flashcard-container');
+const enlargeButton = document.getElementById('enlarge-button');
+const buttonContainer = document.querySelector('.button-container');
+let isEnlarged = false;
+
+// Manejar clic en el botón para agrandar/contraer
+enlargeButton.addEventListener('click', () => {
+    if (isEnlarged) {
+        // Volver al tamaño original
+        flashcardContainer.style.position = '';
+        flashcardContainer.style.top = '';
+        flashcardContainer.style.left = '';
+        flashcardContainer.style.width = '100%';
+        flashcardContainer.style.height = '500px';
+        flashcardContainer.style.maxWidth = '600px';
+        flashcardContainer.style.maxHeight = '500px';
+        enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+        buttonContainer.classList.remove('fullscreen');
+        isEnlarged = false;
+    } else {
+        // Agrandar al tamaño completo
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen');
+        isEnlarged = true;
+    }
+});
+
+
+
+
+
+
+let exposureInterval;
+let isExposing = false;
+let isPaused = false;
+let currentExposureIndex = 0;
+let timeouts = []; // Array para guardar los IDs de los setTimeout
+
+// Función para iniciar/pausar la exposición de las tarjetas
+document.getElementById('start-exposure-button').addEventListener('click', () => {
+    const icon = document.querySelector('#start-exposure-button i');
+    const startButton = document.getElementById('start-exposure-button');
+
+    if (!isExposing) {
+        // Guardar el estado de pantalla completa antes de recargar
+        if (isEnlarged) {
+            sessionStorage.setItem('fullscreenMode', 'true'); // Indicar que estaba en pantalla completa
+        } else {
+            sessionStorage.removeItem('fullscreenMode'); // Quitar indicador si no está en pantalla completa
+        }
+
+        // Guardar indicador de iniciar exposición después de recargar
+        sessionStorage.setItem('startExposureAfterReload', 'true');
+
+        // Reproducir el sonido de inicio de exposición antes de recargar
+        const startExposureSound = document.getElementById('startExposureSound');
+        startExposureSound.play().catch(error => {
+            console.log('Error al reproducir el sonido de inicio:', error);
+        });
+
+        // Evitar que el sonido de reinicio se reproduzca
+        sessionStorage.setItem('skipResetSound', 'true');
+
+        setTimeout(() => {
+            location.reload(); // Recargar la página después de reproducir el sonido
+        }, 500); // Ajuste breve para permitir que el sonido se reproduzca
+        return; // Salir para esperar la recarga
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play'); // Mostrar ícono de play
+        icon.classList.add('playing'); // Añadir efecto de parpadeo
+        console.log("Reanudando exposición...");
+        resumeExposure();
+    } else {
+        isPaused = true;
+        icon.classList.add('fa-sync-alt');
+        icon.classList.remove('fa-play'); // Cambiar ícono a pausa
+        icon.classList.remove('playing'); // Quitar efecto de parpadeo
+        console.log("Pausando exposición...");
+        stopExposure();
+    }
+});
+
+
+
+
+
+
+// Detectar si se debe iniciar automáticamente después de la recarga
+// Detectar si se debe iniciar automáticamente después de recargar
+window.addEventListener('load', () => {
+    // Restablecer pantalla completa si estaba activa antes de recargar
+    if (sessionStorage.getItem('fullscreenMode') === 'true') {
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen');
+        isEnlarged = true;
+    } else {
+        isEnlarged = false;
+    }
+
+    // Evitar el sonido de reinicio si está indicado
+    const skipResetSound = sessionStorage.getItem('skipResetSound');
+    if (skipResetSound === 'true') {
+        sessionStorage.removeItem('skipResetSound'); // Limpiar indicador
+    } else {
+        const soundResetButton = document.getElementById('soundResetButton');
+        soundResetButton.play().catch(error => {
+            console.log('Error al reproducir el sonido tras la recarga:', error);
+        });
+    }
+
+    // Iniciar exposición automáticamente si el indicador está activo
+    if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+        sessionStorage.removeItem('startExposureAfterReload');
+        console.log("Iniciando exposición automáticamente después de recargar.");
+        const startButton = document.getElementById('start-exposure-button');
+        const icon = document.querySelector('#start-exposure-button i');
+        isExposing = true;
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play');
+        icon.classList.add('playing');
+        startButton.style.backgroundColor = "gold";
+        startButton.disabled = true;
+        startExposure(); // Iniciar exposición
+    }
+});
+
+
+
+
+
+// Función para iniciar la exposición
+function startExposure() {
+    console.log("Iniciando exposición...");
+    const startButton = document.getElementById('start-exposure-button');
+    const icon = document.querySelector('#start-exposure-button i');
+
+    isExposing = true;
+    isPaused = false;
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.add('fa-play');
+    icon.classList.add('playing');
+    startButton.style.backgroundColor = "gold";
+    startButton.disabled = true;
+
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    const flipDelay = currentExposureIndex === 0 ? 3000 : 4000; // 4 segundos para la primera tarjeta, 6 segundos para las siguientes
+    const preAudioDelay = 0; // 1 segundo antes del audio
+    const postAudioDelay = 10000; // 3 segundos después del audio
+
+    let timeoutId = setTimeout(() => {
+        flipCard(currentExposureIndex, true); // Voltear la tarjeta
+
+        let repetitions = 0;
+        const audioDuration = audios[currentExposureIndex].duration * 20; // Duración del audio en milisegundos
+
+        const playAudioWithDelays = () => {
+            setTimeout(() => {
+                // Repetir el audio varias veces
+                const audioRepetitionInterval = setInterval(() => {
+                    audios[currentExposureIndex].play();
+                    repetitions++;
+
+                    if (repetitions >= 2) { // Número de repeticiones del audio
+                        clearInterval(audioRepetitionInterval);
+
+                        console.log("Audio terminado, esperando antes de la siguiente tarjeta...");
+                        setTimeout(() => {
+                            moveToNextCard(); // Pasar a la siguiente tarjeta después del postAudioDelay
+                        }, postAudioDelay);
+                    }
+                }, audioDuration); // Intervalo para reproducir el audio
+            }, preAudioDelay); // PreAudioDelay antes de reproducir el audio
+        };
+
+        const moveToNextCard = () => {
+            currentExposureIndex++;
+
+            if (currentExposureIndex >= audios.length) {
+                currentExposureIndex = 0;
+                yesButton.disabled = false;
+                noButton.disabled = false;
+                yesButton.classList.remove('disabled');
+                noButton.classList.remove('disabled');
+                isExposing = false;
+
+                showFinalReviewMessage();
+
+                setTimeout(() => {
+                    location.reload();
+                }, 3000);
+
+                startButton.style.backgroundColor = "";
+                startButton.disabled = false;
+                icon.classList.remove('playing');
+            } else {
+                startExposure(); // Continuar con la siguiente tarjeta
+            }
+            updateTotalCardsCounter();
+        };
+
+        playAudioWithDelays();
+    }, flipDelay); // Retraso inicial para voltear la tarjeta
+
+    timeouts.push(timeoutId); // Guardar el ID del timeout
+}
+
+
+
+
+
+
+// Función para pausar la exposición
+function stopExposure() {
+    clearInterval(exposureInterval);
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+}
+
+// Función para reanudar la exposición
+function resumeExposure() {
+    startExposure();
+}
+
+// Función para restablecer valores sin recargar
+function resetExposureValues() {
+    console.log("Restableciendo valores para la exposición.");
+    isExposing = false;
+    isPaused = false;
+    currentExposureIndex = 0;
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+}
+
+
+
+
+
+// Función para mostrar la tarjeta en la posición indicada
+function showCard(index) {
+    flashcards.forEach((card, i) => {
+        card.classList.remove('is-visible');
+        if (i === index) {
+            card.classList.add('is-visible');
+        }
+    });
+}
+
+// Función para voltear la tarjeta
+function flipCard(index, flipped) {
+    const card = flashcards[index];
+    if (flipped) {
+        card.classList.add('flipped'); // Voltea la tarjeta
+    } else {
+        card.classList.remove('flipped'); // Muestra la cara frontal
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+    }
+}
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    audios.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0; // Reiniciar al inicio
+    });
+}
+
+// Función para reproducir audio final
+function playFinalMessageAudio() {
+    const finalMessageSound = document.getElementById('finalMessageSound');
+    finalMessageSound.play();
+}
+
+        const resetButton = document.getElementById('reset-button');
+        const soundResetButton = document.getElementById('soundResetButton');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+    const totalCardsRemaining = flashcards.length - completedCards.size - postponedCards.size - currentExposureIndex;
+    const totalCardsSpan = document.getElementById("total-cards");
+    totalCardsSpan.textContent = totalCardsRemaining;
+}
+
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+    const soundNoButton = document.getElementById('soundNoButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundNoButton.pause();
+    soundNoButton.currentTime = 0;
+    soundNoButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón No:', error);
+    });
+    
+    // Resto de la lógica del botón "No"
+    if (postponedCards.has(currentCardIndex)) {
+        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+        if (lastPostponedCard === currentCardIndex) {
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            disableButtons();
+        } else {
+            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        moveToNextCard();
+    }
+});
+
+yesButton.addEventListener('click', () => {
+    const soundYesButton = document.getElementById('soundYesButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundYesButton.pause();
+    soundYesButton.currentTime = 0;
+    soundYesButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Sí:', error);
+    });
+    
+    // Resto de la lógica del botón "Sí"
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    }
+
+    completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+    updateTotalCardsCounter(); // Actualizar el total de tarjetas
+    moveToNextCard();
+});
+
+
+
+    
+resetButton.addEventListener('click', () => {
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    const soundResetButton = document.getElementById('soundResetButton');
+    
+    soundResetButton.pause(); // Detener cualquier reproducción anterior
+    soundResetButton.currentTime = 0; // Reiniciar el tiempo al principio
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Reiniciar:', error);
+    });
+
+    // Recargar la página y asegurarnos que el sonido se reproduzca después de la recarga
+    location.reload(); // Recarga la página inmediatamente
+});
+
+// Después de la recarga, reproducir el sonido de inmediato
+window.addEventListener('load', () => {
+    const soundResetButton = document.getElementById('soundResetButton');
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido tras la recarga:', error);
+    });
+});
+
+
+
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+    resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+    totalCardsInfo.textContent = flashcards.length;
+    cardsRemembered.textContent = noCounter;
+    cardsNotRemembered.textContent = yesCounter;
+
+    // Calcular porcentaje y actualizar el progreso circular
+    const percentage = (yesCounter / flashcards.length) * 100;
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+    progressCircle.style.setProperty('--progress', `${percentage}deg`);
+
+    // Desactivar el botón después de mostrar el resumen
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;  // Desactivar el botón
+    startButton.classList.add('disabled');  // Añadir la clase 'disabled' para cambiar el estilo
+}
+
+
+
+    
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+// Función para mostrar el mensaje de "Repaso Finalizado"
+function showFinalReviewMessage() {
+    console.log('Mensaje de repaso finalizado a punto de mostrarse');
+    const finalReviewMessage = document.getElementById('final-review-message');
+    finalReviewMessage.style.display = 'flex';
+
+    // Efecto de confeti
+    confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+    });
+
+    // Reproducir el audio de "Repaso Finalizado"
+    playFinalMessageAudio();
+
+    // Desactivar el botón después de mostrar el mensaje de repaso finalizado
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;
+    startButton.classList.add('disabled');  // Añadir clase 'disabled'
+
+    setTimeout(() => {
+        console.log('Ocultando el mensaje de repaso finalizado');
+        finalReviewMessage.style.display = 'none';
+    }, 3000);
+}
+
+
+
+function playAudio(index) {
+    console.log('Reproduciendo audio de la tarjeta', index);
+    if (audios[index]) {
+        stopAllAudios();
+        audios[index].play();
+
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) {
+                console.log('Última tarjeta terminada, mostrando mensaje');
+                showFinalReviewMessage();
+                resetFlashcards();
+            }
+        };
+    }
+}
+
+
+
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+
+        // Si es el último audio, mostrar el mensaje de repaso finalizado
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) { // Si es la última tarjeta
+                showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
+                resetFlashcards(); // Regresar a la primera tarjeta
+            }
+        };
+    }
+}
+
+
+// Función para reiniciar las tarjetas (volver a la primera tarjeta)
+function resetFlashcards() {
+    currentExposureIndex = 0;
+    showCard(currentExposureIndex); // Mostrar la primera tarjeta
+    flipCard(currentExposureIndex, false); // Voltear la tarjeta
+    updateTotalCardsCounter(); // Actualizar el contador
+}
+
+
+
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

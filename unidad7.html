@@ -880,83 +880,83 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
 
     <script> 
-             // Contraseña predefinida
-        const correctPassword = "12345"; // Cambia esta contraseña por la que prefieras
-        let attempts = 0; // Contador de intentos
+                 const correctPassword = "12345"; // Contraseña predefinida
+    let attempts = localStorage.getItem('attempts') || 0; // Recuperar intentos desde localStorage
 
-        // Función para mostrar el SweetAlert
-        function showPasswordPrompt() {
-            Swal.fire({
-                title: 'Protección con Contraseña',
-                text: `Intento ${attempts + 1} de 3: Ingresa la contraseña para acceder`,
-                input: 'password',
-                inputAttributes: {
-                    autocapitalize: 'off',
-                    placeholder: 'Ingresa la contraseña',
-                },
-                showConfirmButton: true,
-                confirmButtonText: 'Acceder',
-                showCancelButton: false,
-                allowOutsideClick: false,
-                didRender: () => {
-                    // Agregar botón "Regresar" dinámicamente
-                    const regresarButton = document.createElement('button');
-                    regresarButton.id = 'regresar';
-                    regresarButton.textContent = 'Regresar';
-                    regresarButton.classList.add('swal2-cancel', 'swal2-styled');
-                    regresarButton.style.marginRight = 'auto';
+    // Función para mostrar el SweetAlert
+    function showPasswordPrompt() {
+        Swal.fire({
+            title: 'Protección con Contraseña',
+            text: `Intento ${parseInt(attempts) + 1} de 3: Ingresa la contraseña para acceder`,
+            input: 'password',
+            inputAttributes: {
+                autocapitalize: 'off',
+                placeholder: 'Ingresa la contraseña',
+            },
+            showConfirmButton: true,
+            confirmButtonText: 'Acceder',
+            showCancelButton: false,
+            allowOutsideClick: false,
+            didRender: () => {
+                const regresarButton = document.createElement('button');
+                regresarButton.id = 'regresar';
+                regresarButton.textContent = 'Regresar';
+                regresarButton.classList.add('swal2-cancel', 'swal2-styled');
+                regresarButton.style.marginRight = 'auto';
 
-                    // Insertar el botón en la ventana de SweetAlert
-                    const actions = Swal.getActions();
-                    actions.prepend(regresarButton);
+                const actions = Swal.getActions();
+                actions.prepend(regresarButton);
 
-                    // Evento para regresar a la página anterior
-                    regresarButton.addEventListener('click', () => {
-                        window.history.back();
-                    });
-                },
-                preConfirm: (password) => {
-                    return new Promise((resolve, reject) => {
+                regresarButton.addEventListener('click', () => {
+                    window.history.back();
+                });
+            },
+            preConfirm: (password) => {
+                return new Promise((resolve, reject) => {
+                    setTimeout(() => {
                         if (password === correctPassword) {
-                            resolve(); // Si la contraseña es correcta
+                            resolve();
                         } else {
-                            reject('Contraseña incorrecta'); // Si es incorrecta
+                            reject('Contraseña incorrecta');
+                        }
+                    }, 1000);
+                }).catch(error => {
+                    Swal.showValidationMessage(error);
+                });
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Acceso permitido',
+                    text: '¡Bienvenido!',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+                localStorage.setItem('attempts', 0); // Resetear intentos después de éxito
+            } else {
+                attempts++; // Incrementamos el contador de intentos
+                localStorage.setItem('attempts', attempts); // Guardamos el contador de intentos
+                if (attempts < 3) {
+                    showPasswordPrompt(); // Mostrar el prompt nuevamente si quedan intentos
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Acceso denegado',
+                        text: 'Has excedido el número máximo de intentos.',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        allowOutsideClick: false,
+                        willClose: () => {
+                            window.history.back(); // Redirigir después de 3 intentos fallidos
                         }
                     });
                 }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Acceso permitido',
-                        text: '¡Bienvenido!',
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
-                } else {
-                    attempts++; // Incrementamos el contador de intentos
-                    if (attempts < 3) {
-                        showPasswordPrompt(); // Mostrar el prompt nuevamente si quedan intentos
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Acceso denegado',
-                            text: 'Has excedido el número máximo de intentos.',
-                            timer: 2000,
-                            showConfirmButton: false,
-                            allowOutsideClick: false,
-                            willClose: () => {
-                                // Redirigir automáticamente después de 3 intentos fallidos
-                                window.history.back();
-                            }
-                        });
-                    }
-                }
-            }).catch(() => {}); // Evita que el SweetAlert se cierre prematuramente
-        }
+            }
+        });
+    }
 
-        // Mostrar el diálogo al cargar la página
-        window.onload = showPasswordPrompt;
+    window.onload = showPasswordPrompt;
 
 
 // Seleccionar todas las tarjetas

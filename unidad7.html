@@ -879,23 +879,30 @@
 
     <script>
         
-       // Contraseña actual (puedes cambiarla dinámicamente si lo deseas)
+              // Contraseña actual (puedes cambiarla dinámicamente si lo deseas)
         const PASSWORD = "18"; // Cambia esto por la contraseña que desees
 
-        // Función para verificar si la contraseña está almacenada
-        function isPasswordStored() {
-            const storedPassword = localStorage.getItem('savedPassword');
-            return storedPassword === PASSWORD; // Verificar si coincide con la contraseña actual
+        // Función para generar un hash simple de la contraseña
+        function generateHash(password) {
+            return btoa(password); // Usamos btoa para codificar la contraseña en Base64
         }
 
-        // Función para almacenar la contraseña
-        function storePassword() {
-            localStorage.setItem('savedPassword', PASSWORD);
+        // Función para verificar si el hash almacenado coincide con la contraseña actual
+        function isPasswordValid() {
+            const storedHash = localStorage.getItem('passwordHash');
+            const currentHash = generateHash(PASSWORD);
+            return storedHash === currentHash; // Verificar si coincide con el hash actual
         }
 
-        // Función para eliminar la contraseña almacenada
-        function clearStoredPassword() {
-            localStorage.removeItem('savedPassword');
+        // Función para almacenar el hash de la contraseña
+        function storePasswordHash() {
+            const hash = generateHash(PASSWORD);
+            localStorage.setItem('passwordHash', hash);
+        }
+
+        // Función para eliminar el hash almacenado
+        function clearStoredPasswordHash() {
+            localStorage.removeItem('passwordHash');
         }
 
         // Función para mostrar el cuadro de diálogo de contraseña
@@ -913,7 +920,8 @@
                 allowOutsideClick: false, // Evitar que el usuario cierre el cuadro de diálogo haciendo clic fuera
                 preConfirm: (password) => {
                     if (password === PASSWORD) { // Verificar la contraseña
-                        storePassword(); // Almacenar la contraseña si es correcta
+                        storePasswordHash(); // Almacenar el hash de la contraseña si es correcta
+                        sessionStorage.setItem('isAuthenticated', 'true'); // Marcar como autenticado en la sesión actual
                         return true; // Contraseña correcta
                     } else {
                         // Mostrar mensaje de error en el mismo cuadro de diálogo
@@ -950,18 +958,19 @@
 
         // Función para verificar el acceso
         function checkAccess() {
-            if (isPasswordStored()) {
-                // Si la contraseña está almacenada y es correcta, permitir acceso sin mostrar mensaje
+            const isAuthenticated = sessionStorage.getItem('isAuthenticated') === 'true';
+            if (isAuthenticated && isPasswordValid()) {
+                // Si el usuario ya está autenticado en esta sesión y el hash es válido, permitir acceso
                 grantAccess();
             } else {
-                // Si no hay contraseña almacenada o es incorrecta, mostrar el cuadro de diálogo
+                // Si no está autenticado o el hash no coincide, mostrar el cuadro de diálogo
                 showPasswordPrompt();
             }
         }
 
-        // Mostrar el cuadro de diálogo de contraseña cuando la página se cargue
-        window.onload = checkAccess;
-
+        // Verificar el acceso cuando la página se carga o se muestra desde el historial
+        window.addEventListener('load', checkAccess);
+        window.addEventListener('pageshow', checkAccess);
 
 
 

@@ -877,109 +877,70 @@
 // Contraseña predefinida
 const correctPassword = "12345a5"; 
 
-// Función para obtener el valor de una cookie por su nombre
-function getCookie(name) {
-    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-    return match ? match[2] : null;
+// Guardar el código en localStorage
+function savePassword(password) {
+    localStorage.setItem('storedPassword', password);
 }
 
-// Función para establecer una cookie
-function setCookie(name, value, days) {
-    const date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000)); // Establece la expiración en días
-    document.cookie = `${name}=${value};expires=${date.toUTCString()};path=/`;
+// Recuperar el código de localStorage
+function getSavedPassword() {
+    return localStorage.getItem('storedPassword');
 }
 
-// Recuperar intentos y estado de acceso desde las cookies
-let attempts = parseInt(getCookie('attempts')) || 0;
-let accessGranted = getCookie('accessGranted');
+// Mostrar el prompt de contraseña solo si no hay una guardada
+function showPasswordPrompt() {
+    Swal.fire({
+        title: 'Reservado para A2.1',
+        text: 'Introduce la contraseña:',
+        input: 'password',
+        inputAttributes: {
+            autocapitalize: 'off',
+            placeholder: 'Ingresa la contraseña',
+        },
+        showConfirmButton: true,
+        confirmButtonText: 'Acceder',
+        showCancelButton: false,
+        allowOutsideClick: false,
+        preConfirm: (password) => {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (password === correctPassword) {
+                        resolve();
+                    } else {
+                        reject('Contraseña incorrecta');
+                    }
+                }, 500);
+            }).catch((error) => {
+                Swal.showValidationMessage(error);
+            });
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Si la contraseña es correcta
+            Swal.fire({
+                icon: 'success',
+                title: '¡Acceso concedido!',
+                text: 'Se guardará el acceso para futuras visitas.',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            savePassword(correctPassword); // Guardar el código en localStorage
+        }
+    });
+}
 
-// Si ya se concedió acceso, no mostrar el prompt
-if (accessGranted === 'true') {
-    console.log('Acceso ya concedido');
-} else {
-    // Mostrar el prompt de contraseña
-    function showPasswordPrompt() {
-        Swal.fire({
-            title: 'Reservado para A2.1',
-            text: `Introduce la contraseña:`,
-            input: 'password',
-            inputAttributes: {
-                autocapitalize: 'off',
-                placeholder: 'Ingresa la contraseña',
-            },
-            showConfirmButton: true,
-            confirmButtonText: 'Acceder',
-            showCancelButton: false,
-            allowOutsideClick: false,
-            didRender: () => {
-                // Agregar botón "Regresar"
-                const regresarButton = document.createElement('button');
-                regresarButton.textContent = 'Regresar';
-                regresarButton.classList.add('swal2-cancel', 'swal2-styled');
-                regresarButton.style.marginRight = 'auto';
-
-                const actions = Swal.getActions();
-                actions.prepend(regresarButton);
-
-                regresarButton.addEventListener('click', () => {
-                    // Redirigir a la página específica de "back"
-                    window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html';
-                });
-            },
-            preConfirm: (password) => {
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => {
-                        if (password === correctPassword) {
-                            resolve();
-                        } else {
-                            reject('Contraseña incorrecta');
-                        }
-                    }, 500);
-                }).catch(error => {
-                    Swal.showValidationMessage(error);
-                });
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Contraseña correcta
-                Swal.fire({
-                    icon: 'success',
-                    title: '',
-                    text: '¡Bienvenido!',
-                    timer: 1500,
-                    showConfirmButton: false
-                });
-                setCookie('attempts', 0, 1); // Reiniciar intentos
-                setCookie('accessGranted', 'true', 1); // Guardar estado de acceso
-            } else {
-                // Contraseña incorrecta
-                attempts++;
-                setCookie('attempts', attempts, 1);
-
-                if (attempts >= 3) {
-                    // Excedió intentos permitidos
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Acceso denegado',
-                        text: 'Has excedido el número máximo de intentos.',
-                        timer: 2000,
-                        showConfirmButton: false,
-                        allowOutsideClick: false,
-                        willClose: () => {
-                            window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html'; // Redirigir a la página de "back"
-                        }
-                    });
-                } else {
-                    showPasswordPrompt(); // Volver a mostrar el prompt
-                }
-            }
-        });
+// Comprobar si ya hay una contraseña guardada
+function checkAccess() {
+    const savedPassword = getSavedPassword();
+    if (savedPassword && savedPassword === correctPassword) {
+        console.log('Acceso concedido automáticamente');
+    } else {
+        showPasswordPrompt();
     }
-
-    // Mostrar el prompt al cargar la página
-    window.onload = showPasswordPrompt;
 }
+
+// Ejecutar la lógica al cargar la página
+window.onload = checkAccess;
 
 
 

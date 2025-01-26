@@ -875,94 +875,129 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
 
     <script> 
-        // Contraseña predefinida
-        let correctPassword = "12345a004";
+// Contraseña predefinida (puedes cambiarla en cualquier momento)
+const correctPassword = "12345a004";
 
-        // Guardar contraseña en localStorage
-        function savePassword(password) {
-            localStorage.setItem('storedPassword', password);
-        }
+// Guardar la contraseña en localStorage
+function savePassword(password) {
+    localStorage.setItem("storedPassword", password);
+}
 
-        // Obtener contraseña guardada de localStorage
-        function getSavedPassword() {
-            return localStorage.getItem('storedPassword');
-        }
+// Recuperar la contraseña guardada desde localStorage
+function getSavedPassword() {
+    return localStorage.getItem("storedPassword");
+}
 
-        // Mostrar el prompt de SweetAlert para pedir la contraseña
-        function showPasswordPrompt() {
+// Mostrar el prompt para ingresar la contraseña
+function showPasswordPrompt() {
+    Swal.fire({
+        title: "Reservado para A2.1",
+        text: "Introduce la contraseña:",
+        input: "password",
+        inputAttributes: {
+            autocapitalize: "off",
+            placeholder: "Ingresa la contraseña",
+        },
+        showConfirmButton: true,
+        confirmButtonText: `
+            <i class="fas fa-arrow-right"></i> Acceder
+        `,
+        showCancelButton: false,
+        allowOutsideClick: false,
+        didRender: () => {
+            // Crear un botón personalizado para "Regresar"
+            const regresarButton = document.createElement("button");
+            regresarButton.id = "regresar";
+            regresarButton.innerHTML = `
+                <i class="fas fa-arrow-left"></i> Regresar
+            `;
+            regresarButton.classList.add("swal2-cancel", "swal2-styled");
+            regresarButton.style.marginRight = "auto";
+
+            // Insertar el botón en las acciones de SweetAlert
+            const actions = Swal.getActions();
+            actions.prepend(regresarButton);
+
+            // Al hacer clic en "Regresar", retrocede en el historial
+            regresarButton.addEventListener("click", () => {
+                window.history.back();
+            });
+        },
+        preConfirm: (password) => {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (password === correctPassword) {
+                        resolve();
+                    } else {
+                        reject("Contraseña incorrecta");
+                    }
+                }, 500);
+            }).catch((error) => {
+                Swal.showValidationMessage(error);
+            });
+        },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Guardar la nueva contraseña en localStorage
+            savePassword(correctPassword);
+
+            // Mostrar mensaje de éxito
             Swal.fire({
-                title: 'Reservado para A2.1',
-                text: 'Introduce la contraseña:',
-                input: 'password',
-                inputAttributes: {
-                    autocapitalize: 'off',
-                    placeholder: 'Ingresa la contraseña',
-                },
-                showConfirmButton: true,
-                confirmButtonText: 'Acceder',
-                allowOutsideClick: false,
-                preConfirm: (password) => {
-                    return new Promise((resolve, reject) => {
-                        setTimeout(() => {
-                            if (password === correctPassword) {
-                                resolve();
-                            } else {
-                                reject('Contraseña incorrecta');
-                            }
-                        }, 500);
-                    }).catch((error) => {
-                        Swal.showValidationMessage(error);
-                    });
-                }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    savePassword(correctPassword); // Guardar contraseña correcta
-                    Swal.fire({
-                        icon: 'success',
-                        title: '¡Acceso concedido!',
-                        text: 'Acceso almacenado para futuras visitas.',
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
-                }
+                icon: "success",
+                title: "¡Acceso concedido!",
+                text: "Se guardará el acceso para futuras visitas.",
+                timer: 1500,
+                showConfirmButton: false,
             });
         }
+    });
+}
 
-        // Verificar acceso y mostrar el prompt si es necesario
-        function checkAccess() {
-            const savedPassword = getSavedPassword();
+// Verificar acceso al cargar la página
+function checkAccess() {
+    const savedPassword = getSavedPassword();
 
-            // Si la contraseña guardada no existe o no coincide, mostrar el prompt
-            if (!savedPassword || savedPassword !== correctPassword) {
-                showPasswordPrompt();
-            }
-        }
+    // Si no hay contraseña almacenada o no coincide con la actual, mostrar el prompt
+    if (!savedPassword || savedPassword !== correctPassword) {
+        showPasswordPrompt();
+    } else {
+        console.log("Acceso concedido automáticamente");
+    }
+}
 
-        // Refrescar la lógica de verificación cada 60 segundos
-        async function refreshPasswordScript() {
-            try {
-                // Simular la verificación de cambios en el script de contraseña
-                console.log("Verificando posibles cambios en la contraseña...");
-                
-                // En este caso, puedes simular un cambio dinámico de contraseña
-                // Por ejemplo: correctPassword = "nuevaContraseña"; // Esto se simula en un entorno real
-                if (getSavedPassword() !== correctPassword) {
-                    console.log("Contraseña cambiada, mostrando el prompt.");
-                    showPasswordPrompt();
-                }
-            } catch (error) {
-                console.error("Error al refrescar el script de contraseña:", error);
-            }
-        }
+// Ejecutar la verificación al cargar la página
+window.onload = checkAccess;
 
-        // Configurar el refresco silencioso del script cada 60 segundos
-        setInterval(refreshPasswordScript, 60000);
+// Configurar la hora específica para el refresh (formato 24 horas)
+const targetHour = 15; // Por ejemplo, las 15:00 (3 PM)
+const targetMinute = 05; // Por ejemplo, 15:30 (3:30 PM)
 
-        // Mostrar hora inicial estática
-        document.getElementById('initial-time').textContent = new Date().toLocaleString();
+function calculateTimeUntilTarget(hour, minute) {
+    const now = new Date();
+    const targetTime = new Date();
 
-        // Verificar acceso al cargar la página
-        checkAccess();
+    // Configurar la hora y minuto objetivo
+    targetTime.setHours(hour);
+    targetTime.setMinutes(minute);
+    targetTime.setSeconds(0);
+
+    // Si la hora objetivo ya pasó hoy, configurarla para mañana
+    if (now > targetTime) {
+        targetTime.setDate(targetTime.getDate() + 1);
+    }
+
+    // Calcular el tiempo restante en milisegundos
+    return targetTime - now;
+}
+
+// Calcular el tiempo restante hasta la hora definida
+const timeUntilRefresh = calculateTimeUntilTarget(targetHour, targetMinute);
+
+// Programar el refresh o acción a la hora definida
+setTimeout(() => {
+    location.reload(); // Recargar la página
+}, timeUntilRefresh);
+
 
 
 

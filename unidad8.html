@@ -1,0 +1,2127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #1f3658, #3558e3);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    width: 100%;
+    background: linear-gradient(to bottom, rgba(110, 183, 33, 0.8), rgba(173, 234, 176, 0.774)); /* Fondo */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 3rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra del texto */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 100%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+/* Contenedor de botones */
+.button-container {
+    width: 100%;
+    max-width: 370px;
+    display: flex;
+    justify-content: space-evenly; /* Espacio uniforme entre todos los botones */
+    align-items: center;
+    padding: 10px 0px;
+    background-color: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+
+/* Contenedor en pantalla completa */
+.button-container.fullscreen {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 90%; /* Ancho ajustado para fullscreen */
+}
+
+/* Botones individuales */
+.button {
+    padding: 10px 15px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 50px;
+    background-color: #3498db;
+    color: #fff;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+     
+        .button.yes { background-color: #27ae60; margin-right: 25px;}
+        .button.no { background-color: #e74c3c;margin-right: 10px; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+
+#completion-message {
+    display: none; /* Inicialmente ocultos */
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+#final-review-message {
+    display: none; /* Inicialmente oculto */
+    position: absolute;
+    width: 100%;                                     
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+        #start-exposure-button {
+  border-radius: 50%;  /* Hacer el botón redondo */
+  padding: 10px;         /* Ajustar el padding para que el icono se vea bien */
+  margin-left: 15px;
+  
+}
+
+.button.disabled {
+    background-color: #bdc3c7;  /* Gris */
+    cursor: not-allowed; 
+    opacity: 0.5;  /* Opcional: Si deseas dar un toque más opaco */
+}
+
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+        color: black; /* color negro al inicio */
+    }
+    50% {
+        opacity: 0.5;
+        color: orange; /* color naranja en la mitad del parpadeo */
+    }
+    100% {
+        opacity: 1;
+        color: black; /* color negro al final */
+    }
+}
+
+.playing {
+    animation: blink 1s infinite;
+}
+
+
+.overlay-text {
+    position: absolute;
+    z-index: 1; /* Colocar por encima del contenido */
+    color: white; /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con los clics */
+    margin: 2%; /* Margen relativo */
+    line-height: 1.5; /* Espaciado entre líneas */
+    top: 30%; /* Posición específica desde arriba */
+    
+}
+
+/* Estilos para .overlay-text1 */
+.overlay-text1 {
+    position: absolute;
+    top: 5px;
+    z-index: 1;
+    color: rgb(142, 5, 126); /* Color específico */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(38, 37, 30, 0.7); /* Sombra del texto */
+    text-align: center; /* Centrado */
+    pointer-events: none; /* No interferir con clics */
+    display: inline-block; /* Comportamiento inline */
+    display: inline-block;
+    animation: blink 0.5s infinite, pause 10s infinite;
+    -webkit-text-stroke: 0.7px white;
+}
+@keyframes pause {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+
+/* Estilos para .overlay-text2 */
+.overlay-text2 {
+    position: absolute;
+    z-index: 1;
+    color: rgb(238, 236, 245); /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con clics */
+    margin: 30px; /* Márgenes específicos */
+    top: 30%; /* Posición específica desde arriba */
+    -webkit-text-stroke: 0.4px black; /* Grosor y color del contorno */
+}
+
+@keyframes moveLeftToRight {
+  0% {
+    transform: translateX(0); /* Posición inicial */
+  }
+  50% {
+    transform: translateX(10px); /* Mueve hacia la derecha */
+  }
+  100% {
+    transform: translateX(0); /* Vuelve a la posición original */
+  }
+}
+@keyframes smoke {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(0, 255, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+
+
+
+
+@keyframes smoke1 {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke1 {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(255, 0, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke1 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke1 span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+  .swal2-actions {
+            flex-direction: row-reverse; /* Invertir el orden de los botones */
+        }
+ #content {
+            display: none; /* Oculta el contenido hasta que se conceda acceso */
+        }
+    </style>
+ 
+</head>
+<body>
+<div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+ <div id="flashcard-container-wrapper">
+
+    <div id="flashcard-container">
+
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738422885184742988-232939550494885.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">es</span> tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi ciudad es grande y bonita.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423143173742911-232940910805123.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">es</span> tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi barrio es tranquilo y tiene un parque.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423200989655570-232941162446912.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">tiene</span> que <span style="display: inline-block; color: green;">ser</span> tu barrio ideal?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi barrio ideal tiene que ser seguro y con tiendas cerca.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423243350277394-232941139206223.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">son</span> los edificios de tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Los edificios son altos y modernos.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423279765214220-232941162446948.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">son</span> las casas de tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Las casas son pequeñas y de colores.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423314009521147-232941471916174.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">hay</span> en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    En mi ciudad hay un parque, un cine y un museo.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423345641126452-232941754941504.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">tiene</span> tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi ciudad tiene un río y un mercado.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423374303869817-232941754941517.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">hay</span> en tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    En mi barrio hay una panadería y una escuela.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423399146809328-232941733462100.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">tiene</span> tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi barrio tiene un supermercado y una farmacia.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423428670734505-232942062117004.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuántas</span> mezquitas <span style="display: inline-block; color: green;">hay</span> en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    En mi ciudad hay tres mezquitas.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423502006409438-232942062117026.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuántas</span> tiendas <span style="display: inline-block; color: green;">hay</span> en tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    En mi barrio hay cinco tiendas.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423528337672431-232941754941564.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuántos</span> supermercados <span style="display: inline-block; color: green;">tiene</span> tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi barrio tiene dos supermercados.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423576383870076-232942562357326.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> el aeropuerto?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El aeropuerto está al norte de la ciudad.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423605723979693-232942562357338.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la estación de tren?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La estación de tren está cerca del centro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423633709897800-232942562357348.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> el parque más grande?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El parque más grande está en el centro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423662914572204-232942807085211.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la biblioteca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La biblioteca está al lado de la escuela.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423697794079000-232942807085228.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> el mercado?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El mercado está en la plaza principal.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423721399108968-232943177769034.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la escuela?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La escuela está en la calle San Martín.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423746542018572-232943347601540.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la iglesia?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La iglesia está en la plaza del pueblo.
+                </div>
+            </div>
+        </div>
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423813507201884-232943087476856.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la piscina?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La piscina está cerca del parque.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423838363956517-232943177769080.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la oficina de correos?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La oficina de correos está al lado del banco.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423863290399719-232943856234563.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> el ayuntamiento?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El ayuntamiento está en la plaza mayor.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738423893924076944-232943757926477.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">está</span> la estación de autobuses?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La estación de autobuses está cerca del aeropuerto.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424107975409005-232944570978394.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿Por favor, <span style="display: inline-block; color: red;">cómo</span> <span style="display: inline-block; color: green;">llego</span> al centro de la ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedes llegar al centro en autobús o en metro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424148841381689-232944570978418.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">hay</span> un banco, por favor?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Hay un banco en la calle principal.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424178629460282-232945131483204.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> una farmacia por aquí cerca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay una farmacia a dos calles de aquí.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424248700326617-232945136423002.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> algún quiosco por aquí cerca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un quiosco en la esquina.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424281444049308-232945136423025.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> alguna clínica por aquí cerca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay una clínica cerca del parque.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424318247430756-232945131483262.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un hospital en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un hospital en el sur de la ciudad.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424350064613954-232945410347179.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un cine en tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    No, no hay un cine en mi barrio, pero hay uno en el centro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424394436955066-232945410347198.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un restaurante cerca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un restaurante italiano en la esquina.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424420821791703-232945739800688.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un gimnasio en tu barrio?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un gimnasio cerca de mi casa.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424452572800057-232945739800699.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un museo en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un museo de arte en el centro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424503423216507-232946322391127.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un supermercado abierto los domingos?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, el supermercado está abierto los domingos por la mañana.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424541588886579-232946284114028.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un café cerca?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un café en la calle principal.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424581970685410-232946797031491.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un centro deportivo en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un centro deportivo con canchas de fútbol y tenis.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424613614063115-232946797031510.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un teatro en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, hay un teatro en el centro de la ciudad.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424640326184594-232946646163626.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Hay</span> un zoo en tu ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    No, no hay ningún zoo, pero hay un acuario.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424667079562920-232946797031539.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">A cuántos</span> kilómetros en coche <span style="display: inline-block; color: green;">está</span> el puerto?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El puerto está a 10 kilómetros en coche.
+                </div>
+            </div>
+        </div>       
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-01-23/moss-audio/user_audio//1738424698864763419-232947241320516.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad8</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">A cuánto tiempo</span>  a pie <span style="display: inline-block; color: green;">está</span> el centro comercial?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El centro comercial está a 15 minutos a pie.
+                </div>
+            </div>
+        </div>     
+        
+
+
+    
+    
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="final-review-message" style="display: none; text-align: center; font-size: 2em; font-weight: bold; color: #fff; background-color: #27ae60; padding: 20px; border-radius: 15px;">
+        ¡Repaso Finalizado! 🎉
+    </div>
+    
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="soundResetButton" src="ttps://www.cjoint.com/doc/24_12/NLFvBMPFH3k_bellding-254774.mp3" preload="auto"></audio>
+    <audio id="startExposureSound" src="https://www.cjoint.com/doc/24_12/NLFsmCkAHKi_start.mp3" preload="auto"></audio>
+
+
+    <audio id="soundYesButton" src="https://www.cjoint.com/doc/24_12/NLFrv5yAbgr_click-124467.mp3" preload="auto"></audio>
+    <audio id="soundNoButton" src="https://www.cjoint.com/doc/24_12/NLFryRqSAhr_bubble-popping-229138.mp3" preload="auto"></audio>
+
+
+   
+    <audio id="finalMessageSound" src="https://www.cjoint.com/doc/24_12/NLFqVDn2rfi_level-win-6416.mp3" preload="auto"></audio>
+
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" style="background-color: rgb(161, 117, 4);" id="start-exposure-button">
+            <i class="fas fa-play"></i> 
+        </button> 
+        <button class="button" id="enlarge-button" style="background-color: #3498db;">
+            <i class="fas fa-expand"></i>
+        </button>             
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+
+           // Bloquear acceso si el usuario no está autenticado
+    if (sessionStorage.getItem('authenticated') !== 'true') {
+        // Muestra un mensaje de error y redirige a la página principal
+        Swal.fire({
+            icon: 'error',
+            title: 'Acceso restringido',
+            text: 'Por favor, autentícate antes de acceder a esta página.',
+            confirmButtonText: 'Volver al inicio'
+        }).then(() => {
+            window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html';
+        });
+    } 
+        
+// Seleccionar todas las tarjetas
+const Flashcards = Array.from(document.querySelectorAll('.flashcard'));
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    Flashcards.forEach(card => {
+        const audio = card.audio; // Usar el objeto de audio asociado
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+        }
+    });
+}
+
+
+Flashcards.forEach(card => {
+    // Obtener el audio correspondiente de la tarjeta
+    const audioSrc = card.getAttribute('data-audio');
+    if (audioSrc) {
+        card.audio = new Audio(audioSrc); // Asociar el objeto de audio a la tarjeta
+    }
+
+    let isFlipped = false; // Bandera para verificar si la tarjeta ya fue volteada
+    let isTransitioning = false; // Controlar si la tarjeta está en transición
+    let waveContainer; // Referencia al contenedor de ondas
+
+    // Función para añadir las ondas tipo Wi-Fi
+    function addWifiWaves(card) {
+        waveContainer = document.createElement('div');
+        waveContainer.classList.add('wifi-waves-container');
+
+        for (let i = 1; i <= 3; i++) {
+            const wave = document.createElement('div');
+            wave.classList.add('wifi-wave');
+            wave.style.animationDelay = `${i * 0.5}s`; // Retraso entre ondas
+            waveContainer.appendChild(wave);
+        }
+
+        card.appendChild(waveContainer);
+
+        // Remover las ondas después de 5 segundos
+        setTimeout(() => {
+            if (waveContainer) {
+                waveContainer.remove();
+                waveContainer = null; // Eliminar referencia
+            }
+        }, 4000);
+    }
+
+    card.addEventListener('click', () => {
+        if (isTransitioning) {
+            console.log('Transición en curso, espere...');
+            return;
+        }
+
+        isTransitioning = true;
+
+        if (!isFlipped) {
+            // Voltear a la cara "back"
+            card.classList.add('flipped');
+            console.log('Volteando a la cara "back".');
+
+            // Añadir las ondas tipo Wi-Fi
+            addWifiWaves(card);
+
+            setTimeout(() => {
+                stopAllAudios1();
+
+                if (card.audio) {
+                    card.audio.currentTime = 0; // Reiniciar el audio
+                    card.audio.play().catch(error => console.log('Error al reproducir el audio:', error));
+                }
+                console.log('Audio reproducido para la cara "back".');
+                isTransitioning = false;
+            }, 1000);
+        } else {
+            // Voltear a la cara "front"
+            card.classList.remove('flipped');
+            console.log('Volteando a la cara "front".');
+
+            // Detener las ondas si están activas
+            if (waveContainer) {
+                waveContainer.remove();
+                waveContainer = null; // Eliminar referencia
+            }
+
+            stopAllAudios1();
+
+            setTimeout(() => {
+                console.log('Cara "front" lista.');
+                isTransitioning = false;
+            }, 1000);
+        }
+
+        isFlipped = !isFlipped;
+    });
+});
+
+// Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container {
+    position: absolute;
+    top: 70%;
+    left: 45%; 
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgba(255, 215, 0, 0.8); /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+    
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+document.head.appendChild(style);
+
+
+
+function stopAllAudios1() {
+    const allAudios = document.querySelectorAll('[data-audio]');
+    allAudios.forEach(audio => {
+        const audioElement = audio.audio || new Audio(audio.getAttribute('data-audio'));
+        audioElement.pause();
+        audioElement.currentTime = 0; // Reiniciar el audio
+    });
+}
+
+
+const baseUrl = 'https://cdn.hailuoai.video/moss/prod/2025-02-02-00/moss-audio/user_audio//';
+const audios = [
+    '1738426268740760712-232953283330165.mp3',
+    '1738426308209682674-232953849471046.mp3',
+    '1738426334440195216-232953849471056.mp3',
+    '1738426372107550632-232953871511645.mp3',
+    '1738426414857160250-232953849471079.mp3',
+    '1738426440143826703-232953849471095.mp3',
+    '1738426467244215777-232954520813635.mp3',
+    '1738426493431070843-232954520813645.mp3',
+    '1738426518707287186-232954520813656.mp3',
+    '1738426546727634971-232954337349821.mp3',
+    '1738426575567007168-232954520813680.mp3',
+    '1738426602191240572-232954508677242.mp3',
+    '1738426635744872302-232955185180739.mp3',
+    '1738426664705761587-232955126079585.mp3',
+    '1738426689171450017-232955185180752.mp3',
+    '1738426719001533912-232955572224128.mp3',
+    '1738426743556090714-232955126079605.mp3',
+    '1738426843953416650-232955763118173.mp3',
+    '1738426878255501141-232956155093126.mp3',
+    '1738426915390806918-232955854389362.mp3',
+    '1738426944141676651-232956155093150.mp3',
+    '1738426972459385656-232956544901189.mp3',
+    '1738426994094883811-232956355686496.mp3',
+    '1738427019839964673-232956774809732.mp3',
+    '1738427045025319102-232956774809743.mp3',
+    '1738427068269343532-232956937646157.mp3',
+    '1738427103883339056-232956937646172.mp3',
+    '1738427129765623572-232957190144136.mp3',
+    '1738427160482862337-232957190144160.mp3',
+    '1738427195509774510-232957190144177.mp3',
+    '1738427244251356206-232957350695022.mp3',
+    '1738427360486673318-232957873414241.mp3',
+    '1738427394002044697-232957873414253.mp3',
+    '1738427442232328607-232958268354714.mp3',
+    '1738427468673615966-232958101508215.mp3',
+    '1738427492715844068-232958561587282.mp3',
+    '1738427516007986391-232958268354749.mp3',
+    '1738427562361822062-232958857273493.mp3',
+    '1738427588988504877-232958701084775.mp3',
+    '1738427617199960263-232958701084787.mp3'
+].map(file => new Audio(baseUrl + file));
+
+
+
+
+
+
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    flashcards.forEach((card, index) => {
+    let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+    let waveContainer1; // Referencia al contenedor de ondas Wi-Fi
+
+    // Función para añadir las ondas Wi-Fi en la cara trasera
+    function addWifiWaves1(card) {
+        waveContainer1 = document.createElement('div');
+        waveContainer1.classList.add('wifi-waves-container1');
+
+        for (let i = 1; i <= 3; i++) {
+            const wave = document.createElement('div');
+            wave.classList.add('wifi-wave1');
+            wave.style.animationDelay = `${i * 0.5}s`; // Retraso entre ondas
+            waveContainer1.appendChild(wave);
+        }
+
+      // Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container1 {
+    position: absolute;
+    top: 70%;
+    left: 43%;  
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave1 {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 2px solid blue; /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+
+
+        document.head.appendChild(style);
+
+        card.querySelector('.back').appendChild(waveContainer1); // Añadir ondas a la cara trasera
+
+        // Remover las ondas después de 5 segundos
+        setTimeout(() => {
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+        }, 3000);
+    }
+
+    card.addEventListener('click', () => {
+        card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+        if (card.classList.contains('flipped')) {
+            // Reproducir el audio inmediatamente
+            if (audios[index]) {
+                stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                audios[index].play();
+                isAudioPlaying = true;
+            }
+
+            // Agregar las ondas Wi-Fi en la cara trasera
+            addWifiWaves1(card);
+
+            console.log('click2: Se hizo clic en el reverso de la tarjeta.');
+        } else {
+            // Detener el audio si la tarjeta se voltea de nuevo
+            if (isAudioPlaying && audios[index]) {
+                audios[index].pause();
+                audios[index].currentTime = 0; // Reiniciar el audio
+                isAudioPlaying = false;
+            }
+
+            // Eliminar las ondas si están activas
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+
+            console.log('click1: Se hizo clic en el frente de la tarjeta.');
+        }
+    });
+});
+
+
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+    yesButton.addEventListener('click', stopAllAudios1);
+    noButton.addEventListener('click', stopAllAudios1);
+
+    const enlargeButton = document.getElementById('enlarge-button');
+    const buttonContainer = document.querySelector('.button-container');
+const flashcardContainer = document.getElementById('flashcard-container');
+let isEnlarged = false; // Estado inicial
+
+const updateOverlayStyles = (isFullscreen) => {
+    // Seleccionar todos los elementos con las clases correspondientes
+    const overlayTexts = document.querySelectorAll('.overlay-text');
+    const overlayTexts1 = document.querySelectorAll('.overlay-text1');
+    const overlayTexts2 = document.querySelectorAll('.overlay-text2');
+
+    // Detectar si es una pantalla grande
+    const isLargeScreen = window.innerWidth > 1024; // Define el límite para pantallas grandes
+
+    // Iterar sobre cada grupo de elementos y aplicar los estilos
+    overlayTexts.forEach((overlayText) => {
+        if (isFullscreen && isLargeScreen) {
+            // Estilos para pantalla completa en pantallas grandes
+            overlayText.style.fontSize = '2.5rem';
+            overlayText.style.textAlign = 'center'; // Centrado horizontal dentro del contenedor
+            overlayText.style.top = '40%'; // Centrado vertical aproximado
+            overlayText.style.left = '50%'; // Coloca el texto en el centro horizontal
+            overlayText.style.transform = 'translate(-50%, -30%)'; // Ajusta para centrar el texto completamente
+        } else {
+            // Restaurar estilos originales o mantener diseño para móviles
+            overlayText.style.fontSize = '2rem';
+            overlayText.style.top = '40%';
+            overlayText.style.left = '0%';
+            overlayText.style.transform = 'translate(0, 0)';
+            overlayText.style.textAlign = 'left';
+           
+        }
+    });
+
+    overlayTexts1.forEach((overlayText1) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '20px';
+            overlayText1.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '5px'
+            overlayText1.style.textAlign = 'center'; // Alineación izquierda para móviles
+        }
+    });
+
+    overlayTexts2.forEach((overlayText2) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText2.style.fontSize = '2.5rem';
+            overlayText2.style.margin = '50px';
+            overlayText2.style.top = '35%';
+            overlayText2.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText2.style.fontSize = '2rem';
+            overlayText2.style.margin = '30px';
+            overlayText2.style.textAlign = 'left'; // Alineación izquierda para móviles
+        }
+    });
+};
+
+
+
+
+// Manejar clic en el botón para agrandar/contraer
+enlargeButton.addEventListener('click', () => {
+    if (isEnlarged) {
+        // Volver al tamaño original
+        flashcardContainer.style.position = '';
+        flashcardContainer.style.top = '';
+        flashcardContainer.style.left = '';
+        flashcardContainer.style.width = '100%';
+        flashcardContainer.style.height = '500px';
+        flashcardContainer.style.maxWidth = '600px';
+        flashcardContainer.style.maxHeight = '500px';
+        enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+        buttonContainer.classList.remove('fullscreen');
+        isEnlarged = false;
+
+        // Restaurar estilos de las superposiciones
+        updateOverlayStyles(false);
+    } else {
+        // Agrandar al tamaño completo
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen'); // Aplicar clase de pantalla completa
+        isEnlarged = true;
+
+        // Ajustar estilos de las superposiciones para pantalla completa
+        updateOverlayStyles(true);
+    }
+});
+
+
+let exposureInterval;
+let isExposing = false;
+let isPaused = false;
+let currentExposureIndex = 0;
+let timeouts = []; // Array para guardar los IDs de los setTimeout
+
+// Función para iniciar/pausar la exposición de las tarjetas
+document.getElementById('start-exposure-button').addEventListener('click', () => {
+    const icon = document.querySelector('#start-exposure-button i');
+    const startButton = document.getElementById('start-exposure-button');
+
+    if (!isExposing) {
+        // Guardar el estado de pantalla completa antes de recargar
+        if (isEnlarged) {
+            sessionStorage.setItem('fullscreenMode', 'true'); // Indicar que estaba en pantalla completa
+        } else {
+            sessionStorage.removeItem('fullscreenMode'); // Quitar indicador si no está en pantalla completa
+        }
+
+        // Guardar indicador de iniciar exposición después de recargar
+        sessionStorage.setItem('startExposureAfterReload', 'true');
+
+        // Reproducir el sonido de inicio de exposición antes de recargar
+        const startExposureSound = document.getElementById('startExposureSound');
+        startExposureSound.play().catch(error => {
+            console.log('Error al reproducir el sonido de inicio:', error);
+        });
+
+        // Evitar que el sonido de reinicio se reproduzca
+        sessionStorage.setItem('skipResetSound', 'true');
+
+        setTimeout(() => {
+            location.reload(); // Recargar la página después de reproducir el sonido
+        }, 500); // Ajuste breve para permitir que el sonido se reproduzca
+        return; // Salir para esperar la recarga
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play'); // Mostrar ícono de play
+        icon.classList.add('playing'); // Añadir efecto de parpadeo
+        console.log("Reanudando exposición...");
+        resumeExposure();
+    } else {
+        isPaused = true;
+        icon.classList.add('fa-sync-alt');
+        icon.classList.remove('fa-play'); // Cambiar ícono a pausa
+        icon.classList.remove('playing'); // Quitar efecto de parpadeo
+        console.log("Pausando exposición...");
+        stopExposure();
+    }
+});
+
+
+window.addEventListener('load', () => {
+    // Forzar el estado inicial a no pantalla completa
+    flashcardContainer.style.position = '';
+    flashcardContainer.style.top = '';
+    flashcardContainer.style.left = '';
+    flashcardContainer.style.width = '100%';
+    flashcardContainer.style.height = '500px';
+    flashcardContainer.style.maxWidth = '600px';
+    flashcardContainer.style.maxHeight = '500px';
+    enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+    buttonContainer.classList.remove('fullscreen');
+    isEnlarged = false;
+
+    // Evitar el sonido de reinicio si está indicado
+    const skipResetSound = sessionStorage.getItem('skipResetSound');
+    if (skipResetSound === 'true') {
+        sessionStorage.removeItem('skipResetSound'); // Limpiar indicador
+    } else {
+        const soundResetButton = document.getElementById('soundResetButton');
+        soundResetButton.play().catch(error => {
+            console.log('Error al reproducir el sonido tras la recarga:', error);
+        });
+    }
+
+    // Iniciar exposición automáticamente si el indicador está activo
+    if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+        sessionStorage.removeItem('startExposureAfterReload');
+        console.log("Iniciando exposición automáticamente después de recargar.");
+        const startButton = document.getElementById('start-exposure-button');
+        const icon = document.querySelector('#start-exposure-button i');
+        isExposing = true;
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play');
+        icon.classList.add('playing');
+        startButton.style.backgroundColor = "gold";
+        startButton.disabled = true;
+        startExposure(); // Iniciar exposición
+    }
+});
+
+
+// Función para iniciar la exposición
+function startExposure() {
+    console.log("Iniciando exposición...");
+    const startButton = document.getElementById('start-exposure-button');
+    const icon = document.querySelector('#start-exposure-button i');
+
+    isExposing = true;
+    isPaused = false;
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.add('fa-play');
+    icon.classList.add('playing');
+    startButton.style.backgroundColor = "gold";
+    startButton.disabled = true;
+
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    const flipDelay = currentExposureIndex === 0 ? 3000 : 4000; // 3 segundos para la primera tarjeta, 4 segundos para las siguientes
+    const preAudioDelay = 0; // 0 segundos antes del audio
+    const postAudioDelay = 10000; // 10 segundos después del audio
+
+    // Reproducir audio de la cara frontal antes de voltear la tarjeta
+    const currentCard = flashcards[currentExposureIndex];
+    const frontAudioSrc = currentCard.getAttribute('data-audio');
+    if (frontAudioSrc) {
+        const frontAudio = new Audio(frontAudioSrc);
+        frontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
+        frontAudio.onended = () => {
+            console.log('Audio de la cara frontal terminado.');
+            proceedToBackAudio(); // Continuar con el audio de la parte trasera
+        };
+    } else {
+        console.log('No hay audio para la cara frontal. Procediendo directamente.');
+        proceedToBackAudio();
+    }
+
+    function proceedToBackAudio() {
+        let timeoutId = setTimeout(() => {
+            flipCard(currentExposureIndex, true); // Voltear la tarjeta
+
+            let repetitions = 0;
+            const audioDuration = audios[currentExposureIndex].duration * 20; // Duración del audio en milisegundos
+
+            const playAudioWithDelays = () => {
+                setTimeout(() => {
+                    // Repetir el audio varias veces
+                    const audioRepetitionInterval = setInterval(() => {
+                        audios[currentExposureIndex].play();
+                        repetitions++;
+
+                        if (repetitions >= 2) { // Número de repeticiones del audio
+                            clearInterval(audioRepetitionInterval);
+
+                            console.log("Audio terminado, esperando antes de la siguiente tarjeta...");
+                            setTimeout(() => {
+                                moveToNextCard(); // Pasar a la siguiente tarjeta después del postAudioDelay
+                            }, postAudioDelay);
+                        }
+                    }, audioDuration); // Intervalo para reproducir el audio
+                }, preAudioDelay); // PreAudioDelay antes de reproducir el audio
+            };
+
+            const moveToNextCard = () => {
+                currentExposureIndex++;
+
+                if (currentExposureIndex >= audios.length) {
+                    currentExposureIndex = 0;
+                    yesButton.disabled = false;
+                    noButton.disabled = false;
+                    yesButton.classList.remove('disabled');
+                    noButton.classList.remove('disabled');
+                    isExposing = false;
+
+                    showFinalReviewMessage();
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+
+                    startButton.style.backgroundColor = "";
+                    startButton.disabled = false;
+                    icon.classList.remove('playing');
+                } else {
+                    startExposure(); // Continuar con la siguiente tarjeta
+                }
+                updateTotalCardsCounter();
+            };
+
+            playAudioWithDelays();
+        }, flipDelay); // Retraso inicial para voltear la tarjeta
+
+        timeouts.push(timeoutId); // Guardar el ID del timeout
+    }
+}
+
+
+// Función para pausar la exposición
+function stopExposure() {
+    clearInterval(exposureInterval);
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+}
+
+// Función para reanudar la exposición
+function resumeExposure() {
+    startExposure();
+}
+
+// Función para restablecer valores sin recargar
+function resetExposureValues() {
+    console.log("Restableciendo valores para la exposición.");
+    isExposing = false;
+    isPaused = false;
+    currentExposureIndex = 0;
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+    
+}
+
+
+// Función para mostrar la tarjeta en la posición indicada
+function showCard(index) {
+    flashcards.forEach((card, i) => {
+        card.classList.remove('is-visible');
+        if (i === index) {
+            card.classList.add('is-visible');
+        }
+    });
+}
+
+// Función para voltear la tarjeta
+function flipCard(index, flipped) {
+    const card = flashcards[index];
+    if (flipped) {
+        card.classList.add('flipped'); // Voltea la tarjeta
+    } else {
+        card.classList.remove('flipped'); // Muestra la cara frontal
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+    }
+}
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    audios.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0; // Reiniciar al inicio
+    });
+}
+
+// Función para reproducir audio final
+function playFinalMessageAudio() {
+    const finalMessageSound = document.getElementById('finalMessageSound');
+    finalMessageSound.play();
+}
+
+        const resetButton = document.getElementById('reset-button');
+        const soundResetButton = document.getElementById('soundResetButton');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < Flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                setTimeout(showCompletionMessage, 800);
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+    const soundNoButton = document.getElementById('soundNoButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundNoButton.pause();
+    soundNoButton.currentTime = 0;
+    soundNoButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón No:', error);
+    });
+    
+    // Resto de la lógica del botón "No"
+    if (postponedCards.has(currentCardIndex)) {
+        
+        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+        if (lastPostponedCard === currentCardIndex) {
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            disableButtons();
+        } else {
+            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        moveToNextCard();
+        
+         // Crear el efecto de espumas
+         createSmokeEffect1(noButton);
+    }
+});
+
+
+
+yesButton.addEventListener('click', () => {  
+    const soundYesButton = document.getElementById('soundYesButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundYesButton.pause();
+    soundYesButton.currentTime = 0;
+    soundYesButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Sí:', error);
+    });
+    
+    // Resto de la lógica del botón "Sí"
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+    
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    
+    }
+
+    completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+    moveToNextCard();
+    updateTotalCardsCounter(); // Actualizar el total de tarjetas     
+    createSmokeEffect(yesButton);
+});
+
+
+function createSmokeEffect(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke = document.createElement('div');
+        smoke.className = 'smoke'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -30; // Desplazamiento vertical inicial (0px a -30px)
+
+        // Estilo de la burbuja
+        smoke.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke.style.zIndex = '10';
+
+        // Crear el texto "Sí" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'Sí';
+        smoke.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke.remove(), 2000);
+    }
+}
+
+function createSmokeEffect1(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke1 = document.createElement('div');
+        smoke1.className = 'smoke1'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -50; // Desplazamiento vertical inicial (0px a -50px)
+
+        // Estilo inicial de la burbuja
+        smoke1.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke1.style.zIndex = '10';
+
+        // Crear el texto "No" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'No';
+        smoke1.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke1);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke1.remove(), 2000);
+    }
+}
+
+
+    
+resetButton.addEventListener('click', () => {
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    const soundResetButton = document.getElementById('soundResetButton');
+    
+    soundResetButton.pause(); // Detener cualquier reproducción anterior
+    soundResetButton.currentTime = 0; // Reiniciar el tiempo al principio
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Reiniciar:', error);
+    });
+
+    // Recargar la página y asegurarnos que el sonido se reproduzca después de la recarga
+    location.reload(); // Recarga la página inmediatamente
+});
+
+
+// Después de la recarga, reproducir el sonido de inmediato
+window.addEventListener('load', () => {
+    const soundResetButton = document.getElementById('soundResetButton');
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido tras la recarga:', error);
+    });
+});
+
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+    resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+    totalCardsInfo.textContent = flashcards.length;
+    cardsRemembered.textContent = noCounter;
+    cardsNotRemembered.textContent = yesCounter;
+
+    // Calcular porcentaje y actualizar el progreso circular
+    const percentage = (yesCounter / flashcards.length) * 100;
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+    progressCircle.style.setProperty('--progress', `${percentage}deg`);
+
+    // Desactivar el botón después de mostrar el resumen
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;  // Desactivar el botón
+    startButton.classList.add('disabled');  // Añadir la clase 'disabled' para cambiar el estilo
+}
+   
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+// Función para mostrar el mensaje de "Repaso Finalizado"
+function showFinalReviewMessage() {
+    console.log('Mensaje de repaso finalizado a punto de mostrarse');
+    const finalReviewMessage = document.getElementById('final-review-message');
+    finalReviewMessage.style.display = 'flex';
+
+    // Efecto de confeti
+    confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+    });
+
+    // Reproducir el audio de "Repaso Finalizado"
+    playFinalMessageAudio();
+
+    // Desactivar el botón después de mostrar el mensaje de repaso finalizado
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;
+    startButton.classList.add('disabled');  // Añadir clase 'disabled'
+
+    setTimeout(() => {
+        console.log('Ocultando el mensaje de repaso finalizado');
+        finalReviewMessage.style.display = 'none';
+    }, 3000);
+}
+
+function playAudio(index) {
+    console.log('Reproduciendo audio de la tarjeta', index);
+    if (audios[index]) {
+        stopAllAudios();
+        audios[index].play();
+
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) {
+                console.log('Última tarjeta terminada, mostrando mensaje');
+                showFinalReviewMessage();
+                resetFlashcards();
+            }
+        };
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+
+        // Si es el último audio, mostrar el mensaje de repaso finalizado
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) { // Si es la última tarjeta
+                showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
+                resetFlashcards(); // Regresar a la primera tarjeta
+            }
+        };
+    }
+}
+
+
+
+// Función para reiniciar las tarjetas (volver a la primera tarjeta)
+function resetFlashcards() {
+    currentExposureIndex = 0;
+    showCard(currentExposureIndex); // Mostrar la primera tarjeta
+    flipCard(currentExposureIndex, false); // Voltear la tarjeta
+    updateTotalCardsCounter(); // Actualizar el contador
+}
+
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

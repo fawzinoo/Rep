@@ -1,0 +1,2387 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #1f3658, #3558e3);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    width: 100%;
+    background: linear-gradient(to bottom, rgba(110, 183, 33, 0.8), rgba(173, 234, 176, 0.774)); /* Fondo */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 3rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra del texto */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 100%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+/* Contenedor de botones */
+.button-container {
+    width: 100%;
+    max-width: 370px;
+    display: flex;
+    justify-content: space-evenly; /* Espacio uniforme entre todos los botones */
+    align-items: center;
+    padding: 10px 0px;
+    background-color: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+
+/* Contenedor en pantalla completa */
+.button-container.fullscreen {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 90%; /* Ancho ajustado para fullscreen */
+}
+
+/* Botones individuales */
+.button {
+    padding: 10px 15px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 50px;
+    background-color: #3498db;
+    color: #fff;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+     
+        .button.yes { background-color: #27ae60; margin-right: 25px;}
+        .button.no { background-color: #e74c3c;margin-right: 10px; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+
+#completion-message {
+    display: none; /* Inicialmente ocultos */
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+#final-review-message {
+    display: none; /* Inicialmente oculto */
+    position: absolute;
+    width: 100%;                                     
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+        #start-exposure-button {
+  border-radius: 50%;  /* Hacer el botón redondo */
+  padding: 10px;         /* Ajustar el padding para que el icono se vea bien */
+  margin-left: 15px;
+  
+}
+
+.button.disabled {
+    background-color: #bdc3c7;  /* Gris */
+    cursor: not-allowed; 
+    opacity: 0.5;  /* Opcional: Si deseas dar un toque más opaco */
+}
+
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+        color: black; /* color negro al inicio */
+    }
+    50% {
+        opacity: 0.5;
+        color: orange; /* color naranja en la mitad del parpadeo */
+    }
+    100% {
+        opacity: 1;
+        color: black; /* color negro al final */
+    }
+}
+
+.playing {
+    animation: blink 1s infinite;
+}
+
+
+.overlay-text {
+    position: absolute;
+    z-index: 1; /* Colocar por encima del contenido */
+    color: white; /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con los clics */
+    margin: 2%; /* Margen relativo */
+    line-height: 1.5; /* Espaciado entre líneas */
+    top: 30%; /* Posición específica desde arriba */
+    
+}
+
+/* Estilos para .overlay-text1 */
+.overlay-text1 {
+    position: absolute;
+    top: 5px;
+    z-index: 1;
+    color: rgb(142, 5, 126); /* Color específico */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(38, 37, 30, 0.7); /* Sombra del texto */
+    text-align: center; /* Centrado */
+    pointer-events: none; /* No interferir con clics */
+    display: inline-block; /* Comportamiento inline */
+    display: inline-block;
+    animation: blink 0.5s infinite, pause 10s infinite;
+    -webkit-text-stroke: 0.7px white;
+}
+@keyframes pause {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+
+/* Estilos para .overlay-text2 */
+.overlay-text2 {
+    position: absolute;
+    z-index: 1;
+    color: rgb(238, 236, 245); /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con clics */
+    margin: 30px; /* Márgenes específicos */
+    top: 30%; /* Posición específica desde arriba */
+    -webkit-text-stroke: 0.4px black; /* Grosor y color del contorno */
+}
+
+@keyframes moveLeftToRight {
+  0% {
+    transform: translateX(0); /* Posición inicial */
+  }
+  50% {
+    transform: translateX(10px); /* Mueve hacia la derecha */
+  }
+  100% {
+    transform: translateX(0); /* Vuelve a la posición original */
+  }
+}
+@keyframes smoke {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(0, 255, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+
+
+
+
+@keyframes smoke1 {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke1 {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(255, 0, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke1 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke1 span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+  .swal2-actions {
+            flex-direction: row-reverse; /* Invertir el orden de los botones */
+        }
+ #content {
+            display: none; /* Oculta el contenido hasta que se conceda acceso */
+        }
+    </style>
+ 
+</head>
+<body>
+<div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+ <div id="flashcard-container-wrapper">
+
+    <div id="flashcard-container">
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505604134606646-233278289977456.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">eres</span> de carácter?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Soy tranquilo y amable.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505654839023382-233278626320484.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">es</span> el médico de carácter?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El médico es serio y amable.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505693998224488-233278881861716.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">son</span> los profesores de carácter?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Los profesores son pacientes y simpáticos.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505868345689440-233279310246062.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">tiene</span> que ser un policía?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Un policía tiene que ser valiente y honesto.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505893889359433-233279386652798.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">tienen</span> que ser los bomberos?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Los bomberos tienen que ser fuertes y rápidos.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738505969757521883-233279744643174.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">es</span> tu compañero de piso?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Mi compañero de piso es ordenado y divertido.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506000222280609-233279884755117.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">tiene</span> que ser tu compañero de piso?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Tiene que ser respetuoso y limpio.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506027941433844-233280421642304.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> cualidades <span style="display: inline-block; color: green;">tiene</span> tu compañero de trabajo?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Es trabajador y amable.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506054907760665-233280488972423.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿Y <span style="display: inline-block; color: red;">qué</span> defectos <span style="display: inline-block; color: green;">tiene</span>?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    A veces es un poco despistado.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506077362427565-233280488972437.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has  hecho</span> hoy?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Hoy he trabajado y he paseado.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506109561187257-233280488972454.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has  hecho</span> esta mañana?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Esta mañana he desayunado y he ido al trabajo.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506130538175914-233280841879616.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has  hecho</span> este mediodía?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Este mediodía he comido con amigos.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506166098462013-233280841879635.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has  hecho</span> esta tarde?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Esta tarde he estudiado y he leído un libro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506210470381891-233280905154646.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has  hecho</span> esta noche?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Esta noche he cenado y he visto una película.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506258218131898-233280905154672.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has ido</span> a trabajar esta mañana?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he ido a trabajar esta mañana.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506282100044479-233281315508374.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has comido</span> bien?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he comido muy bien.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506360011649922-233281748611142.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Adónde</span> <span style="display: inline-block; color: green;">has</span> ido?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He ido al parque.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506383850859653-233281748611157.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Adónde</span> <span style="display: inline-block; color: green;">has salido</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He salido al cine.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506406164463002-233281725993124.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Adónde</span> <span style="display: inline-block; color: green;">has viajado</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He viajado a la playa.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506427169393415-233281903001684.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">has estudiado</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He estudiado en la biblioteca.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506463276437974-233281903001697.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Dónde</span> <span style="display: inline-block; color: green;">has estado</span> esta tarde?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Esta tarde he estado en casa.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506630153889817-233282494066790.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Por qué</span>  <span style="display: inline-block; color: green;">has estado </span> en el mercado?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He estado en el mercado para comprar comida.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506687783599222-233283100397635.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">ha estado</span> mi abuela esta mañana?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Tu abuela ha estado muy contenta esta mañana.
+                </div>
+            </div>
+        </div>
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506734300184515-233283199332492.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuánto</span> <span style="display: inline-block; color: green;">has tenido</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He tenido dos bolígrafos.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506803425357331-233283544252484.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuánto</span> dinero <span style="display: inline-block; color: green;">has tenido</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He tenido 20 euros.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506842258387491-233283544252503.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">has tenido</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He tenido un problema.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506866508278697-233283544252513.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">ha habido</span> en casa hoy?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    En casa ha habido mucha tranquilidad.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506925436359971-233283567874170.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">A qué</span> hora <span style="display: inline-block; color: green;">ha empezado</span> la clase esta tarde?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    La clase ha empezado a las 4 de la tarde.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506949555048060-233284153884741.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">A qué</span> hora <span style="display: inline-block; color: green;">has viajado</span> esta semana?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He viajado a las 10 de la mañana.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738506983799986153-233284312883331.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cuándo</span> <span style="display: inline-block; color: green;">has ido</span> a la playa este año?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He ido a la playa en julio.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507115578733479-233284696055890.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Cómo</span> <span style="display: inline-block; color: green;">has ido</span> al centro de la ciudad?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He ido al centro en autobús.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507148634483040-233284696055910.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Con quién</span>  <span style="display: inline-block; color: green;">has cenado</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    He cenado con mi familia.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507191794396267-233284804866166.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: yellow;">Te</span> <span style="display: inline-block; color: green;">ha gustado</span> el partido?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, me ha gustado mucho.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507218749989011-233284930212030.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: yellow;">Te</span> <span style="display: inline-block; color: green;">han gustado</span> mis ideas?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, me han gustado tus ideas.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507242027505183-233285195235423.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: yellow;">te</span> <span style="display: inline-block; color: green;">ha gustado</span> de la tienda?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Me ha gustado la ropa.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507284550350490-233285195235440.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> camisetas <span style="display: inline-block; color: yellow;">te</span> <span style="display: inline-block; color: green;">han gustado</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Me han gustado las camisetas azules.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507312448436958-233285300887726.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> plato <span style="display: inline-block; color: yellow;">te</span> <span style="display: inline-block; color: green;">ha gustado</span> ?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Me ha gustado la paella.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507343943469550-233285269405818.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: yellow;">te</span> <span style="display: inline-block; color: green;">ha gustado</span> de la ciudad durante el viaje?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Me ha gustado el parque.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507383392904846-233285885378632.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has ido</span> alguna vez a Europa?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he ido a Europa.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507414789990778-233285708042340.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has perdido</span> alguna vez algún objeto de valor?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he perdido un reloj.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507565419026113-233286470262882.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has viajado</span> alguna vez solo/a?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he viajado solo/a.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507607807101072-233286470262898.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has hecho</span> alguna vez deporte al aire libre?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he hecho senderismo.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507650386440739-233286954168393.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has olvidado</span> alguna vez tu pasaporte en casa?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, lo he olvidado una vez.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507685071202087-233287004311635.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Has ido</span> en metro alguna vez?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, he ido en metro muchas veces.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507713403696326-233287004311643.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">sabes</span> hacer?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sé cocinar y bailar.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507861987633816-233287721168981.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">sabes</span> preparar?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sé preparar pasta y ensalada.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507882490990807-233287721168990.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">sabe</span> hacer el trabajador?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    El trabajador sabe reparar cosas.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507910697535596-233287721169006.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Sabes</span> conducir?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, sé conducir.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507931825888368-233287770992817.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Sabes</span> cocinar?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, sé cocinar.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738507989852941747-233288376971338.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: green;">Sabes</span> tocar la guitarra?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    No, no sé tocar la guitarra.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508015790736704-233288263417956.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿El trabajador <span style="display: inline-block; color: green;">sabe</span> reparar la avería?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Sí, el trabajador sabe reparar la avería.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508142479070278-233288987267210.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">puedes</span> hacer ahora?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedo leer un libro.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508171053040970-233288800698467.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">puedes</span> prepararme?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedo prepararte un café.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508201953589387-233288987267237.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> platos <span style="display: inline-block; color: green;">puedes</span> preparar?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedo preparar sopa y pollo.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508230817891003-233288987267249.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">puedes</span> hacer para resolver el problema?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedo hablar con el jefe.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508252785913743-233288943165566.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">puedo</span> hacer para aliviar el dolor?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedes tomar una pastilla.
+                </div>
+            </div>
+        </div>
+        
+        <div class="flashcard" data-audio="https://cdn.hailuoai.video/moss/prod/2025-02-02-22/moss-audio/user_audio//1738508357514664276-233289688387734.mp3">
+            <div class="front">
+                <div class="overlay-text1">Unidad 9</div>
+                <div class="overlay-text">
+                    ¿<span style="display: inline-block; color: red;">Qué</span> <span style="display: inline-block; color: green;">puedo</span> hacer para dormir bien?
+                </div>
+            </div>
+            <div class="back">
+                <div class="overlay-text2">
+                    Puedes leer un libro antes de dormir.
+                </div>
+            </div>
+        </div>
+        
+
+        
+
+
+    
+    
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="final-review-message" style="display: none; text-align: center; font-size: 2em; font-weight: bold; color: #fff; background-color: #27ae60; padding: 20px; border-radius: 15px;">
+        ¡Repaso Finalizado! 🎉
+    </div>
+    
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="soundResetButton" src="ttps://www.cjoint.com/doc/24_12/NLFvBMPFH3k_bellding-254774.mp3" preload="auto"></audio>
+    <audio id="startExposureSound" src="https://www.cjoint.com/doc/24_12/NLFsmCkAHKi_start.mp3" preload="auto"></audio>
+
+
+    <audio id="soundYesButton" src="https://www.cjoint.com/doc/24_12/NLFrv5yAbgr_click-124467.mp3" preload="auto"></audio>
+    <audio id="soundNoButton" src="https://www.cjoint.com/doc/24_12/NLFryRqSAhr_bubble-popping-229138.mp3" preload="auto"></audio>
+
+
+   
+    <audio id="finalMessageSound" src="https://www.cjoint.com/doc/24_12/NLFqVDn2rfi_level-win-6416.mp3" preload="auto"></audio>
+
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" style="background-color: rgb(161, 117, 4);" id="start-exposure-button">
+            <i class="fas fa-play"></i> 
+        </button> 
+        <button class="button" id="enlarge-button" style="background-color: #3498db;">
+            <i class="fas fa-expand"></i>
+        </button>             
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+
+           // Bloquear acceso si el usuario no está autenticado
+    if (sessionStorage.getItem('authenticated') !== 'true') {
+        // Muestra un mensaje de error y redirige a la página principal
+        Swal.fire({
+            icon: 'error',
+            title: 'Acceso restringido',
+            text: 'Por favor, autentícate antes de acceder a esta página.',
+            confirmButtonText: 'Volver al inicio'
+        }).then(() => {
+            window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html';
+        });
+    } 
+        
+// Seleccionar todas las tarjetas
+const Flashcards = Array.from(document.querySelectorAll('.flashcard'));
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    Flashcards.forEach(card => {
+        const audio = card.audio; // Usar el objeto de audio asociado
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+        }
+    });
+}
+
+
+Flashcards.forEach(card => {
+    // Obtener el audio correspondiente de la tarjeta
+    const audioSrc = card.getAttribute('data-audio');
+    if (audioSrc) {
+        card.audio = new Audio(audioSrc); // Asociar el objeto de audio a la tarjeta
+    }
+
+    let isFlipped = false; // Bandera para verificar si la tarjeta ya fue volteada
+    let isTransitioning = false; // Controlar si la tarjeta está en transición
+    let waveContainer; // Referencia al contenedor de ondas
+
+    // Función para añadir las ondas tipo Wi-Fi
+    function addWifiWaves(card) {
+        waveContainer = document.createElement('div');
+        waveContainer.classList.add('wifi-waves-container');
+
+        for (let i = 1; i <= 3; i++) {
+            const wave = document.createElement('div');
+            wave.classList.add('wifi-wave');
+            wave.style.animationDelay = `${i * 0.5}s`; // Retraso entre ondas
+            waveContainer.appendChild(wave);
+        }
+
+        card.appendChild(waveContainer);
+
+        // Remover las ondas después de 5 segundos
+        setTimeout(() => {
+            if (waveContainer) {
+                waveContainer.remove();
+                waveContainer = null; // Eliminar referencia
+            }
+        }, 4000);
+    }
+
+    card.addEventListener('click', () => {
+        if (isTransitioning) {
+            console.log('Transición en curso, espere...');
+            return;
+        }
+
+        isTransitioning = true;
+
+        if (!isFlipped) {
+            // Voltear a la cara "back"
+            card.classList.add('flipped');
+            console.log('Volteando a la cara "back".');
+
+            // Añadir las ondas tipo Wi-Fi
+            addWifiWaves(card);
+
+            setTimeout(() => {
+                stopAllAudios1();
+
+                if (card.audio) {
+                    card.audio.currentTime = 0; // Reiniciar el audio
+                    card.audio.play().catch(error => console.log('Error al reproducir el audio:', error));
+                }
+                console.log('Audio reproducido para la cara "back".');
+                isTransitioning = false;
+            }, 1000);
+        } else {
+            // Voltear a la cara "front"
+            card.classList.remove('flipped');
+            console.log('Volteando a la cara "front".');
+
+            // Detener las ondas si están activas
+            if (waveContainer) {
+                waveContainer.remove();
+                waveContainer = null; // Eliminar referencia
+            }
+
+            stopAllAudios1();
+
+            setTimeout(() => {
+                console.log('Cara "front" lista.');
+                isTransitioning = false;
+            }, 1000);
+        }
+
+        isFlipped = !isFlipped;
+    });
+});
+
+// Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container {
+    position: absolute;
+    top: 70%;
+    left: 45%; 
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgba(255, 215, 0, 0.8); /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+    
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+document.head.appendChild(style);
+
+
+
+function stopAllAudios1() {
+    const allAudios = document.querySelectorAll('[data-audio]');
+    allAudios.forEach(audio => {
+        const audioElement = audio.audio || new Audio(audio.getAttribute('data-audio'));
+        audioElement.pause();
+        audioElement.currentTime = 0; // Reiniciar el audio
+    });
+}
+
+const baseUrlFeb2 = 'https://cdn.hailuoai.video/moss/prod/2025-02-02-23/moss-audio/user_audio//';
+const baseUrlFeb3 = 'https://cdn.hailuoai.video/moss/prod/2025-02-03-00/moss-audio/user_audio//';
+const audios = [
+    '1738510154627991465-233297185038417.mp3',
+    '1738510300330736037-233297829187728.mp3',
+    '1738510396698448674-233298248781896.mp3',
+    '1738510434224456651-233298248781917.mp3',
+    '1738510504356368966-233298516832343.mp3',
+    '1738510536996927901-233298516832354.mp3',
+    '1738510570826999200-233298765361319.mp3',
+    '1738510612303587498-233298765361340.mp3',
+    '1738510649424376578-233298881319026.mp3',
+    '1738510676578421355-233299238133853.mp3',
+    '1738510739551860511-233299454001244.mp3',
+    '1738510776228787425-233299776716881.mp3',
+    '1738510856610892761-233299776716921.mp3',
+    '1738510885995788030-233300289122438.mp3',
+    '1738510927855294962-233300289122459.mp3',
+    '1738510952783113594-233300056436853.mp3',
+    '1738510985065558557-233300253773946.mp3',
+    '1738511027842768602-233300655042655.mp3',
+    '1738511066145839081-233300655042671.mp3',
+    '1738511092399524154-233300746887273.mp3',
+    '1738511137218958652-233300919058608.mp3',
+    '1738511178866613584-233301394100299.mp3',
+    '1738511220811387051-233301202329725.mp3',
+    '1738511586826877479-233303048773721.mp3',
+    '1738511426141558850-233302519660609.mp3',
+    '1738511637874152869-233303113654434.mp3',
+    '1738511673349157312-233303113654456.mp3',
+    '1738511706637444549-233303599767684.mp3',
+    '1738511755996171664-233303443206254.mp3',
+    '1738511805565932341-233303516758142.mp3',
+    ].map(file => new Audio(baseUrlFeb2 + file));
+
+    audios.push(...[
+    '1738512015259922632-233304540872814.mp3',
+    '1738512114539172434-233304818172091.mp3',
+    '1738512170566919843-233305228537959.mp3',
+    '1738512204003331757-233305557684310.mp3',
+    '1738512266406658553-233305380090043.mp3',
+    '1738512310297827194-233306090709061.mp3',
+    '1738512350852875526-233306090709079.mp3',
+    '1738512380680001464-233306018009262.mp3',
+    '1738512409722797661-233306561417344.mp3',
+    '1738512441512885927-233306610892876.mp3',
+    '1738512485008664402-233306610892904.mp3',
+    '1738512511988293550-233306561417399.mp3',
+    '1738512572932123480-233307075879059.mp3',
+    '1738512608627677480-233307058589785.mp3',
+    '1738512655069010120-233307058589801.mp3',
+    '1738512708051660097-233307556307031.mp3',
+    '1738512770981324371-233307723788388.mp3',
+    '1738512798803745628-233307723788414.mp3',
+    '1738512841947962657-233308145098845.mp3',
+    '1738512887065952941-233308122636465.mp3',
+    '1738512937064066499-233308626223180.mp3',
+    '1738513038776001178-233308787093616.mp3',
+    '1738513082465213696-233309132816479.mp3',
+    '1738513128609359109-233309172629678.mp3',
+    '1738513159513661165-233309541003342.mp3',
+    '1738513190687181587-233309653176401.mp3',
+    '1738513219531958498-233309541003369.mp3'
+].map(file => new Audio(baseUrlFeb3 + file)));
+
+
+
+
+
+
+
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    flashcards.forEach((card, index) => {
+    let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+    let waveContainer1; // Referencia al contenedor de ondas Wi-Fi
+
+    // Función para añadir las ondas Wi-Fi en la cara trasera
+    function addWifiWaves1(card) {
+        waveContainer1 = document.createElement('div');
+        waveContainer1.classList.add('wifi-waves-container1');
+
+        for (let i = 1; i <= 3; i++) {
+            const wave = document.createElement('div');
+            wave.classList.add('wifi-wave1');
+            wave.style.animationDelay = `${i * 0.5}s`; // Retraso entre ondas
+            waveContainer1.appendChild(wave);
+        }
+
+      // Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container1 {
+    position: absolute;
+    top: 70%;
+    left: 43%;  
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave1 {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 2px solid blue; /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+
+
+        document.head.appendChild(style);
+
+        card.querySelector('.back').appendChild(waveContainer1); // Añadir ondas a la cara trasera
+
+        // Remover las ondas después de 5 segundos
+        setTimeout(() => {
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+        }, 3000);
+    }
+
+    card.addEventListener('click', () => {
+        card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+        if (card.classList.contains('flipped')) {
+            // Reproducir el audio inmediatamente
+            if (audios[index]) {
+                stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                audios[index].play();
+                isAudioPlaying = true;
+            }
+
+            // Agregar las ondas Wi-Fi en la cara trasera
+            addWifiWaves1(card);
+
+            console.log('click2: Se hizo clic en el reverso de la tarjeta.');
+        } else {
+            // Detener el audio si la tarjeta se voltea de nuevo
+            if (isAudioPlaying && audios[index]) {
+                audios[index].pause();
+                audios[index].currentTime = 0; // Reiniciar el audio
+                isAudioPlaying = false;
+            }
+
+            // Eliminar las ondas si están activas
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+
+            console.log('click1: Se hizo clic en el frente de la tarjeta.');
+        }
+    });
+});
+
+
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+    yesButton.addEventListener('click', stopAllAudios1);
+    noButton.addEventListener('click', stopAllAudios1);
+
+    const enlargeButton = document.getElementById('enlarge-button');
+    const buttonContainer = document.querySelector('.button-container');
+const flashcardContainer = document.getElementById('flashcard-container');
+let isEnlarged = false; // Estado inicial
+
+const updateOverlayStyles = (isFullscreen) => {
+    // Seleccionar todos los elementos con las clases correspondientes
+    const overlayTexts = document.querySelectorAll('.overlay-text');
+    const overlayTexts1 = document.querySelectorAll('.overlay-text1');
+    const overlayTexts2 = document.querySelectorAll('.overlay-text2');
+
+    // Detectar si es una pantalla grande
+    const isLargeScreen = window.innerWidth > 1024; // Define el límite para pantallas grandes
+
+    // Iterar sobre cada grupo de elementos y aplicar los estilos
+    overlayTexts.forEach((overlayText) => {
+        if (isFullscreen && isLargeScreen) {
+            // Estilos para pantalla completa en pantallas grandes
+            overlayText.style.fontSize = '2.5rem';
+            overlayText.style.textAlign = 'center'; // Centrado horizontal dentro del contenedor
+            overlayText.style.top = '40%'; // Centrado vertical aproximado
+            overlayText.style.left = '50%'; // Coloca el texto en el centro horizontal
+            overlayText.style.transform = 'translate(-50%, -30%)'; // Ajusta para centrar el texto completamente
+        } else {
+            // Restaurar estilos originales o mantener diseño para móviles
+            overlayText.style.fontSize = '2rem';
+            overlayText.style.top = '40%';
+            overlayText.style.left = '0%';
+            overlayText.style.transform = 'translate(0, 0)';
+            overlayText.style.textAlign = 'left';
+           
+        }
+    });
+
+    overlayTexts1.forEach((overlayText1) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '20px';
+            overlayText1.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '5px'
+            overlayText1.style.textAlign = 'center'; // Alineación izquierda para móviles
+        }
+    });
+
+    overlayTexts2.forEach((overlayText2) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText2.style.fontSize = '2.5rem';
+            overlayText2.style.margin = '50px';
+            overlayText2.style.top = '35%';
+            overlayText2.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText2.style.fontSize = '2rem';
+            overlayText2.style.margin = '30px';
+            overlayText2.style.textAlign = 'left'; // Alineación izquierda para móviles
+        }
+    });
+};
+
+
+
+
+// Manejar clic en el botón para agrandar/contraer
+enlargeButton.addEventListener('click', () => {
+    if (isEnlarged) {
+        // Volver al tamaño original
+        flashcardContainer.style.position = '';
+        flashcardContainer.style.top = '';
+        flashcardContainer.style.left = '';
+        flashcardContainer.style.width = '100%';
+        flashcardContainer.style.height = '500px';
+        flashcardContainer.style.maxWidth = '600px';
+        flashcardContainer.style.maxHeight = '500px';
+        enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+        buttonContainer.classList.remove('fullscreen');
+        isEnlarged = false;
+
+        // Restaurar estilos de las superposiciones
+        updateOverlayStyles(false);
+    } else {
+        // Agrandar al tamaño completo
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen'); // Aplicar clase de pantalla completa
+        isEnlarged = true;
+
+        // Ajustar estilos de las superposiciones para pantalla completa
+        updateOverlayStyles(true);
+    }
+});
+
+
+let exposureInterval;
+let isExposing = false;
+let isPaused = false;
+let currentExposureIndex = 0;
+let timeouts = []; // Array para guardar los IDs de los setTimeout
+
+// Función para iniciar/pausar la exposición de las tarjetas
+document.getElementById('start-exposure-button').addEventListener('click', () => {
+    const icon = document.querySelector('#start-exposure-button i');
+    const startButton = document.getElementById('start-exposure-button');
+
+    if (!isExposing) {
+        // Guardar el estado de pantalla completa antes de recargar
+        if (isEnlarged) {
+            sessionStorage.setItem('fullscreenMode', 'true'); // Indicar que estaba en pantalla completa
+        } else {
+            sessionStorage.removeItem('fullscreenMode'); // Quitar indicador si no está en pantalla completa
+        }
+
+        // Guardar indicador de iniciar exposición después de recargar
+        sessionStorage.setItem('startExposureAfterReload', 'true');
+
+        // Reproducir el sonido de inicio de exposición antes de recargar
+        const startExposureSound = document.getElementById('startExposureSound');
+        startExposureSound.play().catch(error => {
+            console.log('Error al reproducir el sonido de inicio:', error);
+        });
+
+        // Evitar que el sonido de reinicio se reproduzca
+        sessionStorage.setItem('skipResetSound', 'true');
+
+        setTimeout(() => {
+            location.reload(); // Recargar la página después de reproducir el sonido
+        }, 500); // Ajuste breve para permitir que el sonido se reproduzca
+        return; // Salir para esperar la recarga
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play'); // Mostrar ícono de play
+        icon.classList.add('playing'); // Añadir efecto de parpadeo
+        console.log("Reanudando exposición...");
+        resumeExposure();
+    } else {
+        isPaused = true;
+        icon.classList.add('fa-sync-alt');
+        icon.classList.remove('fa-play'); // Cambiar ícono a pausa
+        icon.classList.remove('playing'); // Quitar efecto de parpadeo
+        console.log("Pausando exposición...");
+        stopExposure();
+    }
+});
+
+
+window.addEventListener('load', () => {
+    // Forzar el estado inicial a no pantalla completa
+    flashcardContainer.style.position = '';
+    flashcardContainer.style.top = '';
+    flashcardContainer.style.left = '';
+    flashcardContainer.style.width = '100%';
+    flashcardContainer.style.height = '500px';
+    flashcardContainer.style.maxWidth = '600px';
+    flashcardContainer.style.maxHeight = '500px';
+    enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+    buttonContainer.classList.remove('fullscreen');
+    isEnlarged = false;
+
+    // Evitar el sonido de reinicio si está indicado
+    const skipResetSound = sessionStorage.getItem('skipResetSound');
+    if (skipResetSound === 'true') {
+        sessionStorage.removeItem('skipResetSound'); // Limpiar indicador
+    } else {
+        const soundResetButton = document.getElementById('soundResetButton');
+        soundResetButton.play().catch(error => {
+            console.log('Error al reproducir el sonido tras la recarga:', error);
+        });
+    }
+
+    // Iniciar exposición automáticamente si el indicador está activo
+    if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+        sessionStorage.removeItem('startExposureAfterReload');
+        console.log("Iniciando exposición automáticamente después de recargar.");
+        const startButton = document.getElementById('start-exposure-button');
+        const icon = document.querySelector('#start-exposure-button i');
+        isExposing = true;
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play');
+        icon.classList.add('playing');
+        startButton.style.backgroundColor = "gold";
+        startButton.disabled = true;
+        startExposure(); // Iniciar exposición
+    }
+});
+
+
+// Función para iniciar la exposición
+function startExposure() {
+    console.log("Iniciando exposición...");
+    const startButton = document.getElementById('start-exposure-button');
+    const icon = document.querySelector('#start-exposure-button i');
+
+    isExposing = true;
+    isPaused = false;
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.add('fa-play');
+    icon.classList.add('playing');
+    startButton.style.backgroundColor = "gold";
+    startButton.disabled = true;
+
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    const flipDelay = currentExposureIndex === 0 ? 3000 : 4000; // 3 segundos para la primera tarjeta, 4 segundos para las siguientes
+    const preAudioDelay = 0; // 0 segundos antes del audio
+    const postAudioDelay = 10000; // 10 segundos después del audio
+
+    // Reproducir audio de la cara frontal antes de voltear la tarjeta
+    const currentCard = flashcards[currentExposureIndex];
+    const frontAudioSrc = currentCard.getAttribute('data-audio');
+    if (frontAudioSrc) {
+        const frontAudio = new Audio(frontAudioSrc);
+        frontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
+        frontAudio.onended = () => {
+            console.log('Audio de la cara frontal terminado.');
+            proceedToBackAudio(); // Continuar con el audio de la parte trasera
+        };
+    } else {
+        console.log('No hay audio para la cara frontal. Procediendo directamente.');
+        proceedToBackAudio();
+    }
+
+    function proceedToBackAudio() {
+        let timeoutId = setTimeout(() => {
+            flipCard(currentExposureIndex, true); // Voltear la tarjeta
+
+            let repetitions = 0;
+            const audioDuration = audios[currentExposureIndex].duration * 20; // Duración del audio en milisegundos
+
+            const playAudioWithDelays = () => {
+                setTimeout(() => {
+                    // Repetir el audio varias veces
+                    const audioRepetitionInterval = setInterval(() => {
+                        audios[currentExposureIndex].play();
+                        repetitions++;
+
+                        if (repetitions >= 2) { // Número de repeticiones del audio
+                            clearInterval(audioRepetitionInterval);
+
+                            console.log("Audio terminado, esperando antes de la siguiente tarjeta...");
+                            setTimeout(() => {
+                                moveToNextCard(); // Pasar a la siguiente tarjeta después del postAudioDelay
+                            }, postAudioDelay);
+                        }
+                    }, audioDuration); // Intervalo para reproducir el audio
+                }, preAudioDelay); // PreAudioDelay antes de reproducir el audio
+            };
+
+            const moveToNextCard = () => {
+                currentExposureIndex++;
+
+                if (currentExposureIndex >= audios.length) {
+                    currentExposureIndex = 0;
+                    yesButton.disabled = false;
+                    noButton.disabled = false;
+                    yesButton.classList.remove('disabled');
+                    noButton.classList.remove('disabled');
+                    isExposing = false;
+
+                    showFinalReviewMessage();
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+
+                    startButton.style.backgroundColor = "";
+                    startButton.disabled = false;
+                    icon.classList.remove('playing');
+                } else {
+                    startExposure(); // Continuar con la siguiente tarjeta
+                }
+                updateTotalCardsCounter();
+            };
+
+            playAudioWithDelays();
+        }, flipDelay); // Retraso inicial para voltear la tarjeta
+
+        timeouts.push(timeoutId); // Guardar el ID del timeout
+    }
+}
+
+
+// Función para pausar la exposición
+function stopExposure() {
+    clearInterval(exposureInterval);
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+}
+
+// Función para reanudar la exposición
+function resumeExposure() {
+    startExposure();
+}
+
+// Función para restablecer valores sin recargar
+function resetExposureValues() {
+    console.log("Restableciendo valores para la exposición.");
+    isExposing = false;
+    isPaused = false;
+    currentExposureIndex = 0;
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+    
+}
+
+
+// Función para mostrar la tarjeta en la posición indicada
+function showCard(index) {
+    flashcards.forEach((card, i) => {
+        card.classList.remove('is-visible');
+        if (i === index) {
+            card.classList.add('is-visible');
+        }
+    });
+}
+
+// Función para voltear la tarjeta
+function flipCard(index, flipped) {
+    const card = flashcards[index];
+    if (flipped) {
+        card.classList.add('flipped'); // Voltea la tarjeta
+    } else {
+        card.classList.remove('flipped'); // Muestra la cara frontal
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+    }
+}
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    audios.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0; // Reiniciar al inicio
+    });
+}
+
+// Función para reproducir audio final
+function playFinalMessageAudio() {
+    const finalMessageSound = document.getElementById('finalMessageSound');
+    finalMessageSound.play();
+}
+
+        const resetButton = document.getElementById('reset-button');
+        const soundResetButton = document.getElementById('soundResetButton');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < Flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                setTimeout(showCompletionMessage, 800);
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+    const soundNoButton = document.getElementById('soundNoButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundNoButton.pause();
+    soundNoButton.currentTime = 0;
+    soundNoButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón No:', error);
+    });
+    
+    // Resto de la lógica del botón "No"
+    if (postponedCards.has(currentCardIndex)) {
+        
+        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+        if (lastPostponedCard === currentCardIndex) {
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            disableButtons();
+        } else {
+            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        moveToNextCard();
+        
+         // Crear el efecto de espumas
+         createSmokeEffect1(noButton);
+    }
+});
+
+
+
+yesButton.addEventListener('click', () => {  
+    const soundYesButton = document.getElementById('soundYesButton');
+    
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    soundYesButton.pause();
+    soundYesButton.currentTime = 0;
+    soundYesButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Sí:', error);
+    });
+    
+    // Resto de la lógica del botón "Sí"
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+    
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    
+    }
+
+    completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+    moveToNextCard();
+    updateTotalCardsCounter(); // Actualizar el total de tarjetas     
+    createSmokeEffect(yesButton);
+});
+
+
+function createSmokeEffect(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke = document.createElement('div');
+        smoke.className = 'smoke'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -30; // Desplazamiento vertical inicial (0px a -30px)
+
+        // Estilo de la burbuja
+        smoke.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke.style.zIndex = '10';
+
+        // Crear el texto "Sí" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'Sí';
+        smoke.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke.remove(), 2000);
+    }
+}
+
+function createSmokeEffect1(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke1 = document.createElement('div');
+        smoke1.className = 'smoke1'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -50; // Desplazamiento vertical inicial (0px a -50px)
+
+        // Estilo inicial de la burbuja
+        smoke1.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke1.style.zIndex = '10';
+
+        // Crear el texto "No" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'No';
+        smoke1.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke1);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke1.remove(), 2000);
+    }
+}
+
+
+    
+resetButton.addEventListener('click', () => {
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    const soundResetButton = document.getElementById('soundResetButton');
+    
+    soundResetButton.pause(); // Detener cualquier reproducción anterior
+    soundResetButton.currentTime = 0; // Reiniciar el tiempo al principio
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Reiniciar:', error);
+    });
+
+    // Recargar la página y asegurarnos que el sonido se reproduzca después de la recarga
+    location.reload(); // Recarga la página inmediatamente
+});
+
+
+// Después de la recarga, reproducir el sonido de inmediato
+window.addEventListener('load', () => {
+    const soundResetButton = document.getElementById('soundResetButton');
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido tras la recarga:', error);
+    });
+});
+
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+    resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+    totalCardsInfo.textContent = flashcards.length;
+    cardsRemembered.textContent = noCounter;
+    cardsNotRemembered.textContent = yesCounter;
+
+    // Calcular porcentaje y actualizar el progreso circular
+    const percentage = (yesCounter / flashcards.length) * 100;
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+    progressCircle.style.setProperty('--progress', `${percentage}deg`);
+
+    // Desactivar el botón después de mostrar el resumen
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;  // Desactivar el botón
+    startButton.classList.add('disabled');  // Añadir la clase 'disabled' para cambiar el estilo
+}
+   
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+// Función para mostrar el mensaje de "Repaso Finalizado"
+function showFinalReviewMessage() {
+    console.log('Mensaje de repaso finalizado a punto de mostrarse');
+    const finalReviewMessage = document.getElementById('final-review-message');
+    finalReviewMessage.style.display = 'flex';
+
+    // Efecto de confeti
+    confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+    });
+
+    // Reproducir el audio de "Repaso Finalizado"
+    playFinalMessageAudio();
+
+    // Desactivar el botón después de mostrar el mensaje de repaso finalizado
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;
+    startButton.classList.add('disabled');  // Añadir clase 'disabled'
+
+    setTimeout(() => {
+        console.log('Ocultando el mensaje de repaso finalizado');
+        finalReviewMessage.style.display = 'none';
+    }, 3000);
+}
+
+function playAudio(index) {
+    console.log('Reproduciendo audio de la tarjeta', index);
+    if (audios[index]) {
+        stopAllAudios();
+        audios[index].play();
+
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) {
+                console.log('Última tarjeta terminada, mostrando mensaje');
+                showFinalReviewMessage();
+                resetFlashcards();
+            }
+        };
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+
+        // Si es el último audio, mostrar el mensaje de repaso finalizado
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) { // Si es la última tarjeta
+                showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
+                resetFlashcards(); // Regresar a la primera tarjeta
+            }
+        };
+    }
+}
+
+
+
+// Función para reiniciar las tarjetas (volver a la primera tarjeta)
+function resetFlashcards() {
+    currentExposureIndex = 0;
+    showCard(currentExposureIndex); // Mostrar la primera tarjeta
+    flipCard(currentExposureIndex, false); // Voltear la tarjeta
+    updateTotalCardsCounter(); // Actualizar el contador
+}
+
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

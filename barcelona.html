@@ -6,6 +6,7 @@
     <title>Visor PDF</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         html, body {
             margin: 0;
@@ -27,49 +28,154 @@
             position: relative;
         }
         canvas {
-            width: 100%;
-            height: auto;
-            max-height: 100vh;
+            width: 100vw;
+            height: 100vh;
         }
         .nav-button {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.2);
-            border: none;
-            color: white !important;
-            font-size: 30px;
-            padding: 20px;
-            cursor: pointer;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: background 0.3s, opacity 0.3s;
-            opacity: 0.6;
-        }
+    position: fixed; /* Cambio de absolute a fixed */
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0, 0, 0, 0.2);
+    border: none;
+    color: white !important;
+    font-size: 30px;
+    padding: 20px;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.3s, opacity 0.3s;
+    opacity: 0.6;
+    z-index: 1000; /* Asegura que estén sobre el canvas */
+}
+
         .nav-button:hover {
             background: rgba(0, 0, 0, 0.4);
             opacity: 1;
         }
         #prev-page {
-            left: 30px;
-            display: none;
+            left: 10px;
+            
         }
         #next-page {
-            right: 30px;
-            display: none;
+            right: 10px;
+            
         }
+        #fullscreen-button, #home-button {
+            position: absolute;
+            bottom: 15px;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background 0.3s;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+        }
+        #fullscreen-button {
+            right: 60px;
+            background: #3498db;
+        }
+        #fullscreen-button:hover {
+            background: #2980b9;
+        }
+        #home-button {
+            right: 15px;
+            background: #e74c3c;
+        }
+        #home-button:hover {
+            background: #c0392b;
+        }
+        @media (max-width: 1000px) {
+    #pdf-container {
+        flex-direction: row; /* Asegura que solo haya una página */
+        display: block;
+    }
+
+    canvas {
+        width: 100vw; /* Mantiene tamaño flexible */
+        height: 100vh;
+    }
+}
+
+@media (min-width: 500px) and (max-width: 700px) {
+    #pdf-container {
+        flex-direction: row; /* Asegura que solo haya una página */
+        display: block;
+       margin-left: 20px;
+       margin-right: 20px;
+        
+    }
+
+    canvas {
+        width: 90vw; /* Mantiene tamaño flexible */
+        height: 100vh;
+        margin-left: 20px;
+       margin-right: 20px;
+    }
+}
+
+@media (min-width: 700px) and (max-width: 1000px) {
+    #pdf-container {
+        flex-direction: row; /* Asegura que solo haya una página */
+        display: block;
+       margin-left: 80px;
+       margin-right: 80px;
+        
+    }
+
+    canvas {
+        width: 68vw; /* Mantiene tamaño flexible */
+        height: 100vh;
+        margin-left: 80px;
+       margin-right: 80px;
+    }
+}
+
+
+
+@media (min-width: 1001px) {
+    #pdf-container {
+        display: flex;
+        flex-direction: row; /* Acomoda dos páginas lado a lado */
+        justify-content: center;
+        align-items: center;
+        
+        
+    }
+
+    canvas {
+        width: 60vw; /* Cada página ocupa el 48% del ancho */
+        height: 100vh;
+    }
+}
+
+
+
     </style>
 </head>
 <body>
     <div id="pdf-container">
         <button id="prev-page" class="nav-button">
-            <img src="https://cdn-icons-png.flaticon.com/512/271/271220.png" alt="Prev" width="30" height="30">
+            <i class="fas fa-chevron-left"></i>
         </button>
         <canvas id="pdf-render"></canvas>
+        <canvas id="pdf-render-2"></canvas> <!-- Segundo canvas para la segunda página -->
+
         <button id="next-page" class="nav-button">
-            <img src="https://cdn-icons-png.flaticon.com/512/271/271228.png" alt="Next" width="30" height="30">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <button id="fullscreen-button">
+            <i class="fas fa-expand"></i>
+        </button>
+        <button id="home-button" onclick="window.location.href='https://fawzinoo.github.io/Rep/Vocabulario.html'">
+            <i class="fas fa-home"></i>
         </button>
     </div>
     <script>
@@ -79,76 +185,85 @@
         const ctx = canvas.getContext('2d');
         const prevPageBtn = document.getElementById("prev-page");
         const nextPageBtn = document.getElementById("next-page");
+        const fullscreenBtn = document.getElementById("fullscreen-button");
+        const fullscreenIcon = fullscreenBtn.querySelector("i");
         
         if (typeof pdfjsLib === 'undefined') {
             console.error("pdf.js no se cargó correctamente");
         } else {
             pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.worker.min.js";
             
-            function renderPage(num) {
-                if (!pdfDoc) return;
-                pdfDoc.getPage(num).then(page => {
-                    const scale = window.innerWidth < 768 ? 2 : 2.5;
-                    const viewport = page.getViewport({ scale });
-                    
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    canvas.style.width = '100vw';
-                    canvas.style.height = 'auto';
-                    
-                    const renderContext = { canvasContext: ctx, viewport: viewport };
-                    page.render(renderContext);
-                    
-                    prevPageBtn.style.display = num > 1 ? "flex" : "none";
-                    nextPageBtn.style.display = num < pdfDoc.numPages ? "flex" : "none";
-                });
-            }
+function renderPage(num) {
+    if (!pdfDoc) return;
+    
+    const isTwoPages = window.innerWidth > 1000;
+    const scale = isTwoPages ? 1.5 : 2.5;
+    
+    pdfDoc.getPage(num).then(page => {
+        const viewport = page.getViewport({ scale });
+        
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        
+        const renderContext = { canvasContext: ctx, viewport: viewport };
+        page.render(renderContext);
+    });
+
+    // Si la pantalla es ancha, cargar la siguiente página también
+    if (isTwoPages && num < pdfDoc.numPages) {
+        const canvas2 = document.getElementById('pdf-render-2');
+        const ctx2 = canvas2.getContext('2d');
+
+        pdfDoc.getPage(num + 1).then(page => {
+            const viewport = page.getViewport({ scale });
             
-            pdfjsLib.getDocument(url).promise.then(pdf => {
-                pdfDoc = pdf;
-                renderPage(pageNum);
-            }).catch(error => {
-                console.error("Error al cargar el PDF:", error);
-            });
+            canvas2.width = viewport.width;
+            canvas2.height = viewport.height;
+           
             
-            prevPageBtn.addEventListener("click", () => {
-                if (pageNum > 1) {
-                    pageNum--;
-                    renderPage(pageNum);
+            const renderContext = { canvasContext: ctx2, viewport: viewport };
+            page.render(renderContext);
+        });
+    }
+}
+
+// Llamar la función al cargar el documento
+pdfjsLib.getDocument(url).promise.then(pdf => {
+    pdfDoc = pdf;
+    renderPage(pageNum);
+});
+
+prevPageBtn.addEventListener("click", () => {
+    if (pageNum > 1) {
+        pageNum -= (window.innerWidth > 400) ? 2 : 1;
+        if (pageNum < 1) pageNum = 1;
+        renderPage(pageNum);
+    }
+});
+
+nextPageBtn.addEventListener("click", () => {
+    if (pageNum < pdfDoc.numPages) {
+        pageNum += (window.innerWidth > 400) ? 2 : 1;
+        renderPage(pageNum);
+    }
+});
+
+            
+            fullscreenBtn.addEventListener("click", () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().then(() => {
+                        fullscreenIcon.classList.remove("fa-expand");
+                        fullscreenIcon.classList.add("fa-compress");
+                    }).catch(err => {
+                        console.error(`Error al activar pantalla completa: ${err.message}`);
+                    });
+                } else {
+                    document.exitFullscreen().then(() => {
+                        fullscreenIcon.classList.remove("fa-compress");
+                        fullscreenIcon.classList.add("fa-expand");
+                    });
                 }
-            });
-            
-            nextPageBtn.addEventListener("click", () => {
-                if (pageNum < pdfDoc.numPages) {
-                    pageNum++;
-                    renderPage(pageNum);
-                }
-            });
-            
-            let touchStartX = 0;
-            let touchEndX = 0;
-            
-            document.addEventListener("touchstart", (event) => {
-                touchStartX = event.changedTouches[0].screenX;
-            });
-            
-            document.addEventListener("touchend", (event) => {
-                touchEndX = event.changedTouches[0].screenX;
-                handleGesture();
-            });
-            
-            function handleGesture() {
-                if (touchEndX < touchStartX - 50 && pageNum < pdfDoc.numPages) {
-                    pageNum++;
-                    renderPage(pageNum);
-                } else if (touchEndX > touchStartX + 50 && pageNum > 1) {
-                    pageNum--;
-                    renderPage(pageNum);
-                }
-            }
-            
-            window.addEventListener('resize', () => {
-                if (pdfDoc) renderPage(pageNum);
             });
         }
     </script>

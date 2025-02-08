@@ -48,7 +48,7 @@
     border: none;
     color: white !important;
     font-size: 30px;
-    padding: 30px;
+    padding: 10px;
     cursor: pointer;
     border-radius: 50%;
     display: flex;
@@ -174,6 +174,18 @@
     }
 }
 
+@keyframes shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    50% { transform: translateX(5px); }
+    75% { transform: translateX(-5px); }
+    100% { transform: translateX(0); }
+}
+
+.shake {
+    animation: shake 0.3s ease-in-out;
+}
+
 
 
     </style>
@@ -210,41 +222,78 @@
             console.error("pdf.js no se cargó correctamente");
         } else {
             pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.worker.min.js";
+
+
+            let touchStartX = 0;
+let touchEndX = 0;
+
+document.addEventListener("touchstart", (e) => {
+    touchStartX = e.changedTouches[0].clientX;
+});
+
+document.addEventListener("touchend", (e) => {
+    touchEndX = e.changedTouches[0].clientX;
+    handleSwipe();
+});
+
+function handleSwipe() {
+    const swipeThreshold = 50; // Distancia mínima para detectar un swipe
+
+    if (touchStartX - touchEndX > swipeThreshold) {
+        // Swipe a la izquierda → SIGUIENTE PÁGINA
+        nextPage();
+    } else if (touchEndX - touchStartX > swipeThreshold) {
+        // Swipe a la derecha → PÁGINA ANTERIOR
+        prevPage();
+    }
+}
+
+
+
             
-function renderPage(num) {
+            function renderPage(num) {
     if (!pdfDoc) return;
-    
+
     const isTwoPages = window.innerWidth > 1000;
     const scale = isTwoPages ? 1.5 : 2.5;
-    
+
+    // Renderizar la primera página (principal)
     pdfDoc.getPage(num).then(page => {
         const viewport = page.getViewport({ scale });
-        
+
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        
-        
+
         const renderContext = { canvasContext: ctx, viewport: viewport };
         page.render(renderContext);
     });
 
-    // Si la pantalla es ancha, cargar la siguiente página también
-    if (isTwoPages && num < pdfDoc.numPages) {
-        const canvas2 = document.getElementById('pdf-render-2');
-        const ctx2 = canvas2.getContext('2d');
+    // Obtener referencia al segundo canvas
+    const canvas2 = document.getElementById('pdf-render-2');
+    const ctx2 = canvas2.getContext('2d');
 
+    // Si la pantalla es ancha y aún hay una página siguiente, renderizar la segunda
+    if (isTwoPages && num + 1 <= pdfDoc.numPages) {
         pdfDoc.getPage(num + 1).then(page => {
             const viewport = page.getViewport({ scale });
-            
+
             canvas2.width = viewport.width;
             canvas2.height = viewport.height;
-           
-            
+
             const renderContext = { canvasContext: ctx2, viewport: viewport };
             page.render(renderContext);
         });
+    } else {
+        // Si no hay más páginas, pintar el segundo canvas de gris
+        canvas2.width = canvas.width; // Mantiene el mismo tamaño que la otra página
+        canvas2.height = canvas.height;
+        ctx2.fillStyle = "#ccc"; // Color gris
+        ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
     }
 }
+
+
+
 
 // Llamar la función al cargar el documento
 pdfjsLib.getDocument(url).promise.then(pdf => {
@@ -254,18 +303,30 @@ pdfjsLib.getDocument(url).promise.then(pdf => {
 
 prevPageBtn.addEventListener("click", () => {
     if (pageNum > 1) {
-        pageNum -= (window.innerWidth > 400) ? 2 : 1;
+        pageNum -= (window.innerWidth > 1000) ? 2 : 1;
         if (pageNum < 1) pageNum = 1;
         renderPage(pageNum);
     }
 });
 
 nextPageBtn.addEventListener("click", () => {
-    if (pageNum < pdfDoc.numPages) {
-        pageNum += (window.innerWidth > 400) ? 2 : 1;
+    const isTwoPages = window.innerWidth > 1000;
+    const nextPageNum = pageNum + (isTwoPages ? 2 : 1);
+
+    if (nextPageNum <= pdfDoc.numPages) {
+        pageNum = nextPageNum;
         renderPage(pageNum);
+    } else {
+        // Agregar la animación de "shake" si se intenta avanzar más allá del final
+        nextPageBtn.classList.add("shake");
+
+        // Remover la clase después de la animación para que pueda repetirse si el usuario sigue haciendo clic
+        setTimeout(() => {
+            nextPageBtn.classList.remove("shake");
+        }, 300);
     }
 });
+
 
             
             fullscreenBtn.addEventListener("click", () => {

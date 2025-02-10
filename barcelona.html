@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <title>Un día en Barcelona</title>
+    <title>Visor PDF</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -344,7 +342,7 @@
         .slider-toggle {
             position: fixed;
             top: 20px;
-            left: 0px;
+            left: 10px;
             background: #8234db;
             border: none;
             height: 40px;
@@ -354,6 +352,92 @@
             color: white;
             font-size: 14px;
         }
+ #tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* 🔥 Alinea el tutorial arriba */
+    flex-direction: column;
+    color: white;
+    font-size: 20px;
+    z-index: 2000;
+    padding-top: 80px; /* 🔥 Ajusta para que no tape el menú */
+}
+
+.tutorial-content {
+    position: absolute;
+    top: -50px; /* 🔥 Ajusta esta altura para que el dedo esté debajo del menú */
+    left: -50px;
+    background: rgba(64, 62, 62, 0.9);
+    height: 300px;
+    width: 300px;
+    border-radius: 200px;
+    text-align: center;
+}
+
+/* Animación del dedo 👆 */
+.hand-animation {
+    font-size: 30px;
+    animation: bounce 1s infinite alternate ease-in-out;
+    position: absolute;
+    top: 140px; /* 🔥 Ajusta para que esté justo debajo del menú */
+    left: 55px;
+    transform: translateX(-50%);
+}
+
+/* Resaltar el botón del menú */
+#slider-toggle {
+    position: fixed;
+    top: 20px;
+    left: 0px;
+    z-index: 2100;
+   
+}
+
+/* Efecto de parpadeo en el menú */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+    }
+    100% {
+        transform: scale(1.2);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 1);
+    }
+}
+
+/* Efecto de rebote para el dedo 👆 */
+@keyframes bounce {
+    0% {
+        transform: translateY(0);
+    }
+    100% {
+        transform: translateY(-15px);
+    }
+}
+
+/* Botón de "Entendido" */
+#tutorial-close {
+    background: #39db34;
+    border: none;
+    padding: 9px 9px;
+    cursor: pointer;
+    border-radius: 20px;
+    color: white;
+    font-size: 12px;
+    margin-top: 0px;
+    margin-left: 80px;
+}
+
+#tutorial-close:hover {
+    background: #227c06;
+}
+
 
     </style>
 </head>
@@ -430,6 +514,18 @@
         <audio id="pageAudio">
             <source id="audioSource" src="" type="audio/mp3">
         </audio>
+        
+        <div id="tutorial-overlay">
+            <div class="tutorial-content">
+                
+                <div class="hand-animation">
+                    👆
+                </div>
+                <p style="margin-top: 140px;font-size: 14px;margin-left: 60px;">¡Toca aquí para abrir el menú!</p>
+                <button id="tutorial-close">¡De acuerdo!
+                </button>
+            </div>
+        </div>
         
     </div>
     <script>
@@ -824,18 +920,32 @@ const slider = document.getElementById("button-slider");
             slider.style.transform = sliderVisible ? "translateX(400px)" : "translateX(0)";
         });
 
-   // Bloquear acceso si el usuario no está autenticado
-    if (sessionStorage.getItem('authenticated') !== 'true') {
-        // Muestra un mensaje de error y redirige a la página principal
-        Swal.fire({
-            icon: 'error',
-            title: 'Acceso restringido',
-            text: 'Por favor, autentícate antes de acceder a esta página.',
-            confirmButtonText: 'Volver al inicio'
-        }).then(() => {
-            window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html';
-        });
-    } 
+        document.addEventListener("DOMContentLoaded", () => {
+    const tutorialOverlay = document.getElementById("tutorial-overlay");
+    const tutorialClose = document.getElementById("tutorial-close");
+
+    // Verificar si el usuario ya ha visto el tutorial
+    if (!localStorage.getItem("tutorialVisto")) {
+        tutorialOverlay.style.display = "flex";
+    } else {
+        tutorialOverlay.style.display = "none";
+    }
+
+    // Si el usuario pulsa "Entendido", oculta el tutorial y guarda el estado
+    tutorialClose.addEventListener("click", () => {
+        tutorialOverlay.style.display = "none";
+        localStorage.setItem("tutorialVisto", "true");
+    });
+
+    // También ocultarlo si el usuario hace clic fuera del contenido
+    tutorialOverlay.addEventListener("click", (event) => {
+        if (event.target === tutorialOverlay) {
+            tutorialOverlay.style.display = "none";
+            localStorage.setItem("tutorialVisto", "true");
+        }
+    });
+});
+
 
 // Pantalla completa
 fullscreenBtn.addEventListener("click", () => {

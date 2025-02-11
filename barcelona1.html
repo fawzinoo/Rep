@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor PDF</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <style>
+      html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: calc(100vh - 120px); /* Resta 10px arriba y 10px abajo */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: #f0f0f0;
+    margin-top: 10px;
+}
+
+        #pdf-container {
+    width: 100vw;
+    height: calc(100vh - 120px); /* Resta 10px arriba y 10px abajo */
+    margin: 10px 0; /* Márgenes solo arriba y abajo */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    background: white; /* Asegura contraste si es necesario */
+    margin-top: 10px;
+}
+
+        canvas {
+            width: 100vw;
+             height: calc(100vh - 120px); /* Resta 10px arriba y 10px abajo */
+             margin-top: 10px;
+            
+        }
+        .nav-button {
+    position: fixed; /* Cambio de absolute a fixed */
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0, 0, 0, 0.2);
+    border: none;
+    color: rgb(195, 34, 34) !important;
+    font-size: 30px;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 10%;
+    display: flex;
+    justify-content: center;
+    width: 25px;
+    align-items: center;
+    transition: background 0.3s, opacity 0.3s;
+    opacity: 1.6;
+    z-index: 1000; /* Asegura que estén sobre el canvas */
+}
+
+        .nav-button:hover {
+            background: rgba(0, 0, 0, 0.4);
+            opacity: 2;
+        }
+        #prev-page {
+            left: 5px;
+            
+        }
+        #next-page {
+            right: 5px;
+            
+        }
+
+ #fullscreen-button, #home-button, #play-pause-button {
+    position: absolute;
+    top: 0;   
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+}
+
+        #fullscreen-button {
+            right: 60px;
+            background: #3498db;
+        }
+        #fullscreen-button:hover {
+            background: #2980b9;
+        }
+        #home-button {
+            right: 15px;
+            background: #e74c3c;
+        }
+        #home-button:hover {
+            background: #c0392b;
+        }
+
+ #play-pause-button {
+    right: 110px;
+    background: #2ecc71;
+    top: 0;   
+}
+#play-pause-button:hover {
+    background: #27ae60;
+}
+
+
+@media (min-width: 0px) and (max-width: 500px) {
+    html, body {
+        height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    #pdf-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100vh; /* 🔥 Ocupar toda la altura */
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
+    }
+
+    canvas {
+        width: 100vw !important; /* 🔥 Ocupa todo el ancho del móvil */
+        height: 100vh !important; /* 🔥 Ocupa todo el alto sin perder proporción */
+        max-height: 100vh;
+        max-width: 100vw;
+        display: block;
+        object-fit: cover; /* 🔥 Ajusta bien el PDF al espacio */
+    }
+
+    /* 🔥 Ocultamos la segunda página para que solo se vea una */
+    #pdf-render-2 {
+        display: none !important;
+    }
+}
+
+
+@media (min-width: 501px) and (max-width: 700px) {
+    html, body {
+        height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    #pdf-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
+    }
+
+    canvas {
+        width: 95vw !important; /* 🔥 Aumentamos el ancho para ocupar más espacio */
+        height: auto !important; /* 🔥 Mantiene la proporción automática */
+        max-height: 100vh;
+        display: block;
+        object-fit: contain;
+    }
+
+    /* 🔥 Ocultamos la segunda página para mostrar solo una */
+    #pdf-render-2 {
+        display: none !important;
+    }
+}
+
+
+@media (min-width: 701px) and (max-width: 1000px) {
+    html, body {
+        height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    #pdf-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
+    }
+
+    canvas {
+        width: 70vw !important; /* 🔥 Ocupar TODO el ancho disponible */
+        height: 100vh !important; /* 🔥 Ocupar TODO el alto disponible */
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        display: block;
+        object-fit: fill; /* 🔥 Esto hará que el PDF rellene completamente el espacio */
+    }
+
+    /* 🔥 Ocultamos la segunda página */
+    #pdf-render-2 {
+        display: none !important;
+    }
+}
+
+
+
+
+@media (min-width: 1001px) {
+    html, body {
+        height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    #pdf-container {
+        display: flex;
+        flex-direction: row; /* Dos páginas lado a lado */
+        justify-content: space-between; /* Asegura que no haya espacio entre páginas */
+        align-items: center;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
+    }
+
+    canvas {
+        width: 50vw; /* 🔥 Ahora cada página ocupa el 50% exacto del ancho */
+        height: 100vh; /* 🔥 Ocupa el 100% del alto */
+        max-height: 100vh;
+        margin: 0;
+        display: block;
+    }
+}
+
+
+
+
+
+
+@keyframes shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    50% { transform: translateX(5px); }
+    75% { transform: translateX(-5px); }
+    100% { transform: translateX(0); }
+}
+
+.shake {
+    animation: shake 0.3s ease-in-out;
+}
+
+@keyframes flipPage {
+    0% {
+        transform: rotateY(0deg);
+        opacity: 1;
+    }
+    50% {
+        transform: rotateY(-90deg);
+        opacity: 0.5;
+    }
+    100% {
+        transform: rotateY(0deg);
+        opacity: 1;
+    }
+}
+
+.page-flip {
+    animation: flipPage 0.6s ease-in-out;
+    transform-origin: center;
+    perspective: 1000px;
+}
+
+#auto-read-button {
+    position: absolute;
+    top: 0;   
+    right: 160px; /* Ubicado a la izquierda del botón play-pause */
+    background: #f1c40f;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+}
+#auto-read-button:hover {
+    background: #f39c12;
+}
+
+#volume-button {
+    position: absolute;
+    top: 0;   
+    right: 210px; /* Ajuste para que esté alineado con otros botones */
+    background: #9b59b6;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+}
+
+#volume-button:hover {
+    background: #8e44ad;
+}
+
+#volume-slider {
+    position: absolute;
+    top: 45px;
+    left: 120px;
+    width: 100px;
+    display: none;
+    transition: opacity 0.3s;
+}
+#page-selector {
+    position: absolute;
+    top: 0px;
+    right: 260px; /* Ajustado para estar a la izquierda del icono de volumen */
+    background: transparent;
+    padding: 3px 5px;
+    height: 40px;
+    display: flex;
+    align-items: center;    
+}
+
+#page-input {
+    width: 50px;
+    height: 30px;
+    border: none;
+    padding: 3px;
+    text-align: center;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+#go-to-page {
+    background: #df1aa1;
+
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    color: white;
+    font-size: 18px;
+    margin-left: 5px;
+    width: 40px;
+    height: 40px;
+}
+
+#go-to-page:hover {
+    background:  #b62a8a;
+}
+
+        /* Menú lateral */
+        #button-slider {
+            position: fixed;
+            top: 20px;
+            left: -400px;
+            width: 400px;
+            height: 40px;
+            background: rgba(191, 186, 186, 0.8);
+            padding: 20px;
+            display: flex;
+            flex-direction: row;
+            gap: 15px;
+            transition: transform 0.3s ease-in-out;
+            align-items: center;
+            text-align: center;
+            margin-left: 10px;
+            
+        }
+        .button-container {
+            display: flex;
+            flex-direction: row;
+            gap: 15px;
+            margin-left: 20px;   
+          
+          
+        }
+        .slider-toggle {
+            position: fixed;
+            top: 20px;
+            left: 10px;
+            background: #8234db;
+            border: none;
+            height: 40px;
+            width: 30px;
+            cursor: pointer;
+            border-radius: 5px;
+            color: white;
+            font-size: 14px;
+        }
+ #tutorial-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* 🔥 Alinea el tutorial arriba */
+    flex-direction: column;
+    color: white;
+    font-size: 20px;
+    z-index: 2000;
+    padding-top: 80px; /* 🔥 Ajusta para que no tape el menú */
+}
+
+.tutorial-content {
+    position: absolute;
+    top: -50px; /* 🔥 Ajusta esta altura para que el dedo esté debajo del menú */
+    left: -50px;
+    background: rgba(64, 62, 62, 0.9);
+    height: 300px;
+    width: 300px;
+    border-radius: 200px;
+    text-align: center;
+}
+
+/* Animación del dedo 👆 */
+.hand-animation {
+    font-size: 30px;
+    animation: bounce 1s infinite alternate ease-in-out;
+    position: absolute;
+    top: 140px; /* 🔥 Ajusta para que esté justo debajo del menú */
+    left: 55px;
+    transform: translateX(-50%);
+}
+
+/* Resaltar el botón del menú */
+#slider-toggle {
+    position: fixed;
+    top: 20px;
+    left: 0px;
+    z-index: 2100;
+   
+}
+
+/* Efecto de parpadeo en el menú */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+    }
+    100% {
+        transform: scale(1.2);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 1);
+    }
+}
+
+/* Efecto de rebote para el dedo 👆 */
+@keyframes bounce {
+    0% {
+        transform: translateY(0);
+    }
+    100% {
+        transform: translateY(-15px);
+    }
+}
+
+/* Botón de "Entendido" */
+#tutorial-close {
+    background: #39db34;
+    border: none;
+    padding: 9px 9px;
+    cursor: pointer;
+    border-radius: 20px;
+    color: white;
+    font-size: 12px;
+    margin-top: 0px;
+    margin-left: 80px;
+}
+
+#tutorial-close:hover {
+    background: #227c06;
+}
+
+
+    </style>
+</head>
+<body>
+    <div id="pdf-container">
+        <button id="prev-page" class="nav-button">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <canvas id="pdf-render"></canvas>
+        <canvas id="pdf-render-2"></canvas> <!-- Segundo canvas para la segunda página -->
+
+        <button id="next-page" class="nav-button">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+
+             
+        <div id="button-slider">
+            <div class="button-container">
+                <button id="fullscreen-button"><i class="fas fa-expand"></i></button>
+                <button id="play-pause-button" class="slider-button"><i class="fas fa-play"></i></button>
+                <button id="auto-read-button" class="slider-button"><i class="fas fa-book-reader"></i></button>
+                <button id="volume-button" class="slider-button"><i class="fas fa-volume-up"></i></button>
+                 <input id="volume-slider" type="range" min="0" max="1" step="0.1" value="1">
+                <button id="home-button" onclick="window.location.href='https://fawzinoo.github.io/Rep/Vocabulario.html'"><i class="fas fa-home"></i></button>                
+                <div id="page-selector">
+                    <input id="page-input" type="number" min="1" placeholder="--" />
+                    <button id="go-to-page"><i class="fas fa-search"></i></button>
+                </div>
+            </div>    
+        </div>
+        <button id="slider-toggle" class="slider-toggle">☰</button>
+    
+
+        <audio id="pageAudio1">
+            <source id="audioSource1" src="https://fawzinoo.github.io/audios/page1.mp3" type="audio/mp3">
+        </audio>
+        
+        <audio id="pageAudio2">
+            <source id="audioSource2" src="https://fawzinoo.github.io/audios/page2.mp3" type="audio/mp3">
+        </audio>
+        <audio id="pageAudio3">
+            <source id="audioSource3" src="https://fawzinoo.github.io/audios/page3.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio4">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page4.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio5">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page5.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio6">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page6.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio7">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page7.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio8">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page8.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageAudio9">
+            <source id="audioSource4" src="https://fawzinoo.github.io/audios/page9.mp3" type="audio/mp3">
+        </audio>
+
+        <audio id="pageSound">
+            <source src="https://www.fesliyanstudios.com/play-mp3/387" type="audio/mp3">
+        </audio>     
+
+
+        <audio id="pageAudio">
+            <source id="audioSource" src="" type="audio/mp3">
+        </audio>
+        
+      <!-- 🔥 Solo se genera si el usuario NO lo ha visto antes -->
+<div id="tutorial-overlay" style="display: none;">
+    <div class="tutorial-content">
+        <div class="hand-animation">👆</div>
+        <p style="margin-top: 140px;font-size: 14px;margin-left: 60px;">
+            ¡Toca aquí para abrir el menú!
+        </p>
+        <button id="tutorial-close">¡De acuerdo!</button>
+    </div>
+</div>
+
+        
+    </div>
+    <script>
+const url = 'https://fawzinoo.github.io/Fotos/barcelona.pdf';
+let pdfDoc = null, pageNum = 1;
+let isPlaying = false;
+let isAutoReading = false;
+const canvas = document.getElementById('pdf-render');
+const ctx = canvas.getContext('2d');
+const prevPageBtn = document.getElementById("prev-page");
+const nextPageBtn = document.getElementById("next-page");
+const fullscreenBtn = document.getElementById("fullscreen-button");
+const fullscreenIcon = fullscreenBtn.querySelector("i");
+const playPauseButton = document.getElementById("play-pause-button");
+const playPauseIcon = playPauseButton?.querySelector("i");
+const autoReadButton = document.getElementById("auto-read-button");
+const autoReadIcon = autoReadButton?.querySelector("i");
+
+if (typeof pdfjsLib === 'undefined') {
+    console.error("pdf.js no se cargó correctamente");
+} else {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.worker.min.js";
+}
+
+// Variables para gestos táctiles
+let touchStartX = 0;
+let touchEndX = 0;
+const swipeThreshold = 50;
+const pdfContainer = document.getElementById("pdf-container");
+
+pdfContainer.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+});
+
+pdfContainer.addEventListener("touchend", (e) => {
+    touchEndX = e.changedTouches[0].clientX;
+    handleSwipe();
+});
+
+function handleSwipe() {
+    if (touchStartX - touchEndX > swipeThreshold && pageNum < pdfDoc.numPages) {
+        pageNum++;
+        renderPage(pageNum);
+    } else if (touchEndX - touchStartX > swipeThreshold && pageNum > 1) {
+        pageNum--;
+        renderPage(pageNum);
+    }
+
+    // 🔥 Asegurar que el input de la página se actualiza
+    const pageInput = document.getElementById("page-input");
+    if (pageInput) {
+        pageInput.value = pageNum;
+    }
+}
+
+
+// Sonido al pasar página
+function playPageSound() {
+    const pageSound = document.getElementById("pageSound");
+    if (pageSound) {
+        pageSound.currentTime = 0;
+        pageSound.play();
+    }
+}
+
+
+
+function renderPage(num) {
+    if (!pdfDoc) return;
+
+    const isTwoPages = window.innerWidth > 1000; // Detecta si hay dos páginas en pantalla
+    const scale = isTwoPages ? 2.5 : 4.0;
+
+    playPageSound(); // Reproduce sonido al pasar página
+
+    // Actualizar el número en el input del selector de página
+    const pageInput = document.getElementById("page-input");
+    if (pageInput) {
+        pageInput.value = num; // 🔥 Actualiza el input con la página actual
+    }
+
+    // Renderiza la primera página
+    pdfDoc.getPage(num).then(page => {
+        const viewport = page.getViewport({ scale });
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const renderContext = { canvasContext: ctx, viewport: viewport };
+        page.render(renderContext);
+    });
+
+    // 🔊 **Actualizar los audios según la página actual**
+    const audio1 = document.getElementById("pageAudio1");
+    const audioSource1 = document.getElementById("audioSource1");
+    audioSource1.src = `https://fawzinoo.github.io/audios/page${num}.mp3`;
+    audio1.load();
+
+    if (isTwoPages && num + 1 <= pdfDoc.numPages) {
+        const audio2 = document.getElementById("pageAudio2");
+        const audioSource2 = document.getElementById("audioSource2");
+        audioSource2.src = `https://fawzinoo.github.io/audios/page${num + 1}.mp3`;
+        audio2.load();
+    }
+
+    // Renderiza la segunda página si hay espacio para dos
+    const canvas2 = document.getElementById('pdf-render-2');
+    const ctx2 = canvas2.getContext('2d');
+
+    if (isTwoPages && num + 1 <= pdfDoc.numPages) {
+        pdfDoc.getPage(num + 1).then(page => {
+            const viewport = page.getViewport({ scale });
+
+            canvas2.width = viewport.width;
+            canvas2.height = viewport.height;
+
+            const renderContext = { canvasContext: ctx2, viewport: viewport };
+            page.render(renderContext);
+        });
+    } else {
+        canvas2.width = canvas.width;
+        canvas2.height = canvas.height;
+        ctx2.fillStyle = "#ccc";
+        ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
+    }
+}
+
+ 
+// Cargar PDF
+pdfjsLib.getDocument(url).promise.then(pdf => {
+    pdfDoc = pdf;
+    renderPage(pageNum);
+});
+
+
+// Botones de navegación
+prevPageBtn.addEventListener("click", () => {
+    if (pageNum > 1) {
+        pageNum -= (window.innerWidth > 1000) ? 2 : 1;
+        if (pageNum < 1) pageNum = 1;
+        renderPage(pageNum);
+
+        if (isAutoReading) {
+            readPage(pageNum); // 🔥 Si está en lectura continua, reproduce la página actual
+        }
+    }
+});
+
+nextPageBtn.addEventListener("click", () => {
+    const isTwoPages = window.innerWidth > 1000;
+    const nextPageNum = pageNum + (isTwoPages ? 2 : 1);
+
+    if (nextPageNum <= pdfDoc.numPages) {
+        pageNum = nextPageNum;
+        renderPage(pageNum);
+
+        if (isAutoReading) {
+            readPage(pageNum); // 🔥 Si está en lectura continua, reproduce la página actual
+        }
+    } else {
+        nextPageBtn.classList.add("shake");
+        setTimeout(() => nextPageBtn.classList.remove("shake"), 300);
+    }
+});
+
+
+// Botón de reproducción manual
+playPauseButton.addEventListener("click", () => {
+    stopAutoReading();
+    togglePlayPause();
+});
+function togglePlayPause() {
+    const audio1 = document.getElementById("pageAudio1");
+    const audio2 = document.getElementById("pageAudio2");
+
+    if (!audio1) return;
+
+    if (isPlaying) {
+        stopAllAudio(); // 🔴 Si está reproduciendo, se detiene completamente
+    } else {
+        isPlaying = true;
+
+        if (playPauseIcon) {
+            playPauseIcon.classList.remove("fa-play");
+            playPauseIcon.classList.add("fa-pause");
+        }
+
+        audio1.play().catch(e => console.error("Error al reproducir audio 1:", e));
+
+        // ✅ Solo configuramos `onended` si NO está en pausa
+        audio1.onended = () => {
+            if (!isPlaying) return; // 🔴 Si el usuario pausó, no continuar
+
+            if (window.hasSecondPage && audio2) {
+                audio2.play().catch(e => console.error("Error al reproducir audio 2:", e));
+
+                audio2.onended = () => {
+                    if (!isPlaying) return; // 🔴 No continuar si el usuario pausó
+                    stopAllAudio();
+                };
+            } else {
+                stopAllAudio();
+            }
+        };
+    }
+}
+
+
+
+
+// Botón de lectura automática
+autoReadButton.addEventListener("click", () => {
+    if (!isAutoReading) {
+        stopManualAudio();
+        isAutoReading = true;
+        if (autoReadIcon) {
+            autoReadIcon.classList.remove("fa-book-reader");
+            autoReadIcon.classList.add("fa-stop");
+        }
+        readPage(pageNum);
+    } else {
+        stopAutoReading();
+    }
+});
+
+function stopAutoReading() {
+    if (!isAutoReading) return; // 🔴 Evitar llamadas innecesarias
+
+    isAutoReading = false;
+
+    if (autoReadIcon) {
+        autoReadIcon.classList.remove("fa-stop");
+        autoReadIcon.classList.add("fa-book-reader");
+    }
+
+    // 🔴 DETENER AUDIOS SI SE ESTÁ REPRODUCIENDO
+    const audio1 = document.getElementById("pageAudio1");
+    const audio2 = document.getElementById("pageAudio2");
+
+    if (audio1) {
+        audio1.pause();
+        audio1.currentTime = 0;
+        audio1.onended = null; // Evita que continúe a la siguiente página
+    }
+    if (audio2) {
+        audio2.pause();
+        audio2.currentTime = 0;
+        audio2.onended = null;
+    }
+
+    // 🔴 EVITAR QUE SE SIGA EJECUTANDO LA FUNCIÓN `goToNextPage`
+    clearTimeout(autoReadTimeout); // Si había un temporizador activo, lo detiene
+}
+
+
+function stopManualAudio() {
+    if (!isPlaying) return; // 🔴 Si ya está en pausa, no hacer nada
+
+    stopAllAudio();
+}
+
+
+
+function stopAllAudio() {
+    const audio1 = document.getElementById("pageAudio1");
+    const audio2 = document.getElementById("pageAudio2");
+
+    if (audio1) {
+        audio1.pause();
+        audio1.currentTime = 0;
+        audio1.onended = null; // 🔴 Evita que el evento `onended` lo reinicie
+    }
+    if (audio2) {
+        audio2.pause();
+        audio2.currentTime = 0;
+        audio2.onended = null; // 🔴 Evita que se siga reproduciendo automáticamente
+    }
+
+    isPlaying = false;
+
+    if (playPauseIcon) {
+        playPauseIcon.classList.remove("fa-pause");
+        playPauseIcon.classList.add("fa-play");
+    }
+}
+
+
+
+function readPage(num) {
+    if (!isAutoReading || num > pdfDoc.numPages) return;
+
+    pageNum = num;
+    renderPage(pageNum);
+
+    const audio1 = document.getElementById("pageAudio1");
+    if (audio1) {
+        audio1.play().catch(e => console.error("Error al reproducir audio 1:", e));
+    }
+
+    audio1.onended = () => {
+        if (isAutoReading) {
+            const nextPage = num + (window.hasSecondPage ? 2 : 1);
+            if (nextPage <= pdfDoc.numPages) {
+                readPage(nextPage);
+            } else {
+                stopAutoReading();
+            }
+        }
+    };
+}
+
+
+
+const volumeButton = document.getElementById("volume-button");
+const volumeSlider = document.getElementById("volume-slider");
+let volumeTimeout;
+
+// Función para mostrar el control de volumen
+function showVolumeSlider() {
+    volumeSlider.style.display = "block";
+    volumeSlider.style.opacity = "1";
+    resetVolumeTimeout();
+}
+
+// Función para ocultar el control de volumen
+function hideVolumeSlider() {
+    volumeSlider.style.opacity = "0";
+    setTimeout(() => {
+        if (volumeSlider.style.opacity === "0") {
+            volumeSlider.style.display = "none";
+        }
+    }, 300); // Esconde el slider después de la animación
+}
+
+// Función para reiniciar el temporizador de ocultación
+function resetVolumeTimeout() {
+    clearTimeout(volumeTimeout);
+    volumeTimeout = setTimeout(hideVolumeSlider, 2000); // Ocultar después de 2 segundos
+}
+
+// Mostrar el control al presionar el botón
+volumeButton.addEventListener("click", showVolumeSlider);
+
+// Ajustar volumen y actualizar el icono
+volumeSlider.addEventListener("input", () => {
+    const volume = volumeSlider.value;
+    document.querySelectorAll("audio").forEach(audio => {
+        audio.volume = volume;
+    });
+
+    // Cambiar el icono según el nivel de volumen
+    if (volume == 0) {
+        volumeButton.innerHTML = '<i class="fas fa-volume-mute"></i>';
+    } else if (volume <= 0.5) {
+        volumeButton.innerHTML = '<i class="fas fa-volume-down"></i>';
+    } else {
+        volumeButton.innerHTML = '<i class="fas fa-volume-up"></i>';
+    }
+
+    resetVolumeTimeout(); // Reiniciar el temporizador al mover el slider
+});
+
+// Ocultar el slider cuando el usuario deja de moverlo
+volumeSlider.addEventListener("mouseleave", resetVolumeTimeout);
+
+
+const pageInput = document.getElementById("page-input");
+const goToPageButton = document.getElementById("go-to-page");
+
+goToPageButton.addEventListener("click", () => {
+    const requestedPage = parseInt(pageInput.value, 10);
+
+    if (isNaN(requestedPage) || requestedPage < 1 || requestedPage > pdfDoc.numPages) {
+        alert("Número de página inválido");
+        return;
+    }
+
+    pageNum = requestedPage;
+    renderPage(pageNum);
+
+    if (isAutoReading) {
+        readPage(pageNum); // 🔥 Si está en modo lectura continua, inicia la lectura desde la nueva página
+    }
+});
+
+const slider = document.getElementById("button-slider");
+        const toggleButton = document.getElementById("slider-toggle");
+        let sliderVisible = false;
+
+        toggleButton.addEventListener("click", () => {
+            sliderVisible = !sliderVisible;
+            slider.style.transform = sliderVisible ? "translateX(400px)" : "translateX(0)";
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+    const tutorialOverlay = document.getElementById("tutorial-overlay");
+    const tutorialClose = document.getElementById("tutorial-close");
+
+    // 🔍 Verificar si los elementos existen antes de continuar
+    if (!tutorialOverlay || !tutorialClose) {
+        console.error("⚠️ Error: No se encontraron los elementos del tutorial.");
+        return;
+    }
+
+    // 🚀 Comprobar si el usuario ya vio el tutorial antes de mostrarlo
+    if (localStorage.getItem("tutorialVisto") === "true") {
+        tutorialOverlay.remove(); // 🔥 Lo eliminamos completamente para que nunca se renderice
+        return;
+    }
+
+    // ✅ Si el usuario nunca lo ha visto, lo mostramos
+    setTimeout(() => {
+        tutorialOverlay.style.display = "flex";
+    }, 500); // 🔥 Pequeño delay opcional para evitar parpadeo
+
+    // 🔥 Función para cerrar y eliminar el tutorial correctamente
+    function closeTutorial() {
+        localStorage.setItem("tutorialVisto", "true"); // ✅ Guardamos el estado
+        tutorialOverlay.style.display = "none"; // ✅ Ocultamos el tutorial
+        setTimeout(() => {
+            tutorialOverlay.remove(); // ✅ Eliminamos el tutorial del DOM después de ocultarlo
+        }, 100);
+    }
+
+    // 🎯 Evento para cerrar con el botón "De acuerdo"
+    tutorialClose.addEventListener("click", closeTutorial);
+
+    // 🎯 También ocultarlo si el usuario hace clic fuera del mensaje
+    tutorialOverlay.addEventListener("click", (event) => {
+        if (event.target === tutorialOverlay) {
+            closeTutorial();
+        }
+    });
+});
+   
+
+
+
+
+
+
+// Pantalla completa
+fullscreenBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+            if (fullscreenIcon) {
+                fullscreenIcon.classList.remove("fa-expand");
+                fullscreenIcon.classList.add("fa-compress");
+            }
+        });
+    } else {
+        document.exitFullscreen().then(() => {
+            if (fullscreenIcon) {
+                fullscreenIcon.classList.remove("fa-compress");
+                fullscreenIcon.classList.add("fa-expand");
+            }
+        });
+    }
+});
+
+    </script>
+</body>
+</html>

@@ -919,14 +919,6 @@ function readPage(num) {
 
     pageNum = num;
     renderPage(pageNum);
-    
-    setTimeout(() => {
-    canvas.width += 1;
-    setTimeout(() => {
-        canvas.width -= 1;
-    }, 50);
-}, 100);
-
 
     const audio1 = document.getElementById("pageAudio1");
     if (audio1) {
@@ -1003,7 +995,12 @@ volumeSlider.addEventListener("mouseleave", resetVolumeTimeout);
 const pageInput = document.getElementById("page-input");
 const goToPageButton = document.getElementById("go-to-page");
 
-goToPageButton.addEventListener("click", async () => {
+// Seleccionamos los elementos necesarios
+const pageInput = document.getElementById("page-input");
+const goToPageButton = document.getElementById("go-to-page");
+
+// Función para cambiar de página de forma fiable en móviles
+function goToPage() {
     const requestedPage = parseInt(pageInput.value, 10);
 
     if (isNaN(requestedPage) || requestedPage < 1 || requestedPage > pdfDoc.numPages) {
@@ -1013,21 +1010,41 @@ goToPageButton.addEventListener("click", async () => {
 
     pageNum = requestedPage;
 
-    // 🔥 Cerrar el teclado en móviles
+    // 🔥 Ocultar teclado en móviles
     pageInput.blur();
 
-    // 🔥 Esperar un momento antes de actualizar la página
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    renderPage(pageNum);
-
-    // 🔥 Forzar actualización del canvas en móviles
+    // 🔥 Asegurar que el input de la página se actualiza visualmente
     setTimeout(() => {
-        canvas.style.display = "none";
-        setTimeout(() => {
-            canvas.style.display = "block";
-        }, 50);
+        pageInput.value = pageNum;
     }, 100);
+
+    // 🔥 Esperar antes de renderizar para evitar que el teclado interfiera
+    setTimeout(() => {
+        renderPage(pageNum);
+
+        // 🔥 Forzar actualización del canvas en móviles
+        setTimeout(() => {
+            canvas.style.display = "none";
+            setTimeout(() => {
+                canvas.style.display = "block";
+            }, 50);
+        }, 100);
+    }, 200);
+}
+
+// Evento cuando se presiona el botón
+goToPageButton.addEventListener("click", goToPage);
+
+// 📱 **Compatibilidad con teclado en móviles**
+pageInput.addEventListener("keyup", (event) => {
+    if (event.key === "Enter") {
+        goToPage();
+    }
+});
+
+// 📱 **Forzar ocultar teclado cuando pierde el foco**
+pageInput.addEventListener("blur", () => {
+    window.scrollTo(0, 0);
 });
 
 

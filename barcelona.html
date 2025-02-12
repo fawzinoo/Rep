@@ -745,6 +745,9 @@ function playPageSound() {
 function renderPage(num) {
     if (!pdfDoc) return;
 
+    // 🔥 Guardar la página actual en LocalStorage
+    localStorage.setItem("lastPage", num);
+
     const isMobile = window.innerWidth <= 500; // 📱 Detecta si es un móvil
     const isTablet = window.innerWidth > 500 && window.innerWidth <= 1000; // 📲 Detecta si es una tablet
     const isTwoPages = window.innerWidth > 1000; // 🖥️ Detecta si hay dos páginas en pantalla
@@ -776,6 +779,12 @@ function renderPage(num) {
     const audioSource1 = document.getElementById("audioSource1");
     audioSource1.src = `https://fawzinoo.github.io/audios/page${num}.mp3`;
     audio1.load();
+
+    // 🔥 Restaurar el tiempo del audio si hay un valor guardado
+    const lastAudioTime = localStorage.getItem("lastAudioTime");
+    if (lastAudioTime !== null) {
+        audio1.currentTime = parseFloat(lastAudioTime);
+    }
 
     if (isTwoPages && num + 1 <= pdfDoc.numPages) {
         const audio2 = document.getElementById("pageAudio2");
@@ -809,6 +818,7 @@ function renderPage(num) {
         ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
     }
 }
+
 
  
 // Cargar PDF
@@ -895,12 +905,15 @@ autoReadButton.addEventListener("click", () => {
 function startAutoReading() {
     isAutoReading = true;
     isPaused = false;
+    localStorage.setItem("isAutoReading", "true"); // 🔥 Guardar estado activo
+
     autoReadIcon.classList.remove("fa-book-reader", "fa-play");
     autoReadIcon.classList.add("fa-pause");
     autoReadButton.classList.remove("paused");
 
-    playAudioForPage(pageNum); // 🔥 Inicia la lectura desde la página actual
+    playAudioForPage(pageNum);
 }
+
 
 function resetAutoReadButton() {
     isAutoReading = false;
@@ -914,6 +927,9 @@ function resetAutoReadButton() {
 function toggleAutoReading() {
     if (isPaused) {
         isPaused = false;
+        isAutoReading = true;
+        localStorage.setItem("isAutoReading", "true"); // 🔥 Guardar estado de lectura automática
+
         autoReadIcon.classList.remove("fa-play");
         autoReadIcon.classList.add("fa-pause");
         autoReadButton.classList.remove("paused");
@@ -923,6 +939,9 @@ function toggleAutoReading() {
         }
     } else {
         isPaused = true;
+        isAutoReading = false;
+        localStorage.setItem("isAutoReading", "false"); // 🔥 Guardar estado de pausa
+
         autoReadIcon.classList.remove("fa-pause");
         autoReadIcon.classList.add("fa-play");
         autoReadButton.classList.add("paused");
@@ -933,14 +952,19 @@ function toggleAutoReading() {
     }
 }
 
+
 function stopAutoReading() {
     isAutoReading = false;
     isPaused = false;
+    localStorage.setItem("isAutoReading", "false"); // 🔥 Guardar estado desactivado
+
     autoReadIcon.classList.remove("fa-pause", "fa-play");
     autoReadIcon.classList.add("fa-book-reader");
     autoReadButton.classList.remove("paused");
+
     stopAllAudio();
 }
+
 
 function playAudioForPage(num) {
     if (!isAutoReading) return; // 🔥 Solo reproduce si la lectura continua está activa
@@ -970,11 +994,13 @@ function playAudioForPage(num) {
 
 function stopAllAudio() {
     if (currentAudio) {
+        localStorage.setItem("lastAudioTime", currentAudio.currentTime);
         currentAudio.pause();
         currentAudio.currentTime = 0;
         currentAudio.onended = null;
     }
 }
+
 
 
 
@@ -1135,46 +1161,75 @@ const slider = document.getElementById("button-slider");
             slider.style.transform = sliderVisible ? "translateX(400px)" : "translateX(0)";
         });
 
-        document.addEventListener("DOMContentLoaded", () => {
+
+
+document.addEventListener("DOMContentLoaded", () => {
     const tutorialOverlay = document.getElementById("tutorial-overlay");
     const tutorialClose = document.getElementById("tutorial-close");
 
-    // 🔍 Verificar si los elementos existen antes de continuar
     if (!tutorialOverlay || !tutorialClose) {
         console.error("⚠️ Error: No se encontraron los elementos del tutorial.");
         return;
     }
 
-    // 🚀 Comprobar si el usuario ya vio el tutorial antes de mostrarlo
     if (localStorage.getItem("tutorialVisto") === "true") {
-        tutorialOverlay.remove(); // 🔥 Lo eliminamos completamente para que nunca se renderice
-        return;
-    }
-
-    // ✅ Si el usuario nunca lo ha visto, lo mostramos
-    setTimeout(() => {
-        tutorialOverlay.style.display = "flex";
-    }, 500); // 🔥 Pequeño delay opcional para evitar parpadeo
-
-    // 🔥 Función para cerrar y eliminar el tutorial correctamente
-    function closeTutorial() {
-        localStorage.setItem("tutorialVisto", "true"); // ✅ Guardamos el estado
-        tutorialOverlay.style.display = "none"; // ✅ Ocultamos el tutorial
+        tutorialOverlay.remove();
+    } else {
         setTimeout(() => {
-            tutorialOverlay.remove(); // ✅ Eliminamos el tutorial del DOM después de ocultarlo
-        }, 100);
+            tutorialOverlay.style.display = "flex";
+        }, 500);
+
+        tutorialClose.addEventListener("click", () => {
+            localStorage.setItem("tutorialVisto", "true");
+            tutorialOverlay.style.display = "none";
+            setTimeout(() => {
+                tutorialOverlay.remove();
+            }, 100);
+        });
+
+        tutorialOverlay.addEventListener("click", (event) => {
+            if (event.target === tutorialOverlay) {
+                localStorage.setItem("tutorialVisto", "true");
+                tutorialOverlay.style.display = "none";
+                setTimeout(() => {
+                    tutorialOverlay.remove();
+                }, 100);
+            }
+        });
     }
 
-    // 🎯 Evento para cerrar con el botón "De acuerdo"
-    tutorialClose.addEventListener("click", closeTutorial);
+    // 🔥 **Restaurar última página**
+    const savedPage = localStorage.getItem("lastPage");
+    pageNum = savedPage ? parseInt(savedPage, 10) : 1;
+    renderPage(pageNum);
 
-    // 🎯 También ocultarlo si el usuario hace clic fuera del mensaje
-    tutorialOverlay.addEventListener("click", (event) => {
-        if (event.target === tutorialOverlay) {
-            closeTutorial();
+    // 🔊 **Restaurar última posición del audio y estado del botón Auto Read**
+    const lastAudioTime = localStorage.getItem("lastAudioTime");
+    const lastAutoReadState = localStorage.getItem("isAutoReading");
+
+    if (lastAudioTime !== null) {
+        const audio = document.getElementById("pageAudio1");
+        if (audio) {
+            audio.currentTime = parseFloat(lastAudioTime);
         }
-    });
+    }
+
+    if (lastAutoReadState === "true") {
+        isAutoReading = true;
+        isPaused = false;
+        autoReadIcon.classList.remove("fa-book-reader", "fa-play");
+        autoReadIcon.classList.add("fa-pause");
+        autoReadButton.classList.remove("paused");
+
+        // 🔥 Asegurar que la lectura automática se reanuda correctamente después de 500ms
+        setTimeout(() => {
+            playAudioForPage(pageNum);
+        }, 500);
+    }
 });
+
+
+
    
 
 

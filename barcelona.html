@@ -905,15 +905,12 @@ autoReadButton.addEventListener("click", () => {
 function startAutoReading() {
     isAutoReading = true;
     isPaused = false;
-    localStorage.setItem("isAutoReading", "true"); // 🔥 Guardar estado activo
-
     autoReadIcon.classList.remove("fa-book-reader", "fa-play");
     autoReadIcon.classList.add("fa-pause");
     autoReadButton.classList.remove("paused");
 
-    playAudioForPage(pageNum);
+    playAudioForPage(pageNum); // 🔥 Inicia la lectura desde la página actual
 }
-
 
 function resetAutoReadButton() {
     isAutoReading = false;
@@ -927,9 +924,6 @@ function resetAutoReadButton() {
 function toggleAutoReading() {
     if (isPaused) {
         isPaused = false;
-        isAutoReading = true;
-        localStorage.setItem("isAutoReading", "true"); // 🔥 Guardar estado de lectura automática
-
         autoReadIcon.classList.remove("fa-play");
         autoReadIcon.classList.add("fa-pause");
         autoReadButton.classList.remove("paused");
@@ -939,9 +933,6 @@ function toggleAutoReading() {
         }
     } else {
         isPaused = true;
-        isAutoReading = false;
-        localStorage.setItem("isAutoReading", "false"); // 🔥 Guardar estado de pausa
-
         autoReadIcon.classList.remove("fa-pause");
         autoReadIcon.classList.add("fa-play");
         autoReadButton.classList.add("paused");
@@ -952,19 +943,14 @@ function toggleAutoReading() {
     }
 }
 
-
 function stopAutoReading() {
     isAutoReading = false;
     isPaused = false;
-    localStorage.setItem("isAutoReading", "false"); // 🔥 Guardar estado desactivado
-
     autoReadIcon.classList.remove("fa-pause", "fa-play");
     autoReadIcon.classList.add("fa-book-reader");
     autoReadButton.classList.remove("paused");
-
     stopAllAudio();
 }
-
 
 function playAudioForPage(num) {
     if (!isAutoReading) return; // 🔥 Solo reproduce si la lectura continua está activa
@@ -1163,7 +1149,7 @@ const slider = document.getElementById("button-slider");
 
 
 
-document.addEventListener("DOMContentLoaded", () => {
+        document.addEventListener("DOMContentLoaded", () => {
     const tutorialOverlay = document.getElementById("tutorial-overlay");
     const tutorialClose = document.getElementById("tutorial-close");
 
@@ -1203,31 +1189,63 @@ document.addEventListener("DOMContentLoaded", () => {
     pageNum = savedPage ? parseInt(savedPage, 10) : 1;
     renderPage(pageNum);
 
-    // 🔊 **Restaurar última posición del audio y estado del botón Auto Read**
+    // 🔊 **Restaurar el último audio reproducido**
+    const lastAudioPage = localStorage.getItem("lastAudioPage");
     const lastAudioTime = localStorage.getItem("lastAudioTime");
     const lastAutoReadState = localStorage.getItem("isAutoReading");
 
-    if (lastAudioTime !== null) {
-        const audio = document.getElementById("pageAudio1");
+    if (lastAudioPage) {
+        const audio = document.getElementById(`pageAudio${lastAudioPage}`);
+
         if (audio) {
-            audio.currentTime = parseFloat(lastAudioTime);
+            audio.load();
+            audio.addEventListener("canplaythrough", () => {
+                if (lastAudioTime !== null) {
+                    audio.currentTime = parseFloat(lastAudioTime);
+                }
+
+                // 🔥 Solo reproducir si Auto Read estaba activado antes de cerrar
+                if (lastAutoReadState === "true") {
+                    isAutoReading = true;
+                    isPaused = false;
+                    autoReadIcon.classList.remove("fa-book-reader", "fa-play");
+                    autoReadIcon.classList.add("fa-pause");
+                    autoReadButton.classList.remove("paused");
+
+                    setTimeout(() => {
+                        audio.play().catch(e => console.error("Error al reproducir audio:", e));
+                    }, 1000);
+                }
+            });
+
+            // 🔥 Si la página cambia antes de cargar el audio, detiene la reproducción
+            audio.addEventListener("pause", () => {
+                localStorage.setItem("lastAudioPage", lastAudioPage);
+                localStorage.setItem("lastAudioTime", audio.currentTime);
+            });
         }
-    }
-
-    if (lastAutoReadState === "true") {
-        isAutoReading = true;
-        isPaused = false;
-        autoReadIcon.classList.remove("fa-book-reader", "fa-play");
-        autoReadIcon.classList.add("fa-pause");
-        autoReadButton.classList.remove("paused");
-
-        // 🔥 Asegurar que la lectura automática se reanuda correctamente después de 500ms
-        setTimeout(() => {
-            playAudioForPage(pageNum);
-        }, 500);
     }
 });
 
+// 🔥 Guardar el último audio en reproducción antes de cerrar la página
+window.addEventListener("beforeunload", () => {
+    let lastAudioPage = null;
+    let lastAudioTime = 0;
+
+    document.querySelectorAll("audio").forEach(audio => {
+        if (!audio.paused && !audio.ended && audio.currentTime > 0) {
+            lastAudioPage = audio.id.replace("pageAudio", "");
+            lastAudioTime = audio.currentTime;
+        }
+    });
+
+    if (lastAudioPage) {
+        localStorage.setItem("lastAudioPage", lastAudioPage);
+        localStorage.setItem("lastAudioTime", lastAudioTime);
+    }
+
+    localStorage.setItem("isAutoReading", isAutoReading ? "true" : "false");
+});
 
 
    

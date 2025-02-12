@@ -74,7 +74,31 @@
             
         }
 
- #fullscreen-button, #home-button, #play-pause-button {
+ #replay-button {
+    position: absolute;
+    top: 0;
+    right: 110px; /* Ocupa el lugar donde estaba el botón de play-pause */
+    background: #2ecc71; /* Verde como el botón anterior */
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+}
+
+#replay-button:hover {
+    background: #27ae60; /* Color más oscuro al pasar el ratón */
+}
+
+
+#fullscreen-button, #home-button, #replay-button {
     position: absolute;
     top: 0;   
     border: none;
@@ -105,15 +129,6 @@
         #home-button:hover {
             background: #c0392b;
         }
-
- #play-pause-button {
-    right: 110px;
-    background: #2ecc71;
-    top: 0;   
-}
-#play-pause-button:hover {
-    background: #27ae60;
-}
 
 
 @media (max-width: 500px) {
@@ -316,13 +331,13 @@
 #auto-read-button {
     position: absolute;
     top: 0;   
-    right: 160px; /* Ubicado a la izquierda del botón play-pause */
-    background: #f1c40f;
+    right: 160px;
+    background: #f1c40f; /* Amarillo - Lectura activa */
     border: none;
     padding: 10px;
     cursor: pointer;
     border-radius: 5px;
-    transition: background 0.3s;
+    transition: background 0.3s, transform 0.2s;
     width: 40px;
     height: 40px;
     display: flex;
@@ -331,9 +346,25 @@
     color: white;
     font-size: 20px;
 }
+
 #auto-read-button:hover {
     background: #f39c12;
 }
+
+/* 🔥 Cuando está en pausa */
+#auto-read-button.paused {
+    background: #e67e22; /* Naranja */
+}
+
+#auto-read-button.paused:hover {
+    background: #d35400;
+}
+
+/* Efecto de clic */
+#auto-read-button:active {
+    transform: scale(0.9);
+}
+
 
 #volume-button {
     position: absolute;
@@ -562,7 +593,7 @@
         <div id="button-slider">
             <div class="button-container">
                 <button id="fullscreen-button"><i class="fas fa-expand"></i></button>
-                <button id="play-pause-button" class="slider-button"><i class="fas fa-play"></i></button>
+                <button id="replay-button" class="slider-button"><i class="fas fa-redo-alt"></i></button>
                 <button id="auto-read-button" class="slider-button"><i class="fas fa-book-reader"></i></button>
                 <button id="volume-button" class="slider-button"><i class="fas fa-volume-up"></i></button>
                  <input id="volume-slider" type="range" min="0" max="1" step="0.1" value="1">
@@ -647,8 +678,6 @@ const prevPageBtn = document.getElementById("prev-page");
 const nextPageBtn = document.getElementById("next-page");
 const fullscreenBtn = document.getElementById("fullscreen-button");
 const fullscreenIcon = fullscreenBtn.querySelector("i");
-const playPauseButton = document.getElementById("play-pause-button");
-const playPauseIcon = playPauseButton?.querySelector("i");
 const autoReadButton = document.getElementById("auto-read-button");
 const autoReadIcon = autoReadButton?.querySelector("i");
 
@@ -674,20 +703,32 @@ pdfContainer.addEventListener("touchend", (e) => {
 });
 
 function handleSwipe() {
+    let pageChanged = false;
+
     if (touchStartX - touchEndX > swipeThreshold && pageNum < pdfDoc.numPages) {
         pageNum++;
-        renderPage(pageNum);
+        pageChanged = true;
     } else if (touchEndX - touchStartX > swipeThreshold && pageNum > 1) {
         pageNum--;
-        renderPage(pageNum);
+        pageChanged = true;
     }
 
-    // 🔥 Asegurar que el input de la página se actualiza
-    const pageInput = document.getElementById("page-input");
-    if (pageInput) {
-        pageInput.value = pageNum;
+    if (pageChanged) {
+        renderPage(pageNum);
+        stopAllAudio();
+
+        if (isAutoReading) {
+            if (!isPaused) {
+                playAudioForPage(pageNum); // 🔥 Si está en curso, reproduce el nuevo audio
+            } else {
+                resetAutoReadButton(); // 🔥 Si estaba pausado, reinicia el botón
+            }
+        } else {
+            resetAutoReadButton(); // 🔥 Si NO está en curso, reinicia el botón
+        }
     }
 }
+
 
 
 // Sonido al pasar página
@@ -777,19 +818,6 @@ pdfjsLib.getDocument(url).promise.then(pdf => {
 });
 
 
-// Botones de navegación
-prevPageBtn.addEventListener("click", () => {
-    if (pageNum > 1) {
-        pageNum -= (window.innerWidth > 1000) ? 2 : 1;
-        if (pageNum < 1) pageNum = 1;
-        renderPage(pageNum);
-
-        if (isAutoReading) {
-            readPage(pageNum); // 🔥 Si está en lectura continua, reproduce la página actual
-        }
-    }
-});
-
 nextPageBtn.addEventListener("click", () => {
     const isTwoPages = window.innerWidth > 1000;
     const nextPageNum = pageNum + (isTwoPages ? 2 : 1);
@@ -797,161 +825,167 @@ nextPageBtn.addEventListener("click", () => {
     if (nextPageNum <= pdfDoc.numPages) {
         pageNum = nextPageNum;
         renderPage(pageNum);
+        stopAllAudio();
 
         if (isAutoReading) {
-            readPage(pageNum); // 🔥 Si está en lectura continua, reproduce la página actual
+            if (!isPaused) {
+                playAudioForPage(pageNum); // 🔥 Si está en curso, reproduce el nuevo audio
+            } else {
+                resetAutoReadButton(); // 🔥 Si estaba pausado, reinicia el botón
+            }
+        } else {
+            resetAutoReadButton(); // 🔥 Si NO está en curso, reinicia el botón
         }
-    } else {
-        nextPageBtn.classList.add("shake");
-        setTimeout(() => nextPageBtn.classList.remove("shake"), 300);
+    }
+});
+
+prevPageBtn.addEventListener("click", () => {
+    if (pageNum > 1) {
+        pageNum -= (window.innerWidth > 1000) ? 2 : 1;
+        if (pageNum < 1) pageNum = 1;
+        renderPage(pageNum);
+        stopAllAudio();
+
+        if (isAutoReading) {
+            if (!isPaused) {
+                playAudioForPage(pageNum); // 🔥 Si está en curso, reproduce el nuevo audio
+            } else {
+                resetAutoReadButton(); // 🔥 Si estaba pausado, reinicia el botón
+            }
+        } else {
+            resetAutoReadButton(); // 🔥 Si NO está en curso, reinicia el botón
+        }
     }
 });
 
 
-// Botón de reproducción manual
-playPauseButton.addEventListener("click", () => {
-    stopAutoReading();
-    togglePlayPause();
+
+
+
+
+
+
+const replayButton = document.getElementById("replay-button");
+
+replayButton.addEventListener("click", () => {
+    stopAllAudio(); // 🔥 Detener cualquier audio en reproducción
+    resetAutoReadButton(); // 🔥 Restablecer el botón de lectura automática
+    startAutoReading(); // 🔥 Comenzar la lectura automática desde la página actual
 });
-function togglePlayPause() {
-    const audio1 = document.getElementById("pageAudio1");
-    const audio2 = document.getElementById("pageAudio2");
 
-    if (!audio1) return;
 
-    if (isPlaying) {
-        stopAllAudio(); // 🔴 Si está reproduciendo, se detiene completamente
+
+
+
+
+
+
+
+let isPaused = false;
+let currentAudio = document.getElementById("pageAudio1");
+
+autoReadButton.addEventListener("click", () => {
+    if (!isAutoReading) {
+        startAutoReading();
     } else {
-        isPlaying = true;
+        toggleAutoReading();
+    }
+});
 
-        if (playPauseIcon) {
-            playPauseIcon.classList.remove("fa-play");
-            playPauseIcon.classList.add("fa-pause");
+function startAutoReading() {
+    isAutoReading = true;
+    isPaused = false;
+    autoReadIcon.classList.remove("fa-book-reader", "fa-play");
+    autoReadIcon.classList.add("fa-pause");
+    autoReadButton.classList.remove("paused");
+
+    playAudioForPage(pageNum); // 🔥 Inicia la lectura desde la página actual
+}
+
+function resetAutoReadButton() {
+    isAutoReading = false;
+    isPaused = false;
+    autoReadIcon.classList.remove("fa-pause", "fa-play");
+    autoReadIcon.classList.add("fa-book-reader");
+    autoReadButton.classList.remove("paused");
+}
+
+
+function toggleAutoReading() {
+    if (isPaused) {
+        isPaused = false;
+        autoReadIcon.classList.remove("fa-play");
+        autoReadIcon.classList.add("fa-pause");
+        autoReadButton.classList.remove("paused");
+
+        if (currentAudio) {
+            currentAudio.play().catch(e => console.error("Error al reanudar audio:", e));
         }
+    } else {
+        isPaused = true;
+        autoReadIcon.classList.remove("fa-pause");
+        autoReadIcon.classList.add("fa-play");
+        autoReadButton.classList.add("paused");
 
-        audio1.play().catch(e => console.error("Error al reproducir audio 1:", e));
+        if (currentAudio) {
+            currentAudio.pause();
+        }
+    }
+}
 
-        // ✅ Solo configuramos `onended` si NO está en pausa
-        audio1.onended = () => {
-            if (!isPlaying) return; // 🔴 Si el usuario pausó, no continuar
+function stopAutoReading() {
+    isAutoReading = false;
+    isPaused = false;
+    autoReadIcon.classList.remove("fa-pause", "fa-play");
+    autoReadIcon.classList.add("fa-book-reader");
+    autoReadButton.classList.remove("paused");
+    stopAllAudio();
+}
 
-            if (window.hasSecondPage && audio2) {
-                audio2.play().catch(e => console.error("Error al reproducir audio 2:", e));
+function playAudioForPage(num) {
+    if (!isAutoReading) return; // 🔥 Solo reproduce si la lectura continua está activa
 
-                audio2.onended = () => {
-                    if (!isPlaying) return; // 🔴 No continuar si el usuario pausó
-                    stopAllAudio();
-                };
-            } else {
-                stopAllAudio();
+    currentAudio = document.getElementById("pageAudio1");
+    if (currentAudio) {
+        currentAudio.src = `https://fawzinoo.github.io/audios/page${num}.mp3`;
+        currentAudio.load();
+        currentAudio.currentTime = 0;
+        currentAudio.play().catch(e => console.error("Error al reproducir audio:", e));
+
+        currentAudio.onended = () => {
+            if (isAutoReading && !isPaused) {
+                const nextPage = pageNum + 1;
+                if (nextPage <= pdfDoc.numPages) {
+                    pageNum = nextPage;
+                    renderPage(pageNum);
+                    playAudioForPage(pageNum);
+                } else {
+                    stopAutoReading();
+                }
             }
         };
     }
 }
 
 
-
-
-// Botón de lectura automática
-autoReadButton.addEventListener("click", () => {
-    if (!isAutoReading) {
-        stopManualAudio();
-        isAutoReading = true;
-        if (autoReadIcon) {
-            autoReadIcon.classList.remove("fa-book-reader");
-            autoReadIcon.classList.add("fa-stop");
-        }
-        readPage(pageNum);
-    } else {
-        stopAutoReading();
-    }
-});
-
-function stopAutoReading() {
-    if (!isAutoReading) return; // 🔴 Evitar llamadas innecesarias
-
-    isAutoReading = false;
-
-    if (autoReadIcon) {
-        autoReadIcon.classList.remove("fa-stop");
-        autoReadIcon.classList.add("fa-book-reader");
-    }
-
-    // 🔴 DETENER AUDIOS SI SE ESTÁ REPRODUCIENDO
-    const audio1 = document.getElementById("pageAudio1");
-    const audio2 = document.getElementById("pageAudio2");
-
-    if (audio1) {
-        audio1.pause();
-        audio1.currentTime = 0;
-        audio1.onended = null; // Evita que continúe a la siguiente página
-    }
-    if (audio2) {
-        audio2.pause();
-        audio2.currentTime = 0;
-        audio2.onended = null;
-    }
-
-    // 🔴 EVITAR QUE SE SIGA EJECUTANDO LA FUNCIÓN `goToNextPage`
-    clearTimeout(autoReadTimeout); // Si había un temporizador activo, lo detiene
-}
-
-
-function stopManualAudio() {
-    if (!isPlaying) return; // 🔴 Si ya está en pausa, no hacer nada
-
-    stopAllAudio();
-}
-
-
-
 function stopAllAudio() {
-    const audio1 = document.getElementById("pageAudio1");
-    const audio2 = document.getElementById("pageAudio2");
-
-    if (audio1) {
-        audio1.pause();
-        audio1.currentTime = 0;
-        audio1.onended = null; // 🔴 Evita que el evento `onended` lo reinicie
-    }
-    if (audio2) {
-        audio2.pause();
-        audio2.currentTime = 0;
-        audio2.onended = null; // 🔴 Evita que se siga reproduciendo automáticamente
-    }
-
-    isPlaying = false;
-
-    if (playPauseIcon) {
-        playPauseIcon.classList.remove("fa-pause");
-        playPauseIcon.classList.add("fa-play");
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio.onended = null;
     }
 }
 
 
 
-function readPage(num) {
-    if (!isAutoReading || num > pdfDoc.numPages) return;
 
-    pageNum = num;
-    renderPage(pageNum);
 
-    const audio1 = document.getElementById("pageAudio1");
-    if (audio1) {
-        audio1.play().catch(e => console.error("Error al reproducir audio 1:", e));
-    }
 
-    audio1.onended = () => {
-        if (isAutoReading) {
-            const nextPage = num + (window.hasSecondPage ? 2 : 1);
-            if (nextPage <= pdfDoc.numPages) {
-                readPage(nextPage);
-            } else {
-                stopAutoReading();
-            }
-        }
-    };
-}
+
+
+
+
+
 
 
 
@@ -1047,6 +1081,17 @@ function goToPage() {
                 canvas.style.display = "block";
             }, 50);
         }, 100);
+
+        // 🔥 Si pausamos y cambiamos de página, restaurar el botón de lectura continua
+        isAutoReading = false;
+        isPaused = false;
+        autoReadIcon.classList.remove("fa-pause", "fa-play");
+        autoReadIcon.classList.add("fa-book-reader");
+        autoReadButton.classList.remove("paused");
+
+        // 🔥 Detener cualquier audio en reproducción
+        stopAllAudio();
+
     }, 300);
 }
 
@@ -1071,6 +1116,9 @@ pageInput.addEventListener("blur", () => {
         window.scrollTo(0, 0);
     }, 100);
 });
+
+
+
 
 //---------------------------------------------------------------------------------------
 

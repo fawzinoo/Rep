@@ -23,7 +23,6 @@
     align-items: center;
     background: #f0f0f0;
     margin-top: 10px;
-    touch-action: manipulation; 
 }
 
         #pdf-container {
@@ -694,33 +693,59 @@ if (typeof pdfjsLib === 'undefined') {
 let touchStartX = 0;
 let touchEndX = 0;
 let touchStartDistance = 0;
+let isPinching = false; // Detecta si hay un gesto de zoom
 const swipeThreshold = 50;
 const pdfContainer = document.getElementById("pdf-container");
 
+// Detectar cuando se inicia un gesto táctil
 pdfContainer.addEventListener("touchstart", (e) => {
     if (e.touches.length > 1) {
-        // Si hay más de un dedo, calcular la distancia inicial entre ellos (para detectar zoom)
+        // Si hay dos dedos, calcular la distancia inicial (para detectar zoom)
         touchStartDistance = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
             e.touches[0].clientY - e.touches[1].clientY
         );
+        isPinching = true; // Activamos la detección de zoom
         return;
     }
+
+    isPinching = false; // Si hay un solo dedo, no es un zoom
     touchStartX = e.touches[0].clientX;
 });
 
+// Detectar cuando los dedos se mueven (para diferenciar zoom de swipe)
+pdfContainer.addEventListener("touchmove", (e) => {
+    if (e.touches.length > 1) {
+        let touchMoveDistance = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+
+        // Si la distancia entre los dedos cambia, es un gesto de zoom
+        if (Math.abs(touchMoveDistance - touchStartDistance) > 10) {
+            isPinching = true; // Confirmamos que es zoom
+        }
+        return;
+    }
+});
+
+// Detectar cuando se suelta el toque
 pdfContainer.addEventListener("touchend", (e) => {
-    if (e.touches.length > 1 || touchStartDistance > 0) {
-        // Si el gesto inició con dos dedos, es un intento de zoom y no debemos cambiar la página
+    if (isPinching) {
+        // Si es un gesto de zoom, cancelar el swipe y resetear variables
         touchStartDistance = 0;
+        isPinching = false;
         return;
     }
 
+    // Si no es un zoom, detectar swipe normal
     touchEndX = e.changedTouches[0].clientX;
     handleSwipe();
 });
 
 function handleSwipe() {
+    if (isPinching) return; // 🚀 Evita que un zoom accidental cambie de página
+
     let pageChanged = false;
 
     if (touchStartX - touchEndX > swipeThreshold && pageNum < pdfDoc.numPages) {
@@ -746,6 +771,7 @@ function handleSwipe() {
         }
     }
 }
+
 
 
 
@@ -1242,7 +1268,7 @@ function resetInactivityTimer() {
     clearTimeout(inactivityTimeout);
     inactivityTimeout = setTimeout(() => {
         window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html';
-    }, 60000); // 1 minuto
+    }, 1800000); //
 }
 
 document.addEventListener('mousemove', resetInactivityTimer);

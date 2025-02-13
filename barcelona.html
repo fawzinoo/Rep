@@ -692,43 +692,25 @@ if (typeof pdfjsLib === 'undefined') {
 // Variables para gestos táctiles
 let touchStartX = 0;
 let touchEndX = 0;
-let touchStartDistance = 0;
 let isPinching = false; // Detectar zoom
-let isZoomingOut = false; // Detectar si el usuario está reduciendo el zoom
 const swipeThreshold = 50;
 const pdfContainer = document.getElementById("pdf-container");
 
 // Detectar inicio del gesto táctil
 pdfContainer.addEventListener("touchstart", (e) => {
     if (e.touches.length > 1) {
-        // Si hay dos dedos, calcular la distancia inicial entre ellos (para detectar zoom)
-        touchStartDistance = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-        isPinching = true; // Se activó el zoom
-        isZoomingOut = false; // Reseteamos la variable de zoom out
+        isPinching = true; // Se detecta uso de dos dedos (zoom)
         return;
     }
 
-    isPinching = false; // Si hay un solo dedo, no es zoom
+    isPinching = false; // Solo un dedo, permitir swipe
     touchStartX = e.touches[0].clientX;
 });
 
 // Detectar movimiento de los dedos
 pdfContainer.addEventListener("touchmove", (e) => {
     if (e.touches.length > 1) {
-        let touchMoveDistance = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-
-        // Si la distancia entre los dedos disminuye, es un pinch-in (reducción de zoom)
-        if (touchMoveDistance < touchStartDistance) {
-            isZoomingOut = true; // Se detecta reducción de zoom
-        }
-
-        isPinching = true; // Seguimos en modo zoom
+        isPinching = true; // Se sigue detectando zoom
         return;
     }
 });
@@ -736,26 +718,17 @@ pdfContainer.addEventListener("touchmove", (e) => {
 // Detectar fin del gesto táctil
 pdfContainer.addEventListener("touchend", (e) => {
     if (isPinching) {
-        if (isZoomingOut) {
-            // 🔥 Si el usuario estaba reduciendo el zoom, bloqueamos el swipe
-            isPinching = false;
-            isZoomingOut = false;
-            return;
-        }
-
-        // Si fue un zoom pero no un zoom-out, resetear la variable
-        isPinching = false;
+        isPinching = false; // Resetear zoom detection
+        return; // ❌ Bloquear swipe si hubo dos dedos
     }
 
-    // Si no es un zoom-out, permitimos el swipe
+    // Si solo se usó un dedo, permitir swipe
     touchEndX = e.changedTouches[0].clientX;
     handleSwipe();
 });
 
 // Función para manejar el swipe
 function handleSwipe() {
-    if (isPinching || isZoomingOut) return; // 🚀 Bloqueamos swipe si fue un zoom-out
-
     let pageChanged = false;
 
     if (touchStartX - touchEndX > swipeThreshold && pageNum < pdfDoc.numPages) {
@@ -781,6 +754,7 @@ function handleSwipe() {
         }
     }
 }
+
 
 
 

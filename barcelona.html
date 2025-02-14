@@ -242,7 +242,7 @@
         flex-direction: column;
         justify-content: flex-start;
         align-items: center;
-        touch-action: pan-y; /* SOLO permitir desplazamiento vertical y bloquear zoom */
+        touch-action: none; /* SOLO permitir desplazamiento vertical y bloquear zoom */
         overscroll-behavior: contain;
         user-select: none;
     }
@@ -258,7 +258,7 @@
         overflow-y: auto; /* Permitir desplazamiento */
         padding: 0;
         margin: 0;
-        touch-action: pan-y; /* SOLO permitir desplazamiento vertical */
+        touch-action: none; /* SOLO permitir desplazamiento vertical */
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch; /* Mejora el scroll en iOS */
         user-select: none;
@@ -1324,42 +1324,37 @@ resetInactivityTimer();
 
 function bloquearZoom() {
     let mediaQuery = window.matchMedia("(min-width: 701px) and (max-width: 1000px)");
-    
+
     if (mediaQuery.matches) {
-        document.documentElement.style.overflow = "hidden"; // Bloquear desbordamiento
+        document.documentElement.style.overflow = "hidden"; // Evitar desbordamiento
 
-        // Bloquear pinch-zoom
-        document.addEventListener("gesturestart", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+        // Bloquear zoom por gestos en iOS y Android
+        document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+        document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+        document.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
+
+        // Bloquear zoom con doble toque
+        document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+
+        // Bloquear zoom con "Ctrl + Scroll"
+        document.addEventListener("wheel", (e) => {
+            if (e.ctrlKey) e.preventDefault();
         }, { passive: false });
 
-        document.addEventListener("gesturechange", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }, { passive: false });
-
-        document.addEventListener("gestureend", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }, { passive: false });
-
-        // Bloquear doble toque para zoom
-        document.addEventListener("dblclick", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }, { passive: false });
-
-        // Bloquear Ctrl + Scroll en PC
-        document.addEventListener("wheel", function (e) {
-            if (e.ctrlKey) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        }, { passive: false });
+        // Modificar dinámicamente el meta viewport para bloquear zoom
+        let meta = document.querySelector("meta[name=viewport]");
+        if (meta) {
+            meta.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+        }
 
     } else {
-        // Eliminar eventos al salir del rango de resolución
+        // Restaurar el meta viewport para otras resoluciones
+        let meta = document.querySelector("meta[name=viewport]");
+        if (meta) {
+            meta.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes");
+        }
+
+        // Eliminar restricciones
         document.documentElement.style.overflow = "";
         document.removeEventListener("gesturestart", bloquearZoom);
         document.removeEventListener("gesturechange", bloquearZoom);
@@ -1369,9 +1364,10 @@ function bloquearZoom() {
     }
 }
 
-// Ejecutar al cargar la página y en cambios de tamaño
+// Ejecutar en carga y cuando se cambie el tamaño de la pantalla
 document.addEventListener("DOMContentLoaded", bloquearZoom);
 window.addEventListener("resize", bloquearZoom);
+
 
 
 

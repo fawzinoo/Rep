@@ -725,23 +725,20 @@ let isPinching = false;
 const swipeThreshold = 100; // Aumenta el umbral para evitar falsos positivos
 const pdfContainer = document.getElementById("pdf-container");
 
-// Detectar cuando se inicia un gesto táctil
-pdfContainer.addEventListener("touchstart", (e) => {
-    if (e.touches.length > 1) {
-        // Si hay dos dedos, calcular la distancia inicial para detectar zoom
-        touchStartDistance = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-        isPinching = true; // Marcar que se está haciendo un gesto de pellizco
-        return;
-    }
+const swipeZoneWidth = 50; // Zona lateral activa (en píxeles)
 
-    // Solo si hay un dedo, permitir swipe
-    isPinching = false;
+pdfContainer.addEventListener("touchstart", (e) => {
+    if (e.touches.length > 1) return; // Ignorar si hay más de un dedo
+
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+
+    // Permitir solo si el toque comienza en los extremos
+    if (touchStartX > swipeZoneWidth && touchStartX < window.innerWidth - swipeZoneWidth) {
+        touchStartX = null; // Anular swipe si se tocó en el centro
+    }
 });
+
 
 document.addEventListener("touchmove", function (e) {
     if (e.touches.length === 2) {
@@ -762,27 +759,20 @@ document.addEventListener("gesturestart", function (e) {
     e.preventDefault(); // Bloquea gestos nativos de zoom en algunos navegadores
 });
 
-// Detectar cuando se suelta el toque
 pdfContainer.addEventListener("touchend", (e) => {
-    if (isPinching) {
-        // Si hubo un gesto de zoom, no permitir el cambio de página
-        isPinching = false; // Restablecer la variable
-        return;
-    }
+    if (touchStartX === null || e.changedTouches.length > 1) return; // Ignorar si el swipe no empezó en los lados
 
-    if (e.changedTouches.length > 1) {
-        return; // Bloqueamos el swipe si se usaron dos dedos
-    }
-
-    // Si solo se usó un dedo, permitir swipe
     touchEndX = e.changedTouches[0].clientX;
     touchEndY = e.changedTouches[0].clientY;
     handleSwipe();
 });
 
-// Función para manejar el swipe solo con un dedo
+
 function handleSwipe() {
+    if (touchStartX === null) return; // No hacer nada si el swipe no comenzó en los extremos
+
     let pageChanged = false;
+    const swipeThreshold = 100; // Sensibilidad del swipe
 
     if (touchStartX - touchEndX > swipeThreshold && pageNum < pdfDoc.numPages) {
         pageNum++;
@@ -807,6 +797,7 @@ function handleSwipe() {
         }
     }
 }
+
 
 
 

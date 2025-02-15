@@ -283,6 +283,7 @@
 
 
 
+/* Estilo por defecto (modo inicial) */
 @media (min-width: 1001px) {
     html, body {
         height: 100vh;
@@ -294,7 +295,6 @@
         justify-content: center;
         align-items: center;
     }
-
     #pdf-container {
         display: flex;
         flex-direction: row; /* Dos páginas lado a lado */
@@ -306,19 +306,83 @@
         padding: 0;
         margin: 0;
     }
-
     canvas {
-        width: 50vw; /* 🔥 Ahora cada página ocupa el 50% exacto del ancho */
-        height: 100vh; /* 🔥 Ocupa el 100% del alto */
+        width: 50vw; /* Cada página ocupa el 50% exacto del ancho */
+        height: 100vh; /* Ocupa el 100% del alto */
         max-height: 100vh;
         margin: 0;
         display: block;
     }
 }
 
+/* Estilo alternativo (activado al presionar el botón) */
+.alternate-mode {
+    html, body {
+        height: 100%;
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+        overflow-y: auto !important; /* Permitir desplazamiento vertical */
+        overflow-x: auto !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: center;
+        touch-action: auto; /* SOLO permitir desplazamiento vertical y bloquear zoom */
+        overscroll-behavior: auto;
+        touch-action: pinch-zoom;
+    }
+    #pdf-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: center;
+        width: 100vw;
+        height: 100vh; /* Ajustar al alto de la pantalla */
+        min-height: 100vh !important; /* Asegurar que haya suficiente contenido */
+        overflow: auto !important; /* Permitir desplazamiento */
+        padding: 0;
+        margin: 0;
+        overscroll-behavior: auto;
+        -webkit-overflow-scrolling: touch; /* Mejora el scroll en iOS */
+        touch-action: auto;
+    }
+    canvas {
+        width: 100vw !important;
+        height: auto !important;
+        max-width: 100vw !important;
+        max-height: none !important;
+        display: block;
+        object-fit: contain;
+    }
+    /* Ocultamos la segunda página */
+    #pdf-render-2 {
+        display: none !important;
+    }
+}
 
 
+#switchModeButton {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+    color: #fff;
+    background-color: turquoise;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+   
+    
+}
 
+/* Cambio de ícono en el botón switchModeButton según el modo */
+#switchModeButton.i-grid {
+    content: "\f00b"; /* Ícono fa-th-large */
+}
+
+#switchModeButton.i-list {
+    content: "\f03e"; /* Ícono fa-list */
+}
 
 
 @keyframes shake {
@@ -466,8 +530,8 @@
         #button-slider {
             position: fixed;
             top: 20px;
-            left: -400px;
-            width: 400px;
+            left: -450px;
+            width: 450px;
             height: 40px;
             background: rgba(191, 186, 186, 0.8);
             padding: 20px;
@@ -618,19 +682,23 @@
              
         <div id="button-slider">
             <div class="button-container">
-                <button id="fullscreen-button"><i class="fas fa-expand"></i></button>
+                <button id="fullscreen-button" class="slider-button"><i class="fas fa-expand"></i></button>
+                <button id="switchModeButton" class="slider-button"> <i class="fas fa-list"></i></button>
                 <button id="replay-button" class="slider-button"><i class="fas fa-redo-alt"></i></button>
                 <button id="auto-read-button" class="slider-button"><i class="fas fa-book-reader"></i></button>
                 <button id="volume-button" class="slider-button"><i class="fas fa-volume-up"></i></button>
-                 <input id="volume-slider" type="range" min="0" max="1" step="0.1" value="1">
-                <button id="home-button" onclick="window.location.href='https://fawzinoo.github.io/Rep/Vocabulario.html'"><i class="fas fa-home"></i></button>                
+                <input id="volume-slider" type="range" min="0" max="1" step="0.1" value="1">
+                <button id="home-button" onclick="window.location.href='https://fawzinoo.github.io/Rep/Vocabulario.html'" class="slider-button"><i class="fas fa-home"></i></button>
+        
+                <!-- Asegura que el selector de página está separado -->
                 <div id="page-selector">
                     <input id="page-input" type="number" min="1" placeholder="--" />
-                    <button id="go-to-page"><i class="fas fa-search"></i></button>
+                    <button id="go-to-page" class="slider-button"><i class="fas fa-search"></i></button>
                 </div>
-            </div>    
+            </div>
         </div>
-        <button id="slider-toggle">
+        
+        <button id="slider-toggle" class="slider-button">
             <i class="fas fa-bars"></i>
         </button>
         
@@ -949,6 +1017,7 @@ prevPageBtn.addEventListener("click", () => {
 
 
 
+
 const replayButton = document.getElementById("replay-button");
 
 replayButton.addEventListener("click", () => {
@@ -992,6 +1061,7 @@ function resetAutoReadButton() {
     autoReadIcon.classList.remove("fa-pause", "fa-play");
     autoReadIcon.classList.add("fa-book-reader");
     autoReadButton.classList.remove("paused");
+    stopAllAudio(); // 🔥 Detener todos los audios
 }
 
 
@@ -1024,31 +1094,67 @@ function stopAutoReading() {
     autoReadIcon.classList.add("fa-book-reader");
     autoReadButton.classList.remove("paused");
     stopAllAudio();
+    resetAutoReadButton()
 }
+
+
+const isLargeScreen = window.innerWidth > 1000; // 🔥 Pantallas grandes
 
 function playAudioForPage(num) {
     if (!isAutoReading) return; // 🔥 Solo reproduce si la lectura continua está activa
 
-    currentAudio = document.getElementById("pageAudio1");
-    if (currentAudio) {
-        currentAudio.src = `https://fawzinoo.github.io/audios/page${num}.mp3`;
-        currentAudio.load();
-        currentAudio.currentTime = 0;
-        currentAudio.play().catch(e => console.error("Error al reproducir audio:", e));
+    const audio1 = document.getElementById("pageAudio1");
+    const audio2 = document.getElementById("pageAudio2");
 
-        currentAudio.onended = () => {
-            if (isAutoReading && !isPaused) {
-                const nextPage = pageNum + 1;
+    if (!audio1) {
+        console.error("Elemento de audio 1 no encontrado.");
+        return;
+    }
+
+    // Cargar y reproducir el primer audio (página actual)
+    audio1.src = `https://fawzinoo.github.io/audios/page${num}.mp3`;
+    audio1.load();
+    audio1.currentTime = 0;
+    audio1.play().catch(e => console.error("Error al reproducir audio 1:", e));
+
+    // Cuando termine el primer audio, verificar si hay un segundo audio
+    audio1.onended = () => {
+        if (!isAutoReading || isPaused) return;
+
+        // Si es una pantalla grande y hay una página siguiente, cargar y reproducir el segundo audio
+        if (isLargeScreen && num + 1 <= pdfDoc.numPages && audio2) {
+            audio2.src = `https://fawzinoo.github.io/audios/page${num + 1}.mp3`;
+            audio2.load();
+            audio2.currentTime = 0;
+            audio2.play().catch(e => console.error("Error al reproducir audio 2:", e));
+
+            // Cuando termine el segundo audio, avanzar a la siguiente página
+            audio2.onended = () => {
+                if (!isAutoReading || isPaused) return;
+
+                const nextPage = num + 2; // 🔥 Avanzar dos páginas
                 if (nextPage <= pdfDoc.numPages) {
                     pageNum = nextPage;
                     renderPage(pageNum);
-                    playAudioForPage(pageNum);
+                    playAudioForPage(pageNum); // Reproducir la siguiente página
                 } else {
-                    stopAutoReading();
+                    stopAutoReading(); // Detener si no hay más páginas
+                    resetAutoReadButton(); // 🔥 Restablecer el botón
                 }
+            };
+        } else {
+            // Si no hay un segundo audio, avanzar a la siguiente página
+            const nextPage = num + 1; // 🔥 Avanzar una página
+            if (nextPage <= pdfDoc.numPages) {
+                pageNum = nextPage;
+                renderPage(pageNum);
+                playAudioForPage(pageNum); // Reproducir la siguiente página
+            } else {
+                stopAutoReading(); // Detener si no hay más páginas
+                resetAutoReadButton(); // 🔥 Restablecer el botón
             }
-        };
-    }
+        }
+    };
 }
 
 
@@ -1225,7 +1331,7 @@ const slider = document.getElementById("button-slider");
 
         toggleButton.addEventListener("click", () => {
             sliderVisible = !sliderVisible;
-            slider.style.transform = sliderVisible ? "translateX(400px)" : "translateX(0)";
+            slider.style.transform = sliderVisible ? "translateX(450px)" : "translateX(0)";
         });
 
 
@@ -1307,7 +1413,32 @@ document.addEventListener('click', resetInactivityTimer);
 
 resetInactivityTimer();
 
+document.addEventListener("DOMContentLoaded", () => {
+    const switchModeButton = document.getElementById('switchModeButton');
+    const body = document.body;
 
+    let isAlternateMode = false;
+
+    function toggleMode() {
+        isAlternateMode = !isAlternateMode;
+
+        if (isAlternateMode) {
+            body.classList.add('alternate-mode');
+            document.documentElement.style.overflow = 'auto';
+            switchModeButton.innerHTML = '<i class="fas fa-columns"></i>';
+            switchModeButton.title = 'Cambiar a Modo Lado a Lado';
+        } else {
+            body.classList.remove('alternate-mode');
+            document.documentElement.style.overflow = 'hidden';
+            switchModeButton.innerHTML = '<i class="fas fa-list"></i>';
+            switchModeButton.title = 'Cambiar a Modo Columna';
+        }
+    }
+  
+    if (switchModeButton) {
+        switchModeButton.addEventListener('click', toggleMode);
+    }
+});
 
 
 

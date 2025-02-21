@@ -705,95 +705,56 @@ function goBack() {
     window.history.back();
 }
     
-function goBack() {
-    window.history.back();
-}
-    
-let previousScrollPosition = 0;
-let inTextView = false;
-let inQuestionsView = false;
+
+let currentTextIndex = 0; // Índice del texto actual
+const texts = document.querySelectorAll('.fragmento'); // Selecciona todos los textos
+const floatingButton = document.getElementById('floating-button');
 
 function toggleScroll() {
-  const textContainer = document.querySelector('.container1'); // Contenedor del texto
-  const questionsContainer = document.getElementById('question-section'); // Contenedor de las preguntas
-  const floatingButton = document.getElementById('floating-button');
-
-  if (!inTextView && !inQuestionsView) {
-    // Guardar la posición antes de movernos
-    previousScrollPosition = window.scrollY;
-
-    // Encajar el texto completamente en pantalla
+  // Si estamos en el último texto, volvemos al primero
+  if (currentTextIndex === texts.length - 1) {
     window.scrollTo({
-      top: textContainer.offsetTop,
+      top: texts[0].offsetTop,
       behavior: 'smooth'
     });
-
-    // Esperar a que la animación termine y luego centrar completamente
-    setTimeout(() => {
-      const textHeight = textContainer.clientHeight;
-      const viewportHeight = window.innerHeight;
-      if (textHeight < viewportHeight) {
-        const extraSpace = (viewportHeight - textHeight) / 2;
-        window.scrollBy({ top: -extraSpace, behavior: 'smooth' });
-      }
-    }, 500);
-
-    // Cambiar el icono a "bajar"
-    floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>';
-    inTextView = true;
-    inQuestionsView = false;
-  } else if (inTextView) {
-    // Si estamos en el texto, bajar a las preguntas 1-5 y encuadrarlas en pantalla
-    window.scrollTo({
-      top: questionsContainer.offsetTop,
-      behavior: 'smooth'
-    });
-
-    // Cambiar el icono a "subir"
-    floatingButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
-    inTextView = false;
-    inQuestionsView = true;
+    currentTextIndex = 0; // Reiniciamos el índice
+    floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>'; // Cambiamos la flecha a "bajar"
   } else {
-    // Volver a la posición original antes del desplazamiento
-    window.scrollTo({ top: previousScrollPosition, behavior: 'smooth' });
+    // Avanzamos al siguiente texto
+    currentTextIndex++;
+    window.scrollTo({
+      top: texts[currentTextIndex].offsetTop,
+      behavior: 'smooth'
+    });
 
-    // Cambiar el icono a "bajar"
-    floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>';
-    inQuestionsView = false;
-    inTextView = false;
+    // Si llegamos al último texto, cambiamos la flecha a "subir"
+    if (currentTextIndex === texts.length - 1) {
+      floatingButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
+    }
   }
 }
 
-// Detectar si el usuario está arriba, en el texto o en las preguntas
+// Detectar la posición del scroll para actualizar la flecha automáticamente
 window.addEventListener('scroll', () => {
-  const textContainer = document.querySelector('.container1');
-  const questionsContainer = document.getElementById('question-section');
-  const floatingButton = document.getElementById('floating-button');
-  const textTop = textContainer.getBoundingClientRect().top;
-  const textBottom = textContainer.getBoundingClientRect().bottom;
-  const questionsTop = questionsContainer.getBoundingClientRect().top;
+  const scrollPosition = window.scrollY;
 
-  // Si el usuario está en las preguntas, el botón debe indicar "⬆️ subir arriba"
-  if (questionsTop < window.innerHeight / 2) {
-    floatingButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
-    inTextView = false;
-    inQuestionsView = true;
-  }
-  // Si el usuario está en el texto, el botón debe indicar "⬇️ bajar"
-  else if (textTop < window.innerHeight / 2 && textBottom > window.innerHeight / 2) {
-    floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>';
-    inTextView = true;
-    inQuestionsView = false;
-  }
-  // Si el usuario está arriba del texto, el botón debe indicar "⬇️ bajar" para mostrar las preguntas
-  else if (textTop > 0) {
-    floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>';
-    inTextView = false;
-    inQuestionsView = false;
-  }
+  // Verificar en qué texto está el usuario
+  texts.forEach((text, index) => {
+    const textTop = text.offsetTop;
+    const textBottom = textTop + text.clientHeight;
+
+    if (scrollPosition >= textTop && scrollPosition < textBottom) {
+      currentTextIndex = index; // Actualizar el índice del texto actual
+
+      // Cambiar la flecha automáticamente si estamos en el último texto
+      if (index === texts.length - 1) {
+        floatingButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
+      } else {
+        floatingButton.innerHTML = '<i class="fas fa-arrow-down"></i>';
+      }
+    }
+  });
 });
-
-
 
 
 

@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.2/css/all.min.css">
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
     
     <style>
     
@@ -486,9 +487,14 @@ height: 60px;
 }
 
     </style>
+       <script type="text/javascript">
+        (function() {
+            emailjs.init("RbwOPvFFeeOjLFbr4"); // Inicializa EmailJS con tu User ID
+        })();
+    </script>
 </head>
 <body>
-    <div id="timer"></div>
+    <div id="timer">60:00</div> <!-- Muestra 1 hora inicialmente -->
     <br>
     <br><br><br><br><br>
     <div class="container">
@@ -854,9 +860,7 @@ height: 60px;
 <button id="floating-button" onclick="toggleScroll()">
     <i class="fas fa-arrow-down"></i>
   </button>
-    <button  onclick="location.reload()">
-    <i class="fas fa-sync-alt"></i>
- </button>
+
     
      <button class="back-button" onclick="goBack()">
     <i class="fas fa-arrow-left"></i>
@@ -874,29 +878,67 @@ height: 60px;
 <br>
     <!-- Script para calificar respuestas -->
     <script>
-    
-   var counter = 60 * 60; // 60 minutes in seconds
-var timerElement = document.getElementById("timer");
-var checked = false;
+let intervalId; // Variable global para almacenar el ID del intervalo
+document.addEventListener("DOMContentLoaded", function () {
+    // Guardar la hora de inicio en localStorage
+    const horaInicio = new Date();
+    localStorage.setItem('horaInicio', horaInicio.toISOString());
 
-var intervalId = setInterval(function() {
-    if (checked) {
-        clearInterval(intervalId);
-        return;
+    // Solicitar nombre y apellido
+    Swal.fire({
+    title: 'Ingresa tu nombre y apellido',
+    html:
+        '<input id="nombre" class="swal2-input" placeholder="Nombre">' +
+        '<input id="apellido" class="swal2-input" placeholder="Apellido">',
+    focusConfirm: false,
+    preConfirm: () => {
+        const nombre = Swal.getPopup().querySelector('#nombre').value;
+        const apellido = Swal.getPopup().querySelector('#apellido').value;
+        if (!nombre || !apellido) {
+            Swal.showValidationMessage('Por favor, ingresa tu nombre y apellido');
+            return false;
+        }
+        return { nombre, apellido };
     }
-    
-    var minutes = Math.floor(counter / 60);
-    var seconds = counter % 60;
-    var timeString = ("0" + minutes).slice(-2) + ":" + ("0" + seconds).slice(-2);
-    timerElement.innerHTML = timeString;
-    counter--;
+}).then((result) => {
+    if (result.isConfirmed) {
+        const { nombre, apellido } = result.value;
+        // Guardar en localStorage
+        localStorage.setItem('nombre', nombre);
+        localStorage.setItem('apellido', apellido);
 
-    if (counter < 0) {
-        clearInterval(intervalId);
-        timerElement.innerHTML = "<p style='font-size:17px;font-family: Arial; color: red'>Tiempo agotado</p>";
-        checkAnswers();
+        // Iniciar el temporizador
+        startTimer(); // <-- Aquí se llama a la función
+    } else {
+        // Si el usuario no ingresa nombre y apellido, mostrar un mensaje de error
+        Swal.fire('Error', 'Debes ingresar tu nombre y apellido para continuar', 'error');
     }
-}, 1000);
+});
+});
+
+
+
+
+
+
+ function startTimer() {
+    var counter = 60 * 60; // 60 minutos en segundos
+    var timerElement = document.getElementById("timer");
+
+    intervalId = setInterval(function() {
+        var minutes = Math.floor(counter / 60);
+        var seconds = counter % 60;
+        var timeString = ("0" + minutes).slice(-2) + ":" + ("0" + seconds).slice(-2);
+        timerElement.innerHTML = timeString;
+        counter--;
+
+        if (counter < 0) {
+            clearInterval(intervalId);
+            timerElement.innerHTML = "<p style='font-size:17px;font-family: Arial; color: red'>Tiempo agotado</p>";
+            checkAnswers();
+        }
+    }, 1000);
+}
 
 // Ejemplo de cómo se podría usar la variable checked
 function someEventTrigger() {
@@ -949,6 +991,82 @@ function goBack() {
 
 
 
+    function sendEmail(score, horaInicio, horaFin) {
+    const nombre = localStorage.getItem('nombre');
+    const apellido = localStorage.getItem('apellido');
+
+    // Calcular la duración del examen
+    const duracionMs = horaFin - horaInicio; // Diferencia en milisegundos
+    const duracionMinutos = Math.floor(duracionMs / 60000); // Convertir a minutos
+    const duracionSegundos = Math.floor((duracionMs % 60000) / 1000); // Convertir a segundos
+
+    // Formatear las horas para que sean legibles
+    const formatoHora = (fecha) => fecha.toLocaleString('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    // Calcular la puntuación por tarea
+    const correctAnswers = [
+        "c", "a", "b", "c", "a", // Tarea 1 (preguntas 1-5)
+        "b", "c", "c", "b", "a", "a", "a", "b", // Tarea 2 (preguntas 6-13)
+        "c", "b", "a", "c", "b", "b", // Tarea 3 (preguntas 14-19)
+        "a", "b", "c", "b", "a", "a" // Tarea 4 (preguntas 20-25)
+    ];
+
+    let scoreTarea1 = 0, scoreTarea2 = 0, scoreTarea3 = 0, scoreTarea4 = 0;
+
+    for (let i = 1; i <= 25; i++) {
+        const radios = document.getElementsByName("q" + i);
+        for (let j = 0; j < radios.length; j++) {
+            if (radios[j].checked && radios[j].value.toLowerCase() === correctAnswers[i - 1]) {
+                if (i <= 5) scoreTarea1++; // Tarea 1
+                else if (i <= 13) scoreTarea2++; // Tarea 2
+                else if (i <= 19) scoreTarea3++; // Tarea 3
+                else scoreTarea4++; // Tarea 4
+            }
+        }
+    }
+
+    // Mensaje con la puntuación desglosada
+    const mensaje = `
+    <p><strong>✎ Ha obtenido una puntuación de <u style="color:blue">${score}/25</u>.</strong></p>
+    <p><strong>✎ Puntuación por tarea:</strong></p>
+    <ul>
+        <li><strong>Tarea 1:</strong> <span style="color: blue;">${scoreTarea1}/5</span></li>
+        <li><strong>Tarea 2:</strong> <span style="color: green;">${scoreTarea2}/8</span></li>
+        <li><strong>Tarea 3:</strong> <span style="color: orange;">${scoreTarea3}/6</span></li>
+        <li><strong>Tarea 4:</strong> <span style="color: red;">${scoreTarea4}/6</span></li>
+    </ul>
+    <p><strong>✎ Hora de inicio:</strong> <u>${formatoHora(horaInicio)}</u></p>
+    <p><strong>✎ Hora de fin:</strong> <u>${formatoHora(horaFin)}</u></p>
+    <p><strong>✎ Duración del examen:</strong> <span style="color: purple;">${duracionMinutos} minutos y ${duracionSegundos} segundos</span>.</p>
+`;
+
+    console.log("Mensaje a enviar:", mensaje); // Log para depuración
+
+    const emailParams = {
+        to_email: "fawzi.elhilali@gmail.com", // Cambia esto por tu correo electrónico
+        from_name: "Examen 1 de Comprensión de lectura",
+        Nombre:  nombre,
+        Apellido: apellido,
+        message: mensaje
+    };
+
+    console.log("Enviando correo...", emailParams); // Log para depuración
+
+    emailjs.send("service_emi1ooe", "template_52gcahd", emailParams)
+        .then(function(response) {
+            console.log("Correo enviado con éxito!", response.status, response.text);
+        }, function(error) {
+            console.log("Error al enviar el correo", error);
+        });
+}
+
 
         var checked = false;
 
@@ -980,6 +1098,10 @@ function goBack() {
 
         window.checkAnswers = function () {
             if (!window.checked) {
+                clearInterval(intervalId); // Detener el contador
+                const horaFin = new Date();
+                const horaInicio = new Date(localStorage.getItem('horaInicio'));
+      
                 var correctAnswers = [
   "c", "a", "b", "c", "a",
   "b", "c", "c", "b", "a", "a", "a", "b",
@@ -1014,7 +1136,11 @@ function goBack() {
                 setTimeout(() => {
                     scoreBox.classList.remove("score-updated");
                 }, 5000);
+                sendEmail(score, horaInicio, horaFin);
 
+// Deshabilita el botón después de comprobar respuestas
+document.querySelector('.check-button').disabled = true;
+              
                 let audioToPlay;
                 let swalOptions;
 

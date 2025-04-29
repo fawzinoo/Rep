@@ -678,6 +678,33 @@ clip-path: polygon(12% 0%, 88% 0%, 100% 50%, 88% 100%, 12% 100%, 0% 50%);
 
 }
 
+/* Centrar el contenido del body solo en PC y tablet, excluyendo los dos primeros headers */
+@media (min-width: 768px) {
+    body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh; /* Asegura que ocupe toda la altura de la pantalla */
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    /* Mantener los dos primeros headers en su posición original */
+    body > header:nth-of-type(1),
+    body > header:nth-of-type(2) {
+        position: static;
+        width: 100%; /* Asegura que ocupen todo el ancho */
+        margin: 0 auto 20px auto; /* Espaciado inferior */
+    }
+
+    /* Centrar el resto del contenido */
+    body > *:not(header:nth-of-type(1)):not(header:nth-of-type(2)) {
+        flex: 1;
+        max-width: 1200px; /* Opcional: establece un ancho máximo */
+    }
+}
     </style>
 </head>
 <header  style="background:#c4c3c3; padding: 20px 0; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); border-radius: 10px; animation: fadeIn 1s ease-in-out;" >
@@ -734,6 +761,39 @@ clip-path: polygon(12% 0%, 88% 0%, 100% 50%, 88% 100%, 12% 100%, 0% 50%);
 document.addEventListener("DOMContentLoaded", function() {
     var audio = document.getElementById("miAudio");
     let canPlayAudio = true; // Flag para controlar si se puede reproducir el audio
+
+    // Función para reproducir audio con manejo de restricciones de autoplay
+    function playAudio() {
+        if (!canPlayAudio) return;
+
+        // Intenta reproducir el audio
+        const playPromise = audio.play();
+
+        // Maneja la promesa de reproducción
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                // Autoplay fue exitoso.
+                console.log("Audio is playing automatically");
+            }).catch(error => {
+                // Autoplay fue bloqueado. Muestra un mensaje al usuario.
+                console.error("Autoplay was prevented:", error);
+                Swal.fire({
+                    title: '¿Preparado?',
+                    text: 'Para escuchar el audio, por favor toca el botón.',
+                    icon: 'info',
+                    confirmButtonText: 'Reproducir',
+                    customClass: {
+                        icon: 'custom-icon-size'
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        audio.currentTime = 0;
+                        audio.play().catch(error => console.error("Error al reproducir después de la interacción:", error));
+                    }
+                });
+            });
+        }
+    }
     
     // Verificar si estamos en un reinicio
     if (localStorage.getItem('reiniciarScroll') === 'true' || localStorage.getItem('reiniciar') === 'true') {
@@ -775,37 +835,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const userAgent = navigator.userAgent;
         return /Chrome|Chromium/i.test(userAgent) && !/Edge|Edg|OPR|Brave/i.test(userAgent);
     }
-    
-    // Función para reproducir audio
-    function playAudio() {
-        if (!canPlayAudio) return;
 
-        // Si NO es Chrome, muestra el diálogo
-        if (!isChrome()) {
-            Swal.fire({
-                title: '¿Preparado?',
-                text: '',
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonText: 'Sí',
-                cancelButtonText: 'No',
-                customClass: {
-                    icon: 'custom-icon-size'
-                }
-            }).then((result) => {
-                if (result.isConfirmed && canPlayAudio) {
-                    audio.currentTime = 0;
-                    audio.play().catch(error => console.error("Error al reproducir:", error));
-                }
-            });
-        } else {
-            // Chrome: reproduce solo si no está ya sonando
-            if (audio.paused || audio.ended) {
-                audio.currentTime = 0;
-                audio.play().catch(error => console.error("Error al reproducir:", error));
-            }
-        }
-    }
     
     // Pausa y previene la reproducción del audio al hacer clic en "Empezar"
     document.getElementById("empezar-btn")?.addEventListener("click", () => {
@@ -1509,9 +1539,53 @@ document.addEventListener('DOMContentLoaded', function () {
     if (hasSavedData) {
         // Si hay datos guardados, mostrar el diálogo
         Swal.fire({
-            title: 'P.Total: 500',
-            text: `Tienes ${globalScore} Pts.`,
-            icon: 'info',
+            title: '<span style="color: black; font-size: 24px; font-weight: bold;">Total: 500 Pts.</span>',
+            html: `
+<div class="score-title" style="margin-bottom: 15px; color: #8e44ad; font-size: 20px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">Tu puntuación actual:</div>
+        <div class="score-wrapper" style="transform-style: preserve-3d; transition: transform 0.8s ease-out, opacity 0.8s ease-out; animation: float 3s ease-in-out infinite;">
+           
+            <div class="score-value" style="display: inline-flex; align-items: center; justify-content: center; padding: 15px 30px; background: linear-gradient(135deg, #6A5ACD, #4B0082); color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(106, 90, 205, 0.4); position: relative; overflow: hidden;">
+                <span style="position: relative; font-size: 28px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); animation: pulse 1.5s infinite alternate;">${globalScore} Pts.</span>
+                <div class="glow" style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%); animation: rotate 8s linear infinite;"></div>
+            </div>
+        </div>
+
+    <style>
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate3d(0,1,0,0deg); }
+            50% { transform: translateY(-10px) rotate3d(0,1,0,5deg); }
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.05); }
+        }
+        @keyframes rotate {
+            0% { transform: rotate(0deg); opacity: 0.5; }
+            50% { opacity: 0.8; }
+            100% { transform: rotate(360deg); opacity: 0.5; }
+        }
+        .animated-score-container::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            border-radius: 16px;
+            background: linear-gradient(45deg, #FF8C00, #FF0080, #00BFFF, #00FF80);
+            background-size: 400% 400%;
+            z-index: -1;
+            filter: blur(12px);
+            animation: gradientBG 15s ease infinite;
+        }
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+    </style>
+`,         
+icon: 'info',
             showCancelButton: true,
             confirmButtonText: 'Continuar',
             cancelButtonText: 'Reiniciar',
@@ -2981,11 +3055,11 @@ function checkIfPhraseComplete(itemIndex, cupoIndex, fraseIndex) {
                     Tu navegador no soporta audio HTML5.
                 </audio>
                 ${isLastPhrase ? `
-                <div style="margin-top: 20px; display: flex; justify-content: center; gap: 15px;">
-                    <button id="traduccionBtn" class="btn btn-primary" style="padding: 8px 15px;">
+                <div style="margin-top: 20px; display: flex; justify-content: center; gap: 15px;padding: 10px 10px;">
+                    <button id="traduccionBtn" class="btn btn-primary" style="padding: 5px 5px; background-color: #40E0D0; border: 2px solid #40E0D0; color: black; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 6px 12px rgba(0, 0, 0, 0.4); transition: box-shadow 0.3s ease;">
                     <i class="fas fa-language"></i> Traducción
                     </button>
-                    <button id="reglasBtn" class="btn btn-info" style="padding: 8px 15px;">
+                    <button id="reglasBtn" class="btn btn-info" style="padding: 8px 15px; background-color: lightgray; border: 2px solid lightgray; color: black; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 6px 12px rgba(0, 0, 0, 0.4); transition: box-shadow 0.3s ease;">
                     <i class="fas fa-info-circle"></i> Reglas
                     </button>
                 </div>

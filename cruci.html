@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crucigrama de Frutas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: linear-gradient(to bottom, #6366f1, #a5b4fc);
+            min-height: 100vh;
+        }
+
+       .header {
+            background-color: #4338ca;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+      .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+          .timer-mini {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .timer-mini.warning {
+            background-color: #f59e0b;
+            border-color: #f59e0b;
+            animation: pulse 1s infinite;
+        }
+.timer-mini-icon {
+            font-size: 12px;
+        }
+        .crossword-container {
+            background-color: #e0f2fe;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 0 auto;
+            max-width: 650px;
+        }
+
+        .fruit-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #4338ca;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+
+       .fruit-image {
+            width: 100px;
+            height: 100px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 3px solid white;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+ .fruit-image:hover {
+            transform: scale(1.05);
+        }
+
+          .image-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            cursor: pointer;
+        }
+        
+         .modal-image {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 15px;
+            border: 5px solid white;
+            object-fit: contain;
+            animation: zoomIn 0.3s ease;
+        }
+
+            @keyframes zoomIn {
+            from {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1001;
+        }
+
+        .close-modal:hover {
+            color: #ff6b6b;
+        }
+
+        .zoom-hint {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        .fruit-info {
+            text-align: center;
+        }
+
+        .fruit-name {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .fruit-instruction {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(18, 32px);
+    grid-template-rows: repeat(18, 32px);
+    gap: 1px;
+    margin: 15px 0;
+    justify-content: center;
+}
+
+        .cell {
+            width: 32px;
+            height: 32px;
+            border: 2px solid #333;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .white {
+            background-color: #f8fafc;
+        }
+
+        .green {
+            background-color: #86efac;
+            border: 3px solid #22c55e;
+        }
+
+        .blue {
+            background-color: #93c5fd;
+        }
+
+        .blocked {
+            background-color: #64748b;
+        }
+
+        .filled {
+            background-color: #f3f4f6;
+            color: #374151;
+            font-weight: bold;
+        }
+
+
+        input[type="text"] {
+            width: 100%;
+            height: 100%;
+            border: none;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            background: transparent;
+            text-transform: uppercase;
+        }
+
+        .green input[type="text"] {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .correct {
+            background-color: #22c55e !important;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 5px;
+            }
+            
+            .crossword-container {
+                padding: 10px;
+                max-width: 100%;
+            }
+
+             .header-right {
+                gap: 5px;
+            }
+
+            .timer-mini {
+                font-size: 10px;
+                padding: 3px 6px;
+            }
+
+        .grid {
+        grid-template-columns: repeat(18, 24px);
+        grid-template-rows: repeat(19, 24px);
+        gap: 1px;
+        margin: 10px 0;
+    }
+    
+    .cell {
+        width: 24px;
+        height: 24px;
+        font-size: 10px;
+    }
+            
+            .fruit-display {
+                flex-direction: column;
+                gap: 10px;
+                padding: 15px;
+            }
+            
+            .fruit-image {
+                width: 80px;
+                height: 80px;
+            }
+
+            .modal-image {
+                max-width: 95%;
+                max-height: 95%;
+            }
+.close-modal {
+                top: 10px;
+                right: 15px;
+                font-size: 30px;
+            }
+            .fruit-name {
+                font-size: 20px;
+            }
+        }
+           .timer-container {
+            display: none;
+        }
+
+        .timer-container.warning {
+            background-color: #f59e0b;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .timer-icon {
+            font-size: 20px;
+        }
+
+        /* Añadir este estilo para la clase separator */
+.separator {
+    background-color: #1f2937 !important;
+    color: white !important;
+    border: 3px solid #374151 !important;
+}
+    </style>
+</head>
+<body>
+   <div class="header">
+    <span>←</span>
+    <span style="font-size: 24px; font-weight: bold;">Crucigrama</span>
+    <div class="header-right">
+        <div id="timerMini" class="timer-mini">
+            <span class="timer-mini-icon">⏰</span>
+            <span id="timerDisplay">30</span>
+        </div>
+        <span>🍎 Frutas</span>
+    </div>
+</div>
+
+<div class="crossword-container">
+    <div class="fruit-display" id="fruitDisplay">
+        <div style="position: relative;">
+            <img id="fruitImage" class="fruit-image" src="" alt="Fruta" onclick="openImageModal()">
+            <div class="zoom-hint">🔍</div>
+        </div>
+        <div class="fruit-info">
+            <div class="fruit-name" id="fruitQuestion">¿Qué fruta es esta?</div>
+            <div class="fruit-instruction">Completa las casillas verdes</div>
+        </div>
+    </div>
+    
+    <div class="grid" id="crossword">
+        <!-- La cuadrícula se generará con JavaScript -->
+    </div>
+</div>
+
+<!-- Modal para imagen ampliada -->
+<div id="imageModal" class="image-modal" onclick="closeImageModal()">
+    <span class="close-modal" onclick="closeImageModal()">&times;</span>
+    <img id="modalImage" class="modal-image" src="" alt="Fruta ampliada">
+</div>
+<!-- Añadir estos botones antes del script, después del crossword-container -->
+<div style="text-align: center; margin: 20px 0;">
+    <button onclick="showAllFruits()" style="background: #4338ca; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer;">
+        Ver Todas las Frutas
+    </button>
+    <button onclick="returnToGame()" style="background: #059669; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer;">
+        Volver al Juego
+    </button>
+    <button onclick="showFruitsStats()" style="background: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer;">
+        Ver Estadísticas
+    </button>
+    <button onclick="checkIntersections()" style="background: #dc2626; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer;">
+        Verificar Intersecciones
+    </button>
+</div>
+    <script>
+// Añadir esta función después de la función resetGame()
+// ...existing code...
+function showAllFruits() {
+    console.log('Mostrando todas las frutas en el crucigrama...');
+    
+    const grid = document.getElementById('crossword');
+    grid.innerHTML = '';
+    
+    // CORREGIR: Usar las mismas dimensiones
+    const gridRows = 19;
+    const gridCols = 18;
+    const gridData = Array(gridRows).fill().map(() => Array(gridCols).fill(null));
+    
+    // Marcar todas las posiciones de frutas
+    fruits.forEach(fruit => {
+        const pos = fruit.position;
+        for (let i = 0; i < fruit.name.length; i++) {
+            let row, col;
+            if (pos.direction === 'horizontal') {
+                row = pos.row;
+                col = pos.col + i;
+            } else {
+                row = pos.row + i;
+                col = pos.col;
+            }
+            
+            // CORREGIR: Usar gridRows y gridCols
+            if (row >= 0 && row < gridRows && col >= 0 && col < gridCols) {
+                gridData[row][col] = {
+                    type: 'white',
+                    letter: fruit.name[i],
+                    fruitName: fruit.name,
+                    number: fruit.number
+                };
+            }
+        }
+    });
+    
+    // Crear el grid HTML - CORREGIR: Usar gridRows y gridCols
+    for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+            const cell = document.createElement('div');
+            cell.dataset.row = row;
+            cell.dataset.col = col;
+            
+            if (gridData[row][col] && gridData[row][col].type === 'white') {
+                // Casilla blanca con letra
+                cell.className = 'cell white';
+                cell.textContent = gridData[row][col].letter;
+                cell.style.backgroundColor = '#c8e6c9';
+                cell.style.color = '#1f2937';
+                
+                // Agregar números si es la primera casilla de una palabra
+                fruits.forEach(fruit => {
+                    if (fruit.position.row === row && fruit.position.col === col) {
+                        const numberSpan = document.createElement('span');
+                        numberSpan.textContent = fruit.number;
+                        numberSpan.style.position = 'absolute';
+                        numberSpan.style.top = '2px';
+                        numberSpan.style.left = '2px';
+                        numberSpan.style.fontSize = '8px';
+                        numberSpan.style.fontWeight = 'bold';
+                        numberSpan.style.color = '#000';
+                        numberSpan.style.zIndex = '10';
+                        cell.appendChild(numberSpan);
+                    }
+                });
+            } else {
+                // Casilla negra
+                cell.className = 'cell black';
+                cell.style.backgroundColor = '#000';
+            }
+            
+            grid.appendChild(cell);
+        }
+    }
+    
+    console.log('Todas las frutas mostradas en el crucigrama');
+}
+
+// Función para volver al modo de juego normal
+function returnToGame() {
+    console.log('Regresando al modo de juego normal...');
+    updateFruitDisplay();
+    generateGrid();
+    
+    // Solo reiniciar timer si no hay uno activo
+    if (!timer) {
+        startTimer();
+    }
+}
+
+// Función para mostrar estadísticas de las frutas
+function showFruitsStats() {
+    console.log('=== ESTADÍSTICAS DE FRUTAS ===');
+    
+    const horizontalFruits = fruits.filter(f => f.position.direction === 'horizontal');
+    const verticalFruits = fruits.filter(f => f.position.direction === 'vertical');
+    const fruitsWithSpaces = fruits.filter(f => f.name.includes(' '));
+    
+    console.log(`Total de frutas: ${fruits.length}`);
+    console.log(`Horizontales: ${horizontalFruits.length}`);
+    console.log(`Verticales: ${verticalFruits.length}`);
+    console.log(`Con espacios: ${fruitsWithSpaces.length}`);
+    
+    console.log('\n=== FRUTAS HORIZONTALES ===');
+    horizontalFruits.forEach((fruit, i) => {
+        console.log(`${i+1}. ${fruit.name} - Fila ${fruit.position.row}, Col ${fruit.position.col}`);
+    });
+    
+    console.log('\n=== FRUTAS VERTICALES ===');
+    verticalFruits.forEach((fruit, i) => {
+        console.log(`${i+1}. ${fruit.name} - Fila ${fruit.position.row}, Col ${fruit.position.col}`);
+    });
+    
+    if (fruitsWithSpaces.length > 0) {
+        console.log('\n=== FRUTAS CON ESPACIOS ===');
+        fruitsWithSpaces.forEach(fruit => {
+            console.log(`- ${fruit.name}`);
+        });
+    }
+}
+
+// Función para verificar intersecciones entre frutas
+function checkIntersections() {
+    console.log('=== VERIFICANDO INTERSECCIONES ===');
+    
+    const intersections = [];
+    
+    for (let i = 0; i < fruits.length; i++) {
+        for (let j = i + 1; j < fruits.length; j++) {
+            const fruit1 = fruits[i];
+            const fruit2 = fruits[j];
+            
+            // Solo verificar si tienen direcciones diferentes
+            if (fruit1.position.direction !== fruit2.position.direction) {
+                const intersection = findIntersection(fruit1, fruit2);
+                if (intersection) {
+                    intersections.push({
+                        fruit1: fruit1.name,
+                        fruit2: fruit2.name,
+                        position: intersection.position,
+                        letter: intersection.letter
+                    });
+                }
+            }
+        }
+    }
+    
+    console.log(`Total de intersecciones encontradas: ${intersections.length}`);
+    intersections.forEach(int => {
+        console.log(`${int.fruit1} ∩ ${int.fruit2} = "${int.letter}" en (${int.position.row}, ${int.position.col})`);
+    });
+    
+    return intersections;
+}
+
+// Función auxiliar para encontrar intersección entre dos frutas
+function findIntersection(fruit1, fruit2) {
+    const pos1 = fruit1.position;
+    const pos2 = fruit2.position;
+    
+    for (let i = 0; i < fruit1.name.length; i++) {
+        for (let j = 0; j < fruit2.name.length; j++) {
+            let row1, col1, row2, col2;
+            
+            if (pos1.direction === 'horizontal') {
+                row1 = pos1.row;
+                col1 = pos1.col + i;
+            } else {
+                row1 = pos1.row + i;
+                col1 = pos1.col;
+            }
+            
+            if (pos2.direction === 'horizontal') {
+                row2 = pos2.row;
+                col2 = pos2.col + j;
+            } else {
+                row2 = pos2.row + j;
+                col2 = pos2.col;
+            }
+            
+            // Si las posiciones coinciden y las letras son iguales
+            if (row1 === row2 && col1 === col2 && fruit1.name[i] === fruit2.name[j]) {
+                return {
+                    position: { row: row1, col: col1 },
+                    letter: fruit1.name[i]
+                };
+            }
+        }
+    }
+    
+    return null;
+}
+
+
+// ...existing code...
+// ...existing code...
+// ...existing code...
+const fruits = [
+    // Palabras Horizontales (14 palabras)
+    {
+        name: 'NECTARINA',
+        image: 'https://fawzinoo.github.io/Fotos/nectarina.png',
+        audio: 'https://fawzinoo.github.io/audios/La nectarina.mp3',
+        position: { row: 0, col: 0, direction: 'horizontal' },
+        number: 1
+    },
+    {
+        name: 'LIMON',
+        image: 'https://fawzinoo.github.io/Fotos/limon.png',
+        audio: 'https://fawzinoo.github.io/audios/El limon.mp3',
+        position: { row: 0, col: 11, direction: 'horizontal' },
+        number: 4
+    },
+    {
+        name: 'SANDIA',
+        image: 'https://fawzinoo.github.io/Fotos/sandía.png',
+        audio: 'https://fawzinoo.github.io/audios/La sandia.mp3',
+        position: { row: 2, col: 10, direction: 'horizontal' },
+        number: 6
+    },
+    {
+        name: 'UVA',
+        image: 'https://fawzinoo.github.io/Fotos/uva.png',
+        audio: 'https://fawzinoo.github.io/audios/Las uvas.mp3',
+        position: { row: 3, col: 2, direction: 'horizontal' },
+        number: 7
+    },
+    {
+        name: 'CHIRIMOYA',
+        image: 'https://fawzinoo.github.io/Fotos/chirimoya.png',
+        audio: 'https://fawzinoo.github.io/audios/La chirimoya.mp3',
+        position: { row: 4, col: 5, direction: 'horizontal' },
+        number: 8
+    },
+    {
+        name: 'KIWI',
+        image: 'https://fawzinoo.github.io/Fotos/kiwi.png',
+        audio: 'https://fawzinoo.github.io/audios/El kiwi.mp3',
+        position: { row: 6, col: 12, direction: 'horizontal' },
+        number: 11
+    },
+    {
+        name: 'PERA',
+        image: 'https://fawzinoo.github.io/Fotos/pera.png',
+        audio: 'https://fawzinoo.github.io/audios/La pera.mp3',
+        position: { row: 7, col: 2, direction: 'horizontal' },
+        number: 12
+    },
+    {
+        name: 'AGUACATE',
+        image: 'https://fawzinoo.github.io/Fotos/aguacate.png',
+        audio: 'https://fawzinoo.github.io/audios/El aguacate.mp3',
+        position: { row: 8, col: 10, direction: 'horizontal' },
+        number: 14
+    },
+    {
+        name: 'FRAMBUESA',
+        image: 'https://fawzinoo.github.io/Fotos/frambuesa.png',
+        audio: 'https://fawzinoo.github.io/audios/La frambuesa.mp3',
+        position: { row: 10, col: 2, direction: 'horizontal' },
+        number: 16
+    },
+    {
+        name: 'MANZANA',
+        image: 'https://fawzinoo.github.io/Fotos/manzana.png',
+        audio: 'https://fawzinoo.github.io/audios/La manzana.mp3',
+        position: { row: 12, col: 4, direction: 'horizontal' },
+        number: 17
+    },
+    {
+        name: 'PLATANO',
+        image: 'https://fawzinoo.github.io/Fotos/platano.png',
+        audio: 'https://fawzinoo.github.io/audios/El platano.mp3',
+        position: { row: 14, col: 10, direction: 'horizontal' },
+        number: 21
+    },
+    {
+        name: 'CEREZA',
+        image: 'https://fawzinoo.github.io/Fotos/cereza.png',
+        audio: 'https://fawzinoo.github.io/audios/La cereza.mp3',
+        position: { row: 15, col: 1, direction: 'horizontal' },
+        number: 22
+    },
+    {
+        name: 'PAPAYA',
+        image: 'https://fawzinoo.github.io/Fotos/papaya.png',
+        audio: 'https://fawzinoo.github.io/audios/La papaya.mp3',
+        position: { row: 18, col: 3, direction: 'horizontal' },
+        number: 24
+    },
+    {
+        name: 'MANGO',
+        image: 'https://fawzinoo.github.io/Fotos/mango.png',
+        audio: 'https://fawzinoo.github.io/audios/El mango.mp3',
+        position: { row: 18, col: 12, direction: 'horizontal' },
+        number: 25
+    },
+
+    // Palabras Verticales (11 palabras)
+    {
+        name: 'NARANJA',
+        image: 'https://fawzinoo.github.io/Fotos/naranja.png',
+        audio: 'https://fawzinoo.github.io/audios/La naranja.mp3',
+        position: { row: 12, col: 6, direction: 'vertical' },
+        number: 1
+    },
+    {
+        name: 'CAQUI',
+        image: 'https://fawzinoo.github.io/Fotos/caqui.png',
+        audio: 'https://fawzinoo.github.io/audios/El Caqui.mp3',
+        position: { row: 0, col: 2, direction: 'vertical' },
+        number: 2
+    },
+    {
+        name: 'ALBARICOQUE',
+        image: 'https://fawzinoo.github.io/Fotos/albaricoque.png',
+        audio: 'https://fawzinoo.github.io/audios/El albaricoque.mp3',
+        position: { row: 0, col: 8, direction: 'vertical' },
+        number: 3
+    },
+    {
+        name: 'MANDARINA',
+        image: 'https://fawzinoo.github.io/Fotos/mandarina.png',
+        audio: 'https://fawzinoo.github.io/audios/La mandarina.mp3',
+        position: { row: 0, col: 13, direction: 'vertical' },
+        number: 5
+    },
+    {
+        name: 'FRESA',
+        image: 'https://fawzinoo.github.io/Fotos/fresa.png',
+        audio: 'https://fawzinoo.github.io/audios/La fresa.mp3',
+        position: { row: 6, col: 4, direction: 'vertical' },
+        number: 9
+    },
+    {
+        name: 'GRANADA',
+        image: 'https://fawzinoo.github.io/Fotos/granada.png',
+        audio: 'https://fawzinoo.github.io/audios/La granada.mp3',
+        position: { row: 6, col: 10, direction: 'vertical' },
+        number: 10
+    },
+    {
+        name: 'MELON',
+        image: 'https://fawzinoo.github.io/Fotos/melon.png',
+        audio: 'https://fawzinoo.github.io/audios/El melon.mp3',
+        position: { row: 7, col: 17, direction: 'vertical' },
+        number: 13
+    },
+    
+    {
+        name: 'CIRUELA',
+        image: 'https://fawzinoo.github.io/Fotos/ciruela.png',
+        audio: 'https://fawzinoo.github.io/audios/La ciruela.mp3',
+        position: { row: 8, col: 14, direction: 'vertical' },
+        number: 18
+    },
+    {
+        name: 'COCO',
+        image: 'https://fawzinoo.github.io/Fotos/coco.png',
+        audio: 'https://fawzinoo.github.io/audios/El coco.mp3',
+        position: { row: 13, col: 1, direction: 'vertical' },
+        number: 19
+    },
+    {
+        name: 'POMELO',
+        image: 'https://fawzinoo.github.io/Fotos/pomelo.png',
+        audio: 'https://fawzinoo.github.io/audios/El pomelo.mp3',
+        position: { row: 13, col: 16, direction: 'vertical' },
+        number: 20
+    },
+    {
+        name: 'PIÑA',
+        image: 'https://fawzinoo.github.io/Fotos/piña.png',
+        audio: 'https://fawzinoo.github.io/audios/La pina.mp3',
+        position: { row: 15, col: 8, direction: 'vertical' },
+        number: 23
+    }
+];
+// ...existing code...
+// ...existing code...
+
+
+
+
+        let currentFruitIndex = 0;
+        let currentFruit = fruits[currentFruitIndex];
+        let completedFruits = new Set();
+        let availableFruits = []; 
+         let incompleteFruits = [];
+
+                // Variables del timer
+        let timer = null;
+        let timeLeft = 30;
+        let currentRound = 1;
+        let totalRounds = 0;
+
+   function playAudio(audioUrl) {
+    try {
+        // Detener cualquier audio previo que pueda estar reproduciéndose
+        if (window.currentAudio) {
+            window.currentAudio.pause();
+            window.currentAudio.currentTime = 0;
+        }
+        
+        const audio = new Audio(audioUrl);
+        window.currentAudio = audio; // Guardar referencia global
+        
+        audio.volume = 0.6; // Reducir volumen para evitar saturación
+        audio.preload = 'auto';
+        
+        // Manejar errores de carga
+        audio.onerror = function() {
+            console.log('Error al cargar el audio:', audioUrl);
+            window.currentAudio = null;
+        };
+        
+        // Limpiar referencia cuando termine
+        audio.onended = function() {
+            window.currentAudio = null;
+        };
+        
+        // Reproducir cuando esté listo
+        const playPromise = audio.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                console.log('Audio reproducido correctamente');
+            }).catch(error => {
+                console.log('Error al reproducir audio:', error);
+                window.currentAudio = null;
+            });
+        }
+        
+    } catch (error) {
+        console.log('Error creando objeto Audio:', error);
+    }
+}
+function stopAllAudio() {
+    // Detener audio de frutas
+    if (window.currentAudio) {
+        try {
+            window.currentAudio.pause();
+            window.currentAudio.currentTime = 0;
+        } catch(e) {}
+        window.currentAudio = null;
+    }
+    
+    // Detener oscilador de éxito
+    if (window.currentOscillator) {
+        try {
+            window.currentOscillator.stop();
+            window.currentOscillator.disconnect();
+        } catch(e) {}
+        window.currentOscillator = null;
+    }
+}
+
+// Añadir función para verificar elementos DOM
+function verifyDOMElements() {
+    const timerMini = document.getElementById('timerMini');
+    const timerDisplay = document.getElementById('timerDisplay');
+    
+    console.log('Verificando elementos DOM:');
+    console.log('timerMini:', timerMini ? 'OK' : 'NO ENCONTRADO');
+    console.log('timerDisplay:', timerDisplay ? 'OK' : 'NO ENCONTRADO');
+    
+    return timerMini && timerDisplay;
+}
+
+        // Función para iniciar el timer
+function startTimer() {
+    console.log('Iniciando timer para:', currentFruit.name);
+    
+    // Limpiar timer anterior si existe
+    if (timer) {
+        clearInterval(timer);
+        timer = null;
+    }
+    
+    timeLeft = 30;
+    updateTimerDisplay();
+    
+    timer = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        console.log(`Timer: ${timeLeft} segundos restantes para ${currentFruit.name}`);
+        
+        // Cambiar color cuando quedan 10 segundos
+        const timerMini = document.getElementById('timerMini');
+        if (timerMini) {
+            if (timeLeft <= 10) {
+                timerMini.classList.add('warning');
+            } else {
+                timerMini.classList.remove('warning');
+            }
+        }
+        
+        // Tiempo agotado
+        if (timeLeft <= 0) {
+            console.log('¡TIEMPO AGOTADO! Ejecutando timeout...');
+            clearInterval(timer);
+            timer = null;
+            
+            // Ejecutar inmediatamente sin setTimeout
+            handleTimeOut();
+        }
+    }, 1000);
+    
+    console.log('Timer iniciado correctamente');
+}
+        // Función para actualizar la visualización del timer
+function updateTimerDisplay() {
+    const timerDisplay = document.getElementById('timerDisplay');
+    if (timerDisplay) {
+        timerDisplay.textContent = timeLeft;
+    } else {
+        console.error('Elemento timerDisplay no encontrado');
+    }
+}
+
+        // Función para detener el timer
+  function stopTimer() {
+    console.log('Deteniendo timer...');
+    if (timer) {
+        clearInterval(timer);
+        timer = null;
+    }
+    
+    const timerMini = document.getElementById('timerMini');
+    if (timerMini) {
+        timerMini.classList.remove('warning');
+    }
+    console.log('Timer detenido');
+}
+
+function initializeGame() {
+    console.log('=== INICIALIZANDO JUEGO ===');
+    
+    // Verificar que los elementos del DOM existan
+    if (!verifyDOMElements()) {
+        console.error('Error: Elementos del DOM no encontrados');
+        return;
+    }
+    
+    initializeRandomFruits();
+    updateFruitDisplay();
+    generateGrid();
+    startTimer();
+    
+    console.log('=== JUEGO INICIALIZADO ===');
+}
+
+// Cambiar la inicialización al final del script de:
+// initializeRandomFruits();
+// updateFruitDisplay();
+// generateGrid();
+// startTimer();
+
+// A:
+// Esperar a que el DOM esté completamente cargado
+document.addEventListener('DOMContentLoaded', function() {
+    initializeGame();
+});
+
+// Como respaldo, también ejecutar después de un pequeño delay
+setTimeout(() => {
+    if (!timer) {
+        console.log('Respaldo: inicializando juego...');
+        initializeGame();
+    }
+}, 500);
+
+        // Función cuando se agota el tiempo
+function handleTimeOut() {
+    console.log('=== TIMEOUT EJECUTADO ===');
+    console.log(`Tiempo agotado para: ${currentFruit.name}`);
+    console.log(`Fruta actual index: ${currentFruitIndex}`);
+    console.log(`Completadas: ${Array.from(completedFruits)}`);
+    console.log(`Disponibles: ${availableFruits}`);
+    
+    // Añadir a frutas incompletas si no está completada
+    if (!completedFruits.has(currentFruitIndex)) {
+        incompleteFruits.push(currentFruitIndex);
+        console.log(`Añadida ${currentFruit.name} (${currentFruitIndex}) a incompletas`);
+    }
+    
+    console.log(`Frutas incompletas total: ${incompleteFruits}`);
+    
+    // Buscar siguiente fruta inmediatamente
+    console.log('Buscando siguiente fruta...');
+    findNextAvailableFruit();
+}
+
+
+// Nueva función para encontrar la siguiente fruta de forma más directa
+function findNextAvailableFruit() {
+    console.log('=== BUSCANDO SIGUIENTE FRUTA ===');
+    
+    let nextIndex = -1;
+    let currentIndexInArray = availableFruits.indexOf(currentFruitIndex);
+    
+    console.log(`Posición actual en array: ${currentIndexInArray}`);
+    
+    // Buscar desde la siguiente posición en adelante
+    for (let i = currentIndexInArray + 1; i < availableFruits.length; i++) {
+        if (!completedFruits.has(availableFruits[i])) {
+            nextIndex = availableFruits[i];
+            console.log(`Siguiente fruta encontrada: ${fruits[nextIndex].name} (index: ${nextIndex})`);
+            break;
+        }
+    }
+    
+    // Si no encontró nada, buscar desde el principio
+    if (nextIndex === -1) {
+        for (let i = 0; i < currentIndexInArray; i++) {
+            if (!completedFruits.has(availableFruits[i])) {
+                nextIndex = availableFruits[i];
+                console.log(`Fruta encontrada al principio: ${fruits[nextIndex].name} (index: ${nextIndex})`);
+                break;
+            }
+        }
+    }
+    
+    if (nextIndex !== -1) {
+        console.log(`Cambiando a fruta: ${fruits[nextIndex].name}`);
+        currentFruitIndex = nextIndex;
+        currentFruit = fruits[currentFruitIndex];
+        
+        updateFruitDisplay();
+        generateGrid();
+        startTimer();
+        
+        console.log('=== CAMBIO COMPLETADO ===');
+    } else {
+        console.log('No hay más frutas disponibles, iniciando nueva ronda...');
+        checkForIncompleteRounds();
+    }
+}
+
+
+        // Función para mezclar array aleatoriamente (algoritmo Fisher-Yates)
+ function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+// Inicializar frutas disponibles de forma aleatoria
+function initializeRandomFruits() {
+    console.log('Inicializando frutas aleatorias...');
+    availableFruits = shuffleArray(fruits.map((_, index) => index));
+    currentFruitIndex = availableFruits[0];
+    currentFruit = fruits[currentFruitIndex];
+    console.log('Primera fruta:', currentFruit.name);
+    console.log('Orden aleatorio:', availableFruits.map(i => fruits[i].name));
+}
+
+
+
+  function openImageModal() {
+            const modal = document.getElementById('imageModal');
+            const modalImage = document.getElementById('modalImage');
+            const fruitImage = document.getElementById('fruitImage');
+            
+            modalImage.src = fruitImage.src;
+            modal.style.display = 'flex';
+            
+            // Prevenir scroll del body cuando el modal está abierto
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeImageModal() {
+            const modal = document.getElementById('imageModal');
+            modal.style.display = 'none';
+            
+            // Restaurar scroll del body
+            document.body.style.overflow = 'auto';
+        }
+         // Cerrar modal con tecla Escape
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeImageModal();
+            }
+        });
+         // Prevenir que el clic en la imagen cierre el modal
+        document.getElementById('modalImage').addEventListener('click', function(event) {
+            event.stopPropagation();
+        });
+
+        function updateFruitDisplay() {
+            document.getElementById('fruitImage').src = currentFruit.image;
+            document.getElementById('fruitQuestion').textContent = `¿Qué fruta es esta? (${currentFruit.name.length} letras)`;
+        }
+        // Generar sonido de éxito
+ function playSuccessSound() {
+    try {
+        // Detener cualquier oscilador previo
+        if (window.currentOscillator) {
+            try {
+                window.currentOscillator.stop();
+                window.currentOscillator.disconnect();
+            } catch(e) {}
+            window.currentOscillator = null;
+        }
+        
+        // Usar un solo contexto de audio global
+        if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        const audioContext = window.audioContext;
+        
+        // Asegurar que el contexto esté activo
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        
+        // Crear oscilador
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        // Guardar referencia para poder detenerlo
+        window.currentOscillator = oscillator;
+        
+        // Conectar
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Configurar
+        oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
+        oscillator.type = 'sine';
+        
+        // Volumen con fade
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.15, audioContext.currentTime + 0.05);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+        
+        // Reproducir
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+        
+        // Limpiar cuando termine
+        oscillator.onended = function() {
+            try {
+                oscillator.disconnect();
+                gainNode.disconnect();
+            } catch(e) {}
+            window.currentOscillator = null;
+        };
+        
+    } catch (e) {
+        console.log('Error en audio:', e);
+    }
+}
+
+
+function generateGrid() {
+    const grid = document.getElementById('crossword');
+    grid.innerHTML = '';
+    
+    // CORREGIR: Usar las mismas dimensiones que en el CSS
+    const gridRows = 19;  // Debe coincidir con el CSS
+    const gridCols = 18;  // Debe coincidir con el CSS
+    const gridData = Array(gridRows).fill().map(() => Array(gridCols).fill(null));
+    
+    // Marcar casillas que deben ser blancas (donde van las letras)
+    fruits.forEach(fruit => {
+        const pos = fruit.position;
+        for (let i = 0; i < fruit.name.length; i++) {
+            let row, col;
+            if (pos.direction === 'horizontal') {
+                row = pos.row;
+                col = pos.col + i;
+            } else {
+                row = pos.row + i;
+                col = pos.col;
+            }
+            
+            // CORREGIR: Usar gridRows y gridCols en lugar de gridSize
+            if (row >= 0 && row < gridRows && col >= 0 && col < gridCols) {
+                if (!gridData[row][col]) {
+                    gridData[row][col] = { type: 'white', letters: [] };
+                }
+                gridData[row][col].letters.push({
+                    letter: fruit.name[i],
+                    fruitIndex: fruits.indexOf(fruit),
+                    letterIndex: i
+                });
+            }
+        }
+    });
+    
+    // Crear el grid HTML - CORREGIR: Usar gridRows y gridCols
+    for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+            const cell = document.createElement('div');
+            cell.dataset.row = row;
+            cell.dataset.col = col;
+            
+            if (gridData[row][col] && gridData[row][col].type === 'white') {
+                // Casilla blanca (para letras)
+                cell.className = 'cell white';
+                
+                // Verificar si esta casilla pertenece a la fruta actual
+                const belongsToCurrentFruit = gridData[row][col].letters.some(
+                    letterData => letterData.fruitIndex === currentFruitIndex
+                );
+                
+                if (belongsToCurrentFruit) {
+                    // Es parte de la fruta actual - hacer editable
+                    cell.classList.add('current-fruit');
+                    
+                    // Verificar si ya hay una letra de una fruta completada
+                    const completedLetter = gridData[row][col].letters.find(
+                        letterData => completedFruits.has(letterData.fruitIndex)
+                    );
+                    
+                    if (completedLetter) {
+                        // Ya hay una letra completada - mostrarla
+                        cell.textContent = completedLetter.letter;
+                        cell.style.backgroundColor = '#c8e6c9'; // Verde claro
+                        cell.style.color = '#1f2937';
+                    } else {
+                        // Crear input para esta casilla
+                        const input = document.createElement('input');
+                        input.type = 'text';
+                        input.maxLength = 1;
+                        input.addEventListener('input', handleInput);
+                        input.addEventListener('keydown', handleKeyDown);
+                        cell.appendChild(input);
+                    }
+                } else {
+                    // No es parte de la fruta actual
+                    const completedLetter = gridData[row][col].letters.find(
+                        letterData => completedFruits.has(letterData.fruitIndex)
+                    );
+                    
+                    if (completedLetter) {
+                        // Mostrar letra de fruta completada
+                        cell.textContent = completedLetter.letter;
+                        cell.style.backgroundColor = '#c8e6c9'; // Verde claro
+                        cell.style.color = '#1f2937';
+                    }
+                }
+                
+                // Agregar números de las palabras (solo en la primera casilla)
+                fruits.forEach(fruit => {
+                    if (fruit.position.row === row && fruit.position.col === col) {
+                        const numberSpan = document.createElement('span');
+                        numberSpan.textContent = fruit.number;
+                        numberSpan.style.position = 'absolute';
+                        numberSpan.style.top = '2px';
+                        numberSpan.style.left = '2px';
+                        numberSpan.style.fontSize = '8px';
+                        numberSpan.style.fontWeight = 'bold';
+                        numberSpan.style.color = '#000';
+                        numberSpan.style.zIndex = '10';
+                        cell.appendChild(numberSpan);
+                    }
+                });
+                
+            } else {
+                // Casilla negra
+                cell.className = 'cell black';
+                cell.style.backgroundColor = '#000';
+            }
+            
+            grid.appendChild(cell);
+        }
+    }
+    
+    // Enfocar el primer input disponible
+    const firstInput = document.querySelector('.current-fruit input');
+    if (firstInput) {
+        firstInput.focus();
+    }
+}
+// ...existing code...
+
+function shouldCellHaveSeparator(row, col) {
+    const pos = currentFruit.position;
+    
+    // Solo aplicar a la fruta actual
+    if (!isCurrentFruitCell(row, col)) {
+        return false;
+    }
+    
+    // Calcular la posición relativa en el nombre de la fruta
+    let relativeIndex;
+    if (pos.direction === 'horizontal') {
+        relativeIndex = col - pos.col;
+    } else {
+        relativeIndex = row - pos.row;
+    }
+    
+    // Buscar espacios en el nombre de la fruta y verificar si esta posición corresponde a un espacio
+    const fruitName = currentFruit.name;
+    let letterCount = 0;
+    
+    for (let i = 0; i < fruitName.length; i++) {
+        if (fruitName[i] === ' ') {
+            // Si encontramos un espacio y coincide con la posición relativa
+            if (letterCount === relativeIndex) {
+                return true;
+            }
+        } else {
+            letterCount++;
+        }
+    }
+    
+    return false;
+}
+
+ function isCurrentFruitCell(row, col) {
+    const pos = currentFruit.position;
+    const nameWithoutSpaces = currentFruit.name.replace(/\s/g, '');
+    const nameLength = nameWithoutSpaces.length + (currentFruit.name.split(' ').length - 1); // Contar espacios como posiciones
+    
+    if (pos.direction === 'horizontal') {
+        return row === pos.row && col >= pos.col && col < pos.col + nameLength;
+    } else {
+        return col === pos.col && row >= pos.row && row < pos.row + nameLength;
+    }
+}
+
+        function isCompletedFruitCell(row, col) {
+            return fruits.some((fruit, index) => {
+                if (!completedFruits.has(index)) return false;
+                
+                const pos = fruit.position;
+                if (pos.direction === 'horizontal') {
+                    return row === pos.row && col >= pos.col && col < pos.col + fruit.name.length;
+                } else {
+                    return col === pos.col && row >= pos.row && row < pos.row + fruit.name.length;
+                }
+            });
+        }
+
+        function getLetterAt(row, col) {
+            for (let i = 0; i < fruits.length; i++) {
+                if (completedFruits.has(i)) {
+                    const fruit = fruits[i];
+                    const pos = fruit.position;
+                    
+                    if (pos.direction === 'horizontal') {
+                        if (row === pos.row && col >= pos.col && col < pos.col + fruit.name.length) {
+                            return fruit.name[col - pos.col];
+                        }
+                    } else {
+                        if (col === pos.col && row >= pos.row && row < pos.row + fruit.name.length) {
+                            return fruit.name[row - pos.row];
+                        }
+                    }
+                }
+            }
+            return '';
+        }
+
+        function handleInput(event) {
+            const input = event.target;
+            const value = input.value.toUpperCase();
+            input.value = value;
+            
+            if (value && value.length === 1) {
+                const nextInput = getNextInput(input);
+                if (nextInput) {
+                    nextInput.focus();
+                }
+            }
+            
+            setTimeout(checkAnswerAutomatic, 100);
+        }
+
+        function handleKeyDown(event) {
+            const input = event.target;
+            
+            // Manejar tecla Backspace (borrar hacia atrás)
+            if (event.key === 'Backspace') {
+                event.preventDefault();
+                
+                if (input.value) {
+                    // Si hay contenido, borrarlo
+                    input.value = '';
+                } else {
+                    // Si no hay contenido, ir al campo anterior
+                    const prevInput = getPreviousInput(input);
+                    if (prevInput) {
+                        prevInput.focus();
+                        prevInput.value = '';
+                    }
+                }
+            }
+            
+            // Manejar tecla Delete (borrar hacia adelante)
+            if (event.key === 'Delete') {
+                event.preventDefault();
+                input.value = '';
+                
+                // Opcional: ir al siguiente campo
+                const nextInput = getNextInput(input);
+                if (nextInput) {
+                    nextInput.focus();
+                }
+            }
+            
+            // Manejar flechas para navegación
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                const prevInput = getPreviousInput(input);
+                if (prevInput) {
+                    prevInput.focus();
+                }
+            }
+            
+            if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                const nextInput = getNextInput(input);
+                if (nextInput) {
+                    nextInput.focus();
+                }
+            }
+            
+            // Verificar automáticamente después de cualquier cambio
+            setTimeout(checkAnswerAutomatic, 100);
+        }
+
+ function getNextInput(currentInput) {
+    const cell = currentInput.parentElement;
+    const row = parseInt(cell.dataset.row);
+    const col = parseInt(cell.dataset.col);
+    const pos = currentFruit.position;
+    
+    let nextRow, nextCol;
+    if (pos.direction === 'horizontal') {
+        nextRow = row;
+        nextCol = col + 1;
+    } else {
+        nextRow = row + 1;
+        nextCol = col;
+    }
+    
+    // Buscar la siguiente casilla que sea un input (no una intersección pre-llenada)
+    let attempts = 0;
+    while (attempts < currentFruit.name.length) {
+        const nextCell = document.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`);
+        const nextInput = nextCell ? nextCell.querySelector('input') : null;
+        
+        if (nextInput) {
+            return nextInput;
+        }
+        
+        // Si no hay input, continuar a la siguiente posición
+        if (pos.direction === 'horizontal') {
+            nextCol++;
+        } else {
+            nextRow++;
+        }
+        attempts++;
+    }
+    
+    return null;
+}
+
+function getPreviousInput(currentInput) {
+    const cell = currentInput.parentElement;
+    const row = parseInt(cell.dataset.row);
+    const col = parseInt(cell.dataset.col);
+    const pos = currentFruit.position;
+    
+    let prevRow, prevCol;
+    if (pos.direction === 'horizontal') {
+        prevRow = row;
+        prevCol = col - 1;
+    } else {
+        prevRow = row - 1;
+        prevCol = col;
+    }
+    
+    // Buscar la casilla anterior que sea un input (no una intersección pre-llenada)
+    let attempts = 0;
+    while (attempts < currentFruit.name.length) {
+        const prevCell = document.querySelector(`[data-row="${prevRow}"][data-col="${prevCol}"]`);
+        const prevInput = prevCell ? prevCell.querySelector('input') : null;
+        
+        if (prevInput) {
+            return prevInput;
+        }
+        
+        // Si no hay input, continuar a la posición anterior
+        if (pos.direction === 'horizontal') {
+            prevCol--;
+        } else {
+            prevRow--;
+        }
+        attempts++;
+    }
+    
+    return null;
+}
+
+ function checkAnswerAutomatic() {
+    const inputs = document.querySelectorAll('.green input');
+    let userAnswer = '';
+    let isComplete = true;
+    
+    // Construir la respuesta considerando inputs, intersecciones pre-llenadas y separadores
+    const pos = currentFruit.position;
+    const nameWithoutSpaces = currentFruit.name.replace(/\s/g, '');
+    
+    for (let i = 0; i < currentFruit.name.length; i++) {
+        if (currentFruit.name[i] === ' ') {
+            userAnswer += ' '; // Añadir espacio en la respuesta
+            continue;
+        }
+        
+        let letterFound = false;
+        let currentRow, currentCol;
+        
+        // Calcular posición considerando espacios
+        let visualIndex = i;
+        if (pos.direction === 'horizontal') {
+            currentRow = pos.row;
+            currentCol = pos.col + visualIndex;
+        } else {
+            currentRow = pos.row + visualIndex;
+            currentCol = pos.col;
+        }
+        
+        // Buscar si es una intersección pre-llenada
+        const intersectionCell = document.querySelector(`[data-row="${currentRow}"][data-col="${currentCol}"].filled-intersection`);
+        if (intersectionCell) {
+            userAnswer += intersectionCell.textContent;
+            letterFound = true;
+        } else {
+            // Buscar si es un input
+            const inputCell = document.querySelector(`[data-row="${currentRow}"][data-col="${currentCol}"] input`);
+            if (inputCell && inputCell.value) {
+                userAnswer += inputCell.value;
+                letterFound = true;
+            }
+        }
+        
+        if (!letterFound) {
+            isComplete = false;
+            break;
+        }
+    }
+    
+    if (isComplete && userAnswer === currentFruit.name) {
+        stopTimer();
+        playSuccessSound();
+        
+        inputs.forEach(input => {
+            input.parentElement.classList.add('correct');
+        });
+        
+        completedFruits.add(currentFruitIndex);
+        incompleteFruits = incompleteFruits.filter(index => index !== currentFruitIndex);
+        
+        setTimeout(() => {
+            playAudio(currentFruit.audio);
+        }, 800);
+        
+        setTimeout(() => {
+            nextFruit();
+        }, 3000);
+    }
+}
+
+function nextFruit() {
+    console.log('nextFruit() llamada (palabra completada)');
+    stopTimer();
+    stopAllAudio();
+    
+    // Usar la misma lógica que para timeout
+    setTimeout(() => {
+        findNextAvailableFruit();
+    }, 100);
+}
+function checkForIncompleteRounds() {
+    if (incompleteFruits.length > 0) {
+        currentRound++;
+        console.log(`Iniciando ronda ${currentRound} con ${incompleteFruits.length} frutas pendientes`);
+        
+        // Reiniciar con las frutas incompletas
+        availableFruits = shuffleArray([...incompleteFruits]);
+        incompleteFruits = [];
+        
+        currentFruitIndex = availableFruits[0];
+        currentFruit = fruits[currentFruitIndex];
+        updateFruitDisplay();
+        generateGrid();
+        startTimer();
+    } else {
+        // Todas las frutas completadas
+        showCompletionMessage();
+    }
+}
+
+       function showCompletionMessage() {
+            const completedCount = completedFruits.size;
+            const totalFruits = fruits.length;
+            
+            let message = `¡Felicidades! Has completado ${completedCount} de ${totalFruits} frutas del crucigrama 🎉`;
+            
+            if (currentRound > 1) {
+                message += `\n\nNúmero de rondas: ${currentRound}`;
+            }
+            
+            if (completedCount === totalFruits) {
+                message += '\n¡Completaste todas las frutas! 🏆';
+            }
+            
+            alert(message);
+            
+            // Opcional: Reiniciar el juego
+            if (confirm('¿Quieres jugar otra vez con un orden diferente?')) {
+                resetGame();
+            }
+        }
+
+    function resetGame() {
+            stopTimer();
+            completedFruits.clear();
+            incompleteFruits = [];
+            currentRound = 1;
+            initializeRandomFruits();
+            updateFruitDisplay();
+            generateGrid();
+            startTimer();
+        }
+
+  // Inicialización
+        initializeRandomFruits();
+        updateFruitDisplay();
+        generateGrid();
+        startTimer(); // Iniciar el primer timer
+    </script>
+</body>
+</html>

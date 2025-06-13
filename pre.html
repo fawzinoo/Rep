@@ -1096,7 +1096,7 @@ function startSubGame(subcategory) {
     currentUser.currentSection = 'lexico';
     saveSession();
     
-    const baseUrl = 'https://script.google.com/macros/s/AKfycbxxyoeSKcnonojoDyxObilgamW2KKKg_DcvbxGRE478t1KlF4RQ-_ZTIo3G_eaE4jI4/exec';
+    const baseUrl = 'https://script.google.com/macros/s/AKfycbz5BjXHsAkzLojFjnGqDoCalQKSF_706CDTu6NNKh7C36aRI-Hv-ueaPCuKi2T2pfx0/exec';
     
     // Registrar acceso al tema
     registerTopicAccess(subcategory);
@@ -1129,32 +1129,32 @@ function openCrossword(url, title) {
     const overlay = document.getElementById('crosswordOverlay');
     const container = document.getElementById('crosswordContainer');
     const iframe = document.getElementById('crosswordIframe');
-    
+
     // Obtener datos del usuario
     const username = getSavedUsername() || currentUser.username;
     const userOrderNumber = currentUser.orderNumber || Date.now();
-    
+
     // Construir URL con parámetros de usuario
     const urlWithParams = new URL(url);
-    urlWithParams.searchParams.append('username', username);
-    urlWithParams.searchParams.append('orderNumber', userOrderNumber);
-    urlWithParams.searchParams.append('timestamp', Date.now());
-    
+    urlWithParams.searchParams.set('username', username);
+    urlWithParams.searchParams.set('orderNumber', userOrderNumber);
+    urlWithParams.searchParams.set('timestamp', Date.now());
+
     // Configurar el contenido
     iframe.src = urlWithParams.toString();
-    
+
     // Mostrar overlay
     overlay.style.display = 'block';
-    
+
     // Trigger transición
     setTimeout(() => {
         container.classList.add('show');
     }, 100);
-    
+
     // Comunicación mejorada con el iframe
     iframe.onload = function() {
         console.log('Iframe cargado, enviando datos de usuario...');
-        
+
         // Enviar datos vía postMessage
         const userData = {
             type: 'USER_DATA',
@@ -1163,26 +1163,27 @@ function openCrossword(url, title) {
             timestamp: Date.now(),
             source: 'crossword_login'
         };
-        
+
         try {
             iframe.contentWindow.postMessage(userData, '*');
             console.log('Datos enviados al iframe:', userData);
         } catch (error) {
             console.log('Error enviando datos al iframe:', error);
         }
-        
+
         // También guardar en localStorage con clave específica para la página externa
         localStorage.setItem('externalGameUser', JSON.stringify(userData));
     };
 }
 
+// Listener para mensajes desde el iframe
 window.addEventListener('message', function(event) {
-    // Verificar origen si es necesario (por seguridad)
+    // Puedes verificar el origen si lo deseas
     // if (event.origin !== 'https://script.google.com') return;
-    
+
     if (event.data && event.data.type === 'GAME_READY') {
         console.log('El juego está listo, reenviando datos de usuario...');
-        
+
         const username = getSavedUsername() || currentUser.username;
         const userData = {
             type: 'USER_DATA',
@@ -1191,34 +1192,42 @@ window.addEventListener('message', function(event) {
             timestamp: Date.now(),
             source: 'crossword_login'
         };
-        
+
         event.source.postMessage(userData, event.origin);
     }
-    
+
     if (event.data && event.data.type === 'CLOSE_GAME') {
         closeCrossword();
     }
 });
 
-
-        // Función para cerrar el crucigrama
-  function closeCrossword() {
+// Función para cerrar el crucigrama y volver a subcategorías
+function closeCrossword() {
     const overlay = document.getElementById('crosswordOverlay');
     const container = document.getElementById('crosswordContainer');
     const iframe = document.getElementById('crosswordIframe');
-    
+
     // Ocultar con transición suave
     container.classList.remove('show');
-    
+
     // Ocultar overlay después de la transición
     setTimeout(() => {
         overlay.style.display = 'none';
         iframe.src = ''; // Limpiar iframe
     }, 600);
-    
-    // Mantener el estado en léxico
+
+    // Mostrar la sección de subcategorías (léxico)
     currentUser.currentSection = 'lexico';
     saveSession();
+
+    // Ocultar todas las secciones primero
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('gameSection').style.display = 'none';
+    document.getElementById('lexicoSection').style.display = 'none';
+
+    // Mostrar solo la de léxico (subcategorías)
+    document.getElementById('lexicoSection').style.display = 'block';
+    document.getElementById('lexicoSection').style.animation = 'fadeIn 0.6s ease-out';
 }
 
 // Función para volver a las categorías principales (modificada)

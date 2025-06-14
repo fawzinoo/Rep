@@ -2896,12 +2896,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // Función mejorada para mostrar el diálogo de bienvenida con confirmación de detección
 // Reemplazar la función showWelcomeDialog existente con esta nueva versión:
 
-// ...existing code...
 function showWelcomeDialog() {
     const userData = getUserData();
     const userName = userData.username;
-    const redirectUrl = 'https://fawzinoo.github.io/Rep/pre.html'; // URL de redirección
-
+    
     // Verificar si realmente se detectó un usuario válido
     if (!userName || userName === 'Invitado') {
         // No se pudo detectar el usuario - mostrar diálogo de error
@@ -2935,13 +2933,7 @@ function showWelcomeDialog() {
                 console.log('Usuario continuó como invitado');
                 initializeGame();
             } else {
-                // Botón "No, salir" presionado (usuario no detectado)
-                console.log('Usuario no detectado eligió salir.');
-                if (window.parent !== window) {
-                    window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                } else {
-                    window.location.href = redirectUrl;
-                }
+                showExitDialog();
             }
         });
     } else {
@@ -3005,53 +2997,31 @@ function showWelcomeDialog() {
                         try {
                             // Paso 1: Registrar inicio de juego
                            updateProgressStep('step1', '⏳ Registrando participación...');
-                            const gameStartSuccess = await registerGameStart();
+const gameStartSuccess = await registerGameStart();
 
-                            if (gameStartSuccess) {
-                                updateProgressStep('step1', '✅ Participación registrada');
-                                const sessionName = await getSessionNameFromServer();
-                                await waitForRival(sessionName); 
-                            } else {
-                                updateProgressStep('step1', '⚠️ Registro opcional falló');
-                                // Swal.close(); // Se cierra con el siguiente Swal
-                                // Ofrecer opción de continuar localmente o salir
-                                Swal.fire({
-                                    title: '⚠️ Fallo en Registro',
-                                    text: 'No se pudo registrar tu participación en el servidor. ¿Quieres jugar de todas formas (sin guardar progreso online) o salir?',
-                                    icon: 'warning',
-                                    showCancelButton: true,
-                                    confirmButtonText: 'Jugar localmente',
-                                    cancelButtonText: 'Salir',
-                                    confirmButtonColor: '#059669',
-                                    cancelButtonColor: '#ef4444',
-                                }).then((choice) => {
-                                    if (choice.isConfirmed) {
-                                        initializeGame();
-                                        startWinnerPolling();
-                                    } else {
-                                        // Salir
-                                        if (userName && userName !== 'Invitado') {
-                                            clearSessionOnServer(userName);
-                                        }
-                                        if (window.parent !== window) {
-                                            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                                        } else {
-                                            window.location.href = redirectUrl;
-                                        }
-                                    }
-                                });
-                                return; // Salir del didOpen para evitar los siguientes pasos
-                            }
+if (gameStartSuccess) {
+    updateProgressStep('step1', '✅ Participación registrada');
+    // Esperar a que haya al menos 2 jugadores en la sesión
+    const sessionName = await getSessionNameFromServer();
+    await waitForRival(sessionName); // SOLO aquí se inicia el juego cuando hay rival
+} else {
+    updateProgressStep('step1', '⚠️ Registro opcional falló');
+    Swal.close();
+    initializeGame();
+    startWinnerPolling();
+    showExitDialog();
+    
+}
 
-                            // Paso 2 y 3: solo actualizan el texto
-                            // initializeGame() es llamado por waitForRival o si el registro falla y se elige jugar localmente.
-                            setTimeout(() => {
-                                updateProgressStep('step2', '✅ Juego inicializado');
-                            }, 600);
+// Paso 2 y 3: solo actualizan el texto, NO deben llamar a initializeGame()
+setTimeout(() => {
+    updateProgressStep('step2', '✅ Juego inicializado');
+}, 600);
 
-                            setTimeout(() => {
-                                updateProgressStep('step3', '✅ Interfaz lista');
-                            }, 1200);
+setTimeout(() => {
+    updateProgressStep('step3', '✅ Interfaz lista');
+    // NO LLAMES initializeGame aquí
+}, 1200);
                             
                         } catch (error) {
                             console.error('Error en preparación:', error);
@@ -3060,49 +3030,28 @@ function showWelcomeDialog() {
                                 html: `
                                     <p>Hubo un error al preparar el juego:</p>
                                     <p style="color: #ef4444; font-size: 14px;">${error.message}</p>
-                                    <p>¿Quieres continuar sin registro completo o salir?</p>
+                                    <p>¿Quieres continuar sin registro completo?</p>
                                 `,
                                 icon: 'warning',
                                 showCancelButton: true,
-                                confirmButtonText: 'Continuar localmente',
-                                cancelButtonText: 'Salir', // Cambiado de 'Reintentar'
-                                confirmButtonColor: '#059669',
-                                cancelButtonColor: '#ef4444',
+                                confirmButtonText: 'Continuar',
+                                cancelButtonText: 'Reintentar'
                             }).then((retryResult) => {
                                 if (retryResult.isConfirmed) {
-                                    initializeGame(); // Continuar localmente
+                                    initializeGame();
                                 } else {
-                                    // Botón "Salir" presionado
-                                    console.log('Usuario eligió salir desde error de preparación.');
-                                    if (userName && userName !== 'Invitado') {
-                                        clearSessionOnServer(userName);
-                                    }
-                                    if (window.parent !== window) {
-                                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                                    } else {
-                                        window.location.href = redirectUrl;
-                                    }
+                                    
                                 }
                             });
                         }
                     }
                 });
             } else {
-                // Botón "No, salir" presionado (usuario detectado)
-                console.log(`Usuario ${userName} eligió no jugar y salir.`);
-                if (userName && userName !== 'Invitado') {
-                    clearSessionOnServer(userName);
-                }
-                if (window.parent !== window) {
-                    window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                } else {
-                    window.location.href = redirectUrl;
-                }
+                showExitDialog();
             }
         });
     }
 }
-// ...existing code...
 function updateProgressStep(stepId, text) {
     const stepElement = document.getElementById(stepId);
     if (stepElement) {

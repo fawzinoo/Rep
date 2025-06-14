@@ -1087,7 +1087,8 @@ function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// Función para iniciar subcategorías de juego (VERIFICAR QUE ESTÉ CORRECTA)
+// ...existing code...
+// Función para iniciar subcategorías de juego (CORREGIDA)
 function startSubGame(subcategory) {
     // Preparar datos de usuario
     const userData = prepareUserDataForExternalPage();
@@ -1099,28 +1100,104 @@ function startSubGame(subcategory) {
     // Registrar acceso al tema
     registerTopicAccess(subcategory);
 
-    // Rutas relativas a la carpeta Rep
+    // Usar URLs de GitHub Pages
     let localUrl = '';
     if (subcategory === 'frutas') {
-        localUrl = 'crucifrutas.html';
+        localUrl = 'https://fawzinoo.github.io/Rep/crucifrutas.html';
     } else if (subcategory === 'verduras') {
-        localUrl = 'cruci_verduras.html';
+        localUrl = 'https://fawzinoo.github.io/Rep/cruci_verduras.html';
     } else if (subcategory === 'animales') {
-        localUrl = 'cruci_animales.html';
+        localUrl = 'https://fawzinoo.github.io/Rep/cruci_animales.html';
     } else if (subcategory === 'colores') {
-        localUrl = 'cruci_colores.html';
+        localUrl = 'https://fawzinoo.github.io/Rep/cruci_colores.html';
     } else {
         alert(`¡Iniciando juego de ${subcategory.toUpperCase()}!`);
         return;
     }
 
-    // Añade los parámetros de usuario a la URL
-    localUrl += `?username=${encodeURIComponent(userData.username)}&orderNumber=${userData.orderNumber}&sessionId=${userData.sessionId}`;
-    openCrossword(localUrl, `Crucigrama de ${subcategory.charAt(0).toUpperCase() + subcategory.slice(1)}`);
+    console.log('Cargando juego desde:', localUrl);
+
+    // Verificar si la URL es accesible
+    fetch(localUrl, { method: 'HEAD' })
+        .then(response => {
+            if (response.ok) {
+                console.log(`Archivo encontrado en: ${localUrl}`);
+                const urlWithParams = `${localUrl}?username=${encodeURIComponent(userData.username)}&orderNumber=${userData.orderNumber}&sessionId=${userData.sessionId}`;
+                openCrossword(urlWithParams, `Crucigrama de ${subcategory.charAt(0).toUpperCase() + subcategory.slice(1)}`);
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        })
+        .catch(error => {
+            console.error(`Error accediendo a: ${localUrl}`, error);
+            showMessage(`Error cargando el juego de ${subcategory}`, 'error');
+            
+            // Mostrar página de error con información útil
+            const tempUrl = `data:text/html,
+                <html>
+                    <head>
+                        <title>Error - Crucigrama de ${subcategory}</title>
+                        <style>
+                            body { 
+                                font-family: Arial, sans-serif; 
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white;
+                                text-align: center;
+                                padding: 50px;
+                                margin: 0;
+                            }
+                            .container {
+                                background: rgba(255, 255, 255, 0.1);
+                                padding: 40px;
+                                border-radius: 20px;
+                                backdrop-filter: blur(10px);
+                            }
+                            button {
+                                background: #f44336;
+                                color: white;
+                                border: none;
+                                padding: 15px 30px;
+                                border-radius: 10px;
+                                cursor: pointer;
+                                font-size: 16px;
+                                margin-top: 20px;
+                            }
+                            .debug {
+                                background: rgba(0,0,0,0.3);
+                                padding: 20px;
+                                border-radius: 10px;
+                                margin: 20px 0;
+                                font-family: monospace;
+                                font-size: 12px;
+                                text-align: left;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1>🚫 Error al cargar el juego</h1>
+                            <p>No se pudo acceder al crucigrama de ${subcategory}.</p>
+                            <div class="debug">
+                                <strong>URL intentada:</strong><br>
+                                ${localUrl}<br><br>
+                                <strong>Error:</strong> ${error.message}
+                            </div>
+                            <p>Por favor, verifica que el archivo esté disponible en GitHub Pages.</p>
+                            <button onclick="window.parent.postMessage({type: 'CLOSE_GAME'}, '*')">
+                                Volver atrás
+                            </button>
+                        </div>
+                    </body>
+                </html>`;
+            
+            openCrossword(tempUrl, `Error - Crucigrama de ${subcategory.charAt(0).toUpperCase() + subcategory.slice(1)}`);
+        });
 }
+// ...existing code...
 
 
 
+// ...existing code...
 // Función para abrir el crucigrama con transición chula
 function openCrossword(url, title) {
     const overlay = document.getElementById('crosswordOverlay');
@@ -1131,14 +1208,13 @@ function openCrossword(url, title) {
     const username = getSavedUsername() || currentUser.username;
     const userOrderNumber = currentUser.orderNumber || Date.now();
 
-    // Construir URL con parámetros de usuario
-    const urlWithParams = new URL(url);
-    urlWithParams.searchParams.set('username', username);
-    urlWithParams.searchParams.set('orderNumber', userOrderNumber);
-    urlWithParams.searchParams.set('timestamp', Date.now());
+    console.log('=== DEBUG: Abriendo crucigrama ===');
+    console.log('URL original:', url);
+    console.log('Username:', username);
+    console.log('OrderNumber:', userOrderNumber);
 
-    // Configurar el contenido
-    iframe.src = urlWithParams.toString();
+    // Configurar el contenido del iframe directamente
+    iframe.src = url;
 
     // Mostrar overlay
     overlay.style.display = 'block';
@@ -1150,36 +1226,57 @@ function openCrossword(url, title) {
 
     // Comunicación mejorada con el iframe
     iframe.onload = function() {
-        console.log('Iframe cargado, enviando datos de usuario...');
+        console.log('=== DEBUG: Iframe cargado correctamente ===');
+        console.log('Iframe src:', iframe.src);
 
-        // Enviar datos vía postMessage
-        const userData = {
-            type: 'USER_DATA',
-            username: username,
-            orderNumber: userOrderNumber,
-            timestamp: Date.now(),
-            source: 'crossword_login'
-        };
+        // Enviar datos vía postMessage después de un breve delay
+        setTimeout(() => {
+            const userData = {
+                type: 'USER_DATA',
+                username: username,
+                orderNumber: userOrderNumber,
+                timestamp: Date.now(),
+                source: 'crossword_login'
+            };
 
-        try {
-            iframe.contentWindow.postMessage(userData, '*');
-            console.log('Datos enviados al iframe:', userData);
-        } catch (error) {
-            console.log('Error enviando datos al iframe:', error);
-        }
+            try {
+                console.log('Enviando datos al iframe:', userData);
+                iframe.contentWindow.postMessage(userData, '*');
+            } catch (error) {
+                console.log('Error enviando datos al iframe (normal en GitHub Pages):', error);
+            }
 
-        // También guardar en localStorage con clave específica para la página externa
-        localStorage.setItem('externalGameUser', JSON.stringify(userData));
+            // También guardar en localStorage
+            localStorage.setItem('externalGameUser', JSON.stringify(userData));
+            localStorage.setItem('userName', username);
+            console.log('Datos guardados en localStorage');
+        }, 1000);
+    };
+
+    // Manejar errores de carga
+    iframe.onerror = function() {
+        console.error('=== ERROR: No se pudo cargar el iframe ===');
+        showMessage('Error cargando el juego', 'error');
+        setTimeout(() => {
+            closeCrossword();
+        }, 2000);
     };
 }
 
-// Listener para mensajes desde el iframe
+// Listener mejorado para mensajes desde el iframe
 window.addEventListener('message', function(event) {
-    // Puedes verificar el origen si lo deseas
-    // if (event.origin !== 'https://script.google.com') return;
+    console.log('=== DEBUG: Mensaje recibido ===');
+    console.log('Origin:', event.origin);
+    console.log('Data:', event.data);
+
+    // Verificar origen si es necesario
+    if (event.origin && !event.origin.includes('github.io') && !event.origin.includes('localhost')) {
+        console.log('Mensaje de origen no confiable ignorado:', event.origin);
+        return;
+    }
 
     if (event.data && event.data.type === 'GAME_READY') {
-        console.log('El juego está listo, reenviando datos de usuario...');
+        console.log('=== El juego está listo, reenviando datos ===');
 
         const username = getSavedUsername() || currentUser.username;
         const userData = {
@@ -1190,16 +1287,30 @@ window.addEventListener('message', function(event) {
             source: 'crossword_login'
         };
 
-        event.source.postMessage(userData, event.origin);
+        try {
+            event.source.postMessage(userData, event.origin);
+            console.log('Datos reenviados exitosamente');
+        } catch (error) {
+            console.error('Error reenviando datos:', error);
+        }
     }
 
     if (event.data && event.data.type === 'CLOSE_GAME') {
+        console.log('=== Solicitud de cierre recibida ===');
         closeCrossword();
+    }
+
+    // Debug: loggear todos los mensajes para entender qué está pasando
+    if (event.data) {
+        console.log('Tipo de mensaje:', event.data.type);
+        console.log('Contenido completo:', event.data);
     }
 });
 
-// Función para cerrar el crucigrama y volver a subcategorías
+// Función mejorada para cerrar el crucigrama
 function closeCrossword() {
+    console.log('=== DEBUG: Cerrando crucigrama ===');
+    
     const overlay = document.getElementById('crosswordOverlay');
     const container = document.getElementById('crosswordContainer');
     const iframe = document.getElementById('crosswordIframe');
@@ -1211,6 +1322,7 @@ function closeCrossword() {
     setTimeout(() => {
         overlay.style.display = 'none';
         iframe.src = ''; // Limpiar iframe
+        console.log('Iframe limpiado');
     }, 600);
 
     // Mostrar la sección de subcategorías (léxico)
@@ -1225,7 +1337,10 @@ function closeCrossword() {
     // Mostrar solo la de léxico (subcategorías)
     document.getElementById('lexicoSection').style.display = 'block';
     document.getElementById('lexicoSection').style.animation = 'fadeIn 0.6s ease-out';
+    
+    console.log('Volviendo a subcategorías de léxico');
 }
+// ...existing code...
 
 // Función para volver a las categorías principales (modificada)
 function goBackToCategories() {

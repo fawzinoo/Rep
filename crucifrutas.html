@@ -880,6 +880,44 @@ input[type="text"]:focus {
 
 
 
+function showExitDialog() {
+    Swal.fire({
+        title: 'Salir del juego',
+        text: '¿Qué quieres?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Salir',
+        cancelButtonText: 'Cerrar sesión',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Si está dentro de un iframe, pedir al padre que lo elimine
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'CLOSE_GAME_IFRAME' }, '*');
+            } else {
+                // Si no está en iframe, simplemente ir atrás o recargar
+                window.history.back();
+            }
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+            // Lógica para cerrar sesión
+            // Limpia datos de usuario y recarga la página o redirige a login
+            localStorage.removeItem('userName');
+            localStorage.removeItem('crosswordUsername');
+            localStorage.removeItem('externalGameUser');
+            // Si está en iframe, pedir al padre que cierre todo
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'CLOSE_GAME_IFRAME' }, '*');
+            } else {
+                // Si no está en iframe, redirigir y luego cerrar la ventana
+                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+                setTimeout(() => {
+                    window.close();
+                }, 3000);
+            }
+        }
+    });
+}
 
 
 
@@ -2908,12 +2946,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function showWelcomeDialog() {
     const userData = getUserData();
     const userName = userData.username;
-
-    // Función para salir y redirigir a pre.html
-    function salirAPre() {
-        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-    }
-
+    
     // Verificar si realmente se detectó un usuario válido
     if (!userName || userName === 'Invitado') {
         // No se pudo detectar el usuario - mostrar diálogo de error
@@ -2947,7 +2980,7 @@ function showWelcomeDialog() {
                 console.log('Usuario continuó como invitado');
                 initializeGame();
             } else {
-                salirAPre();
+                showExitDialog();
             }
         });
     } else {
@@ -2988,7 +3021,7 @@ function showWelcomeDialog() {
         }).then(async (result) => {
             if (result.isConfirmed) {
                 console.log(`Usuario ${userName} confirmó iniciar el juego`);
-
+                
                 // Mostrar proceso de registro e inicialización
                 Swal.fire({
                     title: '🎮 Preparando juego...',
@@ -3010,31 +3043,33 @@ function showWelcomeDialog() {
                     didOpen: async () => {
                         try {
                             // Paso 1: Registrar inicio de juego
-                            updateProgressStep('step1', '⏳ Registrando participación...');
-                            const gameStartSuccess = await registerGameStart();
+                           updateProgressStep('step1', '⏳ Registrando participación...');
+const gameStartSuccess = await registerGameStart();
 
-                            if (gameStartSuccess) {
-                                updateProgressStep('step1', '✅ Participación registrada');
-                                // Esperar a que haya al menos 2 jugadores en la sesión
-                                const sessionName = await getSessionNameFromServer();
-                                await waitForRival(sessionName); // SOLO aquí se inicia el juego cuando hay rival
-                            } else {
-                                updateProgressStep('step1', '⚠️ Registro opcional falló');
-                                Swal.close();
-                                initializeGame();
-                                startWinnerPolling();
-                            }
+if (gameStartSuccess) {
+    updateProgressStep('step1', '✅ Participación registrada');
+    // Esperar a que haya al menos 2 jugadores en la sesión
+    const sessionName = await getSessionNameFromServer();
+    await waitForRival(sessionName); // SOLO aquí se inicia el juego cuando hay rival
+} else {
+    updateProgressStep('step1', '⚠️ Registro opcional falló');
+    Swal.close();
+    initializeGame();
+    startWinnerPolling();
+   
+    
+}
 
-                            // Paso 2 y 3: solo actualizan el texto, NO deben llamar a initializeGame()
-                            setTimeout(() => {
-                                updateProgressStep('step2', '✅ Juego inicializado');
-                            }, 600);
+// Paso 2 y 3: solo actualizan el texto, NO deben llamar a initializeGame()
+setTimeout(() => {
+    updateProgressStep('step2', '✅ Juego inicializado');
+}, 600);
 
-                            setTimeout(() => {
-                                updateProgressStep('step3', '✅ Interfaz lista');
-                                // NO LLAMES initializeGame aquí
-                            }, 1200);
-
+setTimeout(() => {
+    updateProgressStep('step3', '✅ Interfaz lista');
+    // NO LLAMES initializeGame aquí
+}, 1200);
+                            
                         } catch (error) {
                             console.error('Error en preparación:', error);
                             Swal.update({
@@ -3052,14 +3087,14 @@ function showWelcomeDialog() {
                                 if (retryResult.isConfirmed) {
                                     initializeGame();
                                 } else {
-                                    salirAPre();
+                                    showExitDialog();
                                 }
                             });
                         }
                     }
                 });
             } else {
-                salirAPre();
+                showExitDialog();
             }
         });
     }

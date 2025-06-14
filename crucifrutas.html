@@ -2944,12 +2944,24 @@ document.addEventListener('DOMContentLoaded', function() {
 // Función mejorada para mostrar el diálogo de bienvenida con confirmación de detección
 // Reemplazar la función showWelcomeDialog existente con esta nueva versión:
 function showWelcomeDialog() {
+    // Controlar el botón "Atrás" del navegador
+    window.onload = function() {
+        history.pushState(null, '', location.href);
+    };
+    window.addEventListener('popstate', function() {
+        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+    });
+
     const userData = getUserData();
     const userName = userData.username;
-    
-    // Verificar si realmente se detectó un usuario válido
+
+    // Función para salir y redirigir a pre.html
+    function salirAPre() {
+        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+    }
+
     if (!userName || userName === 'Invitado') {
-        // No se pudo detectar el usuario - mostrar diálogo de error
+        // Diálogo para usuario no detectado
         Swal.fire({
             title: '⚠️ Usuario no detectado',
             html: `
@@ -2977,14 +2989,13 @@ function showWelcomeDialog() {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                console.log('Usuario continuó como invitado');
                 initializeGame();
             } else {
-                showExitDialog();
+                salirAPre();
             }
         });
     } else {
-        // Usuario detectado correctamente - mostrar confirmación
+        // Diálogo para usuario detectado correctamente
         Swal.fire({
             title: `✅ Preparado ${userName}`,
             html: `
@@ -3020,9 +3031,7 @@ function showWelcomeDialog() {
             }
         }).then(async (result) => {
             if (result.isConfirmed) {
-                console.log(`Usuario ${userName} confirmó iniciar el juego`);
-                
-                // Mostrar proceso de registro e inicialización
+                // Aquí va tu lógica para iniciar el juego...
                 Swal.fire({
                     title: '🎮 Preparando juego...',
                     html: `
@@ -3042,34 +3051,28 @@ function showWelcomeDialog() {
                     allowOutsideClick: false,
                     didOpen: async () => {
                         try {
-                            // Paso 1: Registrar inicio de juego
-                           updateProgressStep('step1', '⏳ Registrando participación...');
-const gameStartSuccess = await registerGameStart();
+                            updateProgressStep('step1', '⏳ Registrando participación...');
+                            const gameStartSuccess = await registerGameStart();
 
-if (gameStartSuccess) {
-    updateProgressStep('step1', '✅ Participación registrada');
-    // Esperar a que haya al menos 2 jugadores en la sesión
-    const sessionName = await getSessionNameFromServer();
-    await waitForRival(sessionName); // SOLO aquí se inicia el juego cuando hay rival
-} else {
-    updateProgressStep('step1', '⚠️ Registro opcional falló');
-    Swal.close();
-    initializeGame();
-    startWinnerPolling();
-   
-    
-}
+                            if (gameStartSuccess) {
+                                updateProgressStep('step1', '✅ Participación registrada');
+                                const sessionName = await getSessionNameFromServer();
+                                await waitForRival(sessionName);
+                            } else {
+                                updateProgressStep('step1', '⚠️ Registro opcional falló');
+                                Swal.close();
+                                initializeGame();
+                                startWinnerPolling();
+                            }
 
-// Paso 2 y 3: solo actualizan el texto, NO deben llamar a initializeGame()
-setTimeout(() => {
-    updateProgressStep('step2', '✅ Juego inicializado');
-}, 600);
+                            setTimeout(() => {
+                                updateProgressStep('step2', '✅ Juego inicializado');
+                            }, 600);
 
-setTimeout(() => {
-    updateProgressStep('step3', '✅ Interfaz lista');
-    // NO LLAMES initializeGame aquí
-}, 1200);
-                            
+                            setTimeout(() => {
+                                updateProgressStep('step3', '✅ Interfaz lista');
+                            }, 1200);
+
                         } catch (error) {
                             console.error('Error en preparación:', error);
                             Swal.update({
@@ -3087,14 +3090,14 @@ setTimeout(() => {
                                 if (retryResult.isConfirmed) {
                                     initializeGame();
                                 } else {
-                                    showExitDialog();
+                                    salirAPre();
                                 }
                             });
                         }
                     }
                 });
             } else {
-                showExitDialog();
+                salirAPre();
             }
         });
     }

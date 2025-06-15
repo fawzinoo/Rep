@@ -874,17 +874,35 @@ input[type="text"]:focus {
 <script>
   const sound = document.getElementById('button-sound');
 
-  // Para todos los botones normales
   document.addEventListener('click', function(e) {
-    // Botones normales
-    if (e.target.tagName === 'BUTTON') {
-      sound.currentTime = 0;
-      sound.play();
+    // Excluir botones del teclado de crucigrama
+    if (e.target.classList.contains('teclado-crucigrama') || 
+        e.target.closest('.teclado-crucigrama')) {
+      return;
     }
-    // Botones de SweetAlert2 (clase .swal2-confirm, .swal2-cancel, etc.)
-    if (e.target.classList.contains('swal2-confirm') ||
-        e.target.classList.contains('swal2-cancel') ||
-        e.target.classList.contains('swal2-deny')) {
+
+    // Excluir tecla ESC/borrar (por contenido o clase)
+    if (e.target.textContent.trim() === 'ESC' ||
+        e.target.textContent.trim() === '⌫' ||
+        e.target.classList.contains('tecla-borrar') ||
+        e.target.classList.contains('tecla-esc')) {
+      return;
+    }
+
+    // Excluir botones que contienen una sola letra (si no tienes clases específicas)
+    if (e.target.tagName === 'BUTTON' && 
+        e.target.textContent.length === 1 && 
+        /^[A-Za-z]$/.test(e.target.textContent)) {
+      return;
+    }
+
+    // Resto de botones (normales y SweetAlert2)
+    if (
+      e.target.tagName === 'BUTTON' ||
+      e.target.classList.contains('swal2-confirm') ||
+      e.target.classList.contains('swal2-cancel') ||
+      e.target.classList.contains('swal2-deny')
+    ) {
       sound.currentTime = 0;
       sound.play();
     }
@@ -1416,21 +1434,21 @@ function verifyDOMElements() {
         // Función para iniciar el timer
 function startTimer() {
     console.log('Iniciando timer para:', currentFruit.name);
-    
+
     // Limpiar timer anterior si existe
     if (timer) {
         clearInterval(timer);
         timer = null;
     }
-    
+
     timeLeft = 20;
     updateTimerDisplay();
-    
+
     timer = setInterval(() => {
         timeLeft--;
         updateTimerDisplay();
         console.log(`Timer: ${timeLeft} segundos restantes para ${currentFruit.name}`);
-        
+
         // Cambiar color cuando quedan 10 segundos
         const timerMini = document.getElementById('timerMini');
         if (timerMini) {
@@ -1440,18 +1458,18 @@ function startTimer() {
                 timerMini.classList.remove('warning');
             }
         }
-        
+
         // Tiempo agotado
         if (timeLeft <= 0) {
             console.log('¡TIEMPO AGOTADO! Ejecutando timeout...');
             clearInterval(timer);
             timer = null;
-            
+
             // Ejecutar inmediatamente sin setTimeout
             handleTimeOut();
         }
     }, 1000);
-    
+
     console.log('Timer iniciado correctamente');
 }
         // Función para actualizar la visualización del timer
@@ -1488,12 +1506,8 @@ function updateScoreDisplay() {
     console.log('Timer detenido');
 }
 
-// ... (código existente) ...
-// ... (código existente) ...
 
-// ... (código existente como keyboardLayouts, loadKeyboardLayoutPreference, saveKeyboardLayoutPreference, buildVirtualKeyboardHTML) ...
-// ... (código existente como keyboardLayouts, loadKeyboardLayoutPreference, saveKeyboardLayoutPreference, buildVirtualKeyboardHTML) ...
-// ... (asegúrate que las funciones keyboardLayouts, loadKeyboardLayoutPreference, saveKeyboardLayoutPreference, buildVirtualKeyboardHTML están definidas ANTES de esta función) ...
+
 
 function initializeVirtualKeyboard() {
     console.log('=== INICIALIZANDO TECLADO VIRTUAL ===');
@@ -1531,83 +1545,111 @@ function initializeVirtualKeyboard() {
                 return;
             }
 
-           // ... (dentro de handleStartPress en initializeVirtualKeyboard) ...
 
-         // ... (dentro de handleStartPress en initializeVirtualKeyboard) ...
-
-            if (action === 'settings') {
-                console.log('SETTINGS detectado - Mostrando SweetAlert');
+   if (action === 'settings') {
+    console.log('SETTINGS detectado - Mostrando SweetAlert');
+    
+    Swal.fire({
+        title: '⚙️ Configuración del Teclado',
+        html: `
+            <div style="text-align: left; margin: 10px 0;">
+                <h4 style="margin: 15px 0 10px 0; color: #1f2937;">Distribución del teclado:</h4>
+                <label style="display: block; margin: 8px 0; cursor: pointer;">
+                    <input type="radio" name="keyboard" value="qwerty" ${currentKeyboardLayout === 'qwerty' ? 'checked' : ''} style="margin-right: 8px;">
+                    <strong>QWERTY</strong>
+                </label>
+                <label style="display: block; margin: 8px 0; cursor: pointer;">
+                    <input type="radio" name="keyboard" value="azerty" ${currentKeyboardLayout === 'azerty' ? 'checked' : ''} style="margin-right: 8px;">
+                    <strong>AZERTY</strong>
+                </label>
                 
-                Swal.fire({
-                    title: '⚙️ Teclado',
-                    html: `
-                        <div style="text-align: left; margin: 10px 0;">
-                            <label style="display: block; margin: 8px 0; cursor: pointer;">
-                                <input type="radio" name="keyboard" value="qwerty" ${currentKeyboardLayout === 'qwerty' ? 'checked' : ''} style="margin-right: 8px;">
-                                <strong>QWERTY</strong>
-                            </label>
-                            <label style="display: block; margin: 8px 0; cursor: pointer;">
-                                <input type="radio" name="keyboard" value="azerty" ${currentKeyboardLayout === 'azerty' ? 'checked' : ''} style="margin-right: 8px;">
-                                <strong>AZERTY</strong>
-                            </label>
-                        </div>
-                    `,
-                    showCancelButton: true,
-                    confirmButtonText: 'Aplicar',
-                    cancelButtonText: 'Cancelar',
-                    confirmButtonColor: '#4338ca',
-                    cancelButtonColor: '#6b7280',
-                    background: '#f8fafc',
-                    customClass: {
-                        popup: 'keyboard-selection-popup'
-                    },
-                    preConfirm: () => {
-                        const selectedRadio = document.querySelector('input[name="keyboard"]:checked');
-                        if (selectedRadio) {
-                            return selectedRadio.value;
-                        }
-                        return null;
-                    }
-                }).then((result) => {
-                    if (result.isConfirmed && result.value) {
-                        const chosenLayout = result.value;
-                        
-                        if (currentKeyboardLayout !== chosenLayout) {
-                            console.log(`Cambiando teclado a ${chosenLayout}`);
-                            currentKeyboardLayout = chosenLayout;
-                            saveKeyboardLayoutPreference();
-                            initializeVirtualKeyboard();
-                            
-                            // Mostrar confirmación con SweetAlert2
-                            Swal.fire({
-                                title: '✅ ¡Listo!',
-                                text: `Teclado cambiado a ${currentKeyboardLayout.toUpperCase()}`,
-                                icon: 'success',
-                                timer: 2000,
-                                showConfirmButton: false,
-                                toast: true,
-                                position: 'top-end',
-                                background: '#10b981',
-                                color: 'white'
-                            });
-                        } else {
-                            // Ya está en esa distribución
-                            Swal.fire({
-                                title: 'ℹ️ Sin cambios',
-                                text: `El teclado ya está en ${currentKeyboardLayout.toUpperCase()}`,
-                                icon: 'info',
-                                timer: 1500,
-                                showConfirmButton: false,
-                                toast: true,
-                                position: 'top-end'
-                            });
-                        }
-                    }
-                    
-                    key.style.transform = '';
-                });
-                return;
+                <h4 style="margin: 20px 0 10px 0; color: #1f2937;">Sonido del teclado:</h4>
+                <label style="display: block; margin: 8px 0; cursor: pointer;">
+                    <input type="radio" name="sound" value="enabled" ${keyboardSoundEnabled ? 'checked' : ''} style="margin-right: 8px;">
+                    <span>🔊 <strong>Activado</strong></span>
+                </label>
+                <label style="display: block; margin: 8px 0; cursor: pointer;">
+                    <input type="radio" name="sound" value="disabled" ${!keyboardSoundEnabled ? 'checked' : ''} style="margin-right: 8px;">
+                    <span>🔇 <strong>Silenciado</strong></span>
+                </label>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#4338ca',
+        cancelButtonColor: '#6b7280',
+        background: '#f8fafc',
+        customClass: {
+            popup: 'keyboard-selection-popup'
+        },
+        preConfirm: () => {
+            const selectedKeyboard = document.querySelector('input[name="keyboard"]:checked');
+            const selectedSound = document.querySelector('input[name="sound"]:checked');
+            
+            return {
+                keyboard: selectedKeyboard ? selectedKeyboard.value : null,
+                sound: selectedSound ? selectedSound.value : null
+            };
+        }
+}).then((result) => {
+        if (result.isConfirmed && result.value) {
+            const { keyboard, sound } = result.value;
+            let hasChanges = false;
+            
+            // Verificar cambios en distribución del teclado
+            if (keyboard && currentKeyboardLayout !== keyboard) {
+                currentKeyboardLayout = keyboard;
+                hasChanges = true;
             }
+            
+            // Verificar cambios en sonido
+            if (sound) {
+                const newSoundEnabled = sound === 'enabled';
+                if (keyboardSoundEnabled !== newSoundEnabled) {
+                    keyboardSoundEnabled = newSoundEnabled;
+                    hasChanges = true;
+                }
+            }
+            
+            if (hasChanges) {
+                saveKeyboardLayoutPreference();
+                
+                // Reconstruir teclado si cambió la distribución
+                if (keyboard && currentKeyboardLayout === keyboard) {
+                    initializeVirtualKeyboard();
+                }
+                
+                // Mostrar confirmación
+                const soundStatus = keyboardSoundEnabled ? 'activado' : 'silenciado';
+                Swal.fire({
+                    title: '✅ ¡Configuración aplicada!',
+                    text: `Teclado: ${currentKeyboardLayout.toUpperCase()}, Sonido: ${soundStatus}`,
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false,
+                    toast: true,
+                    position: 'top-end',
+                    background: '#10b981',
+                    color: 'white'
+                });
+            } else {
+                Swal.fire({
+                    title: 'ℹ️ Sin cambios',
+                    text: 'La configuración ya estaba así',
+                    icon: 'info',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    toast: true,
+                    position: 'top-end'
+                });
+            }
+        }
+        
+        key.style.transform = '';
+    });
+    return;
+}
             
             if (!keyChar) return;
 
@@ -1658,8 +1700,9 @@ function initializeVirtualKeyboard() {
     console.log(`Teclado virtual (${currentKeyboardLayout.toUpperCase()}) inicializado correctamente.`);
     console.log('=== FIN INICIALIZACIÓN TECLADO ===');
 }
-// Modificar la función initializeGame para incluir el teclado
-function initializeGame() {
+
+
+async function initializeGame() {
     console.log('=== INICIALIZANDO JUEGO ===');
     
     if (!verifyDOMElements()) {
@@ -1669,27 +1712,26 @@ function initializeGame() {
   
     initializeRandomFruits();
     updateFruitDisplay();
+    await mostrarImagenGrandeTemporal(currentFruit.image); // SOLO AQUÍ
     generateGrid();
     startTimer();
     initializeVirtualKeyboard(); 
     updateScoreDisplay(); 
-    
-    
-    console.log('=== JUEGO INICIALIZADO ===');
 }
 
-// Cambiar la inicialización al final del script de:
-// initializeRandomFruits();
-// updateFruitDisplay();
-// generateGrid();
-// startTimer();
 
-// A:
-// Esperar a que el DOM esté completamente cargado
+
 document.addEventListener('DOMContentLoaded', function() {
     initializeGame();
 });
+
+
 function playKeySound(key) {
+    // Si el sonido está deshabilitado, no reproducir nada
+    if (!keyboardSoundEnabled) {
+        return;
+    }
+    
     try {
         if (!window.audioContext) {
             window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -1715,30 +1757,32 @@ function playKeySound(key) {
         
         // Frecuencias más suaves y agradables
         let frequency = 440;
+        let volumeMultiplier = 1;
         
         if (key === 'backspace') {
-            frequency = 220; // Do3 - más suave
+            frequency = 220;
+            volumeMultiplier = 1.6;
         } else if (key === 'settings') {
-            frequency = 880; // La4 - elegante
+            frequency = 880;
         } else if (typeof key === 'string' && key.length === 1) {
-            // Escala pentatónica para sonidos más armoniosos
-            const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00]; // Do, Re, Mi, Sol, La
+            const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00];
             const charCode = key.charCodeAt(0);
             frequency = pentatonicScale[charCode % pentatonicScale.length];
         }
         
         oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-        oscillator.type = 'sine'; // Sonido más suave que 'square'
+        oscillator.type = 'sine';
         
-        // Envolvente de volumen más moderna (ADSR)
-        const attackTime = 0.005;  // Ataque muy rápido
-        const decayTime = 0.02;    // Decaimiento corto
-        const sustainLevel = 0.3;  // Nivel de sostenimiento bajo
-        const releaseTime = 0.08;  // Liberación suave
+        const attackTime = 0.005;
+        const decayTime = 0.02;
+        const sustainLevel = 0.3;
+        const releaseTime = 0.08;
+        
+        const baseVolume = 0.35 * volumeMultiplier;
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.15, audioContext.currentTime + attackTime);
-        gainNode.gain.linearRampToValueAtTime(sustainLevel * 0.15, audioContext.currentTime + attackTime + decayTime);
+        gainNode.gain.linearRampToValueAtTime(baseVolume, audioContext.currentTime + attackTime);
+        gainNode.gain.linearRampToValueAtTime(sustainLevel * baseVolume, audioContext.currentTime + attackTime + decayTime);
         gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + attackTime + decayTime + releaseTime);
         
         oscillator.start(audioContext.currentTime);
@@ -1756,6 +1800,8 @@ function playKeySound(key) {
         console.log('Error en sonido de tecla:', e);
     }
 }
+
+let photoTimeoutId = null;
         // Función cuando se agota el tiempo
 function handleTimeOut() {
     console.log('=== TIMEOUT EJECUTADO ===');
@@ -1763,23 +1809,28 @@ function handleTimeOut() {
     console.log(`Fruta actual index: ${currentFruitIndex}`);
     console.log(`Completadas: ${Array.from(completedFruits)}`);
     console.log(`Disponibles: ${availableFruits}`);
-    
+
+    // Cancela cualquier temporizador de foto pendiente
+    if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
+        clearTimeout(photoTimeoutId);
+        photoTimeoutId = null;
+    }
+
     // Añadir a frutas incompletas si no está completada
     if (!completedFruits.has(currentFruitIndex)) {
         incompleteFruits.push(currentFruitIndex);
         console.log(`Añadida ${currentFruit.name} (${currentFruitIndex}) a incompletas`);
     }
-    
+
     console.log(`Frutas incompletas total: ${incompleteFruits}`);
-    
+
     // Buscar siguiente fruta inmediatamente
     console.log('Buscando siguiente fruta...');
     findNextAvailableFruit();
 }
 
 
-// Nueva función para encontrar la siguiente fruta de forma más directa
-function findNextAvailableFruit() {
+async function findNextAvailableFruit() {
     console.log('=== BUSCANDO SIGUIENTE FRUTA ===');
     
     let nextIndex = -1;
@@ -1806,13 +1857,16 @@ function findNextAvailableFruit() {
     if (nextIndex !== -1) {
         currentFruitIndex = nextIndex;
         currentFruit = fruits[currentFruitIndex];
-        
+
+        // SOLO aquí, y SOLO una vez
+        await mostrarImagenGrandeTemporal(currentFruit.image);
+
         updateFruitDisplay();
         generateGrid();
-        initializeVirtualKeyboard(); // AÑADIR
+        initializeVirtualKeyboard();
         startTimer();
     } else {
-        checkForIncompleteRounds();
+        await checkForIncompleteRounds();
     }
 }
 
@@ -2611,22 +2665,33 @@ function checkAnswerAutomatic() {
     if (window.checkingAnswer) {
         return;
     }
-    
+
+    // Cancela el temporizador automático de la palabra
+    if (timer) {
+        clearInterval(timer);
+        timer = null;
+    }
+    // Cancela cualquier timeout de foto pendiente
+    if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
+        clearTimeout(photoTimeoutId);
+        photoTimeoutId = null;
+    }
+
     const inputs = document.querySelectorAll('.green input');
     let userAnswer = '';
     let isComplete = true;
-    
+
     const pos = currentFruit.position;
-    
+
     for (let i = 0; i < currentFruit.name.length; i++) {
         if (currentFruit.name[i] === ' ') {
             userAnswer += ' ';
             continue;
         }
-        
+
         let letterFound = false;
         let currentRow, currentCol;
-        
+
         if (pos.direction === 'horizontal') {
             currentRow = pos.row;
             currentCol = pos.col + i;
@@ -2634,7 +2699,7 @@ function checkAnswerAutomatic() {
             currentRow = pos.row + i;
             currentCol = pos.col;
         }
-        
+
         // Buscar en celdas con clase .green (tanto intersecciones como inputs)
         const greenCell = document.querySelector(`[data-row="${currentRow}"][data-col="${currentCol}"].green`);
         if (greenCell) {
@@ -2653,30 +2718,29 @@ function checkAnswerAutomatic() {
                 }
             }
         }
-        
+
         if (!letterFound) {
             isComplete = false;
             break;
         }
     }
-    
+
     if (isComplete && userAnswer === currentFruit.name) {
-        stopTimer();
         playSuccessSound();
-        
+
         // Marcar como correctas todas las celdas verdes (inputs e intersecciones)
         document.querySelectorAll('.green').forEach(cell => {
             cell.classList.add('correct');
         });
 
-      const previousScore = completedFruits.size;
+        const previousScore = completedFruits.size;
         completedFruits.add(currentFruitIndex);
-        
+
         if (completedFruits.size > previousScore) {
             triggerPointScoredEffects();
-            
+
             // NUEVO: Enviar puntos al Google Sheet
-            const newPoints = 1; // <--- CAMBIO AQUÍ: Enviar siempre 1 punto por fruta completada
+            const newPoints = 1;
             sendPointsToSheet(newPoints, 'fruta_completada').then(success => {
                 if (success) {
                     console.log(`✅ Puntos registrados en Google Sheet: ${newPoints} por fruta completada`);
@@ -2685,30 +2749,34 @@ function checkAnswerAutomatic() {
                 }
             });
         }
-        
+
         updateScoreDisplay();
         incompleteFruits = incompleteFruits.filter(index => index !== currentFruitIndex);
-        
+
         setTimeout(() => {
             playAudio(currentFruit.audio);
+
+            const audio = window.currentAudio;
+            let duracion = 2000;
+            if (audio && audio.duration && !isNaN(audio.duration)) {
+                duracion = audio.duration * 1000;
+            }
+
+            setTimeout(() => {
+                nextFruit(); // SOLO esto, sin mostrar imagen aquí
+            }, duracion);
         }, 800);
-        
-        setTimeout(() => {
-            nextFruit();
-        }, 3000);
     }
 }
-function nextFruit() {
-    console.log('nextFruit() llamada (palabra completada)');
+async function nextFruit() {
     stopTimer();
     stopAllAudio();
-    
-    // Usar la misma lógica que para timeout
-    setTimeout(() => {
-        findNextAvailableFruit();
+    setTimeout(async () => {
+        await findNextAvailableFruit();
     }, 100);
 }
-function checkForIncompleteRounds() {
+
+async function checkForIncompleteRounds() {
     if (incompleteFruits.length > 0) {
         currentRound++;
         availableFruits = shuffleArray([...incompleteFruits]);
@@ -2716,6 +2784,7 @@ function checkForIncompleteRounds() {
         currentFruitIndex = availableFruits[0];
         currentFruit = fruits[currentFruitIndex];
         updateFruitDisplay();
+        await mostrarImagenGrandeTemporal(currentFruit.image); // SOLO AQUÍ
         generateGrid();
         initializeVirtualKeyboard();
         startTimer();
@@ -2780,16 +2849,24 @@ const keyboardLayouts = {
     ]
 };
 let currentKeyboardLayout = 'qwerty';
+let keyboardSoundEnabled = true;
 
 function loadKeyboardLayoutPreference() {
     const savedLayout = localStorage.getItem('crosswordKeyboardLayout');
     if (savedLayout && keyboardLayouts[savedLayout]) {
         currentKeyboardLayout = savedLayout;
     }
+    
+    // Cargar preferencia de sonido
+    const savedSoundSetting = localStorage.getItem('crosswordKeyboardSound');
+    if (savedSoundSetting !== null) {
+        keyboardSoundEnabled = savedSoundSetting === 'true';
+    }
 }
 
 function saveKeyboardLayoutPreference() {
     localStorage.setItem('crosswordKeyboardLayout', currentKeyboardLayout);
+    localStorage.setItem('crosswordKeyboardSound', keyboardSoundEnabled.toString());
 }
 
 function buildVirtualKeyboardHTML(layoutName) {
@@ -3535,6 +3612,64 @@ document.addEventListener('visibilitychange', function() {
     estadoPendiente = null;
   }
 });
+
+function mostrarImagenGrandeTemporal(imagenUrl) {
+    return new Promise((resolve) => {
+        if (!imagenUrl) {
+            resolve();
+            return;
+        }
+
+        // Elimina cualquier overlay anterior
+        document.querySelectorAll('.fruit-image-overlay').forEach(el => el.remove());
+
+        // Crea el overlay nuevo
+        const overlay = document.createElement('div');
+        overlay.className = 'fruit-image-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = 0;
+        overlay.style.left = 0;
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.background = 'rgba(0,0,0,0.85)';
+        overlay.style.display = 'flex';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.zIndex = 9999;
+
+        const imgGrande = document.createElement('img');
+        imgGrande.src = imagenUrl;
+        imgGrande.style.maxWidth = '90vw';
+        imgGrande.style.maxHeight = '90vh';
+        imgGrande.style.borderRadius = '20px';
+        imgGrande.style.boxShadow = '0 8px 40px #000a';
+
+        overlay.appendChild(imgGrande);
+        document.body.appendChild(overlay);
+
+        // Permite cerrar el overlay haciendo clic
+        overlay.addEventListener('click', () => {
+            overlay.remove();
+            resolve();
+        });
+
+        // Cierra automáticamente después de 3 segundos
+        setTimeout(() => {
+            overlay.remove();
+            resolve();
+        }, 3000);
+    });
+}
+
+function precargarImagenes(frutas) {
+    frutas.forEach(fruta => {
+        const img = new Image();
+        img.src = fruta.image;
+    });
+}
+
+// Llama a esta función al iniciar el juego:
+precargarImagenes(fruits);
     </script>
 </body>
 </html>

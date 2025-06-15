@@ -868,13 +868,6 @@ input[type="text"]:focus {
     <img id="modalImage" class="modal-image" src="" alt="Fruta ampliada">
 </div>
 
-<div id="welcomeBackdrop" style="
-  position:fixed;
-  top:0; left:0; width:100vw; height:100vh;
-  background: #e0f2fe;
-  z-index: 9998;
-  display: none;
-"></div>
 
  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
  <audio id="button-sound" src="https://www.myinstants.com/media/sounds/geometry-dash-click-sound.mp3"></audio>
@@ -1725,6 +1718,7 @@ async function initializeGame() {
     initializeVirtualKeyboard(); 
     updateScoreDisplay(); 
 }
+
 
 
 
@@ -3018,24 +3012,150 @@ function cerrarIframeYSalir() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('welcomeBackdrop').style.display = 'block';
-    showWelcomeDialog();
-});
-
 function showWelcomeDialog() {
-    Swal.fire({
-        title: '¡Usuario detectado!',
-        text: '¿Quieres jugar?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Sí, jugar',
-        cancelButtonText: 'No, salir'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            document.getElementById('welcomeBackdrop').style.display = 'none';
-        }
-    });
+    const userData = getUserData();
+    const userName = userData.username;
+
+    if (!userName || userName === 'Invitado') {
+        Swal.fire({
+            title: '⚠️ Usuario no detectado',
+            html: `
+                <p>No se pudo detectar tu nombre de usuario.</p>
+                <p><strong>Posibles causas:</strong></p>
+                <ul style="text-align: left; margin: 10px 0;">
+                    <li>No has iniciado sesión correctamente</li>
+                    <li>La página se cargó directamente</li>
+                    <li>Error en la comunicación entre páginas</li>
+                </ul>
+                <p>¿Quieres continuar como invitado?</p>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, como invitado',
+            cancelButtonText: 'No, salir',
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor: '#ef4444',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            customClass: {
+                popup: 'welcome-dialog-popup',
+                title: 'welcome-dialog-title',
+                content: 'welcome-dialog-content'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                initializeGame();
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                cerrarIframeYSalir();
+            }
+            // Si el usuario cierra el diálogo de otra forma, no hagas nada
+        });
+    } else {
+        Swal.fire({
+            title: `✅ Preparado ${userName}`,
+            html: `
+                <div style="text-align: center; margin: 15px 0;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">🎮</div>
+                    <p style="font-size: 18px; margin-bottom: 15px;"><strong>¡Hola ${userName}!</strong></p>
+                    <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; margin: 10px 0;">
+                        <p style="font-size: 14px; color: #0369a1; margin: 0;">
+                            <strong>Usuario detectado correctamente</strong><br>
+                            Jugador: ${userName}<br>
+                            ${userData.sessionId ? `Sesión: ${userData.sessionId.substring(0, 8)}...` : ''}<br>
+                            Game: Crucigrama de Frutas 🍎
+                        </p>
+                    </div>
+                    <p style="margin-top: 15px; color: #059669;">
+                        <strong>¿Estás listo para jugar?</strong><br>
+                        <small>Se registrará tu participación automáticamente</small>
+                    </p>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, ¡jugar!',
+            cancelButtonText: 'No, salir',
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#ef4444',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            customClass: {
+                popup: 'welcome-dialog-popup',
+                title: 'welcome-dialog-title',
+                content: 'welcome-dialog-content'
+            }
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                // ...lógica para iniciar el juego...
+                Swal.fire({
+                    title: '🎮 Preparando juego...',
+                    html: `
+                        <div style="text-align: center;">
+                            <p>Configurando crucigrama para <strong>${userName}</strong></p>
+                            <div style="margin: 15px 0;">
+                                <div id="progress-steps" style="font-size: 14px; color: #6b7280;">
+                                    <div id="step1" style="margin: 5px 0;">⏳ Registrando participación...</div>
+                                    <div id="step2" style="margin: 5px 0; opacity: 0.5;">⏳ Inicializando juego...</div>
+                                    <div id="step3" style="margin: 5px 0; opacity: 0.5;">⏳ Preparando interfaz...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `,
+                    icon: 'info',
+                    showConfirmButton: false,
+                    allowOutsideClick: false,
+                    didOpen: async () => {
+                        try {
+                            updateProgressStep('step1', '⏳ Registrando participación...');
+                            const gameStartSuccess = await registerGameStart();
+
+                            if (gameStartSuccess) {
+                                updateProgressStep('step1', '✅ Participación registrada');
+                                const sessionName = await getSessionNameFromServer();
+                                await waitForRival(sessionName);
+                            } else {
+                                updateProgressStep('step1', '⚠️ Registro opcional falló');
+                                Swal.close();
+                                initializeGame();
+                                startWinnerPolling();
+                            }
+
+                            setTimeout(() => {
+                                updateProgressStep('step2', '✅ Juego inicializado');
+                            }, 600);
+
+                            setTimeout(() => {
+                                updateProgressStep('step3', '✅ Interfaz lista');
+                            }, 1200);
+
+                        } catch (error) {
+                            console.error('Error en preparación:', error);
+                            Swal.update({
+                                title: '⚠️ Error en preparación',
+                                html: `
+                                    <p>Hubo un error al preparar el juego:</p>
+                                    <p style="color: #ef4444; font-size: 14px;">${error.message}</p>
+                                    <p>¿Quieres continuar sin registro completo?</p>
+                                `,
+                                icon: 'warning',
+                                showCancelButton: true,
+                                confirmButtonText: 'Continuar',
+                                cancelButtonText: 'Reintentar'
+                            }).then((retryResult) => {
+                                if (retryResult.isConfirmed) {
+                                    initializeGame();
+                                } else if (retryResult.dismiss === Swal.DismissReason.cancel) {
+                                    cerrarIframeYSalir();
+                                }
+                            });
+                        }
+                    }
+                });
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                cerrarIframeYSalir();
+            }
+        });
+    }
 }
 function updateProgressStep(stepId, text) {
     const stepElement = document.getElementById(stepId);
@@ -3549,7 +3669,269 @@ function precargarImagenes(frutas) {
 // Llama a esta función al iniciar el juego:
 precargarImagenes(fruits);
 
+// Helper function to show a blue overlay
+function showBlueScreenOverlay() {
+    let overlay = document.getElementById('blueScreenOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'blueScreenOverlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.backgroundColor = '#6366f1'; // Using a blue from your existing theme
+        overlay.style.zIndex = '1000'; // Positioned behind SweetAlert2's default overlay (z-index 1060)
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'block';
+}
 
+// Helper function to hide the blue overlay
+function hideBlueScreenOverlay() {
+    let overlay = document.getElementById('blueScreenOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    showBlueScreenOverlay(); // Show the blue overlay first
+    // Modified showWelcomeDialog to ensure overlay hides at the correct times
+    function showWelcomeDialog() {
+        const userData = getUserData();
+        const userName = userData.username;
+
+        // This helper function now primarily focuses on the action (initialize or exit),
+        // assuming the overlay is handled by the calling context for most 'initialize' paths.
+        const finalCleanupAndProceed = (action) => {
+            if (action === 'initialize') {
+                initializeGame();
+                startWinnerPolling();
+            } else if (action === 'exit') {
+                // Ensure overlay is hidden if exiting, as a fallback.
+                hideBlueScreenOverlay();
+                cerrarIframeYSalir();
+            }
+        };
+
+        if (!userName || userName === 'Invitado') {
+            Swal.fire({
+                title: '⚠️ Usuario no detectado',
+                html: `
+                    <p>No se pudo detectar tu nombre de usuario.</p>
+                    <p><strong>Posibles causas:</strong></p>
+                    <ul style="text-align: left; margin: 10px 0;">
+                        <li>No has iniciado sesión correctamente</li>
+                        <li>La página se cargó directamente</li>
+                        <li>Error en la comunicación entre páginas</li>
+                    </ul>
+                    <p>¿Quieres continuar como invitado?</p>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, como invitado',
+                cancelButtonText: 'No, salir',
+                confirmButtonColor: '#f59e0b',
+                cancelButtonColor: '#ef4444',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                customClass: {
+                    popup: 'welcome-dialog-popup',
+                    title: 'welcome-dialog-title',
+                    content: 'welcome-dialog-content'
+                }
+            }).then((result) => {
+                hideBlueScreenOverlay(); // Hide overlay after this Swal resolves
+                if (result.isConfirmed) {
+                    finalCleanupAndProceed('initialize');
+                } else { // Handles cancel and other dismissals
+                    finalCleanupAndProceed('exit');
+                }
+            });
+        } else { // userName is present
+            Swal.fire({
+                title: `✅ Preparado ${userName}`,
+                html: `
+                    <div style="text-align: center; margin: 15px 0;">
+                        <div style="font-size: 48px; margin-bottom: 10px;">🎮</div>
+                        <p style="font-size: 18px; margin-bottom: 15px;"><strong>¡Hola ${userName}!</strong></p>
+                        <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; margin: 10px 0;">
+                            <p style="font-size: 14px; color: #0369a1; margin: 0;">
+                                <strong>Usuario detectado correctamente</strong><br>
+                                Jugador: ${userName}<br>
+                                ${userData.sessionId ? `Sesión: ${userData.sessionId.substring(0, 8)}...` : ''}<br>
+                                Game: Crucigrama de Frutas 🍎
+                            </p>
+                        </div>
+                        <p style="margin-top: 15px; color: #059669;">
+                            <strong>¿Estás listo para jugar?</strong><br>
+                            <small>Se registrará tu participación automáticamente</small>
+                        </p>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, ¡jugar!',
+                cancelButtonText: 'No, salir',
+                confirmButtonColor: '#059669',
+                cancelButtonColor: '#ef4444',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                customClass: {
+                    popup: 'welcome-dialog-popup',
+                    title: 'welcome-dialog-title',
+                    content: 'welcome-dialog-content'
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ // "Preparando juego..." Swal
+                        title: '🎮 Preparando juego...',
+                        html: `
+                            <div style="text-align: center;">
+                                <p>Configurando crucigrama para <strong>${userName}</strong></p>
+                                <div style="margin: 15px 0;">
+                                    <div id="progress-steps" style="font-size: 14px; color: #6b7280;">
+                                        <div id="step1" style="margin: 5px 0;">⏳ Registrando participación...</div>
+                                        <div id="step2" style="margin: 5px 0; opacity: 0.5;">⏳ Inicializando juego...</div>
+                                        <div id="step3" style="margin: 5px 0; opacity: 0.5;">⏳ Preparando interfaz...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `,
+                        icon: 'info',
+                        showConfirmButton: false,
+                        allowOutsideClick: false,
+                        didOpen: async () => {
+                            try {
+                                updateProgressStep('step1', '⏳ Registrando participación...');
+                                const gameStartSuccess = await registerGameStart();
+
+                                if (gameStartSuccess) {
+                                    updateProgressStep('step1', '✅ Participación registrada');
+                                    updateProgressStep('step2', '⏳ Buscando rival / Configurando sesión...');
+                                    const sessionName = await getSessionNameFromServer();
+                                    
+                                    // The callback to waitForRival now handles hiding the overlay
+                                    await waitForRival(sessionName, () => {
+                                        hideBlueScreenOverlay(); // Hide overlay immediately after waitForRival's Swal closes
+                                        
+                                        updateProgressStep('step2', '✅ Sesión lista');
+                                        updateProgressStep('step3', '⏳ Cargando juego...');
+                                        finalCleanupAndProceed('initialize');
+                                        setTimeout(() => { 
+                                            if(document.getElementById('step3')) updateProgressStep('step3', '✅ ¡A jugar!');
+                                            Swal.close(); // Ensure "Preparando juego..." is closed
+                                        }, 500);
+                                    });
+                                } else { // gameStartSuccess is false
+                                    updateProgressStep('step1', '⚠️ Registro opcional falló');
+                                    updateProgressStep('step2', '⏳ Inicializando (sin registro completo)...');
+                                    Swal.close(); // Close "Preparando juego..."
+                                    hideBlueScreenOverlay(); // Hide overlay
+                                    finalCleanupAndProceed('initialize');
+                                    setTimeout(() => {
+                                        if(document.getElementById('step3')) updateProgressStep('step3', '✅ ¡A jugar!');
+                                    }, 500);
+                                }
+                            } catch (error) {
+                                console.error('Error en preparación:', error);
+                                Swal.update({ // Update the "Preparando juego..." Swal to show error
+                                    title: '⚠️ Error en preparación',
+                                    html: `
+                                        <p>Hubo un error al preparar el juego:</p>
+                                        <p style="color: #ef4444; font-size: 14px;">${error.message}</p>
+                                        <p>¿Quieres continuar sin registro completo?</p>
+                                    `,
+                                    icon: 'warning',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Continuar',
+                                    cancelButtonText: 'Salir',
+                                });
+                            }
+                        }
+                    }).then((preparandoResult) => {
+                        // This .then() is for the "Preparando juego..." Swal,
+                        // primarily if it was updated to an error dialog.
+                        if (Swal.isVisible() && preparandoResult && (preparandoResult.isConfirmed || preparandoResult.isDismissed)) { 
+                            hideBlueScreenOverlay(); // Hide overlay after error dialog resolves
+                            if (preparandoResult.isConfirmed) {
+                                finalCleanupAndProceed('initialize');
+                            } else { 
+                                finalCleanupAndProceed('exit');
+                            }
+                        }
+                    });
+                } else { // User cancelled "Preparado {userName}"
+                    hideBlueScreenOverlay(); // Hide overlay after this Swal resolves
+                    finalCleanupAndProceed('exit');
+                }
+            });
+        }
+    }
+
+    // Modified waitForRival to manage Swals and use a callback that will eventually hide the overlay
+    async function waitForRival(sessionName, onGameAndOverlayReadyCallback) {
+        let alone = await checkIfAloneInSession(sessionName);
+        let currentSwal = Swal.getPopup(); // Check if "Preparando juego..." is open
+
+        if (alone) {
+            // If "Preparando juego..." is open, update it. Otherwise, show new "Espera rival"
+            if (currentSwal && currentSwal.querySelector('.swal2-title').textContent.includes('Preparando juego')) {
+                 Swal.update({
+                    title: 'Espera a tu rival',
+                    html: 'Aún no hay otro jugador en tu sesión. Espera un momento...',
+                    icon: 'info',
+                    showConfirmButton: false, // Keep it hidden
+                 });
+            } else {
+                if (Swal.isVisible()) Swal.close(); // Close any other Swal
+                Swal.fire({ 
+                    title: 'Espera a tu rival',
+                    text: 'Aún no hay otro jugador en tu sesión. Espera un momento...',
+                    icon: 'info',
+                    allowOutsideClick: false,
+                    showConfirmButton: false,
+                });
+            }
+
+            const interval = setInterval(async () => {
+                const stillAlone = await checkIfAloneInSession(sessionName);
+                if (!stillAlone) {
+                    clearInterval(interval);
+                    if (Swal.isVisible()) { 
+                        Swal.close(); 
+                    }
+                    if (onGameAndOverlayReadyCallback) onGameAndOverlayReadyCallback();
+                }
+            }, 2000);
+        } else { // Not alone
+            if (Swal.isVisible() && Swal.getPopup().querySelector('.swal2-title').textContent.includes('Preparando juego')) {
+                // "Preparando juego..." is open, and rival is already there.
+                // The didOpen logic will proceed to call onGameAndOverlayReadyCallback.
+                // No need to close Swal here, let the didOpen flow handle it.
+            } else if (Swal.isVisible()) {
+                 Swal.close(); // Close "Espera rival" or other Swals
+            }
+            if (onGameAndOverlayReadyCallback) onGameAndOverlayReadyCallback();
+        }
+    }
+
+    // Original DOMContentLoaded logic from your selection
+    console.log('DOM cargado - obteniendo datos de usuario...');
+    const userData = getUserData();
+    console.log('Datos de usuario obtenidos:', userData);
+    showUserDebugInfo();
+    setTimeout(notifyGameReady, 1000);
+
+    // Fallback to show Welcome Dialog if no USER_DATA message received
+    setTimeout(() => {
+        if (!userDataReceived) {
+            console.log('No USER_DATA message received after 2 seconds, showing welcome dialog as fallback.');
+            showWelcomeDialog();
+        }
+    }, 2000); // 2-second timeout for fallback
+});
 
     </script>
 </body>

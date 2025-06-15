@@ -804,11 +804,16 @@ input[type="text"]:focus {
     }
 }
 
-
+.oculto-por-dialogo > *:not(.swal2-container) {
+    visibility: hidden !important;
+}
+.oculto-por-dialogo {
+    overflow: hidden !important;
+}
     </style>
 </head>
 <body>
-    <div id="main-content" style="display: none;">
+     <body class="oculto-por-dialogo">
    <div class="header">
     <span>←</span>
     <span style="font-size: 24px; font-weight: bold;">Crucigrama</span>
@@ -873,6 +878,7 @@ input[type="text"]:focus {
  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
  <audio id="button-sound" src="https://www.myinstants.com/media/sounds/geometry-dash-click-sound.mp3"></audio>
 <script>
+
   const sound = document.getElementById('button-sound');
 
   document.addEventListener('click', function(e) {
@@ -1704,7 +1710,7 @@ function initializeVirtualKeyboard() {
 
 
 async function initializeGame() {
-        document.getElementById('main-content').style.display = 'block';
+       document.body.classList.remove('oculto-por-dialogo'); // Solo esto
     console.log('=== INICIALIZANDO JUEGO ===');
     
     if (!verifyDOMElements()) {
@@ -2476,15 +2482,74 @@ function shouldCellHaveSeparator(row, col) {
             return '';
         }
 
+        function isMobileOrTablet() {
+    return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent);
+}
 function handleInput(event) {
-    // Bloquear completamente los eventos de input del teclado físico
-    event.preventDefault();
-    return false;
+    if (isMobileOrTablet()) {
+        // Bloquear completamente los eventos de input del teclado físico en móvil/tablet
+        event.preventDefault();
+        return false;
+    }
+    // En PC, permitir la escritura normal
 }
 
+// ...existing code...
 
-// ... (código existente) ...
-// ... (código existente) ...
+// Añade esto después de definir processVirtualKeyPress y logicallyActiveInput
+
+// ...existing code...
+
+let nKeyDownTime = null;
+
+document.addEventListener('keydown', function(event) {
+    // Ignorar si hay un modal SweetAlert2 abierto
+    if (document.body.classList.contains('swal2-shown')) return;
+
+    // Solo letras (A-Z, Ñ)
+    let key = event.key.toUpperCase();
+
+    // Detectar pulsación larga de N para Ñ
+    if (key === 'N') {
+        if (!nKeyDownTime) {
+            nKeyDownTime = Date.now();
+        }
+        // No procesar aún, esperar keyup para decidir si es N o Ñ
+        event.preventDefault();
+        return;
+    }
+
+    if (/^[A-ZÑ]$/.test(key)) {
+        event.preventDefault();
+        processVirtualKeyPress(key);
+    } else if (event.key === 'Backspace') {
+        event.preventDefault();
+        processVirtualBackspace();
+    }
+    // Puedes añadir más controles para flechas si quieres navegación
+});
+
+document.addEventListener('keyup', function(event) {
+    // Ignorar si hay un modal SweetAlert2 abierto
+    if (document.body.classList.contains('swal2-shown')) return;
+
+    let key = event.key.toUpperCase();
+
+    if (key === 'N' && nKeyDownTime) {
+        const duration = Date.now() - nKeyDownTime;
+        nKeyDownTime = null;
+        // Si la pulsación fue larga (>=600ms), poner Ñ, si no, N
+        if (duration >= 600) {
+            processVirtualKeyPress('Ñ');
+        } else {
+            processVirtualKeyPress('N');
+        }
+        event.preventDefault();
+        return;
+    }
+});
+
+
 function ensureInputVisible(input) {
     const gridContainer = document.querySelector('.grid-container');
     const virtualKeyboard = document.querySelector('.virtual-keyboard');
@@ -3064,7 +3129,7 @@ function showWelcomeDialog() {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                document.getElementById('main-content').style.display = 'block';
+                document.body.classList.remove('oculto-por-dialogo');
                 initializeGame();
             } else if (result.dismiss === Swal.DismissReason.cancel) {
                 cerrarIframeYSalir();
@@ -3107,7 +3172,7 @@ function showWelcomeDialog() {
             }
         }).then(async (result) => {
             if (result.isConfirmed) {
-                        document.getElementById('main-content').style.display = 'none'; 
+                        document.body.classList.add('oculto-por-dialogo');
                 // ...lógica para iniciar el juego...
                 Swal.fire({
                     title: '🎮 Preparando juego...',
@@ -3164,7 +3229,7 @@ function showWelcomeDialog() {
                                 confirmButtonText: 'Continuar',
                                 cancelButtonText: 'Reintentar'
                             }).then((retryResult) => {
-                                    document.getElementById('main-content').style.display = 'block';
+                                    document.body.classList.remove('oculto-por-dialogo');
                                 if (retryResult.isConfirmed) {
                                     initializeGame();
                                 } else if (retryResult.dismiss === Swal.DismissReason.cancel) {
@@ -3406,7 +3471,7 @@ async function waitForRival(sessionName) {
     let alone = await checkIfAloneInSession(sessionName);
 
     if (alone) {
-         document.getElementById('main-content').style.display = 'none';
+         document.body.classList.add('oculto-por-dialogo');
         waitingAlert = Swal.fire({
             title: 'Espera a tu rival',
             text: 'Aún no hay otro jugador en tu sesión. Espera un momento...',
@@ -3693,6 +3758,12 @@ function precargarImagenes(frutas) {
 // Llama a esta función al iniciar el juego:
 precargarImagenes(fruits);
 
+function mostrarMainContent() {
+    document.body.classList.remove('oculto-por-dialogo');
+}
+function ocultarMainContent() {
+    document.body.classList.add('oculto-por-dialogo');
+}
 
 
     </script>

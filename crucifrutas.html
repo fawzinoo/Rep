@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Frutas</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>  
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -872,11 +873,13 @@ input[type="text"]:focus {
 <div id="imageModal" class="image-modal" onclick="closeImageModal()">
     <span class="close-modal" onclick="closeImageModal()">&times;</span>
     <img id="modalImage" class="modal-image" src="" alt="Fruta ampliada">
+
 </div>
 
 </div>
  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
  <audio id="button-sound" src="https://www.myinstants.com/media/sounds/geometry-dash-click-sound.mp3"></audio>
+ <audio id="winner-sound" src="https://fawzinoo.github.io/audios/winn.mp3"></audio> 
 <script>
 
   const sound = document.getElementById('button-sound');
@@ -973,7 +976,21 @@ function launchConfetti() {
     }
 }
 
-
+function playWinnerSound() {
+    console.log("Intentando reproducir sonido de ganador..."); // NUEVO LOG
+    const winnerSound = document.getElementById('winner-sound');
+    if (winnerSound) {
+        console.log("Elemento de audio 'winner-sound' encontrado:", winnerSound); // NUEVO LOG
+        winnerSound.currentTime = 0;
+        winnerSound.play().then(() => {
+            console.log("Reproducción de sonido de ganador iniciada."); // NUEVO LOG
+        }).catch(error => {
+            console.error("Error al reproducir sonido de ganador:", error); // ERROR LOG MEJORADO
+        });
+    } else {
+        console.error("Elemento de audio 'winner-sound' NO encontrado."); // NUEVO LOG
+    }
+}
 
 // Añadir esta función después de la función resetGame()
 // ...existing code...
@@ -2726,7 +2743,7 @@ function getPreviousInput(currentInput) {
     
     return null;
 }
-function checkAnswerAutomatic() {
+async function checkAnswerAutomatic() {
     if (window.checkingAnswer) {
         return;
     }
@@ -2828,7 +2845,16 @@ function checkAnswerAutomatic() {
             }
 
             setTimeout(() => {
-                nextFruit(); // SOLO esto, sin mostrar imagen aquí
+                if (completedFruits.size === fruits.length) {
+                    // Todas las frutas completadas
+                    console.log('Todas las frutas completadas. Mostrando animación Lottie.');
+                    showLottieAnimation(); // Mostrar animación
+                    notifyGameCompleted().then(() => {
+                        startWinnerPolling();
+                    });
+                } else {
+                    nextFruit(); 
+                }
             }, duracion);
         }, 800);
     }
@@ -3596,9 +3622,12 @@ function startWinnerPolling() {
                 body: JSON.stringify(postData)
             });
             const data = await response.json();
+            console.log("Respuesta de getScoreStatusAndRank:", data);
             if (data && data.completed === "GANADOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                hideLottieAnimation(); // Ocultar animación
+                playWinnerSound();
                 Swal.fire({
                     title: '¡Eres el GANADOR! 🎉',
                     text: '¡Felicidades, has ganado la partida!',
@@ -3609,7 +3638,7 @@ function startWinnerPolling() {
                    if (window.parent !== window) {
     window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
 } else {
-    window.location.href = 'pre.html';
+    window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
 }
                 });
                 launchConfetti();
@@ -3625,6 +3654,8 @@ function startWinnerPolling() {
             } else if (data && data.completed === "PERDEDOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                hideLottieAnimation(); // Ocultar animación
+                
                 Swal.fire({
                     title: 'Has perdido',
                     text: 'Otro jugador ha completado antes que tú.',
@@ -3635,7 +3666,7 @@ function startWinnerPolling() {
                    if (window.parent !== window) {
     window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
 } else {
-    window.location.href = 'pre.html';
+    window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
 }
                 });
                 // Borra el estado PERDEDOR en la hoja (columna F)
@@ -3765,6 +3796,60 @@ function ocultarMainContent() {
     document.body.classList.add('oculto-por-dialogo');
 }
 
+function createLottieOverlayIfNotExists() {
+    if (document.getElementById('lottie-wait-overlay')) {
+        return; // Ya existe
+    }
+
+    const overlayDiv = document.createElement('div');
+    overlayDiv.id = 'lottie-wait-overlay';
+    overlayDiv.style.display = 'none';
+    overlayDiv.style.position = 'fixed';
+    overlayDiv.style.top = '0';
+    overlayDiv.style.left = '0';
+    overlayDiv.style.width = '100vw';
+    overlayDiv.style.height = '100vh';
+    overlayDiv.style.background = 'rgba(0,0,0,0.25)';
+    overlayDiv.style.zIndex = '99999';
+    overlayDiv.style.justifyContent = 'center';
+    overlayDiv.style.alignItems = 'center';
+
+    const lottiePlayer = document.createElement('lottie-player');
+    lottiePlayer.id = 'lottie-wait';
+    lottiePlayer.setAttribute('src', 'https://fawzinoo.github.io/Rep/Animation%20-%201750018222493.json');
+    lottiePlayer.setAttribute('background', 'transparent');
+    lottiePlayer.setAttribute('speed', '1');
+    lottiePlayer.style.width = '100px';
+    lottiePlayer.style.height = '100px';
+    lottiePlayer.setAttribute('loop', '');
+    lottiePlayer.setAttribute('autoplay', '');
+
+    overlayDiv.appendChild(lottiePlayer);
+    document.body.appendChild(overlayDiv);
+}
+
+function showLottieAnimation() {
+    createLottieOverlayIfNotExists(); // Asegura que el overlay exista
+    const lottieOverlay = document.getElementById('lottie-wait-overlay');
+    if (lottieOverlay) {
+        lottieOverlay.style.display = 'flex';
+        const player = document.getElementById('lottie-wait');
+        if (player && typeof player.play === 'function') { // Verificar que player.play sea una función
+            player.play();
+        }
+    }
+}
+
+function hideLottieAnimation() {
+    const lottieOverlay = document.getElementById('lottie-wait-overlay');
+    if (lottieOverlay) {
+        lottieOverlay.style.display = 'none';
+        const player = document.getElementById('lottie-wait');
+        if (player && typeof player.stop === 'function') { // Verificar que player.stop sea una función
+            player.stop();
+        }
+    }
+}
 
     </script>
 </body>

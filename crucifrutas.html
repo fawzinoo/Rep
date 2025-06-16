@@ -3160,30 +3160,33 @@ function showWelcomeDialog() {
             } else if (result.dismiss === Swal.DismissReason.cancel) {
                 cerrarIframeYSalir();
             }
-            // Si el usuario cierra el diálogo de otra forma, no hagas nada
         });
     } else {
         Swal.fire({
-            title: `✅ Preparado ${userName}`,
             html: `
-                <div style="text-align: center; margin: 15px 0;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">🎮</div>
-                    <p style="font-size: 18px; margin-bottom: 15px;"><strong>¡Hola ${userName}!</strong></p>
-                    <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; margin: 10px 0;">
-                        <p style="font-size: 14px; color: #0369a1; margin: 0;">
-                            <strong>Usuario detectado correctamente</strong><br>
-                            Jugador: ${userName}<br>
-                            ${userData.sessionId ? `Sesión: ${userData.sessionId.substring(0, 8)}...` : ''}<br>
-                            Game: Crucigrama de Frutas 🍎
-                        </p>
-                    </div>
-                    <p style="margin-top: 15px; color: #059669;">
-                        <strong>¿Estás listo para jugar?</strong><br>
-                        <small>Se registrará tu participación automáticamente</small>
-                    </p>
-                </div>
+            <div style="text-align: center; margin: 15px 0;">
+            <lottie-player 
+            src="https://lottie.host/c5f2b76e-f9de-4a0c-843e-b146a34f12a4/nT4CPOsBRH.json"
+            background="transparent"
+            speed="1"
+            style="width: 100px; height: 100px; margin: 0 auto 1px auto; display: block;"
+            loop
+            autoplay>
+            </lottie-player>
+            <p style="font-size: 22px; font-weight: bold; margin-bottom: 10px; color: #4338ca; letter-spacing: 1px;">
+                👋 ¡Hola <span style="color: #059669;">${userName}</span>!
+            </p>
+     
+            <div style="margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span style="font-size: 22px; color: #059669;">🧩</span>
+                <span style="color: blue; font-size: 18px; font-weight: 600; letter-spacing: 0.5px;">
+                    ¿Estás listo para jugar?
+                </span>
+                <span style="font-size: 22px; color: #059669;">🧩</span>
+            </div>
+            </p>
+            </div>
             `,
-            icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'Sí, ¡jugar!',
             cancelButtonText: 'No, salir',
@@ -3198,51 +3201,145 @@ function showWelcomeDialog() {
             }
         }).then(async (result) => {
             if (result.isConfirmed) {
-                        document.body.classList.add('oculto-por-dialogo');
-                // ...lógica para iniciar el juego...
-                Swal.fire({
-                    title: '🎮 Preparando juego...',
-                    html: `
-                        <div style="text-align: center;">
-                            <p>Configurando crucigrama para <strong>${userName}</strong></p>
-                            <div style="margin: 15px 0;">
-                                <div id="progress-steps" style="font-size: 14px; color: #6b7280;">
-                                    <div id="step1" style="margin: 5px 0;">⏳ Registrando participación...</div>
-                                    <div id="step2" style="margin: 5px 0; opacity: 0.5;">⏳ Inicializando juego...</div>
-                                    <div id="step3" style="margin: 5px 0; opacity: 0.5;">⏳ Preparando interfaz...</div>
-                                </div>
-                            </div>
-                        </div>
-                    `,
-                    icon: 'info',
-                    showConfirmButton: false,
-                    allowOutsideClick: false,
-                    didOpen: async () => {
-                        try {
-                            updateProgressStep('step1', '⏳ Registrando participación...');
-                            const gameStartSuccess = await registerGameStart();
+            document.body.classList.add('oculto-por-dialogo');
+            Swal.fire({
+                html: `
+                <div id="crucigrama-preparando"></div>
+                <h2 style="margin-top:20px; font-size: 1.5em;">Preparando el crucigrama...</h2>
 
-                            if (gameStartSuccess) {
-                                updateProgressStep('step1', '✅ Participación registrada');
-                                const sessionName = await getSessionNameFromServer();
-                                await waitForRival(sessionName);
-                            } else {
-                                updateProgressStep('step1', '⚠️ Registro opcional falló');
-                                Swal.close();
-                                initializeGame();
-                                startWinnerPolling();
-                            }
+                    <div id="progress-steps" style="font-size: 14px; color: #6b7280;">
+                    <div id="step1" style="margin: 5px 0;">⏳ Registrando participación...</div>
+                    <div id="step2" style="margin: 5px 0; opacity: 0.5;">⏳ Inicializando juego...</div>
+                    <div id="step3" style="margin: 5px 0; opacity: 0.5;">⏳ Preparando interfaz...</div>
+                    </div>
+                </div>
+                <style>
+                    #crucigrama-preparando {
+                    display: grid;
+                    grid-template-rows: repeat(3, 1fr);
+                    grid-template-columns: repeat(3, 1fr);
+                    width: 50px;
+                    height: 50px;
+                    border: 2px solid #333;
+                    margin: 0 auto;
+                    background: #fafafa;
+                    }
+                    .celda-prep {
+                    border: 1px solid #999;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.8em;
+                    background: #fff;
+                    width: 100%;
+                    height: 100%;
+                    transition: background 0.3s;
+                    }
+                    .resaltada-prep {
+                    background: yellow !important;
+                    }
+                    .step-done {
+                    color: #059669 !important;
+                    opacity: 1 !important;
+                    font-weight: bold;
+                    }
+                </style>
+                `,
+                showConfirmButton: false,
+                allowOutsideClick: false,
+                width: 300,
+                didOpen: async () => {
+                // Crucigrama animado usando el JSON original
+                const crucigramaData = {
+                    size: 3,
+                    width: 50,
+                    height: 50,
+                    animaciones: [
+                    { palabra: 'ANA', posiciones: [0, 1, 2] },
+                    { palabra: 'ALA', posiciones: [0, 3, 6] },
+                    { palabra: 'OLA', posiciones: [6, 7, 8] }
+                    ]
+                };
 
-                            setTimeout(() => {
-                                updateProgressStep('step2', '✅ Juego inicializado');
-                            }, 600);
+                const crucigrama = document.getElementById('crucigrama-preparando');
+                crucigrama.style.width = crucigramaData.width + 'px';
+                crucigrama.style.height = crucigramaData.height + 'px';
+                let celdas = [];
+                for (let i = 0; i < crucigramaData.size * crucigramaData.size; i++) {
+                    const celda = document.createElement('div');
+                    celda.className = 'celda-prep';
+                    celda.textContent = '';
+                    crucigrama.appendChild(celda);
+                    celdas.push(celda);
+                }
+                let animIndex = 0;
+                function limpiarCeldas() {
+                    celdas.forEach(celda => {
+                    celda.textContent = '';
+                    celda.classList.remove('resaltada-prep');
+                    });
+                }
+                function animarPalabra({palabra, posiciones}, callback) {
+                    let i = 0;
+                    function escribirLetra() {
+                    if (i < palabra.length) {
+                        celdas[posiciones[i]].textContent = palabra[i];
+                        i++;
+                        setTimeout(escribirLetra, 300);
+                    } else {
+                        posiciones.forEach(idx => celdas[idx].classList.add('resaltada-prep'));
+                        setTimeout(() => {
+                        posiciones.forEach(idx => celdas[idx].classList.remove('resaltada-prep'));
+                        limpiarCeldas();
+                        setTimeout(callback, 400);
+                        }, 700);
+                    }
+                    }
+                    escribirLetra();
+                }
+                function cicloAnimacion() {
+                    animarPalabra(crucigramaData.animaciones[animIndex], () => {
+                    animIndex = (animIndex + 1) % crucigramaData.animaciones.length;
+                    cicloAnimacion();
+                    });
+                }
+                cicloAnimacion();
 
-                            setTimeout(() => {
-                                updateProgressStep('step3', '✅ Interfaz lista');
-                            }, 1200);
+                // Helper para marcar step como hecho (verde)
+                function markStepDone(stepId, text) {
+                    const el = document.getElementById(stepId);
+                    if (el) {
+                    el.textContent = text;
+                    el.classList.add('step-done');
+                    }
+                }
 
-                        } catch (error) {
-                            console.error('Error en preparación:', error);
+                try {
+                    updateProgressStep('step1', '⏳ Registrando participación...');
+                    const gameStartSuccess = await registerGameStart();
+
+                    if (gameStartSuccess) {
+                    markStepDone('step1', '✅ Participación registrada');
+                    updateProgressStep('step2', '⏳ Inicializando juego...');
+                    const sessionName = await getSessionNameFromServer();
+                    // Marcar step2 como hecho después de un pequeño delay
+                    setTimeout(() => {
+                        markStepDone('step2', '✅ Juego inicializado');
+                        updateProgressStep('step3', '⏳ Preparando interfaz...');
+                    }, 600);
+                    // Marcar step3 como hecho después de otro delay
+                    setTimeout(() => {
+                        markStepDone('step3', '✅ Interfaz lista');
+                    }, 1200);
+                    await waitForRival(sessionName);
+                    } else {
+                    markStepDone('step1', '⚠️ Registro opcional falló');
+                    Swal.close();
+                    initializeGame();
+                    startWinnerPolling();
+                    }
+                } catch (error) {
+                    console.error('Error en preparación:', error);
                             Swal.update({
                                 title: '⚠️ Error en preparación',
                                 html: `
@@ -3255,7 +3352,7 @@ function showWelcomeDialog() {
                                 confirmButtonText: 'Continuar',
                                 cancelButtonText: 'Reintentar'
                             }).then((retryResult) => {
-                                    document.body.classList.remove('oculto-por-dialogo');
+                                document.body.classList.remove('oculto-por-dialogo');
                                 if (retryResult.isConfirmed) {
                                     initializeGame();
                                 } else if (retryResult.dismiss === Swal.DismissReason.cancel) {

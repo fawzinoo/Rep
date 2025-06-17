@@ -885,9 +885,19 @@ input[type="text"]:focus {
 
 .oculto-por-dialogo > *:not(.swal2-container) {
     visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
+
 .oculto-por-dialogo {
     overflow: hidden !important;
+}
+
+.swal2-container {
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 999999 !important;
 }
 
 @media (min-width: 1025px) {
@@ -1916,26 +1926,55 @@ function initializeVirtualKeyboard() {
 
 
 
+// Agregar esta variable global cerca de las otras declaraciones de variables
+let gameInitializationStopped = false;
+
+// Modificar la función initializeGame para que sea cancelable
 async function initializeGame() {
+    // Resetear la bandera al inicio
+    gameInitializationStopped = false;
+    
     document.body.classList.remove('oculto-por-dialogo');
     console.log('=== INICIALIZANDO JUEGO ===');
+    
+    // Verificar si debe detenerse antes de cada paso
+    if (gameInitializationStopped) {
+        console.log('❌ Inicialización del juego detenida');
+        return;
+    }
     
     if (!verifyDOMElements()) {
         console.error('Elementos DOM no verificados');
         return;
     }
     
+    if (gameInitializationStopped) return;
+    
     initializeRandomFruits();
     updateFruitDisplay();
+    
+    if (gameInitializationStopped) return;
+    
     await mostrarImagenGrandeTemporal(currentFruit.image);
+    
+    if (gameInitializationStopped) {
+        // Si se detiene después de mostrar la imagen, asegurarse de limpiar
+        document.querySelectorAll('.fruit-image-overlay').forEach(el => el.remove());
+        return;
+    }
+    
     generateGrid();
     startTimer();
     initializeVirtualKeyboard();
     handleDeviceOptimizations();
     updateScoreDisplay();
     
+    if (gameInitializationStopped) return;
+    
     // NUEVO: Cargar puntos totales al inicializar
     await loadTotalPoints();
+    
+    if (gameInitializationStopped) return;
     
     // NUEVO: Iniciar actualizaciones del ranking
     startRankingUpdates();
@@ -1943,7 +1982,36 @@ async function initializeGame() {
 
 
 
-
+// Agregar esta nueva función
+function stopGameInitializationAndHide() {
+    console.log('🛑 Deteniendo inicialización del juego y ocultando contenido...');
+    
+    // Detener la inicialización
+    gameInitializationStopped = true;
+    
+    // Ocultar el contenido principal
+    document.body.classList.add('oculto-por-dialogo');
+    
+    // Detener timer si está activo
+    stopTimer();
+    
+    // Detener audio
+    stopAllAudio();
+    
+    // Eliminar overlays de imagen si existen
+    document.querySelectorAll('.fruit-image-overlay').forEach(el => el.remove());
+    
+    // Detener actualizaciones de ranking
+    stopRankingUpdates();
+    
+    // Limpiar timeouts pendientes
+    if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
+        clearTimeout(photoTimeoutId);
+        photoTimeoutId = null;
+    }
+    
+    console.log('✅ Juego detenido y contenido ocultado');
+}
 
 
 
@@ -3917,6 +3985,7 @@ async function clearSessionOnServer(userName) {
 
 let winnerPollingInterval = null;
 
+// Modificar la función startWinnerPolling para manejar el abandono
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
     winnerPollingInterval = setInterval(async () => {
@@ -3934,25 +4003,34 @@ function startWinnerPolling() {
             });
             const data = await response.json();
             console.log("Respuesta de getScoreStatusAndRank:", data);
+            
             if (data && data.completed === "GANADOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                
+                // NUEVO: Detener inicialización y ocultar contenido
+                stopGameInitializationAndHide();
+                
                 hideLottieAnimation(); // Ocultar animación
                 playWinnerSound();
+                
                 Swal.fire({
                     title: '¡Eres el GANADOR! 🎉',
                     text: '¡Felicidades, has ganado la partida!',
                     icon: 'success',
-                    confirmButtonText: 'Aceptar'
+                    confirmButtonText: 'Aceptar',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
                 }).then(() => {
                     clearSessionOnServer(userName);
-                   if (window.parent !== window) {
-    window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-} else {
-    window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-}
+                    if (window.parent !== window) {
+                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+                    } else {
+                        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+                    }
                 });
                 launchConfetti();
+                
                 // Borra el estado GANADOR en la hoja (columna F)
                 fetch(scriptURL, {
                     method: 'POST',
@@ -3965,21 +4043,28 @@ function startWinnerPolling() {
             } else if (data && data.completed === "PERDEDOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                
+                // NUEVO: Detener inicialización y ocultar contenido
+                stopGameInitializationAndHide();
+                
                 hideLottieAnimation(); // Ocultar animación
                 
                 Swal.fire({
                     title: 'Has perdido',
                     text: 'Otro jugador ha completado antes que tú.',
                     icon: 'error',
-                    confirmButtonText: 'Aceptar'
+                    confirmButtonText: 'Aceptar',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
                 }).then(() => {
                     clearSessionOnServer(userName);
-                   if (window.parent !== window) {
-    window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-} else {
-    window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-}
+                    if (window.parent !== window) {
+                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+                    } else {
+                        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+                    }
                 });
+                
                 // Borra el estado PERDEDOR en la hoja (columna F)
                 fetch(scriptURL, {
                     method: 'POST',
@@ -3995,7 +4080,6 @@ function startWinnerPolling() {
         }
     }, 5000);
 }
-
 async function notifyGameCompleted() {
     const userName = getUserName();
     if (!userName) return;
@@ -4600,7 +4684,51 @@ async function testBothRankings() {
 }
 
 
-// Para ejecutar la prueba, ejecuta en la consola: testBothRankings()
+// Agregar esta función para manejar casos específicos de abandono
+function handleWinnerByAbandonment() {
+    console.log('🏆 Ganador por abandono del rival detectado');
+    
+    // Detener todo inmediatamente
+    stopGameInitializationAndHide();
+    
+    // Detener polling
+    if (winnerPollingInterval) {
+        clearInterval(winnerPollingInterval);
+        winnerPollingInterval = null;
+    }
+    
+    // Mostrar mensaje de victoria
+    Swal.fire({
+        title: '🎉 ¡GANASTE POR ABANDONO!',
+        html: `
+            <div style="text-align: center; margin: 15px 0;">
+                <p style="font-size: 18px; color: #059669; margin-bottom: 10px;">
+                    🏃‍♂️ Tu rival ha abandonado la partida
+                </p>
+                <p style="font-size: 16px; color: #4b5563;">
+                    ¡Felicidades, eres el ganador!
+                </p>
+            </div>
+        `,
+        icon: 'success',
+        confirmButtonText: '¡Genial!',
+        confirmButtonColor: '#059669',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => {
+        const userName = getUserName();
+        clearSessionOnServer(userName);
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
+    });
+    
+    // Efectos visuales
+    launchConfetti();
+    playWinnerSound();
+}
     </script>
 </body>
 </html>

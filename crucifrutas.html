@@ -994,6 +994,20 @@ input[type="text"]:focus {
 .ranking-current .ranking-score {
     color: #dc2626; /* Rojo para diferenciarlo */
 }
+
+.defeat-popup {
+  border: 3px solid #dc3545 !important;
+  border-radius: 15px !important;
+}
+
+.defeat-popup .swal2-title {
+  color: #dc3545 !important;
+  font-size: 1.8em !important;
+}
+
+.defeat-popup .swal2-content {
+  font-size: 1.1em !important;
+}
     </style>
 </head>
 <body>
@@ -1077,6 +1091,8 @@ input[type="text"]:focus {
  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
  <audio id="button-sound" src="https://www.myinstants.com/media/sounds/geometry-dash-click-sound.mp3"></audio>
  <audio id="winner-sound" src="https://fawzinoo.github.io/audios/winn.mp3"></audio> 
+ <!-- Después de tu audio de victoria -->
+<audio id="defeat-sound" src="https://www.myinstants.com/media/sounds/geometry-dash-click-sound.mp3" preload="auto"></audio>
 <script>
 
   const sound = document.getElementById('button-sound');
@@ -1130,7 +1146,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxkjceGhyxrff2AL0wey1TFpecr6Y_fYQW8R4-K2ReVUWNTJvFq0NkzNK2BAaOMoNYrKw/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbzuJGlrtIWjPvE8PqyK-H55qFk4XmuUpgwNecflyyb_wRMhqheqfr39xxOR54YVzGViiQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4727,6 +4743,131 @@ function handleWinnerByAbandonment() {
     // Efectos visuales
     launchConfetti();
     playWinnerSound();
+}
+
+// Agregar estas variables globales al inicio del script
+let statusCheckInterval = null;
+let isCheckingStatus = false;
+
+
+// Función para iniciar verificación de estado cada segundo
+function startStatusChecking() {
+  if (statusCheckInterval) {
+    clearInterval(statusCheckInterval);
+  }
+  
+  hasShownLoserMessage = false;
+  statusCheckInterval = setInterval(checkUserStatus, 1000); // Cada segundo
+  console.log('🔄 Verificación de estado iniciada - cada segundo');
+}
+
+// Función para verificar estado del usuario
+async function checkUserStatus() {
+  if (isCheckingStatus || hasShownLoserMessage) return;
+  isCheckingStatus = true;
+  
+  try {
+    const userData = getUserData();
+    if (!userData || !userData.username) {
+      isCheckingStatus = false;
+      return;
+    }
+
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'checkMyStatus',
+        username: userData.username
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log(`Estado actual: ${result.status}`);
+      
+      if (result.status === 'PERDEDOR' && !hasShownLoserMessage) {
+        hasShownLoserMessage = true;
+        clearInterval(statusCheckInterval);
+        showLoserMessage();
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error verificando estado:', error);
+  } finally {
+    isCheckingStatus = false;
+  }
+}
+
+// Función para mostrar mensaje de perdedor
+function showLoserMessage() {
+  console.log('💥 Mostrando mensaje de perdedor');
+  
+  // Detener todas las verificaciones
+  if (statusCheckInterval) {
+    clearInterval(statusCheckInterval);
+  }
+  
+  // Reproducir sonido de derrota si existe
+  try {
+    const defeatSound = document.getElementById('defeat-sound');
+    if (defeatSound) {
+      defeatSound.play();
+    }
+  } catch (e) {
+    console.log('No se pudo reproducir sonido de derrota');
+  }
+  
+  // Mostrar mensaje inmediatamente
+  Swal.fire({
+    title: '😔 ¡Has Perdido!',
+    text: 'Otro jugador terminó el crucigrama antes que tú',
+    icon: 'error',
+    confirmButtonText: 'Entendido',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    customClass: {
+      popup: 'defeat-popup'
+    }
+  }).then(() => {
+    // Opcional: cerrar juego o reiniciar
+    cerrarJuego();
+  });
+}
+
+// Detener verificación de estado
+function stopStatusChecking() {
+  if (statusCheckInterval) {
+    clearInterval(statusCheckInterval);
+    statusCheckInterval = null;
+    console.log('⏹️ Verificación de estado detenida');
+  }
+}
+
+// Modificar registerGameStart para iniciar verificación
+async function registerGameStart() {
+  // ... (código existente) ...
+  
+  // Al final de la función, después de registrar exitosamente:
+  startStatusChecking(); // 🚀 Iniciar verificación inmediata
+  
+  return result;
+}
+
+// Agregar al event listener de beforeunload
+window.addEventListener('beforeunload', function () {
+  stopStatusChecking();
+  // ... (resto de tu código) ...
+});
+
+// También detener cuando se complete el juego exitosamente
+function handleGameWin() {
+  stopStatusChecking(); // Detener verificación si ganas
+  // ... (resto de tu código de victoria) ...
 }
     </script>
 </body>

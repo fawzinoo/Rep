@@ -1932,51 +1932,58 @@ let gameInitializationStopped = false;
 async function initializeGame() {
     // Resetear la bandera al inicio
     gameInitializationStopped = false;
-    
-    document.body.classList.remove('oculto-por-dialogo');
-    console.log('=== INICIALIZANDO JUEGO ===');
-    
-    // Verificar si debe detenerse antes de cada paso
-    if (gameInitializationStopped) {
-        console.log('❌ Inicialización del juego detenida');
-        return;
+
+    // Mostrar un diálogo de "cargando"
+    Swal.fire({
+        title: 'Preparando el juego...',
+        text: 'Por favor, espera un momento.',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    try {
+        const sessionName = await getSessionNameFromServer();
+        if (gameInitializationStopped) return; // Salir si se canceló durante la espera
+
+        const userName = getUserName();
+        if (userName && userName !== 'Invitado') {
+            await registerGameStart(userName, sessionName);
+            if (gameInitializationStopped) return; // Salir si se canceló
+        }
+
+        // Obtener las frutas y construir el crucigrama
+        fruits = await fetchFruits();
+        if (gameInitializationStopped) return; // Salir si se canceló
+
+        buildGrid();
+        setupInputListeners();
+        setupKeyboardListeners();
+
+        // Iniciar con la primera fruta
+        nextFruit();
+
+        // Cerrar el diálogo de "cargando"
+        Swal.close();
+
+        // Iniciar actualizaciones del ranking en segundo plano
+        startRankingUpdates();
+
+        // Iniciar la verificación de estado del juego (GANADOR/PERDEDOR) en segundo plano
+        checkGameStatusPeriodically();
+
+    } catch (error) {
+        console.error("Error durante la inicialización del juego:", error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error al cargar',
+            text: 'No se pudo iniciar el juego. Por favor, intenta de nuevo.',
+        }).then(() => {
+            // Opcional: redirigir o cerrar si la carga falla
+            cerrarIframeYSalir();
+        });
     }
-    
-    if (!verifyDOMElements()) {
-        console.error('Elementos DOM no verificados');
-        return;
-    }
-    
-    if (gameInitializationStopped) return;
-    
-    initializeRandomFruits();
-    updateFruitDisplay();
-    
-    if (gameInitializationStopped) return;
-    
-    await mostrarImagenGrandeTemporal(currentFruit.image);
-    
-    if (gameInitializationStopped) {
-        // Si se detiene después de mostrar la imagen, asegurarse de limpiar
-        document.querySelectorAll('.fruit-image-overlay').forEach(el => el.remove());
-        return;
-    }
-    
-    generateGrid();
-    startTimer();
-    initializeVirtualKeyboard();
-    handleDeviceOptimizations();
-    updateScoreDisplay();
-    
-    if (gameInitializationStopped) return;
-    
-    // NUEVO: Cargar puntos totales al inicializar
-    await loadTotalPoints();
-    
-    if (gameInitializationStopped) return;
-    
-    // NUEVO: Iniciar actualizaciones del ranking
-    startRankingUpdates();
 }
 
 
@@ -3386,12 +3393,16 @@ window.addEventListener('popstate', function() {
 // ...existing code...
 
 function cerrarIframeYSalir() {
-    // NUEVO: Detener actualizaciones del ranking
+    // Detener actualizaciones del ranking y el polling de estado
     stopRankingUpdates();
+    if (gameStatusInterval) {
+        clearInterval(gameStatusInterval);
+    }
     
     if (window.parent !== window) {
         window.parent.postMessage({ type: 'CLOSE_GAME_IFRAME_AND_EXIT' }, '*');
     } else {
+        // Fallback si no está en un iframe
         window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
     }
 }
@@ -3984,103 +3995,7 @@ async function clearSessionOnServer(userName) {
 
 let winnerPollingInterval = null;
 
-// Modificar la función startWinnerPolling para manejar el abandono
-function startWinnerPolling() {
-    if (winnerPollingInterval) clearInterval(winnerPollingInterval);
-    winnerPollingInterval = setInterval(async () => {
-        const userName = getUserName();
-        if (!userName) return;
-        const postData = {
-            action: 'getScoreStatusAndRank',
-            username: userName
-        };
-        try {
-            const response = await fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify(postData)
-            });
-            const data = await response.json();
-            console.log("Respuesta de getScoreStatusAndRank:", data);
-            
-            if (data && data.completed === "GANADOR") {
-                clearInterval(winnerPollingInterval);
-                winnerPollingInterval = null;
-                
-                stopGameInitializationAndHide();
-                ocultarMainContent(); // <-- OCULTA TODO DETRÁS
-                hideLottieAnimation();
-                playWinnerSound();
-                
-                Swal.fire({
-                    title: '¡Eres el GANADOR! 🎉',
-                    text: '¡Felicidades, has ganado la partida!',
-                    icon: 'success',
-                    confirmButtonText: 'Aceptar',
-                    allowOutsideClick: false,
-                    allowEscapeKey: false
-                }).then(() => {
-                    clearSessionOnServer(userName);
-                    if (window.parent !== window) {
-                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                    } else {
-                        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-                    }
-                });
-                launchConfetti();
-                console.log("Enviando petición para limpiar estado PERDEDOR de", userName);
-                fetch(scriptURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
-                });
-            } else if (data && data.completed === "PERDEDOR") {
-                clearInterval(winnerPollingInterval);
-                winnerPollingInterval = null;
-                
-                stopGameInitializationAndHide();
-                ocultarMainContent(); // <-- OCULTA TODO DETRÁS
-                hideLottieAnimation();
 
-                // Detén cualquier timeout de fotos si existe
-                if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
-                    clearTimeout(photoTimeoutId);
-                    photoTimeoutId = null;
-                }
-                
-                Swal.fire({
-                    title: 'Has perdido',
-                    text: 'Otro jugador ha completado antes que tú.',
-                    icon: 'error',
-                    confirmButtonText: 'Aceptar',
-                    allowOutsideClick: false,
-                    allowEscapeKey: false
-                }).then(() => {
-                    clearSessionOnServer(userName);
-                    if (window.parent !== window) {
-                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                    } else {
-                        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-                    }
-                });
-                
-                fetch(scriptURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
-                });
-            }
-        } catch (e) {
-            console.error('Error al obtener estado de ganador:', e);
-        }
-    }, 5000);
-}
 async function notifyGameCompleted() {
     const userName = getUserName();
     if (!userName) return;
@@ -4753,21 +4668,87 @@ function pollStatus() {
 }
 
 function mostrarMensajePerdedor() {
+    // Detenemos el polling global para no seguir verificando
+    if (gameStatusInterval) {
+        clearInterval(gameStatusInterval);
+    }
+
     Swal.fire({
         title: 'Has perdido',
-        text: 'Otro jugador ha completado antes que tú.',
+        text: 'Otro jugador ha completado el juego antes que tú.',
         icon: 'error',
         confirmButtonText: 'Aceptar',
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // Aquí puedes limpiar la sesión, redirigir, etc.
-        // Por ejemplo:
-        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        // Limpiar la sesión del usuario en el backend
+        const userName = getUserName();
+        if (userName && userName !== 'Invitado') {
+            clearWinnerStatus(userName);
+        }
+        cerrarIframeYSalir();
     });
-    // Deshabilita la interfaz de juego
+
+    // Deshabilita la interfaz de juego para que no se pueda seguir jugando
     document.querySelectorAll('input, button').forEach(el => el.disabled = true);
 }
+
+
+let gameStatusInterval = null; // <--- NUEVA VARIABLE GLOBAL
+
+function checkGameStatusPeriodically() {
+    // Limpiar cualquier intervalo anterior para evitar duplicados
+    if (gameStatusInterval) {
+        clearInterval(gameStatusInterval);
+    }
+
+    const userName = getUserName();
+    if (!userName || userName === 'Invitado') {
+        console.log("Polling de estado detenido: no hay un usuario logueado.");
+        return;
+    }
+
+    gameStatusInterval = setInterval(async () => {
+        const postData = {
+            action: 'getScoreStatusAndRank',
+            username: userName
+        };
+
+        try {
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(postData)
+            });
+            const data = await response.json();
+            
+            // Loguear el estado recibido para depuración
+            console.log(`[Polling] Estado para ${userName}: ${data.completed}`);
+
+            if (data.completed === "PERDEDOR") {
+                console.log("[Polling] ¡PERDEDOR DETECTADO! Deteniendo el juego.");
+                clearInterval(gameStatusInterval); // Detener polling
+                stopGameInitializationAndHide();
+                ocultarMainContent();
+                hideLottieAnimation();
+                mostrarMensajePerdedor(); // Mostrar el mensaje de perdedor
+            } else if (data.completed === "GANADOR") {
+                console.log("[Polling] ¡GANADOR DETECTADO! (Probablemente por abandono del rival o por ser el único que queda).");
+                clearInterval(gameStatusInterval); // Detener polling
+                stopGameInitializationAndHide();
+                ocultarMainContent();
+                hideLottieAnimation();
+                handleWinnerByAbandonment(); // Reutilizamos la función de ganador por abandono
+            }
+            // Si el estado es vacío o cualquier otra cosa, no hace nada y el juego continúa.
+            // El polling seguirá en la siguiente iteración.
+
+        } catch (e) {
+            console.error('[Polling] Error al verificar estado del juego:', e);
+            // Opcional: podrías detener el polling si hay muchos errores seguidos para no sobrecargar.
+        }
+    }, 3000); // Verifica el estado cada 3 segundos.
+    }
     </script>
 </body>
 </html>

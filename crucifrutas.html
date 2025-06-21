@@ -4089,6 +4089,8 @@ let winnerPollingInterval = null;
 
 // La función startWinnerPolling queda igual - es la ÚNICA fuente autorizada para limpieza
 
+// Reemplazar la función startWinnerPolling existente
+
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
     winnerPollingInterval = setInterval(async () => {
@@ -4113,8 +4115,19 @@ function startWinnerPolling() {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
-                // ✅ ÚNICA limpieza oficial autorizada para GANADOR
-                console.log('🎉 GANADOR OFICIAL confirmado por servidor - Limpieza autorizada');
+                // 🧹 LIMPIAR CELDA F INMEDIATAMENTE para GANADOR
+                console.log('🎉 GANADOR OFICIAL - Limpiando celda F inmediatamente');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+                
+                // Luego limpiar sesión también
                 await limpiezaInmediataUsuario(userName, 'ganador_polling');
                 
                 invalidatePermissionsCache();
@@ -4144,9 +4157,21 @@ function startWinnerPolling() {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
-                // ✅ ÚNICA limpieza oficial autorizada para PERDEDOR
-                console.log('💔 PERDEDOR OFICIAL confirmado por servidor - Limpieza autorizada');
-                await limpiezaInmediataUsuario(userName, 'perdedor_polling');
+                // 🧹 LIMPIAR CELDA F INMEDIATAMENTE para PERDEDOR
+                console.log('💔 PERDEDOR OFICIAL - Limpiando celda F inmediatamente');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                }).then(() => {
+                    console.log(`✅ Celda F limpiada para ${userName} tras polling PERDEDOR`);
+                }).catch(error => {
+                    console.error('❌ Error limpiando celda F en polling:', error);
+                });
                 
                 invalidatePermissionsCache();
                 
@@ -4167,6 +4192,10 @@ function startWinnerPolling() {
                     allowOutsideClick: false,
                     allowEscapeKey: false
                 }).then(() => {
+                    // Limpiar sesión solo cuando el usuario confirme
+                    console.log('👤 Usuario confirmó salir tras perder - Limpiando sesión');
+                    limpiezaInmediataUsuario(userName, 'clear_session_manual');
+                    
                     if (window.parent !== window) {
                         window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
                     } else {
@@ -4907,11 +4936,7 @@ async function verificarPermisosYEjecutar(accion, datos) {
     }
 }
 
-// Reemplazar la función mostrarMensajeBloqueo existente
 
-// Reemplazar la función mostrarMensajeBloqueo existente
-
-// Reemplazar la función mostrarMensajeBloqueo existente
 
 // Reemplazar la función mostrarMensajeBloqueo existente
 
@@ -4928,23 +4953,24 @@ function mostrarMensajeBloqueo(status) {
     let icono = 'warning';
     
     if (status === "PERDEDOR") {
-        // 🧹 LIMPIAR CELDA F INMEDIATAMENTE cuando se detecta perdedor
+        // 🧹 SIEMPRE LIMPIAR CELDA F cuando se muestra mensaje de perdedor
         console.log('🔴 PERDEDOR detectado - Limpiando celda F inmediatamente');
         
-        // Limpiar SOLO la celda F (columna estado)
-        fetch(scriptURL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'clearWinnerStatus',
-                username: userName
-            })
-        }).then(() => {
-            console.log(`✅ Celda F limpiada para ${userName} tras detectar PERDEDOR`);
-        }).catch(error => {
-            console.error('❌ Error limpiando celda F:', error);
-        });
+        if (userName && userName !== 'Invitado') {
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            }).then(() => {
+                console.log(`✅ Celda F limpiada para ${userName} en mostrarMensajeBloqueo`);
+            }).catch(error => {
+                console.error('❌ Error limpiando celda F:', error);
+            });
+        }
         
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
         stopGameInitializationAndHide();
@@ -4989,7 +5015,24 @@ function mostrarMensajeBloqueo(status) {
         return;
         
     } else if (status === "GANADOR") {
-        console.log('🟢 GANADOR detectado - Solo mostrando mensaje');
+        // 🧹 SIEMPRE LIMPIAR CELDA F cuando se muestra mensaje de ganador
+        console.log('🟢 GANADOR detectado - Limpiando celda F inmediatamente');
+        
+        if (userName && userName !== 'Invitado') {
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            }).then(() => {
+                console.log(`✅ Celda F limpiada para ${userName} en mostrarMensajeBloqueo GANADOR`);
+            }).catch(error => {
+                console.error('❌ Error limpiando celda F:', error);
+            });
+        }
         
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";
@@ -5280,7 +5323,35 @@ function markGameAsInactive() {
 }
 
 
+// Agregar una función específica para limpiar solo la celda F
 
+async function limpiarSoloCeldaF(username, reason = 'unknown') {
+    console.log(`🧹 LIMPIANDO SOLO CELDA F para ${username} - Motivo: ${reason}`);
+    
+    if (!username || username === 'Invitado') {
+        console.log('❌ No se puede limpiar - usuario no válido');
+        return;
+    }
+    
+    try {
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: username
+            })
+        });
+        console.log(`✅ Celda F limpiada para ${username} - Motivo: ${reason}`);
+        
+        // Invalidar caché de permisos
+        invalidatePermissionsCache();
+        
+    } catch (error) {
+        console.error('❌ Error limpiando celda F:', error);
+    }
+}
     </script>
 </body>
 </html>

@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbzxjrjefGlixgGP2Hutx_2gSeuLr6vM6kxCMCAJhgU-XCBuiZvN68Nxu9Oi0M79wuE4BQ/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxDbwJWg82VEKPNx5Al9hSPLNrLfd-jDh6U-GM5XBkiJlk3FODWCDzWVOZT7aMEVri2-g/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -2339,6 +2339,8 @@ function triggerPointScoredEffects() {
 }
 // Reemplazar las funciones processVirtualKeyPress y processVirtualBackspace existentes
 // Modificar processVirtualKeyPress para limpiar celda F
+// Modificar processVirtualKeyPress
+
 async function processVirtualKeyPress(keyValue) {
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
@@ -2357,24 +2359,10 @@ async function processVirtualKeyPress(keyValue) {
                     })
                 });
                 
-                // 🆕 OBTENER EL NOMBRE DEL GANADOR ESPECÍFICAMENTE
-                try {
-                    const response = await fetch(scriptURL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'getScoreStatusAndRank',
-                            username: userName
-                        })
-                    });
-                    const data = await response.json();
-                    const winnerName = data.winnerName || 'Otro jugador';
-                    console.log(`🎯 Ganador obtenido para tecla bloqueada: "${winnerName}"`);
-                    mostrarMensajeBloqueo(permissions.status, winnerName);
-                } catch (error) {
-                    console.error('Error obteniendo ganador:', error);
-                    mostrarMensajeBloqueo(permissions.status, 'Otro jugador');
-                }
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
                 return;
             }
             
@@ -2385,7 +2373,7 @@ async function processVirtualKeyPress(keyValue) {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original sin cambios...
+    // Resto del código sin cambios...
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2416,8 +2404,8 @@ async function processVirtualKeyPress(keyValue) {
     }
     setTimeout(checkAnswerAutomatic, 100);
 }
-// Modificar processVirtualBackspace para limpiar celda F
-// Modificar processVirtualBackspace para obtener el nombre del ganador
+
+// Aplicar el mismo cambio en processVirtualBackspace
 
 async function processVirtualBackspace() {
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
@@ -2437,24 +2425,10 @@ async function processVirtualBackspace() {
                     })
                 });
                 
-                // 🆕 OBTENER EL NOMBRE DEL GANADOR ESPECÍFICAMENTE
-                try {
-                    const response = await fetch(scriptURL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'getScoreStatusAndRank',
-                            username: userName
-                        })
-                    });
-                    const data = await response.json();
-                    const winnerName = data.winnerName || 'Otro jugador';
-                    console.log(`🎯 Ganador obtenido para backspace bloqueado: "${winnerName}"`);
-                    mostrarMensajeBloqueo(permissions.status, winnerName);
-                } catch (error) {
-                    console.error('Error obteniendo ganador:', error);
-                    mostrarMensajeBloqueo(permissions.status, 'Otro jugador');
-                }
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para backspace bloqueado: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
                 return;
             }
             
@@ -2465,45 +2439,48 @@ async function processVirtualBackspace() {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original sin cambios...
-    let currentTargetInput = logicallyActiveInput;
-
-    if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
-        const firstGreenInput = document.querySelector('.green input');
-        if (firstGreenInput) {
-            firstGreenInput.focus();
-            currentTargetInput = logicallyActiveInput;
-        }
-    }
-
-    if (!currentTargetInput) {
-        console.log('No hay input activo para el backspace virtual.');
-        return;
-    }
-
-    if (currentTargetInput.value) {
-        virtualKeyboardIsWriting = true;
-        currentTargetInput.readOnly = false;
-        currentTargetInput.value = '';
-        currentTargetInput.readOnly = true;
-        virtualKeyboardIsWriting = false;
-    } else {
-        const prevInput = getPreviousInput(currentTargetInput);
-        if (prevInput) {
-            prevInput.focus();
-            setTimeout(() => {
-                if (logicallyActiveInput && logicallyActiveInput === prevInput && logicallyActiveInput.value) {
-                    virtualKeyboardIsWriting = true;
-                    logicallyActiveInput.readOnly = false;
-                    logicallyActiveInput.value = '';
-                    logicallyActiveInput.readOnly = true;
-                    virtualKeyboardIsWriting = false;
-                }
-            }, 10);
-        }
-    }
-    setTimeout(checkAnswerAutomatic, 100);
+    // Resto del código sin cambios...
 }
+
+// Y en el event listener del teclado físico también aplicar el mismo cambio
+document.addEventListener('keydown', async function(event) {
+    if (document.body.classList.contains('swal2-shown')) return;
+
+    if (!window.lastPhysicalKeyCheck || Date.now() - window.lastPhysicalKeyCheck > 5000) {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit) {
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Teclado físico bloqueado por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+                
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para teclado físico bloqueado: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
+                event.preventDefault();
+                return;
+            }
+            
+            mostrarMensajeBloqueo(permissions.status, null);
+            event.preventDefault();
+            return;
+        }
+        
+        window.lastPhysicalKeyCheck = Date.now();
+    }
+
+    // Resto del código sin cambios...
+});
 function generateGrid() {
     const grid = document.getElementById('crossword');
     grid.innerHTML = '';
@@ -2861,12 +2838,6 @@ function handleInput(event) {
 
 let nKeyDownTime = null;
 
-// Reemplazar el event listener del teclado físico existente
-// Reemplazar el event listener del teclado físico existente
-
-// Modificar el event listener del teclado físico
-// Modificar el event listener del teclado físico
-
 document.addEventListener('keydown', async function(event) {
     if (document.body.classList.contains('swal2-shown')) return;
 
@@ -2887,24 +2858,10 @@ document.addEventListener('keydown', async function(event) {
                     })
                 });
                 
-                // 🆕 OBTENER EL NOMBRE DEL GANADOR ESPECÍFICAMENTE
-                try {
-                    const response = await fetch(scriptURL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'getScoreStatusAndRank',
-                            username: userName
-                        })
-                    });
-                    const data = await response.json();
-                    const winnerName = data.winnerName || 'Otro jugador';
-                    console.log(`🎯 Ganador obtenido para teclado físico bloqueado: "${winnerName}"`);
-                    mostrarMensajeBloqueo(permissions.status, winnerName);
-                } catch (error) {
-                    console.error('Error obteniendo ganador:', error);
-                    mostrarMensajeBloqueo(permissions.status, 'Otro jugador');
-                }
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para teclado físico bloqueado: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
                 event.preventDefault();
                 return;
             }
@@ -5497,7 +5454,35 @@ async function debugWinnerName() {
     console.log('🧪 === FIN DEBUG ===');
 }
 
-// Llama esta función en la consola para debuggear: debugWinnerName()
+// Crear función específica para obtener el ganador
+
+async function obtenerNombreGanadorEspecifico() {
+    console.log('🔍 Obteniendo nombre del ganador específicamente...');
+    
+    try {
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'getWinnerName'
+            })
+        });
+        
+        const data = await response.json();
+        console.log('🔍 Respuesta getWinnerName:', data);
+        
+        if (data && data.winnerName && data.winnerName !== 'Sin ganador') {
+            console.log(`🏆 Ganador específico encontrado: "${data.winnerName}"`);
+            return data.winnerName;
+        } else {
+            console.log('🔍 No se encontró ganador específico');
+            return 'Otro jugador';
+        }
+    } catch (error) {
+        console.error('❌ Error obteniendo ganador específico:', error);
+        return 'Otro jugador';
+    }
+}
     </script>
 </body>
 </html>

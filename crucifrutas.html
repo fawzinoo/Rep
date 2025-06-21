@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxU5_CufIo62vWk6xi0mNwK200vBY1PwWmGTr1eDjGshluxQb902tO-qH62_MD8On1-VQ/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbzklQbcbeG6QxCRW2Ww6nHnMEX6BIi43Ol066FSbgWthfmwJkG8f2RjaU-GTuSw2-c/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4767,6 +4767,145 @@ function mostrarMensajePerdedor() {
     });
     // Deshabilita la interfaz de juego
     document.querySelectorAll('input, button').forEach(el => el.disabled = true);
+}
+
+// En tu archivo JavaScript del cliente
+async function verificarPermisosYEjecutar(accion, datos) {
+    try {
+        // Verificar si el usuario puede editar
+        const checkResponse = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'canUserEdit',
+                username: currentUsername
+            })
+        });
+        
+        const checkResult = await checkResponse.json();
+        
+        if (!checkResult.success || !checkResult.canEdit) {
+            // Usuario no puede editar
+            mostrarMensajeBloqueo(checkResult.status);
+            return { success: false, blocked: true };
+        }
+        
+        // Usuario puede editar, ejecutar la acción original
+        const actionResponse = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(datos)
+        });
+        
+        return await actionResponse.json();
+        
+    } catch (error) {
+        console.error('Error verificando permisos:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function mostrarMensajeBloqueo(status) {
+    let mensaje = "No puedes realizar más cambios.";
+    let titulo = "Juego Bloqueado";
+    
+    if (status === "PERDEDOR") {
+        mensaje = "Has perdido el juego. No puedes realizar más cambios en el crucigrama.";
+        titulo = "¡Has Perdido!";
+    } else if (status === "GANADOR") {
+        mensaje = "¡Felicitaciones! Ya has ganado el juego.";
+        titulo = "¡Has Ganado!";
+    }
+    
+    Swal.fire({
+        title: titulo,
+        text: mensaje,
+        icon: status === "PERDEDOR" ? 'error' : 'success',
+        confirmButtonText: 'Entendido',
+        allowOutsideClick: false
+    });
+}
+
+// Modificar tus funciones existentes para usar la verificación
+async function registrarPuntos(datos) {
+    const resultado = await verificarPermisosYEjecutar('registerPoints', {
+        action: 'registerPoints',
+        username: currentUsername,
+        ...datos
+    });
+    
+    if (resultado.blocked) {
+        return; // Usuario bloqueado, no continuar
+    }
+    
+    // Procesar resultado normal...
+    if (resultado.success) {
+        console.log('Puntos registrados:', resultado.pointsRegistered);
+    } else {
+        console.error('Error registrando puntos:', resultado.error);
+    }
+}
+
+// En tus event listeners de las celdas
+function setupCellEventListeners() {
+    const allCells = document.querySelectorAll('.crossword-cell input');
+    
+    allCells.forEach(cell => {
+        cell.addEventListener('input', async function(event) {
+            // Verificar permisos antes de procesar el input
+            const canEdit = await verificarSiPuedeEditar();
+            
+            if (!canEdit) {
+                event.preventDefault();
+                this.value = ''; // Limpiar el valor
+                return false;
+            }
+            
+            // Tu lógica existente de input aquí...
+        });
+        
+        cell.addEventListener('keydown', async function(event) {
+            const canEdit = await verificarSiPuedeEditar();
+            
+            if (!canEdit) {
+                event.preventDefault();
+                return false;
+            }
+            
+            // Tu lógica existente de keydown aquí...
+        });
+    });
+}
+
+async function verificarSiPuedeEditar() {
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'canUserEdit',
+                username: currentUsername
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (!result.success || !result.canEdit) {
+            mostrarMensajeBloqueo(result.status);
+            return false;
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Error verificando permisos:', error);
+        return false; // Por seguridad, bloquear si hay error
+    }
 }
     </script>
 </body>

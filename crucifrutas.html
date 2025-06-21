@@ -3194,22 +3194,78 @@ async function checkAnswerAutomatic() {
                 duracion = audio.duration * 1000;
             }
 
-  setTimeout(() => {
+// Reemplazar la sección final de checkAnswerAutomatic
+
+setTimeout(() => {
     if (completedFruits.size === fruits.length) {
-        // Todas las frutas completadas
-        console.log('🏆 Todas las frutas completadas. Notificando victoria.');
-        showLottieAnimation(); // Mostrar animación
+        // 🏆 TODAS LAS FRUTAS COMPLETADAS - VICTORIA DIRECTA
+        console.log('🏆 Todas las frutas completadas. VICTORIA DIRECTA.');
+        
+        // 🆕 MOSTRAR VICTORIA INMEDIATAMENTE sin esperar broadcast
+        handleDirectWin();
+        
+        // También notificar al servidor y hacer broadcast para otros usuarios
         notifyGameCompleted().then(() => {
-            // 🆕 NO iniciar polling aquí, el broadcast se encargará
-            console.log('✅ Victoria notificada, esperando broadcast...');
+            console.log('✅ Victoria notificada al servidor');
         });
     } else {
         nextFruit(); 
-                }
-            }, duracion);
+    }
+}, duracion);
         }, 800);
     }
 }
+
+// Agregar nueva función para victoria directa
+
+function handleDirectWin() {
+    console.log('🎉 Manejando VICTORIA DIRECTA (sin broadcast)');
+    
+    // Marcar que ya se mostró la victoria para evitar duplicados del broadcast
+    window.victoryShown = true;
+    
+    // Detener el juego inmediatamente
+    stopGameInitializationAndHide();
+    ocultarMainContent();
+    hideLottieAnimation();
+    
+    // Detener polling si está activo
+    if (winnerPollingInterval) {
+        clearInterval(winnerPollingInterval);
+        winnerPollingInterval = null;
+    }
+    
+    // Detener timer
+    stopTimer();
+    
+    // Efectos de victoria
+    playWinnerSound();
+    launchConfetti();
+    
+    // Ocultar la animación de Lottie de espera si está visible
+    hideLottieAnimation();
+    
+    // Mostrar mensaje de victoria INMEDIATAMENTE
+    Swal.fire({
+        title: '¡Eres el GANADOR! 🎉',
+        text: '¡Felicidades, has completado todas las frutas!',
+        icon: 'success',
+        confirmButtonText: 'Aceptar',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => {
+        // Limpiar y salir
+        const userName = getUserName();
+        limpiezaInmediataUsuario(userName, 'ganador_directo');
+        
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
+    });
+}
+
 async function nextFruit() {
     stopTimer();
     stopAllAudio();
@@ -4330,6 +4386,7 @@ window.addEventListener('storage', function(event) {
 
 
 
+// Reemplazar la función handleWinnerFromBroadcast existente
 
 function handleWinnerFromBroadcast(winnerData) {
     const currentUser = getUserName();
@@ -4337,19 +4394,25 @@ function handleWinnerFromBroadcast(winnerData) {
     
     console.log(`🎯 Procesando ganador desde broadcast: "${winner}", Usuario actual: "${currentUser}"`);
     
+    // 🆕 SI YA SE MOSTRÓ VICTORIA DIRECTA, IGNORAR BROADCAST
+    if (window.victoryShown) {
+        console.log('⚠️ Victoria ya mostrada directamente, ignorando broadcast');
+        return;
+    }
+    
     // Verificar si el evento es reciente (últimos 30 segundos)
     if (Date.now() - winnerData.timestamp > 30000) {
         console.log('⚠️ Evento de ganador muy antiguo, ignorando');
         return;
     }
     
-    // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+    // Verificar si ya hay un SweetAlert abierto
     if (document.body.classList.contains('swal2-shown')) {
         console.log('⚠️ Ya hay un SweetAlert abierto, ignorando broadcast');
         return;
     }
     
-    // 🆕 VERIFICAR SI YA SE PROCESÓ ESTE EVENTO
+    // Verificar si ya se procesó este evento
     if (window.lastProcessedWinner === winner && window.lastProcessedTimestamp === winnerData.timestamp) {
         console.log('⚠️ Evento ya procesado anteriormente, ignorando');
         return;
@@ -4360,15 +4423,49 @@ function handleWinnerFromBroadcast(winnerData) {
     window.lastProcessedTimestamp = winnerData.timestamp;
     
     if (winner === currentUser) {
-        // 🎉 ESTE USUARIO ES EL GANADOR
-        console.log('🏆 ¡SOY EL GANADOR! - Mostrando interfaz de victoria');
+        // Este usuario es el ganador DESDE BROADCAST (no directo)
+        console.log('🏆 SOY EL GANADOR desde broadcast - Mostrando interfaz de victoria');
         handleLocalWinner();
     } else {
-        // 💔 OTRO USUARIO GANÓ
+        // Otro usuario ganó
         console.log(`💔 Otro usuario ganó: "${winner}" - Mostrando interfaz de perdedor`);
         handleLocalLoser(winner);
     }
 }
+
+// Función de emergencia para limpiar estado trabado
+
+function emergencyCleanup() {
+    console.log('🚨 LIMPIEZA DE EMERGENCIA - Desbloqueando interfaz');
+    
+    // Ocultar animación Lottie
+    hideLottieAnimation();
+    
+    // Mostrar contenido principal
+    mostrarMainContent();
+    
+    // Remover clases que ocultan contenido
+    document.body.classList.remove('oculto-por-dialogo');
+    
+    // Cerrar cualquier SweetAlert abierto
+    if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+        Swal.close();
+    }
+    
+    // Resetear variables de estado
+    window.victoryShown = false;
+    window.defeatShown = false;
+    window.currentBlockAlert = false;
+    
+    console.log('✅ Limpieza de emergencia completada');
+}
+
+// Agregar combinación de teclas de emergencia (Ctrl+Shift+E)
+document.addEventListener('keydown', function(event) {
+    if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+        emergencyCleanup();
+    }
+});
 
 // Reemplazar la función handleLocalWinner existente
 
@@ -5776,13 +5873,22 @@ function testBroadcastWinner(testWinnerName = null) {
 
 // Agregar función para resetear estados
 
+// Reemplazar la función resetGameStates existente
+
 function resetGameStates() {
     window.victoryShown = false;
     window.defeatShown = false;
     window.lastProcessedWinner = null;
     window.lastProcessedTimestamp = null;
     window.currentBlockAlert = false;
-    console.log('🔄 Estados del juego reseteados');
+    gameInitializationStopped = false; // Importante para permitir nuevo inicio
+    
+    // Limpiar broadcast del localStorage
+    try {
+        localStorage.removeItem('crucigrama_winner_broadcast');
+    } catch (e) {}
+    
+    console.log('🔄 Estados del juego reseteados completamente');
 }
 
 

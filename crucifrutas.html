@@ -2333,34 +2333,15 @@ function triggerPointScoredEffects() {
     }
 }
 async function processVirtualKeyPress(keyValue) {
-    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
-    const userData = getUserData();
-    const userName = userData.username;
+    // Verificación optimizada con caché
+    const permissions = await checkUserPermissionsCached();
     
-    if (userName && userName !== 'Invitado') {
-        try {
-            const response = await fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'canUserEdit',
-                    username: userName
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (!result.success || !result.canEdit) {
-                mostrarMensajeBloqueo(result.status);
-                return; // No permitir la entrada
-            }
-        } catch (error) {
-            console.error('Error verificando permisos:', error);
-            return; // Por seguridad, bloquear si hay error
-        }
+    if (!permissions.canEdit) {
+        mostrarMensajeBloqueo(permissions.status);
+        return;
     }
 
-    // Resto del código original de processVirtualKeyPress
+    // Resto del código original sin cambios
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2393,34 +2374,15 @@ async function processVirtualKeyPress(keyValue) {
 }
 
 async function processVirtualBackspace() {
-    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
-    const userData = getUserData();
-    const userName = userData.username;
+    // Verificación optimizada con caché
+    const permissions = await checkUserPermissionsCached();
     
-    if (userName && userName !== 'Invitado') {
-        try {
-            const response = await fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'canUserEdit',
-                    username: userName
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (!result.success || !result.canEdit) {
-                mostrarMensajeBloqueo(result.status);
-                return; // No permitir el borrado
-            }
-        } catch (error) {
-            console.error('Error verificando permisos:', error);
-            return; // Por seguridad, bloquear si hay error
-        }
+    if (!permissions.canEdit) {
+        mostrarMensajeBloqueo(permissions.status);
+        return;
     }
 
-    // Resto del código original de processVirtualBackspace
+    // Resto del código original sin cambios
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2816,9 +2778,23 @@ function handleInput(event) {
 
 let nKeyDownTime = null;
 
-document.addEventListener('keydown', function(event) {
+// Reemplazar el event listener del teclado físico existente
+document.addEventListener('keydown', async function(event) {
     // Ignorar si hay un modal SweetAlert2 abierto
     if (document.body.classList.contains('swal2-shown')) return;
+
+    // Solo verificar permisos una vez por cada "ráfaga" de teclas
+    if (!window.lastPermissionCheck || Date.now() - window.lastPermissionCheck > 2000) {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit) {
+            mostrarMensajeBloqueo(permissions.status);
+            event.preventDefault();
+            return;
+        }
+        
+        window.lastPermissionCheck = Date.now();
+    }
 
     // Solo letras (A-Z, Ñ)
     let key = event.key.toUpperCase();
@@ -2828,7 +2804,6 @@ document.addEventListener('keydown', function(event) {
         if (!nKeyDownTime) {
             nKeyDownTime = Date.now();
         }
-        // No procesar aún, esperar keyup para decidir si es N o Ñ
         event.preventDefault();
         return;
     }
@@ -2840,7 +2815,6 @@ document.addEventListener('keydown', function(event) {
         event.preventDefault();
         processVirtualBackspace();
     }
-    // Puedes añadir más controles para flechas si quieres navegación
 });
 
 document.addEventListener('keyup', function(event) {
@@ -3760,27 +3734,13 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') {
         return false;
     }
 
-    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
-    try {
-        const checkResponse = await fetch(scriptURL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'canUserEdit',
-                username: userName
-            })
-        });
-        
-        const checkResult = await checkResponse.json();
-        
-        if (!checkResult.success || !checkResult.canEdit) {
-            console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${checkResult.status}`);
-            mostrarMensajeBloqueo(checkResult.status);
-            return false; // No enviar puntos
-        }
-    } catch (error) {
-        console.error('Error verificando permisos para enviar puntos:', error);
-        return false; // Por seguridad, no enviar puntos si hay error
+    // Verificación optimizada con caché
+    const permissions = await checkUserPermissionsCached();
+    
+    if (!permissions.canEdit) {
+        console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${permissions.status}`);
+        mostrarMensajeBloqueo(permissions.status);
+        return false;
     }
     
     const postData = {
@@ -4039,6 +3999,7 @@ async function clearSessionOnServer(userName) {
 let winnerPollingInterval = null;
 
 // Modificar la función startWinnerPolling para manejar el abandono
+// Modificar la función startWinnerPolling existente
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
     winnerPollingInterval = setInterval(async () => {
@@ -4061,8 +4022,11 @@ function startWinnerPolling() {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
+                // Invalidar caché porque el estado cambió
+                invalidatePermissionsCache();
+                
                 stopGameInitializationAndHide();
-                ocultarMainContent(); // <-- OCULTA TODO DETRÁS
+                ocultarMainContent();
                 hideLottieAnimation();
                 playWinnerSound();
                 
@@ -4095,11 +4059,13 @@ function startWinnerPolling() {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
+                // Invalidar caché porque el estado cambió
+                invalidatePermissionsCache();
+                
                 stopGameInitializationAndHide();
-                ocultarMainContent(); // <-- OCULTA TODO DETRÁS
+                ocultarMainContent();
                 hideLottieAnimation();
 
-                // Detén cualquier timeout de fotos si existe
                 if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
                     clearTimeout(photoTimeoutId);
                     photoTimeoutId = null;
@@ -4864,6 +4830,11 @@ async function verificarPermisosYEjecutar(accion, datos) {
 }
 
 function mostrarMensajeBloqueo(status) {
+    // Evitar mostrar múltiples alertas del mismo tipo
+    if (window.currentBlockAlert) {
+        return;
+    }
+    
     let mensaje = "No puedes realizar más cambios.";
     let titulo = "Juego Bloqueado";
     let icono = 'warning';
@@ -4878,14 +4849,18 @@ function mostrarMensajeBloqueo(status) {
         icono = 'success';
     }
     
+    window.currentBlockAlert = true;
+    
     Swal.fire({
         title: titulo,
         text: mensaje,
         icon: icono,
         confirmButtonText: 'Entendido',
         allowOutsideClick: false,
-        timer: 3000, // Auto-cerrar después de 3 segundos
+        timer: 2000, // Reducido a 2 segundos
         timerProgressBar: true
+    }).then(() => {
+        window.currentBlockAlert = false;
     });
 }
 
@@ -4967,6 +4942,74 @@ async function verificarSiPuedeEditar() {
     }
 }
 
+// Agregar estas variables globales al inicio del script
+let userPermissionsCache = {
+    canEdit: true,
+    status: '',
+    lastCheck: 0,
+    cacheTimeout: 10000 // 10 segundos de caché
+};
+
+// Función optimizada para verificar permisos con caché
+async function checkUserPermissionsCached() {
+    const userData = getUserData();
+    const userName = userData.username;
+    
+    // Si es invitado, siempre puede editar
+    if (!userName || userName === 'Invitado') {
+        return { canEdit: true, status: '' };
+    }
+    
+    const now = Date.now();
+    
+    // Verificar si el caché es válido
+    if (now - userPermissionsCache.lastCheck < userPermissionsCache.cacheTimeout) {
+        return {
+            canEdit: userPermissionsCache.canEdit,
+            status: userPermissionsCache.status
+        };
+    }
+    
+    // Caché expirado, verificar con el servidor
+    try {
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'canUserEdit',
+                username: userName
+            })
+        });
+        
+        const result = await response.json();
+        
+        // Actualizar caché
+        userPermissionsCache = {
+            canEdit: result.success && result.canEdit,
+            status: result.status || '',
+            lastCheck: now,
+            cacheTimeout: 10000
+        };
+        
+        return {
+            canEdit: userPermissionsCache.canEdit,
+            status: userPermissionsCache.status
+        };
+        
+    } catch (error) {
+        console.error('Error verificando permisos:', error);
+        // En caso de error, mantener el estado anterior del caché
+        return {
+            canEdit: userPermissionsCache.canEdit,
+            status: userPermissionsCache.status
+        };
+    }
+}
+
+// Función para invalidar el caché (llamar cuando sepamos que el estado cambió)
+function invalidatePermissionsCache() {
+    userPermissionsCache.lastCheck = 0;
+}
 
     </script>
 </body>

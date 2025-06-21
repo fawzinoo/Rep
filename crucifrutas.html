@@ -3239,17 +3239,21 @@ async function checkForIncompleteRounds() {
 }
 
    
-   function resetGame() {
+function resetGame() {
     stopTimer();
     completedFruits.clear();
     updateScoreDisplay();
     incompleteFruits = [];
     currentRound = 1;
+    
+    // 🆕 RESETEAR ESTADOS
+    resetGameStates();
+    
     initializeRandomFruits();
     updateFruitDisplay();
     generateGrid();
     startTimer();
-    initializeVirtualKeyboard(); // AÑADIR
+    initializeVirtualKeyboard();
 }
 
 let logicallyActiveInput = null;
@@ -4259,8 +4263,22 @@ async function notifyGameCompleted() {
 
 // Agregar nueva función para broadcast
 
+// Reemplazar la función broadcastWinnerToAllUsers existente
+
 function broadcastWinnerToAllUsers(winnerName) {
     console.log(`📢 Broadcasting ganador "${winnerName}" a localStorage de todos los usuarios`);
+    
+    // 🆕 VERIFICAR SI YA SE HIZO BROADCAST PARA EVITAR DUPLICADOS
+    const lastBroadcast = localStorage.getItem('crucigrama_winner_broadcast');
+    if (lastBroadcast) {
+        try {
+            const lastData = JSON.parse(lastBroadcast);
+            if (lastData.winner === winnerName && Date.now() - lastData.timestamp < 10000) {
+                console.log('⚠️ Broadcast reciente ya realizado, evitando duplicado');
+                return;
+            }
+        } catch (e) {}
+    }
     
     // Crear evento de almacenamiento que será detectado por todas las pestañas/ventanas
     const winnerData = {
@@ -4275,27 +4293,33 @@ function broadcastWinnerToAllUsers(winnerName) {
     
     console.log(`✅ Datos del ganador guardados en localStorage:`, winnerData);
     
-    // También disparar el evento manualmente en la pestaña actual
-    window.dispatchEvent(new StorageEvent('storage', {
-        key: 'crucigrama_winner_broadcast',
-        newValue: JSON.stringify(winnerData),
-        oldValue: null,
-        storageArea: localStorage
-    }));
+    // 🆕 NO disparar evento manual en la misma pestaña para evitar duplicados
+    // El storage event se encargará de notificar a otras pestañas
 }
 
 // Agregar listener al final del script
 
-// 🆕 LISTENER PARA DETECTAR GANADOR DESDE LOCALSTORAGE
+// Reemplazar los event listeners existentes para storage
+
+// 🆕 LISTENER MEJORADO PARA DETECTAR GANADOR DESDE LOCALSTORAGE
 window.addEventListener('storage', function(event) {
     // Solo procesar eventos de ganador
     if (event.key === 'crucigrama_winner_broadcast' && event.newValue) {
+        // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+        if (document.body.classList.contains('swal2-shown')) {
+            console.log('⚠️ SweetAlert ya abierto, ignorando evento storage');
+            return;
+        }
+        
         try {
             const winnerData = JSON.parse(event.newValue);
             console.log('📢 Ganador detectado desde localStorage:', winnerData);
             
             if (winnerData.type === 'WINNER_DETECTED' && winnerData.winner) {
-                handleWinnerFromBroadcast(winnerData);
+                // Pequeño delay para evitar conflictos con múltiples eventos
+                setTimeout(() => {
+                    handleWinnerFromBroadcast(winnerData);
+                }, 100);
             }
         } catch (error) {
             console.error('❌ Error procesando ganador desde localStorage:', error);
@@ -4303,22 +4327,9 @@ window.addEventListener('storage', function(event) {
     }
 });
 
-// También agregar listener interno para la misma pestaña
-window.addEventListener('storage', function(event) {
-    if (event.key === 'crucigrama_winner_broadcast' && event.newValue) {
-        try {
-            const winnerData = JSON.parse(event.newValue);
-            if (winnerData.type === 'WINNER_DETECTED') {
-                console.log('📢 Evento interno - Ganador detectado:', winnerData.winner);
-                handleWinnerFromBroadcast(winnerData);
-            }
-        } catch (error) {
-            console.error('Error en listener interno:', error);
-        }
-    }
-});
 
-// Agregar función para manejar ganador detectado
+
+
 
 function handleWinnerFromBroadcast(winnerData) {
     const currentUser = getUserName();
@@ -4332,6 +4343,22 @@ function handleWinnerFromBroadcast(winnerData) {
         return;
     }
     
+    // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+    if (document.body.classList.contains('swal2-shown')) {
+        console.log('⚠️ Ya hay un SweetAlert abierto, ignorando broadcast');
+        return;
+    }
+    
+    // 🆕 VERIFICAR SI YA SE PROCESÓ ESTE EVENTO
+    if (window.lastProcessedWinner === winner && window.lastProcessedTimestamp === winnerData.timestamp) {
+        console.log('⚠️ Evento ya procesado anteriormente, ignorando');
+        return;
+    }
+    
+    // Marcar evento como procesado
+    window.lastProcessedWinner = winner;
+    window.lastProcessedTimestamp = winnerData.timestamp;
+    
     if (winner === currentUser) {
         // 🎉 ESTE USUARIO ES EL GANADOR
         console.log('🏆 ¡SOY EL GANADOR! - Mostrando interfaz de victoria');
@@ -4343,17 +4370,25 @@ function handleWinnerFromBroadcast(winnerData) {
     }
 }
 
-// Reemplazar la función handleLocalWinner
+// Reemplazar la función handleLocalWinner existente
 
 function handleLocalWinner() {
     console.log('🎉 Manejando victoria local');
     
-    // Evitar múltiples llamadas
-    if (window.localWinnerProcessed) {
-        console.log('⚠️ Victoria local ya procesada, ignorando');
+    // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+    if (document.body.classList.contains('swal2-shown')) {
+        console.log('⚠️ Ya hay un SweetAlert de victoria abierto, no mostrar otro');
         return;
     }
-    window.localWinnerProcessed = true;
+    
+    // 🆕 VERIFICAR SI YA SE MOSTRÓ VICTORIA
+    if (window.victoryShown) {
+        console.log('⚠️ Victoria ya mostrada anteriormente');
+        return;
+    }
+    
+    // Marcar victoria como mostrada
+    window.victoryShown = true;
     
     // Detener el juego
     stopGameInitializationAndHide();
@@ -4370,16 +4405,14 @@ function handleLocalWinner() {
     playWinnerSound();
     launchConfetti();
     
-    // Mostrar mensaje de victoria SIN TIMER
+    // Mostrar mensaje de victoria
     Swal.fire({
         title: '¡Eres el GANADOR! 🎉',
         text: '¡Felicidades, has ganado la partida!',
         icon: 'success',
         confirmButtonText: 'Aceptar',
         allowOutsideClick: false,
-        allowEscapeKey: false,
-        showCloseButton: false
-        // 🆕 NO incluir timer ni timerProgressBar
+        allowEscapeKey: false
     }).then(() => {
         // Limpiar y salir
         const userName = getUserName();
@@ -4392,8 +4425,25 @@ function handleLocalWinner() {
         }
     });
 }
+// Reemplazar la función handleLocalLoser existente
+
 function handleLocalLoser(winnerName) {
     console.log(`💔 Manejando derrota local - Ganador: "${winnerName}"`);
+    
+    // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+    if (document.body.classList.contains('swal2-shown')) {
+        console.log('⚠️ Ya hay un SweetAlert de derrota abierto, no mostrar otro');
+        return;
+    }
+    
+    // 🆕 VERIFICAR SI YA SE MOSTRÓ DERROTA
+    if (window.defeatShown) {
+        console.log('⚠️ Derrota ya mostrada anteriormente');
+        return;
+    }
+    
+    // Marcar derrota como mostrada
+    window.defeatShown = true;
     
     // Detener el juego
     stopGameInitializationAndHide();
@@ -5722,6 +5772,17 @@ function testBroadcastWinner(testWinnerName = null) {
     console.log(`🧪 Probando broadcast con ganador: "${winner}"`);
     
     broadcastWinnerToAllUsers(winner);
+}
+
+// Agregar función para resetear estados
+
+function resetGameStates() {
+    window.victoryShown = false;
+    window.defeatShown = false;
+    window.lastProcessedWinner = null;
+    window.lastProcessedTimestamp = null;
+    window.currentBlockAlert = false;
+    console.log('🔄 Estados del juego reseteados');
 }
 
 

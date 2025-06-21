@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbzklQbcbeG6QxCRW2Ww6nHnMEX6BIi43Ol066FSbgWthfmwJkG8f2RjaU-GTuSw2-c/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxdhz_MO2795iECaK6xSM2bxBaEyWYJ8Yc6TkPZKyMcahZiNFBgSmrNn5jiNzLPFpx1nQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -2341,12 +2341,10 @@ function triggerPointScoredEffects() {
 // Modificar processVirtualKeyPress para limpiar celda F
 
 async function processVirtualKeyPress(keyValue) {
-    // Solo verificar permisos si no se han verificado recientemente
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
-            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
             const userName = getUserName();
             if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
                 console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
@@ -2361,7 +2359,8 @@ async function processVirtualKeyPress(keyValue) {
                 });
             }
             
-            mostrarMensajeBloqueo(permissions.status);
+            // 🆕 PASAR NULL para que busque el nombre del ganador
+            mostrarMensajeBloqueo(permissions.status, null);
             return;
         }
         
@@ -2403,12 +2402,10 @@ async function processVirtualKeyPress(keyValue) {
 // Modificar processVirtualBackspace para limpiar celda F
 
 async function processVirtualBackspace() {
-    // Solo verificar permisos si no se han verificado recientemente
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
-            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
             const userName = getUserName();
             if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
                 console.log('🔴 Backspace bloqueado por PERDEDOR - Limpiando celda F');
@@ -2423,7 +2420,8 @@ async function processVirtualBackspace() {
                 });
             }
             
-            mostrarMensajeBloqueo(permissions.status);
+            // 🆕 PASAR NULL para que busque el nombre del ganador
+            mostrarMensajeBloqueo(permissions.status, null);
             return;
         }
         
@@ -2832,15 +2830,12 @@ let nKeyDownTime = null;
 // Modificar el event listener del teclado físico
 
 document.addEventListener('keydown', async function(event) {
-    // Ignorar si hay un modal SweetAlert2 abierto
     if (document.body.classList.contains('swal2-shown')) return;
 
-    // Solo verificar permisos cada 5 segundos, no en cada tecla
     if (!window.lastPhysicalKeyCheck || Date.now() - window.lastPhysicalKeyCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
-            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
             const userName = getUserName();
             if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
                 console.log('🔴 Teclado físico bloqueado por PERDEDOR - Limpiando celda F');
@@ -2855,7 +2850,8 @@ document.addEventListener('keydown', async function(event) {
                 });
             }
             
-            mostrarMensajeBloqueo(permissions.status);
+            // 🆕 PASAR NULL para que busque el nombre del ganador
+            mostrarMensajeBloqueo(permissions.status, null);
             event.preventDefault();
             return;
         }
@@ -3802,13 +3798,11 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') {
         return false;
     }
 
-    // Verificación optimizada con caché
     const permissions = await checkUserPermissionsCached();
     
     if (!permissions.canEdit) {
         console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${permissions.status}`);
         
-        // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
         if (permissions.status === "PERDEDOR") {
             console.log('🔴 Envío de puntos bloqueado por PERDEDOR - Limpiando celda F');
             fetch(scriptURL, {
@@ -3822,7 +3816,8 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') {
             });
         }
         
-        mostrarMensajeBloqueo(permissions.status);
+        // 🆕 PASAR NULL para que busque el nombre del ganador
+        mostrarMensajeBloqueo(permissions.status, null);
         return false;
     }
     
@@ -4937,9 +4932,7 @@ async function verificarPermisosYEjecutar(accion, datos) {
 
 // Reemplazar la función mostrarMensajeBloqueo existente
 
-// Reemplazar la función mostrarMensajeBloqueo existente
-
-async function mostrarMensajeBloqueo(status) {
+async function mostrarMensajeBloqueo(status, winnerName = null) {
     // Evitar mostrar múltiples alertas del mismo tipo
     if (window.currentBlockAlert) {
         return;
@@ -4971,23 +4964,28 @@ async function mostrarMensajeBloqueo(status) {
             });
         }
         
-        // 🆕 OBTENER EL NOMBRE DEL GANADOR
-        let winnerName = 'Otro jugador';
-        try {
-            const response = await fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'getScoreStatusAndRank',
-                    username: userName
-                })
-            });
-            const data = await response.json();
-            if (data && data.winnerName) {
-                winnerName = data.winnerName;
+        // 🆕 USAR EL NOMBRE DEL GANADOR PROPORCIONADO O OBTENERLO
+        let ganadorFinal = winnerName;
+        if (!ganadorFinal || ganadorFinal === 'Otro jugador') {
+            try {
+                const response = await fetch(scriptURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'getScoreStatusAndRank',
+                        username: userName
+                    })
+                });
+                const data = await response.json();
+                if (data && data.winnerName) {
+                    ganadorFinal = data.winnerName;
+                } else {
+                    ganadorFinal = 'Otro jugador';
+                }
+            } catch (error) {
+                console.error('Error obteniendo nombre del ganador:', error);
+                ganadorFinal = 'Otro jugador';
             }
-        } catch (error) {
-            console.error('Error obteniendo nombre del ganador:', error);
         }
         
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
@@ -5001,9 +4999,12 @@ async function mostrarMensajeBloqueo(status) {
             photoTimeoutId = null;
         }
         
-        mensaje = `${winnerName} ha completado antes que tú y ha ganado la partida.`;
+        // 🎯 MENSAJE ESPECÍFICO CON EL NOMBRE DEL GANADOR
+        mensaje = `${ganadorFinal} ha ganado la partida.`;
         titulo = "¡Has Perdido!";
         icono = 'error';
+        
+        console.log(`🔴 Mostrando mensaje de perdedor: "${ganadorFinal}" ganó`);
         
         window.currentBlockAlert = true;
         

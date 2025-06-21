@@ -4007,21 +4007,26 @@ async function clearSessionOnServer(userName) {
     } catch (e) {
         console.warn('No se pudo limpiar la sesión en backend:', e);
     }
+    await limpiezaInmediataUsuario(username, 'clear_session_manual');
 }
 
 let winnerPollingInterval = null;
 
 // Modificar la función startWinnerPolling para manejar el abandono
 // Modificar la función startWinnerPolling existente
+// Reemplazar la función startWinnerPolling existente
+
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
     winnerPollingInterval = setInterval(async () => {
         const userName = getUserName();
         if (!userName) return;
+        
         const postData = {
             action: 'getScoreStatusAndRank',
             username: userName
         };
+        
         try {
             const response = await fetch(scriptURL, {
                 method: 'POST',
@@ -4034,6 +4039,10 @@ function startWinnerPolling() {
             if (data && data.completed === "GANADOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                
+                // 🧹 LIMPIEZA INMEDIATA - ANTES DE MOSTRAR EL MODAL
+                console.log('🎉 GANADOR detectado en polling - Limpieza inmediata');
+                await limpiezaInmediataUsuario(userName, 'ganador_polling');
                 
                 // Invalidar caché porque el estado cambió
                 invalidatePermissionsCache();
@@ -4051,7 +4060,7 @@ function startWinnerPolling() {
                     allowOutsideClick: false,
                     allowEscapeKey: false
                 }).then(() => {
-                    clearSessionOnServer(userName);
+                    // La limpieza ya se ejecutó arriba, solo redirigir
                     if (window.parent !== window) {
                         window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
                     } else {
@@ -4059,18 +4068,14 @@ function startWinnerPolling() {
                     }
                 });
                 launchConfetti();
-                console.log("Enviando petición para limpiar estado PERDEDOR de", userName);
-                fetch(scriptURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
-                });
+                
             } else if (data && data.completed === "PERDEDOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
+                
+                // 🧹 LIMPIEZA INMEDIATA - ANTES DE MOSTRAR EL MODAL
+                console.log('💔 PERDEDOR detectado en polling - Limpieza inmediata');
+                await limpiezaInmediataUsuario(userName, 'perdedor_polling');
                 
                 // Invalidar caché porque el estado cambió
                 invalidatePermissionsCache();
@@ -4092,21 +4097,12 @@ function startWinnerPolling() {
                     allowOutsideClick: false,
                     allowEscapeKey: false
                 }).then(() => {
-                    clearSessionOnServer(userName);
+                    // La limpieza ya se ejecutó arriba, solo redirigir
                     if (window.parent !== window) {
                         window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
                     } else {
                         window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
                     }
-                });
-                
-                fetch(scriptURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
                 });
             }
         } catch (e) {
@@ -4842,18 +4838,26 @@ async function verificarPermisosYEjecutar(accion, datos) {
     }
 }
 
+// Reemplazar la función mostrarMensajeBloqueo existente
+
 function mostrarMensajeBloqueo(status) {
     // Evitar mostrar múltiples alertas del mismo tipo
     if (window.currentBlockAlert) {
         return;
     }
     
+    const userName = getUserName();
+    
     let mensaje = "No puedes realizar más cambios.";
     let titulo = "Juego Bloqueado";
     let icono = 'warning';
     
     if (status === "PERDEDOR") {
-        // DETENER EL JUEGO Y OCULTAR CONTENIDO como cuando gana
+        // 🧹 LIMPIEZA INMEDIATA - NO ESPERAR A ACEPTAR
+        console.log('🔴 PERDEDOR detectado - Ejecutando limpieza inmediata');
+        limpiezaInmediataUsuario(userName, 'perdedor_detectado');
+        
+        // DETENER EL JUEGO Y OCULTAR CONTENIDO
         stopGameInitializationAndHide();
         ocultarMainContent();
         hideLottieAnimation();
@@ -4864,7 +4868,7 @@ function mostrarMensajeBloqueo(status) {
             photoTimeoutId = null;
         }
         
-        mensaje = "Otro jugador ha completado antes que tú. No puedes realizar más cambios.";
+        mensaje = "Otro jugador ha completado antes que tú. El juego ha terminado.";
         titulo = "¡Has Perdido!";
         icono = 'error';
         
@@ -4876,14 +4880,11 @@ function mostrarMensajeBloqueo(status) {
             icon: icono,
             confirmButtonText: 'Salir del Juego',
             allowOutsideClick: false,
-            allowEscapeKey: false, // No permitir ESC
-            showCloseButton: false  // No mostrar X para cerrar
+            allowEscapeKey: false,
+            showCloseButton: false
         }).then((result) => {
+            // La limpieza ya se ejecutó arriba, solo redirigir
             if (result.isConfirmed) {
-                const userName = getUserName();
-                clearSessionOnServer(userName);
-                
-                // Redirigir igual que cuando gana
                 if (window.parent !== window) {
                     window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
                 } else {
@@ -4893,14 +4894,19 @@ function mostrarMensajeBloqueo(status) {
             window.currentBlockAlert = false;
         });
         
-        return; // Salir early para perdedores
+        return;
+        
     } else if (status === "GANADOR") {
+        // 🧹 LIMPIEZA INMEDIATA - NO ESPERAR A ACEPTAR
+        console.log('🟢 GANADOR detectado - Ejecutando limpieza inmediata');
+        limpiezaInmediataUsuario(userName, 'ganador_detectado');
+        
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";
         icono = 'success';
     }
     
-    // Para otros casos (GANADOR o estados generales)
+    // Para GANADOR u otros casos
     window.currentBlockAlert = true;
     
     Swal.fire({
@@ -4915,7 +4921,6 @@ function mostrarMensajeBloqueo(status) {
         window.currentBlockAlert = false;
     });
 }
-
 // Modificar tus funciones existentes para usar la verificación
 async function registrarPuntos(datos) {
     const resultado = await verificarPermisosYEjecutar('registerPoints', {
@@ -5067,6 +5072,8 @@ function invalidatePermissionsCache() {
 }
 
 // Agregar una función para verificar periódicamente si el usuario perdió
+// Modificar la función startLoserDetection existente
+
 function startLoserDetection() {
     if (window.loserDetectionInterval) clearInterval(window.loserDetectionInterval);
     
@@ -5076,12 +5083,113 @@ function startLoserDetection() {
         if (!permissions.canEdit && permissions.status === "PERDEDOR") {
             clearInterval(window.loserDetectionInterval);
             
+            const userName = getUserName();
+            
+            // 🧹 LIMPIEZA INMEDIATA - ANTES DE MOSTRAR EL MODAL
+            console.log('🔍 PERDEDOR detectado en detección - Limpieza inmediata');
+            await limpiezaInmediataUsuario(userName, 'perdedor_deteccion');
+            
             // Forzar mostrar el mensaje de perdedor
             mostrarMensajeBloqueo("PERDEDOR");
         }
-    }, 3000); // Verificar cada 3 segundos
+    }, 3000);
 }
 
+function logUsageMetrics() {
+    const today = new Date().toDateString();
+    console.log(`Peticiones del día ${today}: ${requestCount}`);
+    
+    // Si te acercas al límite, aumentar cacheTimeout
+    if (requestCount > 15000) {
+        console.warn('⚠️ Acercándose al límite diario');
+    }
+}
+
+// Agregar esta función al inicio del script
+
+async function limpiezaInmediataUsuario(username, reason = 'unknown') {
+    console.log(`🧹 LIMPIEZA INMEDIATA para ${username} - Motivo: ${reason}`);
+    
+    if (!username || username === 'Invitado') {
+        console.log('❌ No se puede limpiar - usuario no válido');
+        return;
+    }
+    
+    try {
+        // Limpiar sesión (columna E)
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearUserSession',
+                username: username
+            })
+        });
+        
+        // Limpiar estado GANADOR/PERDEDOR (columna F)
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: username
+            })
+        });
+        
+        // Limpiar estado ABANDONADO si existe
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearAbandonadoStatus',
+                username: username
+            })
+        });
+        
+        console.log(`✅ Limpieza inmediata completada para ${username}`);
+        
+        // Invalidar caché de permisos
+        invalidatePermissionsCache();
+        
+    } catch (error) {
+        console.error('❌ Error en limpieza inmediata:', error);
+    }
+}
+
+// Agregar al final del script
+
+// Limpieza automática al abandonar la página
+window.addEventListener('beforeunload', async (event) => {
+    const userName = getUserName();
+    if (userName && userName !== 'Invitado') {
+        console.log('🚪 Usuario abandonando la página - Limpieza inmediata');
+        
+        // Limpieza síncrona para beforeunload
+        navigator.sendBeacon(scriptURL, JSON.stringify({
+            action: 'clearUserSession',
+            username: userName
+        }));
+        
+        navigator.sendBeacon(scriptURL, JSON.stringify({
+            action: 'clearWinnerStatus',
+            username: userName
+        }));
+    }
+});
+
+// Limpieza adicional al ocultar la página
+document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) {
+        const userName = getUserName();
+        if (userName && userName !== 'Invitado') {
+            console.log('👁️ Página oculta - Limpieza inmediata');
+            await limpiezaInmediataUsuario(userName, 'page_hidden');
+        }
+    }
+});
     </script>
 </body>
 </html>

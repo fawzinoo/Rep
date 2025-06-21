@@ -2333,17 +2333,22 @@ function triggerPointScoredEffects() {
         }, 600); // Duración de la animación (0.6s)
     }
 }
+// Reemplazar las funciones processVirtualKeyPress y processVirtualBackspace existentes
+
 async function processVirtualKeyPress(keyValue) {
-    // Verificación optimizada con caché
-    const permissions = await checkUserPermissionsCached();
-    
-    if (!permissions.canEdit) {
-        // Usar la función mejorada que maneja perdedores correctamente
-        mostrarMensajeBloqueo(permissions.status);
-        return;
+    // Solo verificar permisos si no se han verificado recientemente
+    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit) {
+            mostrarMensajeBloqueo(permissions.status);
+            return;
+        }
+        
+        window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original sin cambios...
+    // Resto del código original - MUCHO MÁS RÁPIDO
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2376,16 +2381,19 @@ async function processVirtualKeyPress(keyValue) {
 }
 
 async function processVirtualBackspace() {
-    // Verificación optimizada con caché
-    const permissions = await checkUserPermissionsCached();
-    
-    if (!permissions.canEdit) {
-        // Usar la función mejorada que maneja perdedores correctamente
-        mostrarMensajeBloqueo(permissions.status);
-        return;
+    // Solo verificar permisos si no se han verificado recientemente
+    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit) {
+            mostrarMensajeBloqueo(permissions.status);
+            return;
+        }
+        
+        window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original sin cambios...
+    // Resto del código original - MUCHO MÁS RÁPIDO
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2782,22 +2790,23 @@ function handleInput(event) {
 let nKeyDownTime = null;
 
 // Reemplazar el event listener del teclado físico existente
+// Reemplazar el event listener del teclado físico existente
+
 document.addEventListener('keydown', async function(event) {
     // Ignorar si hay un modal SweetAlert2 abierto
     if (document.body.classList.contains('swal2-shown')) return;
 
-    // Solo verificar permisos una vez por cada "ráfaga" de teclas
-    if (!window.lastPermissionCheck || Date.now() - window.lastPermissionCheck > 2000) {
+    // Solo verificar permisos cada 5 segundos, no en cada tecla
+    if (!window.lastPhysicalKeyCheck || Date.now() - window.lastPhysicalKeyCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
-            // Usar la función mejorada que maneja perdedores correctamente
             mostrarMensajeBloqueo(permissions.status);
             event.preventDefault();
             return;
         }
         
-        window.lastPermissionCheck = Date.now();
+        window.lastPhysicalKeyCheck = Date.now();
     }
 
     // Solo letras (A-Z, Ñ)
@@ -4985,27 +4994,30 @@ async function verificarSiPuedeEditar() {
     }
 }
 
-// Agregar estas variables globales al inicio del script
+// Modificar la variable userPermissionsCache existente
+
 let userPermissionsCache = {
     canEdit: true,
     status: '',
     lastCheck: 0,
-    cacheTimeout: 10000 // 10 segundos de caché
+    cacheTimeout: 15000 // Aumentado a 15 segundos para mejor rendimiento
 };
 
 // Función optimizada para verificar permisos con caché
+// Reemplazar la función checkUserPermissionsCached existente
+
 async function checkUserPermissionsCached() {
     const userData = getUserData();
     const userName = userData.username;
     
-    // Si es invitado, siempre puede editar
+    // Si es invitado, siempre puede editar (sin verificaciones adicionales)
     if (!userName || userName === 'Invitado') {
         return { canEdit: true, status: '' };
     }
     
     const now = Date.now();
     
-    // Verificar si el caché es válido
+    // Verificar si el caché es válido (15 segundos)
     if (now - userPermissionsCache.lastCheck < userPermissionsCache.cacheTimeout) {
         return {
             canEdit: userPermissionsCache.canEdit,
@@ -5013,7 +5025,7 @@ async function checkUserPermissionsCached() {
         };
     }
     
-    // Caché expirado, verificar con el servidor
+    // Caché expirado, verificar con el servidor (solo si es necesario)
     try {
         const response = await fetch(scriptURL, {
             method: 'POST',
@@ -5031,7 +5043,7 @@ async function checkUserPermissionsCached() {
             canEdit: result.success && result.canEdit,
             status: result.status || '',
             lastCheck: now,
-            cacheTimeout: 10000
+            cacheTimeout: 15000 // 15 segundos
         };
         
         return {
@@ -5041,10 +5053,10 @@ async function checkUserPermissionsCached() {
         
     } catch (error) {
         console.error('Error verificando permisos:', error);
-        // En caso de error, mantener el estado anterior del caché
+        // En caso de error, asumir que puede editar para no bloquear el juego
         return {
-            canEdit: userPermissionsCache.canEdit,
-            status: userPermissionsCache.status
+            canEdit: true,
+            status: ''
         };
     }
 }

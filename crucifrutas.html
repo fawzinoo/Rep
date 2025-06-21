@@ -2338,6 +2338,7 @@ function triggerPointScoredEffects() {
     }
 }
 // Reemplazar las funciones processVirtualKeyPress y processVirtualBackspace existentes
+// Modificar processVirtualKeyPress para limpiar celda F
 
 async function processVirtualKeyPress(keyValue) {
     // Solo verificar permisos si no se han verificado recientemente
@@ -2345,6 +2346,21 @@ async function processVirtualKeyPress(keyValue) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
+            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+            }
+            
             mostrarMensajeBloqueo(permissions.status);
             return;
         }
@@ -2352,7 +2368,7 @@ async function processVirtualKeyPress(keyValue) {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original - MUCHO MÁS RÁPIDO
+    // Resto del código original...
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2384,12 +2400,29 @@ async function processVirtualKeyPress(keyValue) {
     setTimeout(checkAnswerAutomatic, 100);
 }
 
+// Modificar processVirtualBackspace para limpiar celda F
+
 async function processVirtualBackspace() {
     // Solo verificar permisos si no se han verificado recientemente
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
+            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Backspace bloqueado por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+            }
+            
             mostrarMensajeBloqueo(permissions.status);
             return;
         }
@@ -2397,7 +2430,7 @@ async function processVirtualBackspace() {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código original - MUCHO MÁS RÁPIDO
+    // Resto del código original...
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2796,6 +2829,8 @@ let nKeyDownTime = null;
 // Reemplazar el event listener del teclado físico existente
 // Reemplazar el event listener del teclado físico existente
 
+// Modificar el event listener del teclado físico
+
 document.addEventListener('keydown', async function(event) {
     // Ignorar si hay un modal SweetAlert2 abierto
     if (document.body.classList.contains('swal2-shown')) return;
@@ -2805,6 +2840,21 @@ document.addEventListener('keydown', async function(event) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
+            // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Teclado físico bloqueado por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+            }
+            
             mostrarMensajeBloqueo(permissions.status);
             event.preventDefault();
             return;
@@ -3741,6 +3791,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // Función para enviar puntos a Google Sheets
 // ...existing code...
 
+// Modificar sendPointsToSheet para limpiar celda F
+
 async function sendPointsToSheet(points, eventType = 'punto_normal') {
     const userData = getUserData();
     const userName = userData.username;
@@ -3755,7 +3807,21 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') {
     
     if (!permissions.canEdit) {
         console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${permissions.status}`);
-        // Usar la función mejorada que maneja perdedores correctamente
+        
+        // 🧹 LIMPIAR CELDA F antes de mostrar mensaje
+        if (permissions.status === "PERDEDOR") {
+            console.log('🔴 Envío de puntos bloqueado por PERDEDOR - Limpiando celda F');
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            });
+        }
+        
         mostrarMensajeBloqueo(permissions.status);
         return false;
     }
@@ -4847,6 +4913,8 @@ async function verificarPermisosYEjecutar(accion, datos) {
 
 // Reemplazar la función mostrarMensajeBloqueo existente
 
+// Reemplazar la función mostrarMensajeBloqueo existente
+
 function mostrarMensajeBloqueo(status) {
     // Evitar mostrar múltiples alertas del mismo tipo
     if (window.currentBlockAlert) {
@@ -4860,8 +4928,23 @@ function mostrarMensajeBloqueo(status) {
     let icono = 'warning';
     
     if (status === "PERDEDOR") {
-        // 🚨 NO hacer NINGUNA limpieza aquí - solo mostrar el mensaje
-        console.log('🔴 PERDEDOR detectado - SOLO mostrando mensaje (SIN limpieza)');
+        // 🧹 LIMPIAR CELDA F INMEDIATAMENTE cuando se detecta perdedor
+        console.log('🔴 PERDEDOR detectado - Limpiando celda F inmediatamente');
+        
+        // Limpiar SOLO la celda F (columna estado)
+        fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: userName
+            })
+        }).then(() => {
+            console.log(`✅ Celda F limpiada para ${userName} tras detectar PERDEDOR`);
+        }).catch(error => {
+            console.error('❌ Error limpiando celda F:', error);
+        });
         
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
         stopGameInitializationAndHide();
@@ -4890,8 +4973,8 @@ function mostrarMensajeBloqueo(status) {
             showCloseButton: false
         }).then((result) => {
             if (result.isConfirmed) {
-                // ÚNICA limpieza permitida: cuando el usuario CONFIRMA salir
-                console.log('👤 Usuario confirmó salir - Haciendo limpieza manual');
+                // Limpiar también la sesión (celda E) al confirmar salir
+                console.log('👤 Usuario confirmó salir - Limpiando sesión');
                 limpiezaInmediataUsuario(userName, 'clear_session_manual');
                 
                 if (window.parent !== window) {
@@ -4906,7 +4989,7 @@ function mostrarMensajeBloqueo(status) {
         return;
         
     } else if (status === "GANADOR") {
-        console.log('🟢 GANADOR detectado - Solo mostrando mensaje (SIN limpieza)');
+        console.log('🟢 GANADOR detectado - Solo mostrando mensaje');
         
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";

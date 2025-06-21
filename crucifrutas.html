@@ -1929,9 +1929,15 @@ function initializeVirtualKeyboard() {
 let gameInitializationStopped = false;
 
 // Modificar la función initializeGame para que sea cancelable
+// Modificar la función initializeGame existente
+
 async function initializeGame() {
     // Resetear la bandera al inicio
     gameInitializationStopped = false;
+    
+    // 🆕 REGISTRAR TIEMPO DE INICIO DEL JUEGO
+    window.gameStartTime = Date.now();
+    console.log('🎮 Juego iniciado en:', new Date(window.gameStartTime).toLocaleTimeString());
     
     document.body.classList.remove('oculto-por-dialogo');
     console.log('=== INICIALIZANDO JUEGO ===');
@@ -1977,9 +1983,7 @@ async function initializeGame() {
     
     // NUEVO: Iniciar actualizaciones del ranking
     startRankingUpdates();
-
 }
-
 
 
 // Agregar esta nueva función
@@ -4017,6 +4021,8 @@ let winnerPollingInterval = null;
 // Reemplazar la función startWinnerPolling existente
 // La función startWinnerPolling se mantiene igual - es la fuente oficial
 
+// La función startWinnerPolling queda igual - es la ÚNICA fuente autorizada para limpieza
+
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
     winnerPollingInterval = setInterval(async () => {
@@ -4035,14 +4041,14 @@ function startWinnerPolling() {
                 body: JSON.stringify(postData)
             });
             const data = await response.json();
-            console.log("Respuesta de getScoreStatusAndRank:", data);
+            console.log("Respuesta OFICIAL de getScoreStatusAndRank:", data);
             
             if (data && data.completed === "GANADOR") {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
-                // ✅ Esta SÍ es limpieza oficial
-                console.log('🎉 GANADOR OFICIAL detectado - Limpieza inmediata');
+                // ✅ ÚNICA limpieza oficial autorizada para GANADOR
+                console.log('🎉 GANADOR OFICIAL confirmado por servidor - Limpieza autorizada');
                 await limpiezaInmediataUsuario(userName, 'ganador_polling');
                 
                 invalidatePermissionsCache();
@@ -4072,8 +4078,8 @@ function startWinnerPolling() {
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
-                // ✅ Esta SÍ es limpieza oficial
-                console.log('💔 PERDEDOR OFICIAL detectado - Limpieza inmediata');
+                // ✅ ÚNICA limpieza oficial autorizada para PERDEDOR
+                console.log('💔 PERDEDOR OFICIAL confirmado por servidor - Limpieza autorizada');
                 await limpiezaInmediataUsuario(userName, 'perdedor_polling');
                 
                 invalidatePermissionsCache();
@@ -4839,6 +4845,8 @@ async function verificarPermisosYEjecutar(accion, datos) {
 
 // Reemplazar la función mostrarMensajeBloqueo existente
 
+// Reemplazar la función mostrarMensajeBloqueo existente
+
 function mostrarMensajeBloqueo(status) {
     // Evitar mostrar múltiples alertas del mismo tipo
     if (window.currentBlockAlert) {
@@ -4852,9 +4860,8 @@ function mostrarMensajeBloqueo(status) {
     let icono = 'warning';
     
     if (status === "PERDEDOR") {
-        // 🚨 NO hacer limpieza aquí - solo mostrar el mensaje
-        // La limpieza se hace en startWinnerPolling cuando es oficial
-        console.log('🔴 PERDEDOR detectado - Mostrando mensaje (sin limpieza aún)');
+        // 🚨 NO hacer NINGUNA limpieza aquí - solo mostrar el mensaje
+        console.log('🔴 PERDEDOR detectado - SOLO mostrando mensaje (SIN limpieza)');
         
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
         stopGameInitializationAndHide();
@@ -4883,7 +4890,8 @@ function mostrarMensajeBloqueo(status) {
             showCloseButton: false
         }).then((result) => {
             if (result.isConfirmed) {
-                // Limpieza solo al confirmar salir
+                // ÚNICA limpieza permitida: cuando el usuario CONFIRMA salir
+                console.log('👤 Usuario confirmó salir - Haciendo limpieza manual');
                 limpiezaInmediataUsuario(userName, 'clear_session_manual');
                 
                 if (window.parent !== window) {
@@ -4898,8 +4906,7 @@ function mostrarMensajeBloqueo(status) {
         return;
         
     } else if (status === "GANADOR") {
-        // 🚨 NO hacer limpieza aquí tampoco
-        console.log('🟢 GANADOR detectado - Solo mostrando mensaje');
+        console.log('🟢 GANADOR detectado - Solo mostrando mensaje (SIN limpieza)');
         
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";
@@ -5089,6 +5096,8 @@ function logUsageMetrics() {
 
 // Reemplazar la función limpiezaInmediataUsuario existente
 
+// Reemplazar la función limpiezaInmediataUsuario existente
+
 async function limpiezaInmediataUsuario(username, reason = 'unknown') {
     console.log(`🧹 LIMPIEZA INMEDIATA para ${username} - Motivo: ${reason}`);
     
@@ -5097,24 +5106,32 @@ async function limpiezaInmediataUsuario(username, reason = 'unknown') {
         return;
     }
     
-    // 🚨 SOLO limpiar en casos específicos de fin de juego
+    // 🚨 SOLO limpiar en casos ESPECÍFICOS de fin de juego CONFIRMADO
     const validReasons = [
-        'ganador_polling',
-        'perdedor_polling', 
-        'perdedor_detectado',
-        'perdedor_deteccion',
-        'page_hidden',
-        'clear_session_manual'
+        'ganador_polling',        // SOLO cuando el polling confirma ganador
+        'perdedor_polling',       // SOLO cuando el polling confirma perdedor  
+        'clear_session_manual'    // SOLO cuando el usuario sale manualmente
     ];
+    
+    // ELIMINAR RAZONES PROBLEMÁTICAS:
+    // - 'perdedor_detectado'
+    // - 'perdedor_deteccion' 
+    // - 'page_hidden' (muy agresivo)
     
     if (!validReasons.includes(reason)) {
         console.log(`⚠️ Razón "${reason}" no válida para limpieza - CANCELANDO`);
         return;
     }
     
+    // VALIDACIÓN ADICIONAL: Solo limpiar si el juego ha estado activo por al menos 30 segundos
+    if (window.gameStartTime && Date.now() - window.gameStartTime < 30000) {
+        console.log(`⚠️ Juego muy reciente (${Date.now() - window.gameStartTime}ms) - CANCELANDO limpieza`);
+        return;
+    }
+    
     try {
-        // Solo limpiar sesión si es fin de juego o abandono
-        if (['ganador_polling', 'perdedor_polling', 'page_hidden', 'clear_session_manual'].includes(reason)) {
+        // Solo limpiar sesión en casos muy específicos
+        if (['ganador_polling', 'perdedor_polling', 'clear_session_manual'].includes(reason)) {
             await fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -5127,8 +5144,8 @@ async function limpiezaInmediataUsuario(username, reason = 'unknown') {
             console.log(`✅ Sesión limpiada para ${username}`);
         }
         
-        // Solo limpiar estado F si es realmente ganador/perdedor
-        if (['ganador_polling', 'perdedor_polling', 'perdedor_detectado', 'perdedor_deteccion'].includes(reason)) {
+        // Solo limpiar estado F en casos confirmados de ganador/perdedor
+        if (['ganador_polling', 'perdedor_polling'].includes(reason)) {
             await fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -5154,15 +5171,22 @@ async function limpiezaInmediataUsuario(username, reason = 'unknown') {
 let gameIsActive = true;
 
 // Limpieza automática al abandonar la página
+// Reemplazar el event listener beforeunload existente
+
 window.addEventListener('beforeunload', async (event) => {
     const userName = getUserName();
     if (userName && userName !== 'Invitado' && gameIsActive) {
-        console.log('🚪 Usuario abandonando la página activa - Limpieza inmediata');
-        
-        navigator.sendBeacon(scriptURL, JSON.stringify({
-            action: 'clearUserSession',
-            username: userName
-        }));
+        // VALIDACIÓN ADICIONAL: Solo limpiar si el juego ha estado activo por más de 60 segundos
+        if (window.gameStartTime && Date.now() - window.gameStartTime > 60000) {
+            console.log('🚪 Usuario abandonando la página después de 60s - Limpieza inmediata');
+            
+            navigator.sendBeacon(scriptURL, JSON.stringify({
+                action: 'clearUserSession',
+                username: userName
+            }));
+        } else {
+            console.log('🚪 Usuario saliendo muy pronto - NO hacer limpieza automática');
+        }
     }
 });
 
@@ -5173,16 +5197,7 @@ function markGameAsInactive() {
 }
 
 
-// Limpieza adicional al ocultar la página
-document.addEventListener('visibilitychange', async () => {
-    if (document.hidden) {
-        const userName = getUserName();
-        if (userName && userName !== 'Invitado') {
-            console.log('👁️ Página oculta - Limpieza inmediata');
-            await limpiezaInmediataUsuario(userName, 'page_hidden');
-        }
-    }
-});
+
     </script>
 </body>
 </html>

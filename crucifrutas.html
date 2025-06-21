@@ -4082,14 +4082,7 @@ async function clearSessionOnServer(userName) {
 
 let winnerPollingInterval = null;
 
-// Modificar la función startWinnerPolling para manejar el abandono
-// Modificar la función startWinnerPolling existente
-// Reemplazar la función startWinnerPolling existente
-// La función startWinnerPolling se mantiene igual - es la fuente oficial
 
-// La función startWinnerPolling queda igual - es la ÚNICA fuente autorizada para limpieza
-
-// Reemplazar la función startWinnerPolling existente
 
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
@@ -4184,9 +4177,13 @@ function startWinnerPolling() {
                     photoTimeoutId = null;
                 }
                 
+                // 🆕 MOSTRAR NOMBRE DEL GANADOR en el mensaje
+                const winnerName = data.winnerName || 'Otro jugador';
+                const mensaje = `${winnerName} ha completado antes que tú y ha ganado la partida.`;
+                
                 Swal.fire({
                     title: 'Has perdido',
-                    text: 'Otro jugador ha completado antes que tú.',
+                    text: mensaje,
                     icon: 'error',
                     confirmButtonText: 'Aceptar',
                     allowOutsideClick: false,
@@ -4940,7 +4937,9 @@ async function verificarPermisosYEjecutar(accion, datos) {
 
 // Reemplazar la función mostrarMensajeBloqueo existente
 
-function mostrarMensajeBloqueo(status) {
+// Reemplazar la función mostrarMensajeBloqueo existente
+
+async function mostrarMensajeBloqueo(status) {
     // Evitar mostrar múltiples alertas del mismo tipo
     if (window.currentBlockAlert) {
         return;
@@ -4972,6 +4971,25 @@ function mostrarMensajeBloqueo(status) {
             });
         }
         
+        // 🆕 OBTENER EL NOMBRE DEL GANADOR
+        let winnerName = 'Otro jugador';
+        try {
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'getScoreStatusAndRank',
+                    username: userName
+                })
+            });
+            const data = await response.json();
+            if (data && data.winnerName) {
+                winnerName = data.winnerName;
+            }
+        } catch (error) {
+            console.error('Error obteniendo nombre del ganador:', error);
+        }
+        
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
         stopGameInitializationAndHide();
         ocultarMainContent();
@@ -4983,7 +5001,7 @@ function mostrarMensajeBloqueo(status) {
             photoTimeoutId = null;
         }
         
-        mensaje = "Otro jugador ha completado antes que tú. El juego ha terminado.";
+        mensaje = `${winnerName} ha completado antes que tú y ha ganado la partida.`;
         titulo = "¡Has Perdido!";
         icono = 'error';
         
@@ -5350,6 +5368,27 @@ async function limpiarSoloCeldaF(username, reason = 'unknown') {
         
     } catch (error) {
         console.error('❌ Error limpiando celda F:', error);
+    }
+}
+
+// Función auxiliar para obtener el nombre del ganador
+
+async function obtenerNombreGanador() {
+    try {
+        const userName = getUserName();
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'getScoreStatusAndRank',
+                username: userName
+            })
+        });
+        const data = await response.json();
+        return data.winnerName || 'Otro jugador';
+    } catch (error) {
+        console.error('Error obteniendo nombre del ganador:', error);
+        return 'Otro jugador';
     }
 }
     </script>

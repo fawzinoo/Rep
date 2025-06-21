@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxdhz_MO2795iECaK6xSM2bxBaEyWYJ8Yc6TkPZKyMcahZiNFBgSmrNn5jiNzLPFpx1nQ/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxq2fZ9qhwhBjnZHG3lur-s2FBDFHsjh57YmIMxiGUv_QspPl6GXU_ICvLHgM-1zALxrg/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4078,6 +4078,7 @@ async function clearSessionOnServer(userName) {
 let winnerPollingInterval = null;
 
 
+// Reemplazar la función startWinnerPolling existente
 
 function startWinnerPolling() {
     if (winnerPollingInterval) clearInterval(winnerPollingInterval);
@@ -4172,28 +4173,12 @@ function startWinnerPolling() {
                     photoTimeoutId = null;
                 }
                 
-                // 🆕 MOSTRAR NOMBRE DEL GANADOR en el mensaje
+                // 🆕 PASAR DIRECTAMENTE EL NOMBRE DEL GANADOR A mostrarMensajeBloqueo
                 const winnerName = data.winnerName || 'Otro jugador';
-                const mensaje = `${winnerName} ha completado antes que tú y ha ganado la partida.`;
+                console.log(`🔴 Perdedor detectado en polling - Ganador: "${winnerName}"`);
                 
-                Swal.fire({
-                    title: 'Has perdido',
-                    text: mensaje,
-                    icon: 'error',
-                    confirmButtonText: 'Aceptar',
-                    allowOutsideClick: false,
-                    allowEscapeKey: false
-                }).then(() => {
-                    // Limpiar sesión solo cuando el usuario confirme
-                    console.log('👤 Usuario confirmó salir tras perder - Limpiando sesión');
-                    limpiezaInmediataUsuario(userName, 'clear_session_manual');
-                    
-                    if (window.parent !== window) {
-                        window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-                    } else {
-                        window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-                    }
-                });
+                // USAR LA FUNCIÓN mostrarMensajeBloqueo CON EL NOMBRE DEL GANADOR
+                mostrarMensajeBloqueo("PERDEDOR", winnerName);
             }
         } catch (e) {
             console.error('Error al obtener estado de ganador:', e);
@@ -4930,6 +4915,7 @@ async function verificarPermisosYEjecutar(accion, datos) {
 
 
 
+
 // Reemplazar la función mostrarMensajeBloqueo existente
 
 async function mostrarMensajeBloqueo(status, winnerName = null) {
@@ -4946,7 +4932,7 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
     
     if (status === "PERDEDOR") {
         // 🧹 SIEMPRE LIMPIAR CELDA F cuando se muestra mensaje de perdedor
-        console.log('🔴 PERDEDOR detectado - Limpiando celda F inmediatamente');
+        console.log('🔴 PERDEDOR detectado en mostrarMensajeBloqueo - Limpiando celda F inmediatamente');
         
         if (userName && userName !== 'Invitado') {
             fetch(scriptURL, {
@@ -4964,9 +4950,12 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
             });
         }
         
-        // 🆕 USAR EL NOMBRE DEL GANADOR PROPORCIONADO O OBTENERLO
-        let ganadorFinal = winnerName;
+        // 🔍 DETERMINAR EL NOMBRE DEL GANADOR
+        let ganadorFinal = winnerName; // Usar el parámetro proporcionado
+        
+        // Solo buscar el ganador si no se proporcionó o es genérico
         if (!ganadorFinal || ganadorFinal === 'Otro jugador') {
+            console.log('🔍 Nombre del ganador no proporcionado, buscando en servidor...');
             try {
                 const response = await fetch(scriptURL, {
                     method: 'POST',
@@ -4977,15 +4966,19 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
                     })
                 });
                 const data = await response.json();
-                if (data && data.winnerName) {
+                if (data && data.winnerName && data.winnerName !== 'Otro jugador') {
                     ganadorFinal = data.winnerName;
+                    console.log(`🔍 Ganador encontrado en servidor: "${ganadorFinal}"`);
                 } else {
                     ganadorFinal = 'Otro jugador';
+                    console.log('🔍 No se encontró ganador específico en servidor');
                 }
             } catch (error) {
-                console.error('Error obteniendo nombre del ganador:', error);
+                console.error('❌ Error obteniendo nombre del ganador:', error);
                 ganadorFinal = 'Otro jugador';
             }
+        } else {
+            console.log(`✅ Usando nombre del ganador proporcionado: "${ganadorFinal}"`);
         }
         
         // DETENER EL JUEGO Y OCULTAR CONTENIDO
@@ -5004,7 +4997,7 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
         titulo = "¡Has Perdido!";
         icono = 'error';
         
-        console.log(`🔴 Mostrando mensaje de perdedor: "${ganadorFinal}" ganó`);
+        console.log(`🔴 Mostrando mensaje final: "${mensaje}"`);
         
         window.currentBlockAlert = true;
         
@@ -5392,6 +5385,41 @@ async function obtenerNombreGanador() {
         return 'Otro jugador';
     }
 }
+
+// Función de debug para verificar nombres de ganador
+
+async function debugWinnerName() {
+    console.log('🧪 === DEBUG NOMBRE DEL GANADOR ===');
+    
+    const userName = getUserName();
+    console.log('Usuario actual:', userName);
+    
+    try {
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'getScoreStatusAndRank',
+                username: userName
+            })
+        });
+        
+        const data = await response.json();
+        console.log('Respuesta completa del servidor:', data);
+        console.log('Nombre del ganador en respuesta:', data.winnerName);
+        console.log('Tipo de winnerName:', typeof data.winnerName);
+        console.log('¿Es undefined?:', data.winnerName === undefined);
+        console.log('¿Es null?:', data.winnerName === null);
+        console.log('¿Es string vacío?:', data.winnerName === '');
+        
+    } catch (error) {
+        console.error('Error en debug:', error);
+    }
+    
+    console.log('🧪 === FIN DEBUG ===');
+}
+
+// Llama esta función en la consola para debuggear: debugWinnerName()
     </script>
 </body>
 </html>

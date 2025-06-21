@@ -1977,6 +1977,7 @@ async function initializeGame() {
     
     // NUEVO: Iniciar actualizaciones del ranking
     startRankingUpdates();
+    startLoserDetection();
 }
 
 
@@ -2337,11 +2338,12 @@ async function processVirtualKeyPress(keyValue) {
     const permissions = await checkUserPermissionsCached();
     
     if (!permissions.canEdit) {
+        // Usar la función mejorada que maneja perdedores correctamente
         mostrarMensajeBloqueo(permissions.status);
         return;
     }
 
-    // Resto del código original sin cambios
+    // Resto del código original sin cambios...
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2378,11 +2380,12 @@ async function processVirtualBackspace() {
     const permissions = await checkUserPermissionsCached();
     
     if (!permissions.canEdit) {
+        // Usar la función mejorada que maneja perdedores correctamente
         mostrarMensajeBloqueo(permissions.status);
         return;
     }
 
-    // Resto del código original sin cambios
+    // Resto del código original sin cambios...
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2788,6 +2791,7 @@ document.addEventListener('keydown', async function(event) {
         const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
+            // Usar la función mejorada que maneja perdedores correctamente
             mostrarMensajeBloqueo(permissions.status);
             event.preventDefault();
             return;
@@ -2816,7 +2820,6 @@ document.addEventListener('keydown', async function(event) {
         processVirtualBackspace();
     }
 });
-
 document.addEventListener('keyup', function(event) {
     // Ignorar si hay un modal SweetAlert2 abierto
     if (document.body.classList.contains('swal2-shown')) return;
@@ -3739,6 +3742,7 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') {
     
     if (!permissions.canEdit) {
         console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${permissions.status}`);
+        // Usar la función mejorada que maneja perdedores correctamente
         mostrarMensajeBloqueo(permissions.status);
         return false;
     }
@@ -4840,15 +4844,54 @@ function mostrarMensajeBloqueo(status) {
     let icono = 'warning';
     
     if (status === "PERDEDOR") {
-        mensaje = "Has perdido el juego. No puedes realizar más cambios en el crucigrama.";
+        // DETENER EL JUEGO Y OCULTAR CONTENIDO como cuando gana
+        stopGameInitializationAndHide();
+        ocultarMainContent();
+        hideLottieAnimation();
+        
+        // Detener foto timeout si existe
+        if (typeof photoTimeoutId !== 'undefined' && photoTimeoutId) {
+            clearTimeout(photoTimeoutId);
+            photoTimeoutId = null;
+        }
+        
+        mensaje = "Otro jugador ha completado antes que tú. No puedes realizar más cambios.";
         titulo = "¡Has Perdido!";
         icono = 'error';
+        
+        window.currentBlockAlert = true;
+        
+        Swal.fire({
+            title: titulo,
+            text: mensaje,
+            icon: icono,
+            confirmButtonText: 'Salir del Juego',
+            allowOutsideClick: false,
+            allowEscapeKey: false, // No permitir ESC
+            showCloseButton: false  // No mostrar X para cerrar
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const userName = getUserName();
+                clearSessionOnServer(userName);
+                
+                // Redirigir igual que cuando gana
+                if (window.parent !== window) {
+                    window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+                } else {
+                    window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+                }
+            }
+            window.currentBlockAlert = false;
+        });
+        
+        return; // Salir early para perdedores
     } else if (status === "GANADOR") {
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";
         icono = 'success';
     }
     
+    // Para otros casos (GANADOR o estados generales)
     window.currentBlockAlert = true;
     
     Swal.fire({
@@ -4857,7 +4900,7 @@ function mostrarMensajeBloqueo(status) {
         icon: icono,
         confirmButtonText: 'Entendido',
         allowOutsideClick: false,
-        timer: 2000, // Reducido a 2 segundos
+        timer: 2000,
         timerProgressBar: true
     }).then(() => {
         window.currentBlockAlert = false;
@@ -5009,6 +5052,22 @@ async function checkUserPermissionsCached() {
 // Función para invalidar el caché (llamar cuando sepamos que el estado cambió)
 function invalidatePermissionsCache() {
     userPermissionsCache.lastCheck = 0;
+}
+
+// Agregar una función para verificar periódicamente si el usuario perdió
+function startLoserDetection() {
+    if (window.loserDetectionInterval) clearInterval(window.loserDetectionInterval);
+    
+    window.loserDetectionInterval = setInterval(async () => {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit && permissions.status === "PERDEDOR") {
+            clearInterval(window.loserDetectionInterval);
+            
+            // Forzar mostrar el mensaje de perdedor
+            mostrarMensajeBloqueo("PERDEDOR");
+        }
+    }, 3000); // Verificar cada 3 segundos
 }
 
     </script>

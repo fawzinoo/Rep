@@ -2332,14 +2332,41 @@ function triggerPointScoredEffects() {
         }, 600); // Duración de la animación (0.6s)
     }
 }
+async function processVirtualKeyPress(keyValue) {
+    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
+    const userData = getUserData();
+    const userName = userData.username;
+    
+    if (userName && userName !== 'Invitado') {
+        try {
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'canUserEdit',
+                    username: userName
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success || !result.canEdit) {
+                mostrarMensajeBloqueo(result.status);
+                return; // No permitir la entrada
+            }
+        } catch (error) {
+            console.error('Error verificando permisos:', error);
+            return; // Por seguridad, bloquear si hay error
+        }
+    }
 
-function processVirtualKeyPress(keyValue) {
+    // Resto del código original de processVirtualKeyPress
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
         if (firstGreenInput) {
-            firstGreenInput.focus(); // Esto actualizará logicallyActiveInput a través del listener 'focusin'
+            firstGreenInput.focus();
             currentTargetInput = logicallyActiveInput;
         }
     }
@@ -2349,85 +2376,89 @@ function processVirtualKeyPress(keyValue) {
         return;
     }
 
-    virtualKeyboardIsWriting = true; // Indicar que el teclado virtual va a operar
+    virtualKeyboardIsWriting = true;
     currentTargetInput.readOnly = false;
     currentTargetInput.value = keyValue.toUpperCase();
     currentTargetInput.readOnly = true;
-    virtualKeyboardIsWriting = false; // El teclado virtual ha terminado de operar en ESTE input
+    virtualKeyboardIsWriting = false;
 
     const nextInput = getNextInput(currentTargetInput);
     if (nextInput) {
         setTimeout(() => {
-            // Cuando el foco se mueva, virtualKeyboardIsWriting será false,
-            // permitiendo que el listener 'focusin' global configure readOnly.
             nextInput.focus();
             ensureInputVisible(nextInput);
-        }, 10); // Timeout corto para asegurar que el DOM se actualice
+        }, 10);
     }
     setTimeout(checkAnswerAutomatic, 100);
 }
-// ... (código existente) ...
 
-function processVirtualBackspace() {
+async function processVirtualBackspace() {
+    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
+    const userData = getUserData();
+    const userName = userData.username;
+    
+    if (userName && userName !== 'Invitado') {
+        try {
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'canUserEdit',
+                    username: userName
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success || !result.canEdit) {
+                mostrarMensajeBloqueo(result.status);
+                return; // No permitir el borrado
+            }
+        } catch (error) {
+            console.error('Error verificando permisos:', error);
+            return; // Por seguridad, bloquear si hay error
+        }
+    }
+
+    // Resto del código original de processVirtualBackspace
     let currentTargetInput = logicallyActiveInput;
 
-    // Asegurarse de tener un input objetivo
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
         if (firstGreenInput) {
-            // Al enfocar, el listener 'focusin' global actualizará logicallyActiveInput
-            // y se encargará de la visibilidad y el estado readOnly inicial.
             firstGreenInput.focus();
-            currentTargetInput = logicallyActiveInput; // Actualizar currentTargetInput después del foco
+            currentTargetInput = logicallyActiveInput;
         }
     }
 
     if (!currentTargetInput) {
         console.log('No hay input activo para el backspace virtual.');
-        return; // Salir si no hay dónde operar
+        return;
     }
 
     if (currentTargetInput.value) {
-        // Caso 1: El input actual tiene contenido, borrarlo.
-        virtualKeyboardIsWriting = true; // Indicar operación del teclado virtual
-        currentTargetInput.readOnly = false; // Permitir modificación
-        currentTargetInput.value = '';       // Borrar contenido
-        currentTargetInput.readOnly = true;  // Restaurar solo lectura
-        virtualKeyboardIsWriting = false; // Terminar operación del teclado virtual
+        virtualKeyboardIsWriting = true;
+        currentTargetInput.readOnly = false;
+        currentTargetInput.value = '';
+        currentTargetInput.readOnly = true;
+        virtualKeyboardIsWriting = false;
     } else {
-        // Caso 2: El input actual está vacío. Intentar moverse al anterior y borrar su contenido.
         const prevInput = getPreviousInput(currentTargetInput);
         if (prevInput) {
-            // Mover el foco al input anterior.
-            // El listener 'focusin' global se activará, actualizará logicallyActiveInput,
-            // y llamará a ensureInputVisible.
-            // En este punto, virtualKeyboardIsWriting es false, por lo que focusin
-            // pondrá prevInput en readOnly=true.
             prevInput.focus();
-
-            // Usar un micro-timeout para permitir que el evento de foco se procese completamente
-            // (incluyendo la actualización de logicallyActiveInput por el listener 'focusin')
-            // antes de intentar borrar el contenido del nuevo input activo.
             setTimeout(() => {
-                // Ahora, logicallyActiveInput debería ser el prevInput.
-                // Verificar que el foco se haya movido correctamente y que el nuevo input tenga valor.
                 if (logicallyActiveInput && logicallyActiveInput === prevInput && logicallyActiveInput.value) {
-                    virtualKeyboardIsWriting = true; // Indicar operación del teclado virtual
-                    logicallyActiveInput.readOnly = false; // Permitir modificación
-                    logicallyActiveInput.value = '';       // Borrar contenido del (ahora) input activo
-                    logicallyActiveInput.readOnly = true;  // Restaurar solo lectura
-                    virtualKeyboardIsWriting = false; // Terminar operación del teclado virtual
+                    virtualKeyboardIsWriting = true;
+                    logicallyActiveInput.readOnly = false;
+                    logicallyActiveInput.value = '';
+                    logicallyActiveInput.readOnly = true;
+                    virtualKeyboardIsWriting = false;
                 }
-                // ensureInputVisible ya es llamado por el listener 'focusin' global
-                // con su propio setTimeout, por lo que no es estrictamente necesario aquí
-                // a menos que se necesite un ajuste de visibilidad inmediato post-borrado.
-            }, 10); // Un timeout muy corto (10ms) es usualmente suficiente.
+            }, 10);
         }
-        // Si no hay prevInput, no se hace nada más.
     }
-    setTimeout(checkAnswerAutomatic, 100); // Verificar respuesta después de la operación
+    setTimeout(checkAnswerAutomatic, 100);
 }
-
 function generateGrid() {
     const grid = document.getElementById('crossword');
     grid.innerHTML = '';
@@ -3720,25 +3751,48 @@ document.addEventListener('DOMContentLoaded', function() {
 // Función para enviar puntos a Google Sheets
 // ...existing code...
 
-// Función mejorada para enviar puntos con más debugging
-async function sendPointsToSheet(points, eventType = 'punto_normal') { // eventType por defecto
+async function sendPointsToSheet(points, eventType = 'punto_normal') {
     const userData = getUserData();
     const userName = userData.username;
     
-    // ... (tu validación de userName) ...
-    
-    
+    if (!userName || userName === 'Invitado') {
+        console.log('❌ No se pueden enviar puntos - usuario no registrado');
+        return false;
+    }
+
+    // NUEVA VERIFICACIÓN: Comprobar si el usuario puede editar
+    try {
+        const checkResponse = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'canUserEdit',
+                username: userName
+            })
+        });
+        
+        const checkResult = await checkResponse.json();
+        
+        if (!checkResult.success || !checkResult.canEdit) {
+            console.log(`❌ Usuario ${userName} no puede registrar puntos - Estado: ${checkResult.status}`);
+            mostrarMensajeBloqueo(checkResult.status);
+            return false; // No enviar puntos
+        }
+    } catch (error) {
+        console.error('Error verificando permisos para enviar puntos:', error);
+        return false; // Por seguridad, no enviar puntos si hay error
+    }
     
     const postData = {
         action: 'registerPoints',
         username: userName,
         points: points,
-        eventType: eventType, // <--- AÑADIDO/MODIFICADO
-        fruitName: currentFruit ? currentFruit.name : '', // O el detalle relevante del juego
+        eventType: eventType,
+        fruitName: currentFruit ? currentFruit.name : '',
         timestamp: new Date().toISOString(),
         sessionId: userData.sessionId || null,
         orderNumber: userData.orderNumber || null,
-        gameMode: 'crucigrama_frutas' // O el gameMode actual
+        gameMode: 'crucigrama_frutas'
     };
     
     console.log('📤 Datos a enviar (modo no-cors):', postData);
@@ -3749,7 +3803,7 @@ async function sendPointsToSheet(points, eventType = 'punto_normal') { // eventT
             mode: 'no-cors',
             body: JSON.stringify(postData)
         });
-        console.log(`✅ Intento de envío de puntos (${points}, evento: ${eventType}) para ${userName} realizado. Verifica logs.`);
+        console.log(`✅ Intento de envío de puntos (${points}, evento: ${eventType}) para ${userName} realizado.`);
         return true;
     } catch (error) {
         console.error('💥 Error de red enviando puntos:', error);
@@ -4812,21 +4866,26 @@ async function verificarPermisosYEjecutar(accion, datos) {
 function mostrarMensajeBloqueo(status) {
     let mensaje = "No puedes realizar más cambios.";
     let titulo = "Juego Bloqueado";
+    let icono = 'warning';
     
     if (status === "PERDEDOR") {
         mensaje = "Has perdido el juego. No puedes realizar más cambios en el crucigrama.";
         titulo = "¡Has Perdido!";
+        icono = 'error';
     } else if (status === "GANADOR") {
         mensaje = "¡Felicitaciones! Ya has ganado el juego.";
         titulo = "¡Has Ganado!";
+        icono = 'success';
     }
     
     Swal.fire({
         title: titulo,
         text: mensaje,
-        icon: status === "PERDEDOR" ? 'error' : 'success',
+        icon: icono,
         confirmButtonText: 'Entendido',
-        allowOutsideClick: false
+        allowOutsideClick: false,
+        timer: 3000, // Auto-cerrar después de 3 segundos
+        timerProgressBar: true
     });
 }
 
@@ -4907,6 +4966,8 @@ async function verificarSiPuedeEditar() {
         return false; // Por seguridad, bloquear si hay error
     }
 }
+
+
     </script>
 </body>
 </html>

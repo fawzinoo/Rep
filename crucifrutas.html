@@ -1930,6 +1930,7 @@ let gameInitializationStopped = false;
 
 // Modificar la función initializeGame para que sea cancelable
 // Modificar la función initializeGame existente
+// Modificar la función initializeGame para incluir detectores
 
 async function initializeGame() {
     // Resetear la bandera al inicio
@@ -1954,6 +1955,9 @@ async function initializeGame() {
     }
     
     if (gameInitializationStopped) return;
+    
+    // 🆕 CONFIGURAR DETECTORES DE GANADOR
+    setupWinnerDetectionListeners();
     
     initializeRandomFruits();
     updateFruitDisplay();
@@ -3432,11 +3436,16 @@ window.addEventListener('message', function(event) {
     }
 });
 
+// Modificar el event listener DOMContentLoaded existente
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM cargado - obteniendo datos de usuario...');
     
     const userData = getUserData();
     console.log('Datos de usuario obtenidos:', userData);
+    
+    // 🆕 VERIFICAR SI YA HAY UN GANADOR
+    checkExistingWinnerOnLoad();
     
     // Mostrar información de debug
     showUserDebugInfo();
@@ -4220,22 +4229,42 @@ function startWinnerPolling() {
         }
     }, 5000);
 }
+// Reemplazar la función notifyGameCompleted existente
+
 async function notifyGameCompleted() {
     const userName = getUserName();
-    if (!userName) return;
+    if (!userName || userName === 'Invitado') {
+        console.log('❌ No se puede notificar - usuario no registrado');
+        return;
+    }
+    
+    console.log('🏆 USUARIO COMPLETÓ TODAS LAS FRUTAS - Marcando como GANADOR');
+    
+    // 🆕 MARCAR COMO GANADOR en la hoja de cálculo
     const postData = {
-        action: 'setCompleted',
-        username: userName,
-        completed: 'COMPLETED'
+        action: 'setCompletedG', // Usar la acción que escribirá "GANADOR"
+        username: userName
     };
-    await fetch(scriptURL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(postData)
-    });
+    
+    try {
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(postData)
+        });
+        console.log(`✅ Usuario ${userName} marcado como GANADOR en el servidor`);
+        
+        // 🆕 ENVIAR NOTIFICACIÓN A TODOS LOS USUARIOS VÍA LOCALSTORAGE
+        notifyAllUsersWinnerFound(userName);
+        
+        // 🆕 INVALIDAR CACHÉ DE PERMISOS
+        invalidatePermissionsCache();
+        
+    } catch (error) {
+        console.error('❌ Error marcando como ganador:', error);
+    }
 }
-
-let estadoPendiente = null;
 
 // Cuando el usuario gana o pierde:
 function usuarioGana() {
@@ -5481,6 +5510,200 @@ async function obtenerNombreGanadorEspecifico() {
     } catch (error) {
         console.error('❌ Error obteniendo ganador específico:', error);
         return 'Otro jugador';
+    }
+}
+
+// Agregar nueva función para notificar ganador via localStorage
+
+function notifyAllUsersWinnerFound(winnerName) {
+    console.log(`📢 Notificando a todos los usuarios que ${winnerName} ha ganado`);
+    
+    const winnerData = {
+        winner: winnerName,
+        timestamp: Date.now(),
+        gameType: 'crucigrama_frutas',
+        sessionId: new Date().getTime() // ID único para esta notificación
+    };
+    
+    // 🆕 ESCRIBIR EN LOCALSTORAGE para que otros usuarios lo detecten
+    localStorage.setItem('gameWinnerNotification', JSON.stringify(winnerData));
+    
+    // 🆕 TAMBIÉN USAR BROADCAST CHANNEL SI ESTÁ DISPONIBLE
+    if (typeof BroadcastChannel !== 'undefined') {
+        try {
+            const channel = new BroadcastChannel('crucigrama_winner');
+            channel.postMessage({
+                type: 'WINNER_FOUND',
+                winner: winnerName,
+                timestamp: Date.now()
+            });
+            console.log(`📡 Ganador notificado via BroadcastChannel: ${winnerName}`);
+        } catch (e) {
+            console.log('BroadcastChannel no disponible:', e);
+        }
+    }
+    
+    // 🆕 DISPARAR EVENTO PERSONALIZADO
+    window.dispatchEvent(new CustomEvent('crucigramaWinnerFound', {
+        detail: { winner: winnerName, timestamp: Date.now() }
+    }));
+}
+
+// Agregar listener para detectar ganador via localStorage
+
+function setupWinnerDetectionListeners() {
+    console.log('🔍 Configurando detectores de ganador...');
+    
+    // 🆕 LISTENER PARA LOCALSTORAGE
+    window.addEventListener('storage', function(event) {
+        if (event.key === 'gameWinnerNotification' && event.newValue) {
+            try {
+                const winnerData = JSON.parse(event.newValue);
+                const currentUser = getUserName();
+                
+                console.log(`📢 Detectado ganador via localStorage:`, winnerData);
+                
+                // Solo procesar si NO soy el ganador
+                if (winnerData.winner !== currentUser) {
+                    console.log(`💔 ${winnerData.winner} ha ganado - YO HE PERDIDO`);
+                    handleLoserByWinnerDetection(winnerData.winner);
+                } else {
+                    console.log(`🎉 Confirmación: SOY EL GANADOR (${winnerData.winner})`);
+                }
+            } catch (e) {
+                console.error('Error procesando notificación de ganador:', e);
+            }
+        }
+    });
+    
+    // 🆕 LISTENER PARA BROADCAST CHANNEL
+    if (typeof BroadcastChannel !== 'undefined') {
+        try {
+            const channel = new BroadcastChannel('crucigrama_winner');
+            channel.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'WINNER_FOUND') {
+                    const currentUser = getUserName();
+                    
+                    console.log(`📡 Detectado ganador via BroadcastChannel:`, event.data);
+                    
+                    if (event.data.winner !== currentUser) {
+                        console.log(`💔 ${event.data.winner} ha ganado via BroadcastChannel - YO HE PERDIDO`);
+                        handleLoserByWinnerDetection(event.data.winner);
+                    }
+                }
+            });
+        } catch (e) {
+            console.log('BroadcastChannel no disponible:', e);
+        }
+    }
+    
+    // 🆕 LISTENER PARA EVENTO PERSONALIZADO
+    window.addEventListener('crucigramaWinnerFound', function(event) {
+        const currentUser = getUserName();
+        
+        if (event.detail.winner !== currentUser) {
+            console.log(`🎯 Detectado ganador via evento personalizado: ${event.detail.winner}`);
+            handleLoserByWinnerDetection(event.detail.winner);
+        }
+    });
+    
+    console.log('✅ Detectores de ganador configurados');
+}
+
+// Nueva función para manejar perdedor por detección local
+
+function handleLoserByWinnerDetection(winnerName) {
+    const currentUser = getUserName();
+    
+    if (!currentUser || currentUser === 'Invitado') {
+        return;
+    }
+    
+    console.log(`💔 Procesando derrota - Ganador: ${winnerName}, Perdedor: ${currentUser}`);
+    
+    // 🛑 DETENER TODO INMEDIATAMENTE
+    stopGameInitializationAndHide();
+    ocultarMainContent();
+    hideLottieAnimation();
+    stopTimer();
+    stopAllAudio();
+    
+    // 🧹 LIMPIAR CELDA F INMEDIATAMENTE
+    fetch(scriptURL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+            action: 'clearWinnerStatus',
+            username: currentUser
+        })
+    }).then(() => {
+        console.log(`✅ Celda F limpiada para ${currentUser} tras detectar ganador local`);
+    }).catch(error => {
+        console.error('❌ Error limpiando celda F:', error);
+    });
+    
+    // 🔄 INVALIDAR CACHÉ
+    invalidatePermissionsCache();
+    
+    // 🚫 DETENER POLLING SI ESTÁ ACTIVO
+    if (winnerPollingInterval) {
+        clearInterval(winnerPollingInterval);
+        winnerPollingInterval = null;
+    }
+    
+    // 📢 MOSTRAR MENSAJE INMEDIATO
+    window.currentBlockAlert = true;
+    
+    Swal.fire({
+        title: '¡Has Perdido!',
+        text: `${winnerName} ha ganado la partida.`,
+        icon: 'error',
+        confirmButtonText: 'Salir del Juego',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showCloseButton: false
+    }).then((result) => {
+        if (result.isConfirmed) {
+            console.log('👤 Usuario confirmó salir tras detectar ganador - Limpiando sesión');
+            limpiezaInmediataUsuario(currentUser, 'clear_session_manual');
+            
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+            } else {
+                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+            }
+        }
+        window.currentBlockAlert = false;
+    });
+}
+
+// Agregar función para verificar si ya hay un ganador almacenado
+
+function checkExistingWinnerOnLoad() {
+    try {
+        const storedWinner = localStorage.getItem('gameWinnerNotification');
+        if (storedWinner) {
+            const winnerData = JSON.parse(storedWinner);
+            const currentUser = getUserName();
+            
+            // Verificar si es reciente (menos de 5 minutos)
+            if (Date.now() - winnerData.timestamp < 300000) {
+                console.log('🔍 Ganador existente detectado al cargar:', winnerData);
+                
+                if (winnerData.winner !== currentUser) {
+                    console.log(`💔 Ganador ya existía: ${winnerData.winner} - YO HE PERDIDO`);
+                    setTimeout(() => {
+                        handleLoserByWinnerDetection(winnerData.winner);
+                    }, 1000);
+                }
+            } else {
+                console.log('🧹 Limpiando notificación de ganador antigua');
+                localStorage.removeItem('gameWinnerNotification');
+            }
+        }
+    } catch (e) {
+        console.error('Error verificando ganador existente:', e);
     }
 }
     </script>

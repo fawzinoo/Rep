@@ -3218,11 +3218,32 @@ setTimeout(() => {
 
 // Agregar nueva función para victoria directa
 
+// Reemplazar la función handleDirectWin existente
+
 function handleDirectWin() {
     console.log('🎉 Manejando VICTORIA DIRECTA (sin broadcast)');
     
     // Marcar que ya se mostró la victoria para evitar duplicados del broadcast
     window.victoryShown = true;
+    
+    // 🆕 LIMPIAR CELDA F INMEDIATAMENTE AL GANAR
+    const userName = getUserName();
+    if (userName && userName !== 'Invitado') {
+        console.log('🧹 Limpiando celda F inmediatamente tras victoria directa');
+        fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: userName
+            })
+        }).then(() => {
+            console.log(`✅ Celda F limpiada para ${userName} tras victoria directa`);
+        }).catch(error => {
+            console.error('❌ Error limpiando celda F:', error);
+        });
+    }
     
     // Detener el juego inmediatamente
     stopGameInitializationAndHide();
@@ -3254,8 +3275,8 @@ function handleDirectWin() {
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // Limpiar y salir
-        const userName = getUserName();
+        // Limpiar sesión también al confirmar salir
+        console.log('👤 Usuario confirmó salir tras victoria - Limpiando sesión');
         limpiezaInmediataUsuario(userName, 'ganador_directo');
         
         if (window.parent !== window) {
@@ -4282,6 +4303,7 @@ function startWinnerPolling() {
     }, 5000);
 }
 // Reemplazar la función notifyGameCompleted existente
+// Reemplazar la función notifyGameCompleted existente
 
 async function notifyGameCompleted() {
     const userName = getUserName();
@@ -4296,7 +4318,7 @@ async function notifyGameCompleted() {
     const postData = {
         action: 'setCompleted',
         username: userName,
-        completed: 'GANADOR'  // 🆕 ESPECÍFICAMENTE "GANADOR"
+        completed: 'GANADOR'
     };
     
     try {
@@ -4309,7 +4331,20 @@ async function notifyGameCompleted() {
         
         console.log(`✅ Usuario ${userName} marcado como GANADOR en servidor`);
         
-        // 🆕 NUEVA FUNCIÓN: Broadcast a localStorage de todos los usuarios
+        // 🆕 LIMPIAR CELDA F INMEDIATAMENTE DESPUÉS DE MARCAR COMO GANADOR
+        console.log('🧹 Limpiando celda F inmediatamente después de marcar como GANADOR');
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: userName
+            })
+        });
+        console.log(`✅ Celda F limpiada para ${userName} tras marcar como GANADOR`);
+        
+        // Broadcast a localStorage de todos los usuarios
         broadcastWinnerToAllUsers(userName);
         
     } catch (error) {
@@ -4317,9 +4352,7 @@ async function notifyGameCompleted() {
     }
 }
 
-// Agregar nueva función para broadcast
 
-// Reemplazar la función broadcastWinnerToAllUsers existente
 
 function broadcastWinnerToAllUsers(winnerName) {
     console.log(`📢 Broadcasting ganador "${winnerName}" a localStorage de todos los usuarios`);
@@ -4468,17 +4501,18 @@ document.addEventListener('keydown', function(event) {
 });
 
 // Reemplazar la función handleLocalWinner existente
+// Reemplazar la función handleLocalWinner existente
 
 function handleLocalWinner() {
     console.log('🎉 Manejando victoria local');
     
-    // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
+    // Verificar si ya hay un SweetAlert abierto
     if (document.body.classList.contains('swal2-shown')) {
         console.log('⚠️ Ya hay un SweetAlert de victoria abierto, no mostrar otro');
         return;
     }
     
-    // 🆕 VERIFICAR SI YA SE MOSTRÓ VICTORIA
+    // Verificar si ya se mostró victoria
     if (window.victoryShown) {
         console.log('⚠️ Victoria ya mostrada anteriormente');
         return;
@@ -4486,6 +4520,25 @@ function handleLocalWinner() {
     
     // Marcar victoria como mostrada
     window.victoryShown = true;
+    
+    // 🆕 LIMPIAR CELDA F INMEDIATAMENTE AL GANAR
+    const userName = getUserName();
+    if (userName && userName !== 'Invitado') {
+        console.log('🧹 Limpiando celda F inmediatamente tras victoria local');
+        fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: userName
+            })
+        }).then(() => {
+            console.log(`✅ Celda F limpiada para ${userName} tras victoria local`);
+        }).catch(error => {
+            console.error('❌ Error limpiando celda F:', error);
+        });
+    }
     
     // Detener el juego
     stopGameInitializationAndHide();
@@ -4511,8 +4564,8 @@ function handleLocalWinner() {
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // Limpiar y salir
-        const userName = getUserName();
+        // Limpiar sesión y salir
+        console.log('👤 Usuario confirmó salir tras victoria - Limpiando sesión');
         limpiezaInmediataUsuario(userName, 'ganador_polling');
         
         if (window.parent !== window) {
@@ -5623,76 +5676,49 @@ function logUsageMetrics() {
 
 // Reemplazar la función limpiezaInmediataUsuario existente
 
-async function limpiezaInmediataUsuario(username, reason = 'unknown') {
-    console.log(`🧹 LIMPIEZA INMEDIATA para ${username} - Motivo: ${reason}`);
-    
+// Modificar la función limpiezaInmediataUsuario para incluir limpieza de celda F
+
+async function limpiezaInmediataUsuario(username, origen = 'manual') {
     if (!username || username === 'Invitado') {
-        console.log('❌ No se puede limpiar - usuario no válido');
+        console.log('⚠️ No se puede limpiar - usuario no válido');
         return;
     }
     
-    // 🚨 SOLO limpiar en casos ESPECÍFICOS de fin de juego CONFIRMADO
-    const validReasons = [
-        'ganador_polling',        // SOLO cuando el polling confirma ganador
-        'perdedor_polling',       // SOLO cuando el polling confirma perdedor  
-        'clear_session_manual'    // SOLO cuando el usuario sale manualmente
-    ];
-    
-    // ELIMINAR RAZONES PROBLEMÁTICAS:
-    // - 'perdedor_detectado'
-    // - 'perdedor_deteccion' 
-    // - 'page_hidden' (muy agresivo)
-    
-    if (!validReasons.includes(reason)) {
-        console.log(`⚠️ Razón "${reason}" no válida para limpieza - CANCELANDO`);
-        return;
-    }
-    
-    // VALIDACIÓN ADICIONAL: Solo limpiar si el juego ha estado activo por al menos 30 segundos
-    if (window.gameStartTime && Date.now() - window.gameStartTime < 30000) {
-        console.log(`⚠️ Juego muy reciente (${Date.now() - window.gameStartTime}ms) - CANCELANDO limpieza`);
-        return;
-    }
+    console.log(`🧹 Iniciando limpieza inmediata para ${username} (origen: ${origen})`);
     
     try {
-        // Solo limpiar sesión en casos muy específicos
-        if (['ganador_polling', 'perdedor_polling', 'clear_session_manual'].includes(reason)) {
-            await fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearUserSession',
-                    username: username
-                })
-            });
-            console.log(`✅ Sesión limpiada para ${username}`);
-        }
+        // 1. Limpiar sesión (celda E)
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearUserSession',
+                username: username
+            })
+        });
+        console.log(`✅ Sesión limpiada para ${username}`);
         
-        // Solo limpiar estado F en casos confirmados de ganador/perdedor
-        if (['ganador_polling', 'perdedor_polling'].includes(reason)) {
-            await fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearWinnerStatus',
-                    username: username
-                })
-            });
-            console.log(`✅ Estado ganador/perdedor limpiado para ${username}`);
-        }
+        // 🆕 2. Limpiar celda F también por seguridad
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: username
+            })
+        });
+        console.log(`✅ Celda F limpiada para ${username}`);
         
-        console.log(`✅ Limpieza inmediata completada para ${username}`);
-        
-        // Invalidar caché de permisos
+        // 3. Invalidar caché
         invalidatePermissionsCache();
+        console.log(`✅ Caché invalidado para ${username}`);
         
     } catch (error) {
-        console.error('❌ Error en limpieza inmediata:', error);
+        console.error(`❌ Error en limpieza inmediata para ${username}:`, error);
     }
 }
-
 let gameIsActive = true;
 
 // Limpieza automática al abandonar la página

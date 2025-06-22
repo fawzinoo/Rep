@@ -4407,9 +4407,11 @@ async function debugLosersMarking() {
 }
 
 // Para usar en la consola: debugLosersMarking()
+// Verificar que esta función esté correcta
 
 function broadcastWinnerToAllUsers(winnerName) {
-    console.log(`📢 Broadcasting ganador "${winnerName}" a localStorage de todos los usuarios`);
+    console.log(`📢 === BROADCASTING GANADOR ===`);
+    console.log(`Nombre del ganador a broadcast: "${winnerName}"`);
     
     // Verificar que el nombre del ganador sea válido
     if (!winnerName || winnerName === 'Invitado' || winnerName.trim() === '') {
@@ -4423,17 +4425,17 @@ function broadcastWinnerToAllUsers(winnerName) {
         winner: winnerName,
         timestamp: Date.now(),
         gameMode: 'crucigrama_frutas',
-        source: 'direct_completion' // 🆕 Marcar como completion directo
+        source: 'direct_completion'
     };
     
-    console.log(`📤 Guardando en localStorage:`, winnerData);
+    console.log(`📤 Datos a guardar en localStorage:`, winnerData);
     
     // Guardar en localStorage (esto activará el evento 'storage' en otras pestañas)
     try {
         localStorage.setItem('crucigrama_winner_broadcast', JSON.stringify(winnerData));
         console.log(`✅ Datos del ganador guardados correctamente en localStorage`);
         
-        // 🆕 Verificar que se guardó correctamente
+        // Verificar que se guardó correctamente
         const verificacion = localStorage.getItem('crucigrama_winner_broadcast');
         if (verificacion) {
             const dataVerificada = JSON.parse(verificacion);
@@ -4445,6 +4447,8 @@ function broadcastWinnerToAllUsers(winnerName) {
     } catch (error) {
         console.error('❌ Error guardando en localStorage:', error);
     }
+    
+    console.log(`📢 === FIN BROADCASTING ===`);
 }
 
 // Reemplazar el event listener existente para storage
@@ -4515,6 +4519,8 @@ function debugLocalStorageBroadcast() {
 
 // Reemplazar handleWinnerFromBroadcast con más debug
 
+// Reemplazar handleWinnerFromBroadcast con más debug
+
 function handleWinnerFromBroadcast(winnerData) {
     const currentUser = getUserName();
     const winner = winnerData.winner;
@@ -4560,13 +4566,64 @@ function handleWinnerFromBroadcast(winnerData) {
     } else {
         // 💔 OTRO USUARIO GANÓ
         console.log(`💔 OTRO USUARIO GANÓ: "${winner}" - Mostrando interfaz de perdedor`);
-        handleLocalLoser(winner);
+        handleLocalLoser(winner); // Pasar el nombre del ganador directamente
     }
     
     console.log(`🎯 === FIN PROCESAMIENTO BROADCAST ===`);
 }
 
-// Función de emergencia para limpiar estado trabado
+// Reemplazar handleWinnerFromBroadcast con más debug
+
+function handleWinnerFromBroadcast(winnerData) {
+    const currentUser = getUserName();
+    const winner = winnerData.winner;
+    
+    console.log(`🎯 === PROCESANDO GANADOR DESDE BROADCAST ===`);
+    console.log(`Ganador: "${winner}"`);
+    console.log(`Usuario actual: "${currentUser}"`);
+    console.log(`Timestamp: ${winnerData.timestamp}`);
+    console.log(`Fuente: ${winnerData.source || 'no especificada'}`);
+    
+    // SI YA SE MOSTRÓ VICTORIA DIRECTA, IGNORAR BROADCAST
+    if (window.victoryShown) {
+        console.log('⚠️ Victoria ya mostrada directamente, ignorando broadcast');
+        return;
+    }
+    
+    // Verificar si el evento es reciente (últimos 30 segundos)
+    if (Date.now() - winnerData.timestamp > 30000) {
+        console.log('⚠️ Evento de ganador muy antiguo, ignorando');
+        return;
+    }
+    
+    // Verificar si ya hay un SweetAlert abierto
+    if (document.body.classList.contains('swal2-shown')) {
+        console.log('⚠️ Ya hay un SweetAlert abierto, ignorando broadcast');
+        return;
+    }
+    
+    // Verificar si ya se procesó este evento
+    if (window.lastProcessedWinner === winner && window.lastProcessedTimestamp === winnerData.timestamp) {
+        console.log('⚠️ Evento ya procesado anteriormente, ignorando');
+        return;
+    }
+    
+    // Marcar evento como procesado
+    window.lastProcessedWinner = winner;
+    window.lastProcessedTimestamp = winnerData.timestamp;
+    
+    if (winner === currentUser) {
+        // Este usuario es el ganador DESDE BROADCAST (no directo)
+        console.log('🏆 SOY EL GANADOR desde broadcast - Mostrando interfaz de victoria');
+        handleLocalWinner();
+    } else {
+        // 💔 OTRO USUARIO GANÓ
+        console.log(`💔 OTRO USUARIO GANÓ: "${winner}" - Mostrando interfaz de perdedor`);
+        handleLocalLoser(winner); // Pasar el nombre del ganador directamente
+    }
+    
+    console.log(`🎯 === FIN PROCESAMIENTO BROADCAST ===`);
+}
 
 function emergencyCleanup() {
     console.log('🚨 LIMPIEZA DE EMERGENCIA - Desbloqueando interfaz');
@@ -4693,8 +4750,11 @@ function handleLocalWinner() {
     });
 }
 
-function handleLocalLoser(winnerName) {
-    console.log(`💔 Manejando derrota local - Ganador: "${winnerName}"`);
+// Reemplazar la función handleLocalLoser existente
+
+async function handleLocalLoser(winnerNameFromBroadcast) {
+    console.log(`💔 === MANEJANDO DERROTA LOCAL ===`);
+    console.log(`Ganador desde broadcast: "${winnerNameFromBroadcast}"`);
     
     // Verificar si ya hay un SweetAlert abierto
     if (document.body.classList.contains('swal2-shown')) {
@@ -4716,15 +4776,29 @@ function handleLocalLoser(winnerName) {
     // 🆕 1. MARCAR ESTE USUARIO COMO PERDEDOR EN EL SERVIDOR
     if (userName && userName !== 'Invitado') {
         console.log('🔴 Marcando usuario como PERDEDOR en servidor');
-        fetch(scriptURL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'setUserAsLoser',
-                username: userName
-            })
-        });
+        try {
+            await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'setUserAsLoser',
+                    username: userName
+                })
+            });
+            console.log('✅ Usuario marcado como PERDEDOR exitosamente');
+        } catch (error) {
+            console.error('❌ Error marcando como perdedor:', error);
+        }
+    }
+    
+    // 🆕 2. OBTENER NOMBRE DEL GANADOR DE FORMA ROBUSTA
+    let winnerName = winnerNameFromBroadcast;
+    
+    // Si no tenemos el nombre del ganador desde broadcast, intentar obtenerlo
+    if (!winnerName || winnerName.trim() === '' || winnerName === 'Sin ganador') {
+        console.log('🔍 Nombre del ganador no válido desde broadcast, obteniendo del servidor...');
+        winnerName = await obtenerNombreGanadorEspecifico();
+        console.log(`🔍 Ganador obtenido del servidor: "${winnerName}"`);
     }
     
     // Detener el juego
@@ -4738,16 +4812,23 @@ function handleLocalLoser(winnerName) {
         winnerPollingInterval = null;
     }
     
+    // 🆕 VALIDAR NOMBRE DEL GANADOR ANTES DE MOSTRAR
+    const finalWinnerName = (winnerName && winnerName.trim() !== '' && winnerName !== 'Sin ganador') 
+        ? winnerName 
+        : 'Otro jugador';
+    
+    console.log(`🎯 Nombre final del ganador para mostrar: "${finalWinnerName}"`);
+    
     // Mostrar mensaje de derrota
     Swal.fire({
         title: '¡Has Perdido!',
-        text: `${winnerName} ha ganado la partida.`,
+        text: `${finalWinnerName} ha ganado la partida.`,
         icon: 'error',
         confirmButtonText: 'Salir del Juego',
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // 🆕 2. LIMPIAR TODO INMEDIATAMENTE AL CONFIRMAR SALIR
+        // 🆕 3. LIMPIAR TODO INMEDIATAMENTE AL CONFIRMAR SALIR
         console.log('👤 Usuario perdedor confirmó salir - Limpiando todo');
         
         if (userName && userName !== 'Invitado') {
@@ -5977,11 +6058,14 @@ async function debugWinnerName() {
 
 // Reemplazar la función obtenerNombreGanadorEspecifico existente
 
+// Reemplazar la función obtenerNombreGanadorEspecifico existente
+
 async function obtenerNombreGanadorEspecifico() {
-    console.log('🔍 Obteniendo nombre del ganador específicamente...');
+    console.log('🔍 === OBTENIENDO NOMBRE DEL GANADOR ESPECÍFICAMENTE ===');
     
     try {
-        // 🆕 PRIMERO: Intentar obtener ganador permanente (más confiable)
+        // 🆕 PASO 1: Intentar obtener ganador permanente (más confiable)
+        console.log('🔍 Paso 1: Intentando obtener ganador permanente...');
         const responsePermanent = await fetch(scriptURL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
@@ -5993,13 +6077,13 @@ async function obtenerNombreGanadorEspecifico() {
         const dataPermanent = await responsePermanent.json();
         console.log('🔍 Respuesta getPermanentWinner:', dataPermanent);
         
-        if (dataPermanent && dataPermanent.permanentWinner && dataPermanent.permanentWinner.trim() !== '') {
-            console.log(`🏆 Ganador permanente encontrado: "${dataPermanent.permanentWinner}"`);
+        if (dataPermanent && dataPermanent.success && dataPermanent.permanentWinner && dataPermanent.permanentWinner.trim() !== '') {
+            console.log(`🏆 ✅ Ganador permanente encontrado: "${dataPermanent.permanentWinner}"`);
             return dataPermanent.permanentWinner;
         }
         
-        // 🔄 FALLBACK: Si no hay ganador permanente, usar método anterior
-        console.log('🔄 No hay ganador permanente, usando método fallback...');
+        // 🔄 PASO 2: Fallback usando getWinnerName
+        console.log('🔄 Paso 2: Ganador permanente no encontrado, usando fallback getWinnerName...');
         
         const response = await fetch(scriptURL, {
             method: 'POST',
@@ -6012,20 +6096,39 @@ async function obtenerNombreGanadorEspecifico() {
         const data = await response.json();
         console.log('🔍 Respuesta getWinnerName (fallback):', data);
         
-        if (data && data.winnerName && data.winnerName !== 'Sin ganador') {
-            console.log(`🏆 Ganador encontrado con fallback: "${data.winnerName}"`);
+        if (data && data.success && data.winnerName && data.winnerName !== 'Sin ganador' && data.winnerName.trim() !== '') {
+            console.log(`🏆 ✅ Ganador encontrado con fallback: "${data.winnerName}"`);
             return data.winnerName;
         }
         
-        console.log('🔍 No se encontró ganador con ningún método');
-        return 'Otro jugador';
+        // 🔄 PASO 3: Último recurso usando getScoreStatusAndRank
+        console.log('🔄 Paso 3: Último recurso usando getScoreStatusAndRank...');
+        
+        const responseScore = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'getScoreStatusAndRank',
+                username: 'dummy' // Usuario dummy para obtener info general
+            })
+        });
+        
+        const dataScore = await responseScore.json();
+        console.log('🔍 Respuesta getScoreStatusAndRank (último recurso):', dataScore);
+        
+        if (dataScore && dataScore.success && dataScore.winnerName && dataScore.winnerName !== 'Sin ganador' && dataScore.winnerName.trim() !== '') {
+            console.log(`🏆 ✅ Ganador encontrado con último recurso: "${dataScore.winnerName}"`);
+            return dataScore.winnerName;
+        }
+        
+        console.log('❌ No se encontró ganador con ningún método');
+        return 'Otro jugador'; // Fallback final
         
     } catch (error) {
         console.error('❌ Error obteniendo ganador específico:', error);
-        return 'Otro jugador';
+        return 'Otro jugador'; // Fallback en caso de error
     }
 }
-// Modificar el beforeunload para limpiar datos de broadcast
 
 window.addEventListener('beforeunload', async (event) => {
     const userName = getUserName();

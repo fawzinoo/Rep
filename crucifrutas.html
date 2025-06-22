@@ -3216,9 +3216,7 @@ setTimeout(() => {
     }
 }
 
-// Agregar nueva función para victoria directa
-
-// Reemplazar la función handleDirectWin existente
+// Modificar handleDirectWin para NO limpiar celda F inmediatamente
 
 function handleDirectWin() {
     console.log('🎉 Manejando VICTORIA DIRECTA (sin broadcast)');
@@ -3226,24 +3224,7 @@ function handleDirectWin() {
     // Marcar que ya se mostró la victoria para evitar duplicados del broadcast
     window.victoryShown = true;
     
-    // 🆕 LIMPIAR CELDA F INMEDIATAMENTE AL GANAR
-    const userName = getUserName();
-    if (userName && userName !== 'Invitado') {
-        console.log('🧹 Limpiando celda F inmediatamente tras victoria directa');
-        fetch(scriptURL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'clearWinnerStatus',
-                username: userName
-            })
-        }).then(() => {
-            console.log(`✅ Celda F limpiada para ${userName} tras victoria directa`);
-        }).catch(error => {
-            console.error('❌ Error limpiando celda F:', error);
-        });
-    }
+    // 🆕 NO LIMPIAR CELDA F AQUÍ - se limpiará en notifyGameCompleted después del broadcast
     
     // Detener el juego inmediatamente
     stopGameInitializationAndHide();
@@ -3263,9 +3244,6 @@ function handleDirectWin() {
     playWinnerSound();
     launchConfetti();
     
-    // Ocultar la animación de Lottie de espera si está visible
-    hideLottieAnimation();
-    
     // Mostrar mensaje de victoria INMEDIATAMENTE
     Swal.fire({
         title: '¡Eres el GANADOR! 🎉',
@@ -3275,7 +3253,8 @@ function handleDirectWin() {
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // Limpiar sesión también al confirmar salir
+        // Limpiar sesión al confirmar salir
+        const userName = getUserName();
         console.log('👤 Usuario confirmó salir tras victoria - Limpiando sesión');
         limpiezaInmediataUsuario(userName, 'ganador_directo');
         
@@ -3286,6 +3265,7 @@ function handleDirectWin() {
         }
     });
 }
+
 
 async function nextFruit() {
     stopTimer();
@@ -4304,6 +4284,7 @@ function startWinnerPolling() {
 }
 // Reemplazar la función notifyGameCompleted existente
 // Reemplazar la función notifyGameCompleted existente
+// Reemplazar la función notifyGameCompleted existente
 
 async function notifyGameCompleted() {
     const userName = getUserName();
@@ -4314,38 +4295,44 @@ async function notifyGameCompleted() {
     
     console.log('🏆 JUEGO COMPLETADO - Marcando como GANADOR en el servidor');
     
-    // Marcar este usuario como GANADOR
-    const postData = {
-        action: 'setCompleted',
-        username: userName,
-        completed: 'GANADOR'
-    };
-    
     try {
-        await fetch(scriptURL, {
+        // 1. Marcar como GANADOR primero
+        const postData = {
+            action: 'setCompleted',
+            username: userName,
+            completed: 'GANADOR'
+        };
+        
+        const response1 = await fetch(scriptURL, {
             method: 'POST',
-            mode: 'no-cors',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify(postData)
         });
         
-        console.log(`✅ Usuario ${userName} marcado como GANADOR en servidor`);
+        console.log('📤 Respuesta setCompleted:', response1.status);
         
-        // 🆕 LIMPIAR CELDA F INMEDIATAMENTE DESPUÉS DE MARCAR COMO GANADOR
-        console.log('🧹 Limpiando celda F inmediatamente después de marcar como GANADOR');
-        await fetch(scriptURL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'clearWinnerStatus',
-                username: userName
-            })
-        });
-        console.log(`✅ Celda F limpiada para ${userName} tras marcar como GANADOR`);
-        
-        // Broadcast a localStorage de todos los usuarios
+        // 🆕 2. HACER BROADCAST INMEDIATAMENTE con el nombre del usuario
+        console.log(`📢 Broadcasting ganador "${userName}" a localStorage`);
         broadcastWinnerToAllUsers(userName);
+        
+        // 3. Limpiar celda F después de un pequeño delay para asegurar que otros vean el GANADOR
+        setTimeout(async () => {
+            console.log('🧹 Limpiando celda F después de broadcast...');
+            try {
+                const response2 = await fetch(scriptURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+                console.log('📤 Respuesta clearWinnerStatus:', response2.status);
+                console.log(`✅ Celda F limpiada para ${userName}`);
+            } catch (error) {
+                console.error('❌ Error limpiando celda F:', error);
+            }
+        }, 2000); // 2 segundos de delay
         
     } catch (error) {
         console.error('❌ Error marcando usuario como ganador:', error);
@@ -4354,19 +4341,15 @@ async function notifyGameCompleted() {
 
 
 
+// Reemplazar la función broadcastWinnerToAllUsers existente
+
 function broadcastWinnerToAllUsers(winnerName) {
     console.log(`📢 Broadcasting ganador "${winnerName}" a localStorage de todos los usuarios`);
     
-    // 🆕 VERIFICAR SI YA SE HIZO BROADCAST PARA EVITAR DUPLICADOS
-    const lastBroadcast = localStorage.getItem('crucigrama_winner_broadcast');
-    if (lastBroadcast) {
-        try {
-            const lastData = JSON.parse(lastBroadcast);
-            if (lastData.winner === winnerName && Date.now() - lastData.timestamp < 10000) {
-                console.log('⚠️ Broadcast reciente ya realizado, evitando duplicado');
-                return;
-            }
-        } catch (e) {}
+    // Verificar que el nombre del ganador sea válido
+    if (!winnerName || winnerName === 'Invitado' || winnerName.trim() === '') {
+        console.error('❌ Nombre de ganador no válido para broadcast:', winnerName);
+        return;
     }
     
     // Crear evento de almacenamiento que será detectado por todas las pestañas/ventanas
@@ -4374,41 +4357,62 @@ function broadcastWinnerToAllUsers(winnerName) {
         type: 'WINNER_DETECTED',
         winner: winnerName,
         timestamp: Date.now(),
-        gameMode: 'crucigrama_frutas'
+        gameMode: 'crucigrama_frutas',
+        source: 'direct_completion' // 🆕 Marcar como completion directo
     };
     
+    console.log(`📤 Guardando en localStorage:`, winnerData);
+    
     // Guardar en localStorage (esto activará el evento 'storage' en otras pestañas)
-    localStorage.setItem('crucigrama_winner_broadcast', JSON.stringify(winnerData));
-    
-    console.log(`✅ Datos del ganador guardados en localStorage:`, winnerData);
-    
-    // 🆕 NO disparar evento manual en la misma pestaña para evitar duplicados
-    // El storage event se encargará de notificar a otras pestañas
+    try {
+        localStorage.setItem('crucigrama_winner_broadcast', JSON.stringify(winnerData));
+        console.log(`✅ Datos del ganador guardados correctamente en localStorage`);
+        
+        // 🆕 Verificar que se guardó correctamente
+        const verificacion = localStorage.getItem('crucigrama_winner_broadcast');
+        if (verificacion) {
+            const dataVerificada = JSON.parse(verificacion);
+            console.log(`✅ Verificación localStorage - Ganador: "${dataVerificada.winner}"`);
+        } else {
+            console.error('❌ Error: No se pudo verificar el localStorage');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error guardando en localStorage:', error);
+    }
 }
 
-// Agregar listener al final del script
-
-// Reemplazar los event listeners existentes para storage
+// Reemplazar el event listener existente para storage
 
 // 🆕 LISTENER MEJORADO PARA DETECTAR GANADOR DESDE LOCALSTORAGE
 window.addEventListener('storage', function(event) {
+    console.log('🔔 Evento storage detectado:', {
+        key: event.key,
+        newValue: event.newValue,
+        oldValue: event.oldValue
+    });
+    
     // Solo procesar eventos de ganador
     if (event.key === 'crucigrama_winner_broadcast' && event.newValue) {
-        // 🆕 VERIFICAR SI YA HAY UN SWEETALERT ABIERTO
-        if (document.body.classList.contains('swal2-shown')) {
-            console.log('⚠️ SweetAlert ya abierto, ignorando evento storage');
-            return;
-        }
-        
         try {
             const winnerData = JSON.parse(event.newValue);
-            console.log('📢 Ganador detectado desde localStorage:', winnerData);
+            console.log('📢 Datos del ganador parseados:', winnerData);
             
             if (winnerData.type === 'WINNER_DETECTED' && winnerData.winner) {
+                console.log(`🎯 Procesando ganador: "${winnerData.winner}"`);
+                
+                // Verificar si ya hay un SweetAlert abierto
+                if (document.body.classList.contains('swal2-shown')) {
+                    console.log('⚠️ SweetAlert ya abierto, ignorando evento storage');
+                    return;
+                }
+                
                 // Pequeño delay para evitar conflictos con múltiples eventos
                 setTimeout(() => {
                     handleWinnerFromBroadcast(winnerData);
                 }, 100);
+            } else {
+                console.log('⚠️ Datos de ganador incompletos:', winnerData);
             }
         } catch (error) {
             console.error('❌ Error procesando ganador desde localStorage:', error);
@@ -4416,18 +4420,47 @@ window.addEventListener('storage', function(event) {
     }
 });
 
+// Función de debug para probar localStorage
+
+function debugLocalStorageBroadcast() {
+    console.log('🧪 === DEBUG LOCALSTORAGE BROADCAST ===');
+    
+    // Verificar contenido actual
+    const current = localStorage.getItem('crucigrama_winner_broadcast');
+    console.log('Contenido actual:', current);
+    
+    if (current) {
+        try {
+            const data = JSON.parse(current);
+            console.log('Datos parseados:', data);
+        } catch (e) {
+            console.error('Error parseando:', e);
+        }
+    }
+    
+    // Probar broadcast manual
+    const testUser = getUserName() || 'TestUser';
+    console.log(`Probando broadcast con usuario: "${testUser}"`);
+    
+    broadcastWinnerToAllUsers(testUser);
+    
+    console.log('🧪 === FIN DEBUG ===');
+}
 
 
-
-// Reemplazar la función handleWinnerFromBroadcast existente
+// Reemplazar handleWinnerFromBroadcast con más debug
 
 function handleWinnerFromBroadcast(winnerData) {
     const currentUser = getUserName();
     const winner = winnerData.winner;
     
-    console.log(`🎯 Procesando ganador desde broadcast: "${winner}", Usuario actual: "${currentUser}"`);
+    console.log(`🎯 === PROCESANDO GANADOR DESDE BROADCAST ===`);
+    console.log(`Ganador: "${winner}"`);
+    console.log(`Usuario actual: "${currentUser}"`);
+    console.log(`Timestamp: ${winnerData.timestamp}`);
+    console.log(`Fuente: ${winnerData.source || 'no especificada'}`);
     
-    // 🆕 SI YA SE MOSTRÓ VICTORIA DIRECTA, IGNORAR BROADCAST
+    // SI YA SE MOSTRÓ VICTORIA DIRECTA, IGNORAR BROADCAST
     if (window.victoryShown) {
         console.log('⚠️ Victoria ya mostrada directamente, ignorando broadcast');
         return;
@@ -4460,10 +4493,12 @@ function handleWinnerFromBroadcast(winnerData) {
         console.log('🏆 SOY EL GANADOR desde broadcast - Mostrando interfaz de victoria');
         handleLocalWinner();
     } else {
-        // Otro usuario ganó
-        console.log(`💔 Otro usuario ganó: "${winner}" - Mostrando interfaz de perdedor`);
+        // 💔 OTRO USUARIO GANÓ
+        console.log(`💔 OTRO USUARIO GANÓ: "${winner}" - Mostrando interfaz de perdedor`);
         handleLocalLoser(winner);
     }
+    
+    console.log(`🎯 === FIN PROCESAMIENTO BROADCAST ===`);
 }
 
 // Función de emergencia para limpiar estado trabado

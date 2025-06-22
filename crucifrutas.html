@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxDbwJWg82VEKPNx5Al9hSPLNrLfd-jDh6U-GM5XBkiJlk3FODWCDzWVOZT7aMEVri2-g/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbzAL3IjMt0k6mdi3UqX1W647IJ5dFSvvvUT8PC8iVUXQ7Bf6Mm_H2p5-xTgRDYDma-Piw/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4286,6 +4286,8 @@ function startWinnerPolling() {
 // Reemplazar la función notifyGameCompleted existente
 // Reemplazar la función notifyGameCompleted existente
 
+// Reemplazar la función notifyGameCompleted existente
+
 async function notifyGameCompleted() {
     const userName = getUserName();
     if (!userName || userName === 'Invitado') {
@@ -4296,7 +4298,7 @@ async function notifyGameCompleted() {
     console.log('🏆 JUEGO COMPLETADO - Marcando como GANADOR en el servidor');
     
     try {
-        // 1. Marcar como GANADOR primero
+        // 1. Marcar como GANADOR (esto automáticamente guarda en columna G también)
         const postData = {
             action: 'setCompleted',
             username: userName,
@@ -4311,15 +4313,15 @@ async function notifyGameCompleted() {
         
         console.log('📤 Respuesta setCompleted:', response1.status);
         
-        // 🆕 2. HACER BROADCAST INMEDIATAMENTE con el nombre del usuario
+        // 2. Hacer broadcast inmediatamente
         console.log(`📢 Broadcasting ganador "${userName}" a localStorage`);
         broadcastWinnerToAllUsers(userName);
         
-        // 3. Limpiar celda F después de un pequeño delay para asegurar que otros vean el GANADOR
+        // 3. Limpiar celda F después de 2 segundos (como antes)
         setTimeout(async () => {
             console.log('🧹 Limpiando celda F después de broadcast...');
             try {
-                const response2 = await fetch(scriptURL, {
+                await fetch(scriptURL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({
@@ -4327,18 +4329,33 @@ async function notifyGameCompleted() {
                         username: userName
                     })
                 });
-                console.log('📤 Respuesta clearWinnerStatus:', response2.status);
                 console.log(`✅ Celda F limpiada para ${userName}`);
             } catch (error) {
                 console.error('❌ Error limpiando celda F:', error);
             }
-        }, 2000); // 2 segundos de delay
+        }, 2000);
+        
+        // 🆕 4. Limpiar ganador permanente después de 30 segundos
+        setTimeout(async () => {
+            console.log('🧹 Limpiando ganador permanente después de 30 segundos...');
+            try {
+                await fetch(scriptURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearPermanentWinner'
+                    })
+                });
+                console.log(`✅ Ganador permanente limpiado`);
+            } catch (error) {
+                console.error('❌ Error limpiando ganador permanente:', error);
+            }
+        }, 30000); // 30 segundos
         
     } catch (error) {
         console.error('❌ Error marcando usuario como ganador:', error);
     }
 }
-
 
 
 // Reemplazar la función broadcastWinnerToAllUsers existente
@@ -5869,10 +5886,32 @@ async function debugWinnerName() {
 
 // Crear función específica para obtener el ganador
 
+// Reemplazar la función obtenerNombreGanadorEspecifico existente
+
 async function obtenerNombreGanadorEspecifico() {
     console.log('🔍 Obteniendo nombre del ganador específicamente...');
     
     try {
+        // 🆕 PRIMERO: Intentar obtener ganador permanente (más confiable)
+        const responsePermanent = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'getPermanentWinner'
+            })
+        });
+        
+        const dataPermanent = await responsePermanent.json();
+        console.log('🔍 Respuesta getPermanentWinner:', dataPermanent);
+        
+        if (dataPermanent && dataPermanent.permanentWinner && dataPermanent.permanentWinner.trim() !== '') {
+            console.log(`🏆 Ganador permanente encontrado: "${dataPermanent.permanentWinner}"`);
+            return dataPermanent.permanentWinner;
+        }
+        
+        // 🔄 FALLBACK: Si no hay ganador permanente, usar método anterior
+        console.log('🔄 No hay ganador permanente, usando método fallback...');
+        
         const response = await fetch(scriptURL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
@@ -5882,21 +5921,21 @@ async function obtenerNombreGanadorEspecifico() {
         });
         
         const data = await response.json();
-        console.log('🔍 Respuesta getWinnerName:', data);
+        console.log('🔍 Respuesta getWinnerName (fallback):', data);
         
         if (data && data.winnerName && data.winnerName !== 'Sin ganador') {
-            console.log(`🏆 Ganador específico encontrado: "${data.winnerName}"`);
+            console.log(`🏆 Ganador encontrado con fallback: "${data.winnerName}"`);
             return data.winnerName;
-        } else {
-            console.log('🔍 No se encontró ganador específico');
-            return 'Otro jugador';
         }
+        
+        console.log('🔍 No se encontró ganador con ningún método');
+        return 'Otro jugador';
+        
     } catch (error) {
         console.error('❌ Error obteniendo ganador específico:', error);
         return 'Otro jugador';
     }
 }
-
 // Modificar el beforeunload para limpiar datos de broadcast
 
 window.addEventListener('beforeunload', async (event) => {

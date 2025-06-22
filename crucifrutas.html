@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxFS_9MhPSeYoNfImOtaaYYmsGRpLZaAL6qbe0aPgDv4Gb4BzJwrT75WtCQ4Srgk3sJ_g/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbyE8G4Zd6qsRqR12GRUWeMmVUfYZxjzcAvGX4i0muL7HxIAJMC9xdkL5Z9kxYKekv42Ag/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -6229,9 +6229,15 @@ function resetGameStates() {
 // 🆕 DETECTOR DE ABANDONO DE PÁGINA
 let abandonoDetectado = false;
 
-// Detectar cuando el usuario cierra/refresca/sale de la página
+// Reemplazar el event listener beforeunload existente
+
 window.addEventListener('beforeunload', function(event) {
     const userName = getUserName();
+    
+    console.log('🚪 === EVENTO BEFOREUNLOAD ===');
+    console.log('Usuario:', userName);
+    console.log('Abandono ya detectado:', abandonoDetectado);
+    console.log('Tiempo de juego:', window.gameStartTime ? Date.now() - window.gameStartTime : 'No definido');
     
     if (!abandonoDetectado && userName && userName !== 'Invitado') {
         abandonoDetectado = true;
@@ -6244,10 +6250,13 @@ window.addEventListener('beforeunload', function(event) {
         }));
         
         console.log('📤 Señal de abandono enviada al servidor');
+    } else {
+        console.log('ℹ️ No se enviará señal de abandono (ya detectado o usuario no válido)');
     }
+    
+    console.log('🚪 === FIN BEFOREUNLOAD ===');
 });
 
-// Detectar navegación hacia atrás
 window.addEventListener('pagehide', function(event) {
     const userName = getUserName();
     
@@ -6265,6 +6274,8 @@ window.addEventListener('pagehide', function(event) {
 
 // 🆕 POLLING PARA DETECTAR SI EL USUARIO SE CONVIRTIÓ EN GANADOR POR ABANDONO
 let abandonWinnerPollingInterval = null;
+
+// Modificar la función startAbandonWinnerPolling existente
 
 function startAbandonWinnerPolling() {
     if (abandonWinnerPollingInterval) {
@@ -6299,16 +6310,20 @@ function startAbandonWinnerPolling() {
                 clearInterval(abandonWinnerPollingInterval);
                 abandonWinnerPollingInterval = null;
                 
-                // Manejar victoria por abandono
-                handleAbandonmentWin();
+                // 🆕 VERIFICAR SI ES VICTORIA POR ABANDONO VS VICTORIA DIRECTA
+                if (!window.victoryShown) {
+                    console.log('🎯 Victoria por abandono detectada - No es victoria directa');
+                    handleAbandonmentWin();
+                } else {
+                    console.log('ℹ️ Victoria ya mostrada directamente, ignorando polling');
+                }
             }
             
         } catch (error) {
             console.error('❌ Error en polling de abandono:', error);
         }
-    }, 2000); // Verificar cada 2 segundos
+    }, 3000); // Verificar cada 3 segundos
 }
-
 function stopAbandonWinnerPolling() {
     if (abandonWinnerPollingInterval) {
         clearInterval(abandonWinnerPollingInterval);
@@ -6317,14 +6332,21 @@ function stopAbandonWinnerPolling() {
     }
 }
 
-// 🆕 MANEJAR VICTORIA POR ABANDONO
+// Reemplazar la función handleAbandonmentWin existente
+
 function handleAbandonmentWin() {
     console.log('🎉 MANEJANDO VICTORIA POR ABANDONO');
+    
+    // Verificar duplicados
+    if (window.victoryShown) {
+        console.log('⚠️ Victoria ya mostrada, ignorando');
+        return;
+    }
     
     // Marcar que ya se mostró la victoria
     window.victoryShown = true;
     
-    // Detener el juego
+    // Detener el juego inmediatamente
     stopGameInitializationAndHide();
     ocultarMainContent();
     hideLottieAnimation();
@@ -6336,6 +6358,9 @@ function handleAbandonmentWin() {
         winnerPollingInterval = null;
     }
     
+    // Detener actualizaciones de ranking
+    stopRankingUpdates();
+    
     // Efectos de victoria
     playWinnerSound();
     launchConfetti();
@@ -6343,7 +6368,16 @@ function handleAbandonmentWin() {
     // Mostrar mensaje específico de victoria por abandono
     Swal.fire({
         title: '¡Eres el GANADOR! 🏆',
-        text: 'Tu rival abandonó la partida. ¡Felicidades!',
+        html: `
+            <div style="text-align: center; margin: 15px 0;">
+                <p style="font-size: 18px; color: #059669; margin-bottom: 10px;">
+                    🏃‍♂️ Tu rival abandonó la partida
+                </p>
+                <p style="font-size: 16px; color: #4b5563;">
+                    ¡Felicidades, eres el ganador!
+                </p>
+            </div>
+        `,
         icon: 'success',
         confirmButtonText: 'Aceptar',
         allowOutsideClick: false,
@@ -6352,7 +6386,7 @@ function handleAbandonmentWin() {
         const userName = getUserName();
         console.log('👤 Usuario ganador por abandono confirmó salir');
         
-        // Limpiar estado temporal
+        // Limpiar estado temporal (solo celda F, las sesiones ya se limpiaron)
         if (userName && userName !== 'Invitado') {
             fetch(scriptURL, {
                 method: 'POST',
@@ -6372,6 +6406,85 @@ function handleAbandonmentWin() {
         }
     });
 }
+
+// Agregar después de las funciones existentes
+
+// Función de debug para simular abandono de rival
+async function debugSimulateRivalAbandonment() {
+    console.log('🧪 === SIMULANDO ABANDONO DE RIVAL ===');
+    
+    const userName = getUserName();
+    console.log('Usuario actual:', userName);
+    
+    if (!userName || userName === 'Invitado') {
+        console.log('❌ No se puede simular - usuario no válido');
+        return;
+    }
+    
+    // Simular que otro usuario abandona
+    const fakeRivalName = 'RivalSimulado';
+    
+    try {
+        console.log(`🚪 Simulando abandono de: ${fakeRivalName}`);
+        
+        // Enviar clearUserSession para el rival simulado
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearUserSession',
+                username: fakeRivalName
+            })
+        });
+        
+        console.log('📤 Abandono simulado enviado');
+        
+        // Esperar un poco y verificar si el usuario actual se convirtió en ganador
+        setTimeout(async () => {
+            console.log('🔍 Verificando si el usuario se convirtió en ganador...');
+            
+            const checkResponse = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'getScoreStatusAndRank',
+                    username: userName
+                })
+            });
+            
+            const data = await checkResponse.json();
+            console.log('📊 Estado después del abandono simulado:', data);
+            
+            if (data.completed === 'GANADOR') {
+                console.log('🏆 ¡Usuario se convirtió en ganador por abandono!');
+            } else {
+                console.log('ℹ️ Usuario no se convirtió en ganador');
+            }
+        }, 2000);
+        
+    } catch (error) {
+        console.error('❌ Error en simulación:', error);
+    }
+    
+    console.log('🧪 === FIN SIMULACIÓN ===');
+}
+
+// Agregar esta función para verificar el estado del polling
+
+function checkAbandonPollingStatus() {
+    console.log('🔍 === ESTADO DEL POLLING DE ABANDONO ===');
+    console.log('Polling activo:', abandonWinnerPollingInterval !== null);
+    console.log('ID del intervalo:', abandonWinnerPollingInterval);
+    console.log('Tiempo de inicio del juego:', window.gameStartTime ? new Date(window.gameStartTime).toLocaleTimeString() : 'No definido');
+    console.log('Estados del juego:');
+    console.log('  - victoryShown:', window.victoryShown);
+    console.log('  - defeatShown:', window.defeatShown);
+    console.log('  - gameInitializationStopped:', gameInitializationStopped);
+    console.log('Usuario actual:', getUserName());
+    console.log('🔍 === FIN ESTADO ===');
+}
+
+// Para usar en la consola: checkAbandonPollingStatus()
     </script>
 </body>
 </html>

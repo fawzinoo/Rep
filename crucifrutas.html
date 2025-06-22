@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxtS3zhPsO_kZLB-AqyubNx7rkv7OvMhuMRLrAwJANiC_Uqlhh_yzO-wB3w2WtbSYzaDg/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxFS_9MhPSeYoNfImOtaaYYmsGRpLZaAL6qbe0aPgDv4Gb4BzJwrT75WtCQ4Srgk3sJ_g/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -1931,6 +1931,8 @@ let gameInitializationStopped = false;
 // Modificar la función initializeGame para que sea cancelable
 // Modificar la función initializeGame existente
 
+// Modificar la función initializeGame existente para incluir polling de abandono
+
 async function initializeGame() {
     // Resetear la bandera al inicio
     gameInitializationStopped = false;
@@ -1983,15 +1985,22 @@ async function initializeGame() {
     
     // NUEVO: Iniciar actualizaciones del ranking
     startRankingUpdates();
+    
+    // 🆕 NUEVO: INICIAR POLLING DE ABANDONO
+    startAbandonWinnerPolling();
+    console.log('🔍 Polling de abandono iniciado');
 }
-
-
 // Agregar esta nueva función
+// Modificar stopGameInitializationAndHide para incluir polling de abandono
+
 function stopGameInitializationAndHide() {
     console.log('🛑 Deteniendo inicialización del juego y ocultando contenido...');
     
     // Detener la inicialización
     gameInitializationStopped = true;
+    
+    // 🆕 DETENER POLLING DE ABANDONO
+    stopAbandonWinnerPolling();
     
     // Ocultar el contenido principal
     document.body.classList.add('oculto-por-dialogo');
@@ -2014,9 +2023,8 @@ function stopGameInitializationAndHide() {
         photoTimeoutId = null;
     }
     
-    console.log('✅ Juego detenido y contenido ocultado');
+    console.log('✅ Juego detenido, contenido ocultado y polling de abandono detenido');
 }
-
 
 
 
@@ -3229,6 +3237,7 @@ function handleDirectWin() {
     window.victoryShown = true;
     
     // Detener el juego inmediatamente
+    stopAbandonWinnerPolling();
     stopGameInitializationAndHide();
     ocultarMainContent();
     hideLottieAnimation();
@@ -3305,8 +3314,26 @@ async function checkForIncompleteRounds() {
 }
 
    
+// Agregar función de debug después de las funciones existentes
+
+function debugAbandonPolling() {
+    console.log('🧪 === DEBUG POLLING DE ABANDONO ===');
+    console.log('Polling activo:', abandonWinnerPollingInterval !== null);
+    console.log('ID del intervalo:', abandonWinnerPollingInterval);
+    console.log('Usuario actual:', getUserName());
+    console.log('Abandono detectado:', abandonoDetectado);
+    console.log('Tiempo de inicio del juego:', window.gameStartTime ? new Date(window.gameStartTime).toLocaleTimeString() : 'No definido');
+    console.log('🧪 === FIN DEBUG ===');
+}
+
+// Para usar en la consola: debugAbandonPolling()
+
 function resetGame() {
     stopTimer();
+    
+    // 🆕 DETENER POLLING DE ABANDONO ANTES DEL RESET
+    stopAbandonWinnerPolling();
+    
     completedFruits.clear();
     updateScoreDisplay();
     incompleteFruits = [];
@@ -3320,6 +3347,10 @@ function resetGame() {
     generateGrid();
     startTimer();
     initializeVirtualKeyboard();
+    
+    // 🆕 REINICIAR POLLING DE ABANDONO
+    startAbandonWinnerPolling();
+    console.log('🔄 Juego reseteado con polling de abandono reiniciado');
 }
 
 let logicallyActiveInput = null;
@@ -3591,6 +3622,7 @@ function showWelcomeDialog() {
             if (result.isConfirmed) {
                 document.body.classList.remove('oculto-por-dialogo');
                 initializeGame();
+                startAbandonWinnerPolling();
             } else if (result.dismiss === Swal.DismissReason.cancel) {
                 cerrarIframeYSalir();
             }
@@ -3771,6 +3803,7 @@ function showWelcomeDialog() {
                     Swal.close();
                     initializeGame();
                     startWinnerPolling();
+                    startAbandonWinnerPolling();
                     }
                 } catch (error) {
                     console.error('Error en preparación:', error);
@@ -3789,6 +3822,7 @@ function showWelcomeDialog() {
                                 document.body.classList.remove('oculto-por-dialogo');
                                 if (retryResult.isConfirmed) {
                                     initializeGame();
+                                    startAbandonWinnerPolling();
                                 } else if (retryResult.dismiss === Swal.DismissReason.cancel) {
                                     cerrarIframeYSalir();
                                 }
@@ -4068,6 +4102,8 @@ async function checkIfAloneInSession(sessionName) {
     }
 }
 
+// Modificar la función waitForRival existente
+
 async function waitForRival(sessionName) {
     let waitingAlert = null;
     let alone = await checkIfAloneInSession(sessionName);
@@ -4088,16 +4124,23 @@ async function waitForRival(sessionName) {
             if (!stillAlone) {
                 clearInterval(interval);
                 Swal.close();
+                
+                // 🆕 INICIAR JUEGO CON POLLING DE ABANDONO
                 initializeGame();
+                // 🆕 ACTIVAR POLLING DE ABANDONO TAMBIÉN AQUÍ
+                startAbandonWinnerPolling();
+                console.log('🤝 Rival encontrado - Polling de abandono activado');
             }
         }, 2000);
     } else {
         Swal.close();
         initializeGame();
         startWinnerPolling();
+        // 🆕 ACTIVAR POLLING DE ABANDONO TAMBIÉN AQUÍ
+        startAbandonWinnerPolling();
+        console.log('🤝 Unido al juego con rival - Polling de abandono activado');
     }
 }
-
 
 
 
@@ -4782,7 +4825,7 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
         }
     }
     
-    // Detener el juego
+   stopAbandonWinnerPolling();
     stopGameInitializationAndHide();
     ocultarMainContent();
     hideLottieAnimation();
@@ -6181,7 +6224,154 @@ function resetGameStates() {
     console.log('🔄 Estados del juego reseteados completamente');
 }
 
+// Agregar después de las funciones existentes
 
+// 🆕 DETECTOR DE ABANDONO DE PÁGINA
+let abandonoDetectado = false;
+
+// Detectar cuando el usuario cierra/refresca/sale de la página
+window.addEventListener('beforeunload', function(event) {
+    const userName = getUserName();
+    
+    if (!abandonoDetectado && userName && userName !== 'Invitado') {
+        abandonoDetectado = true;
+        console.log('🚪 ABANDONO DETECTADO - Usuario saliendo de la página: ' + userName);
+        
+        // Enviar señal de abandono al servidor
+        navigator.sendBeacon(scriptURL, JSON.stringify({
+            action: 'clearUserSession',
+            username: userName
+        }));
+        
+        console.log('📤 Señal de abandono enviada al servidor');
+    }
+});
+
+// Detectar navegación hacia atrás
+window.addEventListener('pagehide', function(event) {
+    const userName = getUserName();
+    
+    if (!abandonoDetectado && userName && userName !== 'Invitado') {
+        abandonoDetectado = true;
+        console.log('⬅️ NAVEGACIÓN HACIA ATRÁS DETECTADA: ' + userName);
+        
+        // Enviar señal de abandono
+        navigator.sendBeacon(scriptURL, JSON.stringify({
+            action: 'clearUserSession',
+            username: userName
+        }));
+    }
+});
+
+// 🆕 POLLING PARA DETECTAR SI EL USUARIO SE CONVIRTIÓ EN GANADOR POR ABANDONO
+let abandonWinnerPollingInterval = null;
+
+function startAbandonWinnerPolling() {
+    if (abandonWinnerPollingInterval) {
+        return; // Ya está activo
+    }
+    
+    console.log('🔍 Iniciando polling para detectar victoria por abandono...');
+    
+    abandonWinnerPollingInterval = setInterval(async () => {
+        try {
+            const userName = getUserName();
+            if (!userName || userName === 'Invitado') {
+                return;
+            }
+            
+            // Verificar si este usuario se convirtió en ganador
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'getScoreStatusAndRank',
+                    username: userName
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.completed === 'GANADOR') {
+                console.log('🏆 ¡GANADOR POR ABANDONO DETECTADO!');
+                
+                // Detener polling
+                clearInterval(abandonWinnerPollingInterval);
+                abandonWinnerPollingInterval = null;
+                
+                // Manejar victoria por abandono
+                handleAbandonmentWin();
+            }
+            
+        } catch (error) {
+            console.error('❌ Error en polling de abandono:', error);
+        }
+    }, 2000); // Verificar cada 2 segundos
+}
+
+function stopAbandonWinnerPolling() {
+    if (abandonWinnerPollingInterval) {
+        clearInterval(abandonWinnerPollingInterval);
+        abandonWinnerPollingInterval = null;
+        console.log('⏹️ Polling de abandono detenido');
+    }
+}
+
+// 🆕 MANEJAR VICTORIA POR ABANDONO
+function handleAbandonmentWin() {
+    console.log('🎉 MANEJANDO VICTORIA POR ABANDONO');
+    
+    // Marcar que ya se mostró la victoria
+    window.victoryShown = true;
+    
+    // Detener el juego
+    stopGameInitializationAndHide();
+    ocultarMainContent();
+    hideLottieAnimation();
+    stopTimer();
+    
+    // Detener otros pollings
+    if (winnerPollingInterval) {
+        clearInterval(winnerPollingInterval);
+        winnerPollingInterval = null;
+    }
+    
+    // Efectos de victoria
+    playWinnerSound();
+    launchConfetti();
+    
+    // Mostrar mensaje específico de victoria por abandono
+    Swal.fire({
+        title: '¡Eres el GANADOR! 🏆',
+        text: 'Tu rival abandonó la partida. ¡Felicidades!',
+        icon: 'success',
+        confirmButtonText: 'Aceptar',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => {
+        const userName = getUserName();
+        console.log('👤 Usuario ganador por abandono confirmó salir');
+        
+        // Limpiar estado temporal
+        if (userName && userName !== 'Invitado') {
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            });
+        }
+        
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
+    });
+}
     </script>
 </body>
 </html>

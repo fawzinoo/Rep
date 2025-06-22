@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbzPt1OQS9N2b2I_dsBJNHa0goT7ug5w5cSkQe3PkdFM3RF5vU00lPWjcLKXxi4WJ1IR4A/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxQvQzk_HmK94QRjl3DeSuvKuGGVTS6aQxDgGVEiWiDvrOmkZJHr2yqCMeM1CKtTr3wwQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4312,13 +4312,7 @@ function startWinnerPolling() {
         }
     }, 5000);
 }
-// Reemplazar la función notifyGameCompleted existente
-// Reemplazar la función notifyGameCompleted existente
-// Reemplazar la función notifyGameCompleted existente
 
-// Reemplazar la función notifyGameCompleted existente
-
-// Reemplazar la función notifyGameCompleted existente
 
 async function notifyGameCompleted() {
     const userName = getUserName();
@@ -4330,7 +4324,7 @@ async function notifyGameCompleted() {
     console.log('🏆 JUEGO COMPLETADO - Marcando como GANADOR en el servidor');
     
     try {
-        // 1. Marcar SOLO este usuario como GANADOR
+        // 1. Marcar este usuario como GANADOR (esto automáticamente marcará perdedores en la misma sesión)
         const postData = {
             action: 'setCompleted',
             username: userName,
@@ -4345,19 +4339,74 @@ async function notifyGameCompleted() {
         
         console.log('📤 Respuesta setCompleted:', response1.status);
         
-        // 2. Hacer broadcast inmediatamente para notificar a otros
+        // 🆕 2. Asegurar que se marquen todos los perdedores en la sesión
+        setTimeout(async () => {
+            console.log('🔴 Asegurando que todos los perdedores estén marcados...');
+            try {
+                const response2 = await fetch(scriptURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'markLosersInSession',
+                        winnerUsername: userName
+                    })
+                });
+                
+                const data = await response2.json();
+                console.log('🔴 Resultado markLosersInSession:', data);
+                
+            } catch (error) {
+                console.error('❌ Error marcando perdedores en sesión:', error);
+            }
+        }, 1000); // 1 segundo de delay
+        
+        // 3. Hacer broadcast inmediatamente para notificar a otros
         console.log(`📢 Broadcasting ganador "${userName}" a localStorage`);
         broadcastWinnerToAllUsers(userName);
-        
-        // 🚫 NO hacer limpiezas automáticas aquí
-        // Las limpiezas se harán cuando cada usuario vea su ventana y la confirme
         
     } catch (error) {
         console.error('❌ Error marcando usuario como ganador:', error);
     }
 }
 
-// Reemplazar la función broadcastWinnerToAllUsers existente
+
+// Función de debug para verificar el marcado de perdedores
+
+async function debugLosersMarking() {
+    console.log('🧪 === DEBUG MARCADO DE PERDEDORES ===');
+    
+    const userName = getUserName();
+    console.log('Usuario actual:', userName);
+    
+    try {
+        // Probar marcar perdedores en la sesión del usuario actual
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'markLosersInSession',
+                winnerUsername: userName
+            })
+        });
+        
+        const data = await response.json();
+        console.log('Resultado markLosersInSession:', data);
+        
+        if (data.success) {
+            console.log(`✅ Perdedores marcados: ${data.losersMarked}`);
+            console.log(`📍 Sesión del ganador: ${data.winnerSession}`);
+        } else {
+            console.log(`❌ Error: ${data.error}`);
+        }
+        
+    } catch (error) {
+        console.error('Error en debug:', error);
+    }
+    
+    console.log('🧪 === FIN DEBUG ===');
+}
+
+// Para usar en la consola: debugLosersMarking()
 
 function broadcastWinnerToAllUsers(winnerName) {
     console.log(`📢 Broadcasting ganador "${winnerName}" a localStorage de todos los usuarios`);

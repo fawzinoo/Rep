@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxQvQzk_HmK94QRjl3DeSuvKuGGVTS6aQxDgGVEiWiDvrOmkZJHr2yqCMeM1CKtTr3wwQ/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbwTzNo1CGMHaOFsWEuFMiPhFJu7sdPCu7gv2SiEBOTt0s-ulpE415BbC-Utp0yyoZLXeQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -3218,6 +3218,8 @@ setTimeout(() => {
 
 // Reemplazar la función handleDirectWin existente
 
+// Reemplazar la función handleDirectWin existente
+
 function handleDirectWin() {
     console.log('🎉 Manejando VICTORIA DIRECTA (sin broadcast)');
     
@@ -3251,9 +3253,9 @@ function handleDirectWin() {
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // 🆕 LIMPIAR TODO INMEDIATAMENTE AL CONFIRMAR
+        // 🆕 LIMPIAR SOLO SESIÓN Y ESTADO F, PERO NO G (ganador permanente)
         const userName = getUserName();
-        console.log('👤 Usuario ganador confirmó salir - Limpiando todo');
+        console.log('👤 Usuario ganador confirmó salir - Limpiando solo sesión y estado temporal');
         
         if (userName && userName !== 'Invitado') {
             // Limpiar sesión (celda E)
@@ -3267,7 +3269,7 @@ function handleDirectWin() {
                 })
             });
             
-            // Limpiar estado de ganador (celda F)
+            // Limpiar estado de ganador temporal (celda F)
             fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -3278,15 +3280,8 @@ function handleDirectWin() {
                 })
             });
             
-            // Limpiar ganador permanente (celda G)
-            fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearPermanentWinner'
-                })
-            });
+            // 🚫 NO LIMPIAR ganador permanente (celda G) aquí
+            // Se limpiará automáticamente después de un tiempo o cuando todos los usuarios hayan visto el resultado
         }
         
         if (window.parent !== window) {
@@ -3296,7 +3291,6 @@ function handleDirectWin() {
         }
     });
 }
-
 async function nextFruit() {
     stopTimer();
     stopAllAudio();
@@ -4314,6 +4308,8 @@ function startWinnerPolling() {
 }
 
 
+// Reemplazar la función notifyGameCompleted existente
+
 async function notifyGameCompleted() {
     const userName = getUserName();
     if (!userName || userName === 'Invitado') {
@@ -4324,7 +4320,7 @@ async function notifyGameCompleted() {
     console.log('🏆 JUEGO COMPLETADO - Marcando como GANADOR en el servidor');
     
     try {
-        // 1. Marcar este usuario como GANADOR (esto automáticamente marcará perdedores en la misma sesión)
+        // 1. Marcar este usuario como GANADOR
         const postData = {
             action: 'setCompleted',
             username: userName,
@@ -4339,11 +4335,11 @@ async function notifyGameCompleted() {
         
         console.log('📤 Respuesta setCompleted:', response1.status);
         
-        // 🆕 2. Asegurar que se marquen todos los perdedores en la sesión
+        // 2. Asegurar que se marquen todos los perdedores en la sesión
         setTimeout(async () => {
             console.log('🔴 Asegurando que todos los perdedores estén marcados...');
             try {
-                const response2 = await fetch(scriptURL, {
+                await fetch(scriptURL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({
@@ -4351,18 +4347,17 @@ async function notifyGameCompleted() {
                         winnerUsername: userName
                     })
                 });
-                
-                const data = await response2.json();
-                console.log('🔴 Resultado markLosersInSession:', data);
-                
             } catch (error) {
                 console.error('❌ Error marcando perdedores en sesión:', error);
             }
-        }, 1000); // 1 segundo de delay
+        }, 1000);
         
         // 3. Hacer broadcast inmediatamente para notificar a otros
         console.log(`📢 Broadcasting ganador "${userName}" a localStorage`);
         broadcastWinnerToAllUsers(userName);
+        
+        // 🆕 4. NO LIMPIAR NADA AQUÍ - Dejar que cada usuario limpie al confirmar
+        console.log('ℹ️ Manteniendo estado del ganador para que otros usuarios puedan verlo');
         
     } catch (error) {
         console.error('❌ Error marcando usuario como ganador:', error);
@@ -4751,29 +4746,27 @@ function handleLocalWinner() {
 }
 
 // Reemplazar la función handleLocalLoser existente
+// Reemplazar handleLocalLoser para preservar ganador permanente
 
 async function handleLocalLoser(winnerNameFromBroadcast) {
     console.log(`💔 === MANEJANDO DERROTA LOCAL ===`);
     console.log(`Ganador desde broadcast: "${winnerNameFromBroadcast}"`);
     
-    // Verificar si ya hay un SweetAlert abierto
+    // Verificaciones de duplicados...
     if (document.body.classList.contains('swal2-shown')) {
         console.log('⚠️ Ya hay un SweetAlert de derrota abierto, no mostrar otro');
         return;
     }
     
-    // Verificar si ya se mostró derrota
     if (window.defeatShown) {
         console.log('⚠️ Derrota ya mostrada anteriormente');
         return;
     }
     
-    // Marcar derrota como mostrada
     window.defeatShown = true;
-    
     const userName = getUserName();
     
-    // 🆕 1. MARCAR ESTE USUARIO COMO PERDEDOR EN EL SERVIDOR
+    // 1. Marcar este usuario como PERDEDOR
     if (userName && userName !== 'Invitado') {
         console.log('🔴 Marcando usuario como PERDEDOR en servidor');
         try {
@@ -4785,20 +4778,33 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
                     username: userName
                 })
             });
-            console.log('✅ Usuario marcado como PERDEDOR exitosamente');
         } catch (error) {
             console.error('❌ Error marcando como perdedor:', error);
         }
     }
     
-    // 🆕 2. OBTENER NOMBRE DEL GANADOR DE FORMA ROBUSTA
+    // 🆕 2. OBTENER NOMBRE DEL GANADOR CON INTENTOS MÚLTIPLES
     let winnerName = winnerNameFromBroadcast;
     
-    // Si no tenemos el nombre del ganador desde broadcast, intentar obtenerlo
     if (!winnerName || winnerName.trim() === '' || winnerName === 'Sin ganador') {
-        console.log('🔍 Nombre del ganador no válido desde broadcast, obteniendo del servidor...');
-        winnerName = await obtenerNombreGanadorEspecifico();
-        console.log(`🔍 Ganador obtenido del servidor: "${winnerName}"`);
+        console.log('🔍 Obteniendo ganador del servidor con reintentos...');
+        
+        // Intentar hasta 3 veces con delay
+        for (let intento = 1; intento <= 3; intento++) {
+            console.log(`🔄 Intento ${intento}/3 obteniendo ganador...`);
+            
+            winnerName = await obtenerNombreGanadorEspecifico();
+            
+            if (winnerName && winnerName !== 'Otro jugador' && winnerName !== 'Sin ganador') {
+                console.log(`✅ Ganador obtenido en intento ${intento}: "${winnerName}"`);
+                break;
+            }
+            
+            if (intento < 3) {
+                console.log(`⏳ Intento ${intento} falló, esperando 1 segundo...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
     }
     
     // Detener el juego
@@ -4806,13 +4812,12 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
     ocultarMainContent();
     hideLottieAnimation();
     
-    // Detener polling si está activo
     if (winnerPollingInterval) {
         clearInterval(winnerPollingInterval);
         winnerPollingInterval = null;
     }
     
-    // 🆕 VALIDAR NOMBRE DEL GANADOR ANTES DE MOSTRAR
+    // Validar nombre final
     const finalWinnerName = (winnerName && winnerName.trim() !== '' && winnerName !== 'Sin ganador') 
         ? winnerName 
         : 'Otro jugador';
@@ -4828,11 +4833,10 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
-        // 🆕 3. LIMPIAR TODO INMEDIATAMENTE AL CONFIRMAR SALIR
-        console.log('👤 Usuario perdedor confirmó salir - Limpiando todo');
+        console.log('👤 Usuario perdedor confirmó salir - Limpiando solo datos del usuario');
         
         if (userName && userName !== 'Invitado') {
-            // Limpiar sesión (celda E)
+            // Limpiar solo sesión y estado del usuario perdedor
             fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -4843,7 +4847,6 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
                 })
             });
             
-            // Limpiar estado de perdedor (celda F)
             fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -4853,6 +4856,8 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
                     username: userName
                 })
             });
+            
+            // 🚫 NO LIMPIAR ganador permanente aquí - preservar para otros usuarios
         }
         
         if (window.parent !== window) {
@@ -4862,6 +4867,38 @@ async function handleLocalLoser(winnerNameFromBroadcast) {
         }
     });
 }
+
+
+// Función para verificar y limpiar ganador cuando sea necesario
+
+async function checkAndClearWinnerIfNoActiveUsers() {
+    console.log('🧹 Verificando si se debe limpiar ganador permanente...');
+    
+    try {
+        const response = await fetch(scriptURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'scheduleAutoClearPermanentWinner'
+            })
+        });
+        
+        console.log('✅ Verificación de limpieza completada');
+        
+    } catch (error) {
+        console.error('❌ Error en verificación de limpieza:', error);
+    }
+}
+
+// Llamar esta función cuando un usuario salga del juego
+window.addEventListener('beforeunload', () => {
+    // Programar limpieza después de que el usuario salga
+    setTimeout(() => {
+        checkAndClearWinnerIfNoActiveUsers();
+    }, 2000);
+});
+
+
 let estadoPendiente = null;
 
 // Cuando el usuario gana o pierde:

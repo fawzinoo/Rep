@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxwcZgpC1fHsJIXVFmhVrJyQ4YX248o9pOnqP1A-j8RbvWsrIzj9YapTUhJ63KaHIlF8A/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbyszUaLqI1qcJNfeU-XInHqi1M1ooEBT2frfueBEcqfCkN11JqgGGFMHyGSxYT_NHs9OA/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4801,7 +4801,9 @@ function handleLocalWinner() {
 
 // Actualizar handleLocalLoser para NO limpiar sesiones
 
-async function handleLocalLoser() {
+// Modificar la función handleLocalLoser para asegurar limpieza
+
+function handleLocalLoser() {
     console.log('😢 MANEJANDO USUARIO PERDEDOR LOCAL');
     
     // Verificar duplicados
@@ -4827,8 +4829,6 @@ async function handleLocalLoser() {
     
     stopTimer();
     stopRankingUpdates();
-    
-    // Detener audio
     stopAllAudio();
     
     const userName = getUserName();
@@ -4859,37 +4859,50 @@ async function handleLocalLoser() {
     }).then(() => {
         console.log('👤 Usuario perdedor confirmó salir');
         
-        // 🆕 LIMPIAR ESTADO TEMPORAL - ESTO ELIMINARÁ "PERDEDOR" DE LA CELDA F
+        // 🆕 LIMPIAR ESTADO INMEDIATAMENTE AL CONFIRMAR
         if (userName && userName !== 'Invitado') {
-            fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearWinnerStatus',  // Esta función limpia cualquier estado incluyendo PERDEDOR
-                    username: userName
+            // Usar Promise.all para asegurar que ambas llamadas se ejecuten
+            Promise.all([
+                // Limpiar estado (PERDEDOR/GANADOR/ABANDONADO)
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                }),
+                // Limpiar sesión también
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearUserSession',
+                        username: userName
+                    })
                 })
-            }).then(() => {
-                console.log('✅ Estado "PERDEDOR" limpiado correctamente');
+            ]).then(() => {
+                console.log('✅ Estado y sesión limpiados para perdedor');
             }).catch(error => {
-                console.error('❌ Error limpiando estado perdedor:', error);
+                console.error('❌ Error limpiando datos:', error);
             });
-            
-            console.log('🧹 Solicitud de limpieza de estado PERDEDOR enviada para:', userName);
         }
         
-        // SALIR DEL JUEGO
-        if (window.parent !== window) {
-            console.log('🚪 Cerrando juego en iframe...');
-            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-        } else {
-            console.log('🚪 Redirigiendo a página principal...');
-            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-        }
+        // SALIR DEL JUEGO DESPUÉS DE UN PEQUEÑO DELAY
+        setTimeout(() => {
+            if (window.parent !== window) {
+                console.log('🚪 Cerrando juego en iframe...');
+                window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+            } else {
+                console.log('🚪 Redirigiendo a página principal...');
+                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+            }
+        }, 500); // 500ms de delay para asegurar que las peticiones se envíen
     });
 }
 
-// Función para verificar y limpiar ganador cuando sea necesario
 
 async function checkAndClearWinnerIfNoActiveUsers() {
     console.log('🧹 Verificando si se debe limpiar ganador permanente...');
@@ -5743,20 +5756,54 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
             allowOutsideClick: false,
             allowEscapeKey: false,
             showCloseButton: false
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Limpiar también la sesión (celda E) al confirmar salir
-                console.log('👤 Usuario confirmó salir - Limpiando sesión');
-                limpiezaInmediataUsuario(userName, 'clear_session_manual');
+}).then((result) => {
+    if (result.isConfirmed) {
+        // 🆕 LIMPIAR INMEDIATAMENTE AL CONFIRMAR SALIR
+        console.log('👤 Usuario confirmó salir - Limpiando estado y sesión');
+        
+        if (userName && userName !== 'Invitado') {
+            Promise.all([
+                // Limpiar estado (PERDEDOR)
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                }),
+                // Limpiar sesión
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearUserSession',
+                        username: userName
+                    })
+                })
+            ]).then(() => {
+                console.log('✅ Estado y sesión limpiados desde mostrarMensajeBloqueo');
                 
+                // Salir después de confirmar limpieza
                 if (window.parent !== window) {
                     window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
                 } else {
                     window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
                 }
+            });
+        } else {
+            // Si no hay usuario válido, salir directamente
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+            } else {
+                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
             }
-            window.currentBlockAlert = false;
-        });
+        }
+    }
+    window.currentBlockAlert = false;
+});
         
         return;
         
@@ -5800,7 +5847,70 @@ async function mostrarMensajeBloqueo(status, winnerName = null) {
         window.currentBlockAlert = false;
     });
 }
-// Modificar tus funciones existentes para usar la verificación
+
+// Función para probar limpieza manual
+
+async function testClearUserStates() {
+    console.log('🧪 === PROBANDO LIMPIEZA DE ESTADOS ===');
+    
+    const userName = getUserName();
+    console.log('Usuario:', userName);
+    
+    if (!userName || userName === 'Invitado') {
+        console.log('❌ No se puede probar - usuario no válido');
+        return;
+    }
+    
+    try {
+        // Probar limpieza de estado
+        console.log('1. Limpiando estado (columna F)...');
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearWinnerStatus',
+                username: userName
+            })
+        });
+        
+        // Probar limpieza de sesión
+        console.log('2. Limpiando sesión (columna E)...');
+        await fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'clearUserSession',
+                username: userName
+            })
+        });
+        
+        console.log('✅ Limpieza completa enviada');
+        
+        // Verificar resultado después de 2 segundos
+        setTimeout(async () => {
+            const response = await fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'getScoreStatusAndRank',
+                    username: userName
+                })
+            });
+            
+            const data = await response.json();
+            console.log('📊 Estado después de limpieza:', data.completed);
+            
+        }, 2000);
+        
+    } catch (error) {
+        console.error('❌ Error:', error);
+    }
+    
+    console.log('🧪 === FIN PRUEBA ===');
+}
+
 async function registrarPuntos(datos) {
     const resultado = await verificarPermisosYEjecutar('registerPoints', {
         action: 'registerPoints',
@@ -6576,8 +6686,10 @@ function stopAbandonWinnerPolling() {
 
 // La función handleAbandonmentWin ya está correcta, pero confirmemos el flujo
 
+// Modificar handleAbandonmentWin para mejor limpieza
+
 function handleAbandonmentWin() {
-    console.log('🎉 MANEJANDO VICTORIA POR ABANDONO - Comportamiento completo como victoria directa');
+    console.log('🎉 MANEJANDO VICTORIA POR ABANDONO - Limpieza completa');
     
     // Verificar duplicados
     if (window.victoryShown) {
@@ -6588,7 +6700,7 @@ function handleAbandonmentWin() {
     // Marcar que ya se mostró la victoria
     window.victoryShown = true;
     
-    // DETENER Y OCULTAR TODO EXACTAMENTE IGUAL QUE handleDirectWin
+    // DETENER Y OCULTAR TODO
     stopAbandonWinnerPolling();
     stopGameInitializationAndHide();
     ocultarMainContent();
@@ -6627,32 +6739,55 @@ function handleAbandonmentWin() {
         const userName = getUserName();
         console.log('👤 Usuario ganador por abandono confirmó salir');
         
-        // 🆕 LIMPIAR ESTADO TEMPORAL - ESTO ELIMINARÁ "GANADOR" DE LA CELDA F
+        // 🆕 LIMPIAR TODO INMEDIATAMENTE AL CONFIRMAR
         if (userName && userName !== 'Invitado') {
-            fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearWinnerStatus',  // Esta función ahora limpia cualquier estado
-                    username: userName
+            Promise.all([
+                // Limpiar estado temporal (GANADOR)
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                }),
+                // Limpiar sesión
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearUserSession',
+                        username: userName
+                    })
+                }),
+                // Limpiar ganador permanente
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearPermanentWinner'
+                    })
                 })
-            }).then(() => {
-                console.log('✅ Estado temporal limpiado para ganador por abandono');
+            ]).then(() => {
+                console.log('✅ Limpieza completa realizada para ganador por abandono');
             }).catch(error => {
-                console.error('❌ Error limpiando estado:', error);
+                console.error('❌ Error en limpieza completa:', error);
             });
         }
         
-        // SALIR DEL JUEGO
-        if (window.parent !== window) {
-            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-        } else {
-            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-        }
+        // SALIR DESPUÉS DE UN PEQUEÑO DELAY
+        setTimeout(() => {
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+            } else {
+                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+            }
+        }, 500);
     });
 }
-
 // Función de debug para simular abandono de rival
 async function debugSimulateRivalAbandonment() {
     console.log('🧪 === SIMULANDO ABANDONO DE RIVAL ===');

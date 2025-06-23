@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbyE8G4Zd6qsRqR12GRUWeMmVUfYZxjzcAvGX4i0muL7HxIAJMC9xdkL5Z9kxYKekv42Ag/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycby5nkdXv5t2_w2ovwsoAT0Q4gbaqLIyjWunVMEjwr7yypo3xSlAkdL3n-nfO8ZrFpmFxQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -1998,6 +1998,7 @@ async function initializeGame() {
             console.log('✅ Polling de abandono confirmado activo');
         } else {
             console.log('❌ ERROR: Polling de abandono NO está activo, reintentando...');
+            setGameActive();
             startAbandonWinnerPolling();
         }
     }, 1000);
@@ -4936,14 +4937,29 @@ function usuarioPierde() {
 
 // Cuando el usuario regresa a la pestaña:
 document.addEventListener('visibilitychange', function() {
-  if (!document.hidden && estadoPendiente) {
-    if (estadoPendiente === 'ganador') {
-      Swal.fire('¡Ganaste!', 'Felicidades', 'success');
-    } else if (estadoPendiente === 'perdedor') {
-      Swal.fire('Perdiste', 'Intenta de nuevo', 'error');
+    if (document.visibilityState === 'hidden') {
+        const userName = getUserName();
+        
+        if (userName && 
+            userName !== 'Invitado' && 
+            gameIsActive && 
+            !abandonoDetectado) {
+            
+            console.log('👁️ PÁGINA OCULTA - Posible abandono: ' + userName);
+            
+            // Esperar un poco para ver si realmente abandonó
+            setTimeout(() => {
+                if (document.visibilityState === 'hidden' && !abandonoDetectado) {
+                    abandonoDetectado = true;
+                    navigator.sendBeacon(scriptURL, JSON.stringify({
+                        action: 'clearUserSession',
+                        username: userName
+                    }));
+                    console.log('📤 Abandono por página oculta enviado');
+                }
+            }, 5000); // 5 segundos de espera
+        }
     }
-    estadoPendiente = null;
-  }
 });
 
 function mostrarImagenGrandeTemporal(imagenUrl) {
@@ -5994,7 +6010,7 @@ async function limpiezaInmediataUsuario(username, origen = 'manual') {
         console.error(`❌ Error en limpieza inmediata para ${username}:`, error);
     }
 }
-let gameIsActive = true;
+
 
 // Limpieza automática al abandonar la página
 // Reemplazar el event listener beforeunload existente
@@ -6240,74 +6256,92 @@ function resetGameStates() {
 
 // 🆕 DETECTOR DE ABANDONO DE PÁGINA
 let abandonoDetectado = false;
+let gameIsActive = false;
 
-// Reemplazar el event listener beforeunload existente
+function setGameActive() {
+    gameIsActive = true;
+    abandonoDetectado = false;
+    console.log('✅ Juego ACTIVO - Detección de abandono habilitada');
+}
 
-// Reemplazar el event listener beforeunload existente con más debug
+// Marcar juego como inactivo
+function setGameInactive() {
+    gameIsActive = false;
+    console.log('❌ Juego INACTIVO - Detección de abandono deshabilitada');
+}
 
+// Event listener principal para beforeunload
 window.addEventListener('beforeunload', function(event) {
     const userName = getUserName();
     
-    console.log('🚪 === EVENTO BEFOREUNLOAD MEJORADO ===');
+    console.log('🚪 === BEFOREUNLOAD DETECTADO ===');
     console.log('Usuario:', userName);
-    console.log('Abandono ya detectado:', abandonoDetectado);
-    console.log('Tiempo de juego:', window.gameStartTime ? Date.now() - window.gameStartTime : 'No definido');
-    console.log('Game active:', gameIsActive);
+    console.log('Juego activo:', gameIsActive);
+    console.log('Ya procesado:', abandonoDetectado);
     
-    if (!abandonoDetectado && userName && userName !== 'Invitado' && gameIsActive) {
-        abandonoDetectado = true;
-        console.log('🚪 ABANDONO DETECTADO - Enviando clearUserSession inmediatamente');
+    // Solo procesar si hay usuario válido, juego activo y no se ha procesado antes
+    if (userName && 
+        userName !== 'Invitado' && 
+        gameIsActive && 
+        !abandonoDetectado) {
         
-        // 🆕 USAR TANTO sendBeacon COMO fetch para mayor confiabilidad
+        abandonoDetectado = true;
+        console.log('🚨 PROCESANDO ABANDONO DE: ' + userName);
+        
         const abandonData = JSON.stringify({
             action: 'clearUserSession',
             username: userName
         });
         
-        // Método 1: sendBeacon (más confiable para beforeunload)
+        // Enviar con sendBeacon (más confiable para beforeunload)
         try {
-            const sent = navigator.sendBeacon(scriptURL, abandonData);
-            console.log('📤 SendBeacon resultado:', sent);
+            const enviado = navigator.sendBeacon(scriptURL, abandonData);
+            console.log('📤 Abandono enviado con sendBeacon:', enviado);
+            
+            // Backup con fetch si sendBeacon falla
+            if (!enviado) {
+                fetch(scriptURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: abandonData,
+                    keepalive: true
+                });
+                console.log('📤 Backup con fetch enviado');
+            }
         } catch (error) {
-            console.error('❌ Error en sendBeacon:', error);
+            console.error('❌ Error enviando abandono:', error);
         }
         
-        // Método 2: Fetch síncrono como backup
-        try {
-            fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: abandonData,
-                keepalive: true // Importante para beforeunload
-            });
-            console.log('📤 Fetch de abandono enviado');
-        } catch (error) {
-            console.error('❌ Error en fetch de abandono:', error);
-        }
+        console.log('✅ Señal de abandono enviada para: ' + userName);
     } else {
-        console.log('ℹ️ No se enviará señal de abandono:', {
-            abandonoDetectado,
-            userName,
-            gameIsActive
+        console.log('ℹ️ Abandono NO procesado:', {
+            tieneUsuario: !!userName,
+            usuarioValido: userName !== 'Invitado',
+            juegoActivo: gameIsActive,
+            yaDetectado: abandonoDetectado
         });
     }
-    
-    console.log('🚪 === FIN BEFOREUNLOAD MEJORADO ===');
 });
+
+// Event listener adicional para pagehide (navegación hacia atrás)
 window.addEventListener('pagehide', function(event) {
     const userName = getUserName();
     
-    if (!abandonoDetectado && userName && userName !== 'Invitado') {
-        abandonoDetectado = true;
-        console.log('⬅️ NAVEGACIÓN HACIA ATRÁS DETECTADA: ' + userName);
+    if (userName && 
+        userName !== 'Invitado' && 
+        gameIsActive && 
+        !abandonoDetectado) {
         
-        // Enviar señal de abandono
+        abandonoDetectado = true;
+        console.log('⬅️ PAGEHIDE - Abandono por navegación: ' + userName);
+        
         navigator.sendBeacon(scriptURL, JSON.stringify({
             action: 'clearUserSession',
             username: userName
         }));
     }
 });
+
 
 // 🆕 POLLING PARA DETECTAR SI EL USUARIO SE CONVIRTIÓ EN GANADOR POR ABANDONO
 let abandonWinnerPollingInterval = null;
@@ -6316,26 +6350,27 @@ let abandonWinnerPollingInterval = null;
 
 // Reemplazar la función startAbandonWinnerPolling con mejor debug
 
+// Polling optimizado
+
 function startAbandonWinnerPolling() {
-    // Limpiar polling anterior si existe
+    // Limpiar polling anterior
     if (abandonWinnerPollingInterval) {
         clearInterval(abandonWinnerPollingInterval);
-        abandonWinnerPollingInterval = null;
     }
     
-    console.log('🔍 === INICIANDO POLLING DE ABANDONO MEJORADO ===');
+    console.log('🔍 Iniciando polling para detectar victoria por abandono...');
+    
+    let pollingCount = 0;
     
     abandonWinnerPollingInterval = setInterval(async () => {
+        pollingCount++;
+        
         try {
             const userName = getUserName();
-            if (!userName || userName === 'Invitado') {
-                console.log('⚠️ Polling abandono: Usuario no válido');
+            if (!userName || userName === 'Invitado' || !gameIsActive) {
                 return;
             }
             
-            console.log(`🔍 Verificando estado para ${userName}...`);
-            
-            // Verificar si este usuario se convirtió en ganador
             const response = await fetch(scriptURL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain' },
@@ -6346,49 +6381,56 @@ function startAbandonWinnerPolling() {
             });
             
             const data = await response.json();
-            console.log(`📊 Estado de ${userName}:`, data.completed);
             
             if (data.success && data.completed === 'GANADOR') {
-                console.log('🏆 ¡GANADOR POR ABANDONO DETECTADO EN POLLING!');
+                console.log(`🏆 POLLING #${pollingCount} - ¡${userName} ES GANADOR!`);
                 
-                // Detener polling inmediatamente
+                // Detener polling
                 clearInterval(abandonWinnerPollingInterval);
                 abandonWinnerPollingInterval = null;
                 
-                // Verificar si es victoria por abandono vs victoria directa
+                // Verificar que no sea victoria directa
                 if (!window.victoryShown) {
-                    console.log('🎯 Victoria por abandono confirmada - Mostrando interfaz');
+                    console.log('🎯 Victoria por abandono detectada');
                     handleAbandonmentWin();
-                } else {
-                    console.log('ℹ️ Victoria ya mostrada directamente, ignorando polling');
                 }
+            } else {
+                console.log(`🔍 Polling #${pollingCount} - Estado: ${data.completed || 'sin estado'}`);
             }
             
         } catch (error) {
-            console.error('❌ Error en polling de abandono:', error);
+            console.error(`❌ Error en polling #${pollingCount}:`, error);
         }
-    }, 2000); // 🆕 Reducido a 2 segundos para mayor responsividad
+    }, 1500); // Verificar cada 1.5 segundos
     
-    console.log('✅ Polling de abandono iniciado con intervalo de 2 segundos');
-    console.log('ID del intervalo:', abandonWinnerPollingInterval);
+    console.log('✅ Polling iniciado - Verificando cada 1.5 segundos');
 }
-
 // Agregar función de debug para probar el sistema
 
-async function debugTestAbandonSystem() {
-    console.log('🧪 === PRUEBA COMPLETA DEL SISTEMA DE ABANDONO ===');
+// Función para probar el sistema completo
+
+async function testAbandonSystem() {
+    console.log('🧪 === PROBANDO SISTEMA DE ABANDONO ===');
     
     const userName = getUserName();
-    console.log('1. Usuario actual:', userName);
+    console.log('1. Usuario:', userName);
+    console.log('2. Juego activo:', gameIsActive);
+    console.log('3. Polling activo:', !!abandonWinnerPollingInterval);
     
-    console.log('2. Estado del polling:');
-    console.log('   - Activo:', abandonWinnerPollingInterval !== null);
-    console.log('   - ID:', abandonWinnerPollingInterval);
+    if (!gameIsActive) {
+        console.log('⚠️ Activando juego primero...');
+        setGameActive();
+    }
     
-    console.log('3. Simulando abandono del usuario actual...');
+    if (!abandonWinnerPollingInterval) {
+        console.log('⚠️ Iniciando polling...');
+        startAbandonWinnerPolling();
+    }
+    
+    console.log('4. Simulando que ESTE usuario abandona...');
     
     try {
-        // Simular que ESTE usuario abandona (para ver qué pasa con otros)
+        // Simular abandono del usuario actual
         const response = await fetch(scriptURL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
@@ -6398,11 +6440,11 @@ async function debugTestAbandonSystem() {
             })
         });
         
-        console.log('4. Abandono simulado enviado');
+        console.log('5. ✅ Abandono simulado enviado');
         
-        // Verificar estado después de 3 segundos
+        // Verificar resultado después de 3 segundos
         setTimeout(async () => {
-            console.log('5. Verificando estado después del abandono...');
+            console.log('6. Verificando resultado...');
             
             const checkResponse = await fetch(scriptURL, {
                 method: 'POST',
@@ -6414,22 +6456,23 @@ async function debugTestAbandonSystem() {
             });
             
             const data = await checkResponse.json();
-            console.log('6. Estado final:', data);
+            console.log('7. Estado final:', data.completed);
             
             if (data.completed === 'GANADOR') {
-                console.log('🏆 ¡Usuario se convirtió en ganador!');
+                console.log('🏆 ¡El usuario se convirtió en GANADOR!');
             } else {
-                console.log('ℹ️ Usuario no se convirtió en ganador');
+                console.log('ℹ️ El usuario no se convirtió en ganador');
             }
         }, 3000);
         
     } catch (error) {
-        console.error('❌ Error en prueba:', error);
+        console.error('❌ Error:', error);
     }
     
-    console.log('🧪 === FIN PRUEBA SISTEMA ABANDONO ===');
+    console.log('🧪 === FIN PRUEBA ===');
 }
 
+// Para usar en consola: testAbandonSystem()
 // Modificar registerGameStart para más debug
 
 async function registerGameStart() {

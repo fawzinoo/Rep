@@ -1935,304 +1935,78 @@ let gameInitializationStopped = false;
 
 // Modificar la función initializeGame para asegurar que el polling inicie
 
-function initializeGame() {
-    console.log('🎮 === INICIALIZANDO JUEGO ===');
+async function initializeGame() {
+    // Resetear la bandera al inicio
+    gameInitializationStopped = false;
     
-    // Resetear variables globales
-    gameIsActive = false;
-    abandonoDetectado = false;
-    window.victoryShown = false;
-    window.loserShown = false;
-    window.currentBlockAlert = false;
-    window.gameInitialized = false;
+    // 🆕 REGISTRAR TIEMPO DE INICIO DEL JUEGO
+    window.gameStartTime = Date.now();
+    console.log('🎮 Juego iniciado en:', new Date(window.gameStartTime).toLocaleTimeString());
     
-    // Obtener nombre de usuario
-    const userName = getUserName();
-    console.log('👤 Inicializando para usuario:', userName);
+    document.body.classList.remove('oculto-por-dialogo');
+    console.log('=== INICIALIZANDO JUEGO ===');
     
-    if (!userName || userName === 'Invitado') {
-        console.error('❌ Usuario no válido para inicializar juego');
-        mostrarError('Por favor, inicia sesión para jugar');
+    // Verificar si debe detenerse antes de cada paso
+    if (gameInitializationStopped) {
+        console.log('❌ Inicialización del juego detenida');
         return;
     }
     
-    // 🆕 VERIFICAR ESTADO DEL USUARIO ANTES DE INICIALIZAR
-    console.log('🔍 Verificando estado del usuario...');
-    
-    fetch(scriptURL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-            action: 'getScoreStatusAndRank',
-            username: userName
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('📊 Estado del usuario:', data.completed);
-        
-        // Si el usuario está marcado como PERDEDOR o ABANDONADO, mostrar mensaje y limpiar
-        if (data.completed === 'PERDEDOR' || data.completed === 'ABANDONADO') {
-            console.log(`⚠️ Usuario tiene estado ${data.completed} - Mostrando mensaje y limpiando`);
-            
-            // Limpiar inmediatamente
-            fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearWinnerStatus',
-                    username: userName
-                })
-            });
-            
-            // Mostrar mensaje según el estado
-            mostrarMensajeBloqueo(data.completed);
-            return; // No continuar con la inicialización
-        }
-        
-        // Si ya hay un ganador permanente, verificar si es este usuario
-        if (data.winnerName && data.winnerName !== 'Sin ganador' && data.winnerName !== userName) {
-            console.log('🏆 Ya hay un ganador permanente:', data.winnerName);
-            mostrarMensajeGanadorExistente(data.winnerName);
-            return;
-        }
-        
-        // Usuario puede jugar - continuar con inicialización
-        console.log('✅ Usuario puede jugar - Continuando inicialización');
-        continuarInicializacion();
-        
-    })
-    .catch(error => {
-        console.error('❌ Error verificando estado del usuario:', error);
-        // En caso de error, continuar con inicialización
-        continuarInicializacion();
-    });
-    
-    function continuarInicializacion() {
-        console.log('⚙️ Continuando con inicialización del juego...');
-        
-        // Resetear puntuación visual
-        updateScoreDisplay(0);
-        
-        // Limpiar crucigrama
-        clearAllCells();
-        
-        // Resetear timer
-        if (typeof resetTimer === 'function') {
-            resetTimer();
-        }
-        
-        // Ocultar elementos no necesarios al inicio
-        ocultarElementosIniciales();
-        
-        // Generar o cargar crucigrama
-        if (typeof generateCrossword === 'function') {
-            console.log('🎯 Generando crucigrama...');
-            generateCrossword();
-        }
-        
-        // Inicializar teclado virtual
-        if (typeof initializeVirtualKeyboard === 'function') {
-            initializeVirtualKeyboard();
-        }
-        
-        // Configurar eventos del juego
-        setupGameEvents();
-        
-        // 🆕 CREAR SESIÓN DE JUEGO
-        console.log('🔗 Creando sesión de juego...');
-        fetch(scriptURL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'getOrCreateSession',
-                sessionBaseName: 'frutas'
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.sessionName) {
-                console.log('✅ Sesión creada:', data.sessionName);
-                window.currentSession = data.sessionName;
-                
-                // Registrar inicio de juego con sesión
-                return fetch(scriptURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'registerGameStart',
-                        username: userName,
-                        sessionName: data.sessionName
-                    })
-                });
-            }
-        })
-        .then(response => {
-            if (response) {
-                return response.json();
-            }
-        })
-        .then(data => {
-            if (data && data.success) {
-                console.log('✅ Inicio de juego registrado en la sesión');
-                
-                // Activar juego
-                gameIsActive = true;
-                window.gameInitialized = true;
-                
-                // 🆕 INICIAR SISTEMAS DE MONITOREO
-                console.log('📡 Iniciando sistemas de monitoreo...');
-                
-                // Iniciar polling para verificar ganadores
-                startWinnerPolling();
-                
-                // Iniciar polling para verificar abandonos
-                startAbandonWinnerPolling();
-                
-                // 🆕 INICIAR LIMPIEZA PERIÓDICA
-                startPeriodicCleanup();
-                
-                // Iniciar timer del juego
-                if (typeof startTimer === 'function') {
-                    startTimer();
-                }
-                
-                // Iniciar actualizaciones de ranking
-                if (typeof startRankingUpdates === 'function') {
-                    startRankingUpdates();
-                }
-                
-                // Mostrar elementos del juego
-                mostrarElementosJuego();
-                
-                console.log('🎮 === JUEGO INICIALIZADO COMPLETAMENTE ===');
-                console.log('Usuario:', userName);
-                console.log('Sesión:', window.currentSession);
-                console.log('Estado activo:', gameIsActive);
-                
-                // Reproducir sonido de inicio si está disponible
-                if (typeof playGameStartSound === 'function') {
-                    playGameStartSound();
-                }
-                
-            } else {
-                console.error('❌ Error registrando inicio de juego');
-                mostrarError('Error al inicializar el juego');
-            }
-        })
-        .catch(error => {
-            console.error('❌ Error en inicialización:', error);
-            mostrarError('Error al conectar con el servidor');
-        });
+    if (!verifyDOMElements()) {
+        console.error('Elementos DOM no verificados');
+        return;
     }
     
-    function setupGameEvents() {
-        console.log('🎛️ Configurando eventos del juego...');
-        
-        // Event listeners para el crucigrama
-        document.addEventListener('keydown', handleKeyboardInput);
-        document.addEventListener('click', handleCellClick);
-        
-        // Prevenir salida accidental
-        window.addEventListener('beforeunload', function(event) {
-            if (gameIsActive && !abandonoDetectado) {
-                const message = '¿Estás seguro de que quieres salir? Perderás el progreso del juego.';
-                event.returnValue = message;
-                return message;
-            }
-        });
-        
-        console.log('✅ Eventos configurados');
+    if (gameInitializationStopped) return;
+    
+    initializeRandomFruits();
+    updateFruitDisplay();
+    
+    if (gameInitializationStopped) return;
+    
+    await mostrarImagenGrandeTemporal(currentFruit.image);
+    
+    if (gameInitializationStopped) {
+        // Si se detiene después de mostrar la imagen, asegurarse de limpiar
+        document.querySelectorAll('.fruit-image-overlay').forEach(el => el.remove());
+        return;
     }
     
-    function ocultarElementosIniciales() {
-        // Ocultar mensajes de carga
-        const loadingElements = document.querySelectorAll('.loading, .spinner');
-        loadingElements.forEach(element => {
-            element.style.display = 'none';
-        });
-        
-        // Ocultar mensajes de victoria/derrota previos
-        const messageElements = document.querySelectorAll('.victory-message, .defeat-message');
-        messageElements.forEach(element => {
-            element.style.display = 'none';
-        });
-    }
+    generateGrid();
+    startTimer();
+    initializeVirtualKeyboard();
+    handleDeviceOptimizations();
+    updateScoreDisplay();
     
-    function mostrarElementosJuego() {
-        console.log('👁️ Mostrando elementos del juego...');
-        
-        // Mostrar crucigrama
-        const crosswordContainer = document.querySelector('.crossword-container');
-        if (crosswordContainer) {
-            crosswordContainer.style.display = 'block';
-        }
-        
-        // Mostrar teclado virtual
-        const keyboard = document.querySelector('.virtual-keyboard');
-        if (keyboard) {
-            keyboard.style.display = 'block';
-        }
-        
-        // Mostrar contador de puntos
-        const scoreDisplay = document.querySelector('.score-display-fixed');
-        if (scoreDisplay) {
-            scoreDisplay.style.display = 'block';
-        }
-        
-        // Mostrar timer
-        const timerDisplay = document.querySelector('.timer-display');
-        if (timerDisplay) {
-            timerDisplay.style.display = 'block';
-        }
-        
-        // Mostrar ranking
-        const rankingDisplay = document.querySelector('.ranking-display');
-        if (rankingDisplay) {
-            rankingDisplay.style.display = 'block';
-        }
-        
-        console.log('✅ Elementos del juego mostrados');
-    }
+    if (gameInitializationStopped) return;
     
-    function mostrarError(mensaje) {
-        console.error('❌ Error del juego:', mensaje);
-        
-        Swal.fire({
-            title: 'Error',
-            text: mensaje,
-            icon: 'error',
-            confirmButtonText: 'Aceptar'
-        });
-    }
+    // NUEVO: Cargar puntos totales al inicializar
+    await loadTotalPoints();
     
-    function mostrarMensajeGanadorExistente(ganador) {
-        console.log('🏆 Mostrando mensaje de ganador existente:', ganador);
-        
-        Swal.fire({
-            title: 'Juego Terminado',
-            html: `
-                <div style="text-align: center; margin: 15px 0;">
-                    <p style="font-size: 18px; color: #059669; margin-bottom: 10px;">
-                        🏆 El ganador es: <strong>${ganador}</strong>
-                    </p>
-                    <p style="font-size: 16px; color: #4b5563;">
-                        El juego ya ha terminado
-                    </p>
-                </div>
-            `,
-            icon: 'info',
-            confirmButtonText: 'Aceptar',
-            allowOutsideClick: false
-        }).then(() => {
-            if (window.parent !== window) {
-                window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
-            } else {
-                window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
-            }
-        });
-    }
+    if (gameInitializationStopped) return;
+    
+    // NUEVO: Iniciar actualizaciones del ranking
+    startRankingUpdates();
+    
+    // 🆕 INICIAR LIMPIEZA PERIÓDICA
+    startPeriodicCleanup();
+    
+    // 🆕 ASEGURAR QUE EL POLLING DE ABANDONO INICIE
+    console.log('🔍 INICIANDO POLLING DE ABANDONO FORZADO...');
+    startAbandonWinnerPolling();
+    
+    // 🆕 VERIFICAR QUE SE INICIÓ CORRECTAMENTE
+    setTimeout(() => {
+        if (abandonWinnerPollingInterval) {
+            console.log('✅ Polling de abandono confirmado activo');
+        } else {
+            console.log('❌ ERROR: Polling de abandono NO está activo, reintentando...');
+            setGameActive();
+            startAbandonWinnerPolling();
+        }
+    }, 1000);
+    
+    console.log('🎮 Juego inicializado completamente con todas las funciones de limpieza');
 }
 
 function stopGameInitializationAndHide() {

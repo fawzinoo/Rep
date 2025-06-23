@@ -1130,7 +1130,7 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycby5nkdXv5t2_w2ovwsoAT0Q4gbaqLIyjWunVMEjwr7yypo3xSlAkdL3n-nfO8ZrFpmFxQ/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxwcZgpC1fHsJIXVFmhVrJyQ4YX248o9pOnqP1A-j8RbvWsrIzj9YapTUhJ63KaHIlF8A/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
@@ -4801,90 +4801,89 @@ function handleLocalWinner() {
 
 // Actualizar handleLocalLoser para NO limpiar sesiones
 
-async function handleLocalLoser(winnerNameFromBroadcast) {
-    console.log(`💔 === MANEJANDO DERROTA LOCAL (sesiones ya limpiadas) ===`);
+async function handleLocalLoser() {
+    console.log('😢 MANEJANDO USUARIO PERDEDOR LOCAL');
     
-    // Verificaciones de duplicados...
-    if (document.body.classList.contains('swal2-shown') || window.defeatShown) {
+    // Verificar duplicados
+    if (window.loserShown) {
+        console.log('⚠️ Mensaje de perdedor ya mostrado, ignorando');
         return;
     }
     
-    window.defeatShown = true;
-    const userName = getUserName();
+    // Marcar que ya se mostró el mensaje de perdedor
+    window.loserShown = true;
     
-    // 1. Marcar este usuario como PERDEDOR
-    if (userName && userName !== 'Invitado') {
-        try {
-            await fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'setUserAsLoser',
-                    username: userName
-                })
-            });
-        } catch (error) {
-            console.error('❌ Error marcando como perdedor:', error);
-        }
-    }
-    
-    // 2. Obtener nombre del ganador
-    let winnerName = winnerNameFromBroadcast;
-    if (!winnerName || winnerName.trim() === '' || winnerName === 'Sin ganador') {
-        for (let intento = 1; intento <= 3; intento++) {
-            winnerName = await obtenerNombreGanadorEspecifico();
-            if (winnerName && winnerName !== 'Otro jugador' && winnerName !== 'Sin ganador') {
-                break;
-            }
-            if (intento < 3) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-    }
-    
-   stopAbandonWinnerPolling();
+    // DETENER Y OCULTAR TODO (igual que victoria)
+    stopAbandonWinnerPolling();
     stopGameInitializationAndHide();
     ocultarMainContent();
     hideLottieAnimation();
     
+    // Detener otros timers
     if (winnerPollingInterval) {
         clearInterval(winnerPollingInterval);
         winnerPollingInterval = null;
     }
     
-    const finalWinnerName = (winnerName && winnerName.trim() !== '' && winnerName !== 'Sin ganador') 
-        ? winnerName 
-        : 'Otro jugador';
+    stopTimer();
+    stopRankingUpdates();
     
-    // Mostrar mensaje de derrota
+    // Detener audio
+    stopAllAudio();
+    
+    const userName = getUserName();
+    console.log('👤 Usuario perdedor:', userName);
+    
+    // MENSAJE DE PERDEDOR
     Swal.fire({
-        title: '¡Has Perdido!',
-        text: `${finalWinnerName} ha ganado la partida.`,
+        title: '¡Has perdido! 😔',
+        html: `
+            <div style="text-align: center; margin: 15px 0;">
+                <p style="font-size: 18px; color: #dc2626; margin-bottom: 10px;">
+                    😔 Otro jugador completó el crucigrama antes que tú
+                </p>
+                <p style="font-size: 16px; color: #4b5563;">
+                    ¡Mejor suerte la próxima vez!
+                </p>
+            </div>
+        `,
         icon: 'error',
-        confirmButtonText: 'Salir del Juego',
+        confirmButtonText: 'Aceptar',
         allowOutsideClick: false,
-        allowEscapeKey: false
+        allowEscapeKey: false,
+        customClass: {
+            popup: 'loser-popup',
+            title: 'loser-title',
+            htmlContainer: 'loser-content'
+        }
     }).then(() => {
         console.log('👤 Usuario perdedor confirmó salir');
         
-        // 🆕 SOLO LIMPIAR ESTADO TEMPORAL - Las sesiones ya se limpiaron automáticamente
+        // 🆕 LIMPIAR ESTADO TEMPORAL - ESTO ELIMINARÁ "PERDEDOR" DE LA CELDA F
         if (userName && userName !== 'Invitado') {
             fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
-                    action: 'clearWinnerStatus',
+                    action: 'clearWinnerStatus',  // Esta función limpia cualquier estado incluyendo PERDEDOR
                     username: userName
                 })
+            }).then(() => {
+                console.log('✅ Estado "PERDEDOR" limpiado correctamente');
+            }).catch(error => {
+                console.error('❌ Error limpiando estado perdedor:', error);
             });
             
-            console.log('ℹ️ Solo limpiando estado temporal (sesiones ya limpiadas automáticamente)');
+            console.log('🧹 Solicitud de limpieza de estado PERDEDOR enviada para:', userName);
         }
         
+        // SALIR DEL JUEGO
         if (window.parent !== window) {
+            console.log('🚪 Cerrando juego en iframe...');
             window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
         } else {
+            console.log('🚪 Redirigiendo a página principal...');
             window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
         }
     });
@@ -6575,6 +6574,8 @@ function stopAbandonWinnerPolling() {
 
 // Reemplazar la función handleAbandonmentWin existente
 
+// La función handleAbandonmentWin ya está correcta, pero confirmemos el flujo
+
 function handleAbandonmentWin() {
     console.log('🎉 MANEJANDO VICTORIA POR ABANDONO - Comportamiento completo como victoria directa');
     
@@ -6587,30 +6588,27 @@ function handleAbandonmentWin() {
     // Marcar que ya se mostró la victoria
     window.victoryShown = true;
     
-    // 🆕 DETENER Y OCULTAR TODO EXACTAMENTE IGUAL QUE handleDirectWin
-    stopAbandonWinnerPolling(); // Detener polling de abandono
-    stopGameInitializationAndHide(); // Detener inicialización del juego
-    ocultarMainContent(); // Ocultar contenido principal
-    hideLottieAnimation(); // Ocultar animaciones Lottie
+    // DETENER Y OCULTAR TODO EXACTAMENTE IGUAL QUE handleDirectWin
+    stopAbandonWinnerPolling();
+    stopGameInitializationAndHide();
+    ocultarMainContent();
+    hideLottieAnimation();
     
-    // Detener otros pollings y timers
     if (winnerPollingInterval) {
         clearInterval(winnerPollingInterval);
         winnerPollingInterval = null;
     }
     
-    stopTimer(); // Detener timer del juego
-    
-    // Detener actualizaciones de ranking
+    stopTimer();
     stopRankingUpdates();
     
-    // 🆕 EFECTOS DE VICTORIA (igual que victoria directa)
+    // EFECTOS DE VICTORIA
     playWinnerSound();
     launchConfetti();
     
-    // 🆕 MENSAJE ESPECÍFICO PERO CON MISMO FORMATO QUE VICTORIA DIRECTA
+    // MENSAJE DE VICTORIA POR ABANDONO
     Swal.fire({
-        title: '¡Eres el GANADOR! 🏆', // Mismo título que victoria directa
+        title: '¡Eres el GANADOR! 🏆',
         html: `
             <div style="text-align: center; margin: 15px 0;">
                 <p style="font-size: 18px; color: #059669; margin-bottom: 10px;">
@@ -6622,30 +6620,31 @@ function handleAbandonmentWin() {
             </div>
         `,
         icon: 'success',
-        confirmButtonText: 'Aceptar', // Mismo botón que victoria directa
+        confirmButtonText: 'Aceptar',
         allowOutsideClick: false,
         allowEscapeKey: false
     }).then(() => {
         const userName = getUserName();
         console.log('👤 Usuario ganador por abandono confirmó salir');
         
-        // 🆕 MISMO PROCESO DE LIMPIEZA QUE handleDirectWin
+        // 🆕 LIMPIAR ESTADO TEMPORAL - ESTO ELIMINARÁ "GANADOR" DE LA CELDA F
         if (userName && userName !== 'Invitado') {
-            // Solo limpiar estado temporal (F) - Las sesiones ya se limpiaron automáticamente
             fetch(scriptURL, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
-                    action: 'clearWinnerStatus',
+                    action: 'clearWinnerStatus',  // Esta función ahora limpia cualquier estado
                     username: userName
                 })
+            }).then(() => {
+                console.log('✅ Estado temporal limpiado para ganador por abandono');
+            }).catch(error => {
+                console.error('❌ Error limpiando estado:', error);
             });
-            
-            console.log('ℹ️ Solo limpiando estado temporal (sesiones ya limpiadas automáticamente)');
         }
         
-        // 🆕 MISMA LÓGICA DE SALIDA QUE handleDirectWin
+        // SALIR DEL JUEGO
         if (window.parent !== window) {
             window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
         } else {
@@ -6653,7 +6652,6 @@ function handleAbandonmentWin() {
         }
     });
 }
-// Agregar después de las funciones existentes
 
 // Función de debug para simular abandono de rival
 async function debugSimulateRivalAbandonment() {

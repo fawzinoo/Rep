@@ -3228,7 +3228,7 @@ setTimeout(() => {
         console.log('🏆 Todas las frutas completadas. VICTORIA DIRECTA.');
         
         // 🆕 MOSTRAR VICTORIA INMEDIATAMENTE sin esperar broadcast
-        handleDirectWin();
+          mostrarVentanaGanador();
         
         // También notificar al servidor y hacer broadcast para otros usuarios
         notifyGameCompleted().then(() => {
@@ -4268,6 +4268,7 @@ function startWinnerPolling() {
             console.log("Respuesta OFICIAL de getScoreStatusAndRank:", data);
             
             if (data && data.completed === "GANADOR") {
+                mostrarVentanaGanador();
                 clearInterval(winnerPollingInterval);
                 winnerPollingInterval = null;
                 
@@ -4607,9 +4608,10 @@ function handleWinnerFromBroadcast(winnerData) {
     window.lastProcessedTimestamp = winnerData.timestamp;
     
     if (winner === currentUser) {
+        mostrarVentanaGanador();
         // Este usuario es el ganador DESDE BROADCAST (no directo)
         console.log('🏆 SOY EL GANADOR desde broadcast - Mostrando interfaz de victoria');
-        handleLocalWinner();
+       
     } else {
         // 💔 OTRO USUARIO GANÓ
         console.log(`💔 OTRO USUARIO GANÓ: "${winner}" - Mostrando interfaz de perdedor`);
@@ -4662,7 +4664,7 @@ function handleWinnerFromBroadcast(winnerData) {
     if (winner === currentUser) {
         // Este usuario es el ganador DESDE BROADCAST (no directo)
         console.log('🏆 SOY EL GANADOR desde broadcast - Mostrando interfaz de victoria');
-        handleLocalWinner();
+       mostrarVentanaGanador();
     } else {
         // 💔 OTRO USUARIO GANÓ
         console.log(`💔 OTRO USUARIO GANÓ: "${winner}" - Mostrando interfaz de perdedor`);
@@ -7041,6 +7043,57 @@ function handleWinnerDetected() {
     }).then(() => {
         // Aquí puedes limpiar estado y redirigir si hace falta
         salirDelJuego();
+    });
+}
+
+function mostrarVentanaGanador() {
+    if (window.victoryShown) return; // Evita mostrar dos veces
+    window.victoryShown = true;
+
+    stopGameInitializationAndHide();
+    ocultarMainContent();
+    hideLottieAnimation();
+    stopTimer();
+    stopRankingUpdates();
+    stopAllAudio();
+
+    if (winnerPollingInterval) {
+        clearInterval(winnerPollingInterval);
+        winnerPollingInterval = null;
+    }
+    if (abandonWinnerPollingInterval) {
+        clearInterval(abandonWinnerPollingInterval);
+        abandonWinnerPollingInterval = null;
+    }
+
+    playWinnerSound();
+    launchConfetti();
+
+    Swal.fire({
+        title: '¡Eres el GANADOR! 🎉',
+        text: '¡Felicidades, has ganado la partida!',
+        icon: 'success',
+        confirmButtonText: 'Aceptar',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => {
+        const userName = getUserName();
+        if (userName && userName !== 'Invitado') {
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            });
+        }
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
     });
 }
     </script>

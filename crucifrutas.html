@@ -2368,12 +2368,15 @@ function triggerPointScoredEffects() {
 // Modificar processVirtualKeyPress
 
 async function processVirtualKeyPress(keyValue) {
-    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
-        const permissions = await checkUserPermissionsCached();
-        
-        if (!permissions.canEdit) {
+    // 1. Bloquea inmediatamente si el caché indica que NO puede editar
+    if (
+        window.userPermissionsCache &&
+        window.userPermissionsCache.lastCheck &&
+        Date.now() - window.userPermissionsCache.lastCheck < (window.userPermissionsCache.cacheTimeout || 30000)
+    ) {
+        if (!window.userPermissionsCache.canEdit) {
             const userName = getUserName();
-            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+            if (window.userPermissionsCache.status === "PERDEDOR" && userName && userName !== 'Invitado') {
                 console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
                 fetch(scriptURL, {
                     method: 'POST',
@@ -2384,24 +2387,18 @@ async function processVirtualKeyPress(keyValue) {
                         username: userName
                     })
                 });
-                
-                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
                 const winnerName = await obtenerNombreGanadorEspecifico();
                 console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
-                mostrarMensajeBloqueo(permissions.status, winnerName);
+                mostrarMensajeBloqueo(window.userPermissionsCache.status, winnerName);
                 return;
             }
-            
-            mostrarMensajeBloqueo(permissions.status, null);
+            mostrarMensajeBloqueo(window.userPermissionsCache.status, null);
             return;
         }
-        
-        window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código sin cambios...
+    // 2. Permitir escribir y mover el foco inmediatamente
     let currentTargetInput = logicallyActiveInput;
-
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
         if (firstGreenInput) {
@@ -2409,12 +2406,10 @@ async function processVirtualKeyPress(keyValue) {
             currentTargetInput = logicallyActiveInput;
         }
     }
-
     if (!currentTargetInput) {
         console.log('No hay input activo para el teclado virtual.');
         return;
     }
-
     virtualKeyboardIsWriting = true;
     currentTargetInput.readOnly = false;
     currentTargetInput.value = keyValue.toUpperCase();
@@ -2429,8 +2424,25 @@ async function processVirtualKeyPress(keyValue) {
         }, 10);
     }
     setTimeout(checkAnswerAutomatic, 100);
-}
 
+    // 3. Si el caché está vencido, chequea permisos en segundo plano y actualiza el caché
+    if (
+        !window.userPermissionsCache ||
+        !window.userPermissionsCache.lastCheck ||
+        Date.now() - window.userPermissionsCache.lastCheck > (window.userPermissionsCache.cacheTimeout || 30000)
+    ) {
+        const permissions = await checkUserPermissionsCached();
+        window.userPermissionsCache = {
+            canEdit: permissions.canEdit,
+            status: permissions.status,
+            lastCheck: Date.now(),
+            cacheTimeout: window.userPermissionsCache ? window.userPermissionsCache.cacheTimeout : 30000
+        };
+        if (!permissions.canEdit) {
+            mostrarMensajeBloqueo(permissions.status, null);
+        }
+    }
+}
 // Aplicar el mismo cambio en processVirtualBackspace
 
 async function processVirtualBackspace() {
@@ -6050,7 +6062,7 @@ let userPermissionsCache = {
     canEdit: true,
     status: '',
     lastCheck: 0,
-    cacheTimeout: 30000 // 30 segundos
+    cacheTimeout: 60000 // 30 segundos
 };
 
 // Función optimizada para verificar permisos con caché

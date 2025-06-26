@@ -2368,36 +2368,7 @@ function triggerPointScoredEffects() {
 // Modificar processVirtualKeyPress
 
 async function processVirtualKeyPress(keyValue) {
-    // 1. Bloquea inmediatamente si el caché indica que NO puede editar
-    if (
-        window.userPermissionsCache &&
-        window.userPermissionsCache.lastCheck &&
-        Date.now() - window.userPermissionsCache.lastCheck < (window.userPermissionsCache.cacheTimeout || 30000)
-    ) {
-        if (!window.userPermissionsCache.canEdit) {
-            const userName = getUserName();
-            if (window.userPermissionsCache.status === "PERDEDOR" && userName && userName !== 'Invitado') {
-                console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
-                fetch(scriptURL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
-                });
-                const winnerName = await obtenerNombreGanadorEspecifico();
-                console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
-                mostrarMensajeBloqueo(window.userPermissionsCache.status, winnerName);
-                return;
-            }
-            mostrarMensajeBloqueo(window.userPermissionsCache.status, null);
-            return;
-        }
-    }
-
-    // 2. Permitir escribir y mover el foco inmediatamente
+    // Permitir escribir y mover el foco SIEMPRE de inmediato
     let currentTargetInput = logicallyActiveInput;
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
@@ -2425,22 +2396,45 @@ async function processVirtualKeyPress(keyValue) {
     }
     setTimeout(checkAnswerAutomatic, 100);
 
-    // 3. Si el caché está vencido, chequea permisos en segundo plano y actualiza el caché
+    // Chequeo de permisos en segundo plano (sin bloquear la escritura)
     if (
         !window.userPermissionsCache ||
         !window.userPermissionsCache.lastCheck ||
         Date.now() - window.userPermissionsCache.lastCheck > (window.userPermissionsCache.cacheTimeout || 30000)
     ) {
-        const permissions = await checkUserPermissionsCached();
-        window.userPermissionsCache = {
-            canEdit: permissions.canEdit,
-            status: permissions.status,
-            lastCheck: Date.now(),
-            cacheTimeout: window.userPermissionsCache ? window.userPermissionsCache.cacheTimeout : 30000
-        };
-        if (!permissions.canEdit) {
-            mostrarMensajeBloqueo(permissions.status, null);
+        checkUserPermissionsCached().then(permissions => {
+            window.userPermissionsCache = {
+                canEdit: permissions.canEdit,
+                status: permissions.status,
+                lastCheck: Date.now(),
+                cacheTimeout: window.userPermissionsCache ? window.userPermissionsCache.cacheTimeout : 30000
+            };
+            if (!permissions.canEdit) {
+                mostrarMensajeBloqueo(permissions.status, null);
+            }
+        });
+    } else if (!window.userPermissionsCache.canEdit) {
+        // Si el caché ya dice que no puede editar, bloquea inmediatamente
+        const userName = getUserName();
+        if (window.userPermissionsCache.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+            console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'clearWinnerStatus',
+                    username: userName
+                })
+            });
+            obtenerNombreGanadorEspecifico().then(winnerName => {
+                console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
+                mostrarMensajeBloqueo(window.userPermissionsCache.status, winnerName);
+            });
+        } else {
+            mostrarMensajeBloqueo(window.userPermissionsCache.status, null);
         }
+        return;
     }
 }
 // Aplicar el mismo cambio en processVirtualBackspace

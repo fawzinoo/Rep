@@ -2363,12 +2363,10 @@ function triggerPointScoredEffects() {
         }, 600); // Duración de la animación (0.6s)
     }
 }
-// Reemplazar las funciones processVirtualKeyPress y processVirtualBackspace existentes
-// Modificar processVirtualKeyPress para limpiar celda F
-// Modificar processVirtualKeyPress
+
 
 async function processVirtualKeyPress(keyValue) {
-    // Permitir escribir y mover el foco SIEMPRE de inmediato
+    // 1. Permitir escribir y mover el foco SIEMPRE de inmediato
     let currentTargetInput = logicallyActiveInput;
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
@@ -2396,7 +2394,7 @@ async function processVirtualKeyPress(keyValue) {
     }
     setTimeout(checkAnswerAutomatic, 100);
 
-    // Chequeo de permisos en segundo plano (sin bloquear la escritura)
+    // 2. Chequeo de permisos en segundo plano, nunca bloquea la escritura actual
     if (
         !window.userPermissionsCache ||
         !window.userPermissionsCache.lastCheck ||
@@ -2410,11 +2408,13 @@ async function processVirtualKeyPress(keyValue) {
                 cacheTimeout: window.userPermissionsCache ? window.userPermissionsCache.cacheTimeout : 30000
             };
             if (!permissions.canEdit) {
+                // Opcional: muestra mensaje, pero NO bloquea la escritura actual
                 mostrarMensajeBloqueo(permissions.status, null);
             }
         });
-    } else if (!window.userPermissionsCache.canEdit) {
-        // Si el caché ya dice que no puede editar, bloquea inmediatamente
+    }
+    // 3. Si el caché ya dice que no puede editar, bloquea SOLO la siguiente pulsación
+    if (window.userPermissionsCache && !window.userPermissionsCache.canEdit) {
         const userName = getUserName();
         if (window.userPermissionsCache.status === "PERDEDOR" && userName && userName !== 'Invitado') {
             console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
@@ -2434,10 +2434,11 @@ async function processVirtualKeyPress(keyValue) {
         } else {
             mostrarMensajeBloqueo(window.userPermissionsCache.status, null);
         }
-        return;
+        // Bloquea SOLO la siguiente pulsación
+        window.userPermissionsCache.canEdit = false;
     }
 }
-// Aplicar el mismo cambio en processVirtualBackspace
+
 
 async function processVirtualBackspace() {
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {

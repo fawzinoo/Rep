@@ -2465,7 +2465,36 @@ async function processVirtualBackspace() {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // Resto del código sin cambios...
+    // === ACCIÓN DE BORRADO REAL ===
+    let currentTargetInput = logicallyActiveInput;
+
+    if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
+        const firstGreenInput = document.querySelector('.green input');
+        if (firstGreenInput) {
+            firstGreenInput.focus();
+            currentTargetInput = logicallyActiveInput;
+        }
+    }
+
+    if (!currentTargetInput) {
+        console.log('No hay input activo para backspace.');
+        return;
+    }
+
+    virtualKeyboardIsWriting = true;
+    currentTargetInput.readOnly = false;
+    currentTargetInput.value = '';
+    currentTargetInput.readOnly = true;
+    virtualKeyboardIsWriting = false;
+
+    // Mover el foco al input anterior si existe
+    const prevInput = getPreviousInput(currentTargetInput);
+    if (prevInput) {
+        setTimeout(() => {
+            prevInput.focus();
+            ensureInputVisible(prevInput);
+        }, 10);
+    }
 }
 
 // Y en el event listener del teclado físico también aplicar el mismo cambio
@@ -6021,7 +6050,7 @@ let userPermissionsCache = {
     canEdit: true,
     status: '',
     lastCheck: 0,
-    cacheTimeout: 15000 // Aumentado a 15 segundos para mejor rendimiento
+    cacheTimeout: 30000 // 30 segundos
 };
 
 // Función optimizada para verificar permisos con caché

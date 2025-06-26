@@ -2363,11 +2363,45 @@ function triggerPointScoredEffects() {
         }, 600); // Duración de la animación (0.6s)
     }
 }
-
+// Reemplazar las funciones processVirtualKeyPress y processVirtualBackspace existentes
+// Modificar processVirtualKeyPress para limpiar celda F
+// Modificar processVirtualKeyPress
 
 async function processVirtualKeyPress(keyValue) {
-    // 1. Permitir escribir y mover el foco SIEMPRE de inmediato
+    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
+        const permissions = await checkUserPermissionsCached();
+        
+        if (!permissions.canEdit) {
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+                
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
+                return;
+            }
+            
+            mostrarMensajeBloqueo(permissions.status, null);
+            return;
+        }
+        
+        window.lastKeyPermissionCheck = Date.now();
+    }
+
+    // Resto del código sin cambios...
     let currentTargetInput = logicallyActiveInput;
+
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
         const firstGreenInput = document.querySelector('.green input');
         if (firstGreenInput) {
@@ -2375,10 +2409,12 @@ async function processVirtualKeyPress(keyValue) {
             currentTargetInput = logicallyActiveInput;
         }
     }
+
     if (!currentTargetInput) {
         console.log('No hay input activo para el teclado virtual.');
         return;
     }
+
     virtualKeyboardIsWriting = true;
     currentTargetInput.readOnly = false;
     currentTargetInput.value = keyValue.toUpperCase();
@@ -2393,56 +2429,13 @@ async function processVirtualKeyPress(keyValue) {
         }, 10);
     }
     setTimeout(checkAnswerAutomatic, 100);
-
-    // 2. Chequeo de permisos en segundo plano, nunca bloquea la escritura actual
-    if (
-        !window.userPermissionsCache ||
-        !window.userPermissionsCache.lastCheck ||
-        Date.now() - window.userPermissionsCache.lastCheck > (window.userPermissionsCache.cacheTimeout || 30000)
-    ) {
-        checkUserPermissionsCached().then(permissions => {
-            window.userPermissionsCache = {
-                canEdit: permissions.canEdit,
-                status: permissions.status,
-                lastCheck: Date.now(),
-                cacheTimeout: window.userPermissionsCache ? window.userPermissionsCache.cacheTimeout : 30000
-            };
-            if (!permissions.canEdit) {
-                // Opcional: muestra mensaje, pero NO bloquea la escritura actual
-                mostrarMensajeBloqueo(permissions.status, null);
-            }
-        });
-    }
-    // 3. Si el caché ya dice que no puede editar, bloquea SOLO la siguiente pulsación
-    if (window.userPermissionsCache && !window.userPermissionsCache.canEdit) {
-        const userName = getUserName();
-        if (window.userPermissionsCache.status === "PERDEDOR" && userName && userName !== 'Invitado') {
-            console.log('🔴 Tecla bloqueada por PERDEDOR - Limpiando celda F');
-            fetch(scriptURL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'clearWinnerStatus',
-                    username: userName
-                })
-            });
-            obtenerNombreGanadorEspecifico().then(winnerName => {
-                console.log(`🎯 Ganador para tecla bloqueada: "${winnerName}"`);
-                mostrarMensajeBloqueo(window.userPermissionsCache.status, winnerName);
-            });
-        } else {
-            mostrarMensajeBloqueo(window.userPermissionsCache.status, null);
-        }
-        // Bloquea SOLO la siguiente pulsación
-        window.userPermissionsCache.canEdit = false;
-    }
 }
 
+// Aplicar el mismo cambio en processVirtualBackspace
 
 async function processVirtualBackspace() {
     if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
-     
+        const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
             const userName = getUserName();
@@ -2472,36 +2465,7 @@ async function processVirtualBackspace() {
         window.lastKeyPermissionCheck = Date.now();
     }
 
-    // === ACCIÓN DE BORRADO REAL ===
-    let currentTargetInput = logicallyActiveInput;
-
-    if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
-        const firstGreenInput = document.querySelector('.green input');
-        if (firstGreenInput) {
-            firstGreenInput.focus();
-            currentTargetInput = logicallyActiveInput;
-        }
-    }
-
-    if (!currentTargetInput) {
-        console.log('No hay input activo para backspace.');
-        return;
-    }
-
-    virtualKeyboardIsWriting = true;
-    currentTargetInput.readOnly = false;
-    currentTargetInput.value = '';
-    currentTargetInput.readOnly = true;
-    virtualKeyboardIsWriting = false;
-
-    // Mover el foco al input anterior si existe
-    const prevInput = getPreviousInput(currentTargetInput);
-    if (prevInput) {
-        setTimeout(() => {
-            prevInput.focus();
-            ensureInputVisible(prevInput);
-        }, 10);
-    }
+    // Resto del código sin cambios...
 }
 
 // Y en el event listener del teclado físico también aplicar el mismo cambio
@@ -2509,7 +2473,7 @@ document.addEventListener('keydown', async function(event) {
     if (document.body.classList.contains('swal2-shown')) return;
 
     if (!window.lastPhysicalKeyCheck || Date.now() - window.lastPhysicalKeyCheck > 5000) {
-
+        const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
             const userName = getUserName();
@@ -2904,7 +2868,7 @@ document.addEventListener('keydown', async function(event) {
     if (document.body.classList.contains('swal2-shown')) return;
 
     if (!window.lastPhysicalKeyCheck || Date.now() - window.lastPhysicalKeyCheck > 5000) {
-      
+        const permissions = await checkUserPermissionsCached();
         
         if (!permissions.canEdit) {
             const userName = getUserName();
@@ -3218,12 +3182,6 @@ async function checkAnswerAutomatic() {
     }
 
     if (isComplete && userAnswer === currentFruit.name) {
-        // Chequeo de permisos SOLO aquí
-        const permissions = await checkUserPermissionsCached();
-        if (!permissions.canEdit) {
-            mostrarMensajeBloqueo(permissions.status, null);
-            return;
-        }
         playSuccessSound();
 
         // Marcar como correctas todas las celdas verdes (inputs e intersecciones)
@@ -4739,30 +4697,15 @@ function emergencyCleanup() {
     console.log('✅ Limpieza de emergencia completada');
 }
 
+// Agregar combinación de teclas de emergencia (Ctrl+Shift+E)
 document.addEventListener('keydown', function(event) {
-    if (document.body.classList.contains('swal2-shown')) return;
-
-    let key = event.key.toUpperCase();
-
-    // Detectar pulsación larga de N para Ñ
-    if (key === 'N') {
-        if (!nKeyDownTime) {
-            nKeyDownTime = Date.now();
-        }
-        event.preventDefault();
-        return;
-    }
-
-    if (/^[A-ZÑ]$/.test(key)) {
-        event.preventDefault();
-        processVirtualKeyPress(key);
-    } else if (event.key === 'Backspace') {
-        event.preventDefault();
-        processVirtualBackspace();
+    if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+        emergencyCleanup();
     }
 });
 
-
+// Reemplazar la función handleLocalWinner existente
+// Reemplazar la función handleLocalWinner existente
 
 // Reemplazar la función handleLocalWinner existente
 
@@ -6078,7 +6021,7 @@ let userPermissionsCache = {
     canEdit: true,
     status: '',
     lastCheck: 0,
-    cacheTimeout: 60000 // 30 segundos
+    cacheTimeout: 15000 // Aumentado a 15 segundos para mejor rendimiento
 };
 
 // Función optimizada para verificar permisos con caché

@@ -2439,40 +2439,7 @@ async function processVirtualKeyPress(keyValue) {
     }
 }
 
-
-async function processVirtualBackspace() {
-    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
-     
-        
-        if (!permissions.canEdit) {
-            const userName = getUserName();
-            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
-                console.log('🔴 Backspace bloqueado por PERDEDOR - Limpiando celda F');
-                fetch(scriptURL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'clearWinnerStatus',
-                        username: userName
-                    })
-                });
-                
-                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
-                const winnerName = await obtenerNombreGanadorEspecifico();
-                console.log(`🎯 Ganador para backspace bloqueado: "${winnerName}"`);
-                mostrarMensajeBloqueo(permissions.status, winnerName);
-                return;
-            }
-            
-            mostrarMensajeBloqueo(permissions.status, null);
-            return;
-        }
-        
-        window.lastKeyPermissionCheck = Date.now();
-    }
-
-    // === ACCIÓN DE BORRADO REAL ===
+function processVirtualBackspace() {
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2481,28 +2448,6 @@ async function processVirtualBackspace() {
             firstGreenInput.focus();
             currentTargetInput = logicallyActiveInput;
         }
-    }
-
-    if (!currentTargetInput) {
-        console.log('No hay input activo para backspace.');
-        return;
-    }
-
-    virtualKeyboardIsWriting = true;
-    currentTargetInput.readOnly = false;
-    currentTargetInput.value = '';
-    currentTargetInput.readOnly = true;
-    virtualKeyboardIsWriting = false;
-
-    // Mover el foco al input anterior si existe
-    const prevInput = getPreviousInput(currentTargetInput);
-    if (prevInput) {
-        setTimeout(() => {
-            prevInput.focus();
-            ensureInputVisible(prevInput);
-        }, 10);
-    }
-}
 
 // Y en el event listener del teclado físico también aplicar el mismo cambio
 document.addEventListener('keydown', async function(event) {
@@ -4739,15 +4684,30 @@ function emergencyCleanup() {
     console.log('✅ Limpieza de emergencia completada');
 }
 
-// Agregar combinación de teclas de emergencia (Ctrl+Shift+E)
 document.addEventListener('keydown', function(event) {
-    if (event.ctrlKey && event.shiftKey && event.key === 'E') {
-        emergencyCleanup();
+    if (document.body.classList.contains('swal2-shown')) return;
+
+    let key = event.key.toUpperCase();
+
+    // Detectar pulsación larga de N para Ñ
+    if (key === 'N') {
+        if (!nKeyDownTime) {
+            nKeyDownTime = Date.now();
+        }
+        event.preventDefault();
+        return;
+    }
+
+    if (/^[A-ZÑ]$/.test(key)) {
+        event.preventDefault();
+        processVirtualKeyPress(key);
+    } else if (event.key === 'Backspace') {
+        event.preventDefault();
+        processVirtualBackspace();
     }
 });
 
-// Reemplazar la función handleLocalWinner existente
-// Reemplazar la función handleLocalWinner existente
+
 
 // Reemplazar la función handleLocalWinner existente
 

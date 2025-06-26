@@ -2439,7 +2439,40 @@ async function processVirtualKeyPress(keyValue) {
     }
 }
 
-function processVirtualBackspace() {
+
+async function processVirtualBackspace() {
+    if (!window.lastKeyPermissionCheck || Date.now() - window.lastKeyPermissionCheck > 5000) {
+     
+        
+        if (!permissions.canEdit) {
+            const userName = getUserName();
+            if (permissions.status === "PERDEDOR" && userName && userName !== 'Invitado') {
+                console.log('🔴 Backspace bloqueado por PERDEDOR - Limpiando celda F');
+                fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'clearWinnerStatus',
+                        username: userName
+                    })
+                });
+                
+                // 🆕 USAR FUNCIÓN ESPECÍFICA PARA OBTENER GANADOR
+                const winnerName = await obtenerNombreGanadorEspecifico();
+                console.log(`🎯 Ganador para backspace bloqueado: "${winnerName}"`);
+                mostrarMensajeBloqueo(permissions.status, winnerName);
+                return;
+            }
+            
+            mostrarMensajeBloqueo(permissions.status, null);
+            return;
+        }
+        
+        window.lastKeyPermissionCheck = Date.now();
+    }
+
+    // === ACCIÓN DE BORRADO REAL ===
     let currentTargetInput = logicallyActiveInput;
 
     if (!currentTargetInput || !currentTargetInput.closest('.green input')) {
@@ -2448,6 +2481,28 @@ function processVirtualBackspace() {
             firstGreenInput.focus();
             currentTargetInput = logicallyActiveInput;
         }
+    }
+
+    if (!currentTargetInput) {
+        console.log('No hay input activo para backspace.');
+        return;
+    }
+
+    virtualKeyboardIsWriting = true;
+    currentTargetInput.readOnly = false;
+    currentTargetInput.value = '';
+    currentTargetInput.readOnly = true;
+    virtualKeyboardIsWriting = false;
+
+    // Mover el foco al input anterior si existe
+    const prevInput = getPreviousInput(currentTargetInput);
+    if (prevInput) {
+        setTimeout(() => {
+            prevInput.focus();
+            ensureInputVisible(prevInput);
+        }, 10);
+    }
+}
 
 // Y en el event listener del teclado físico también aplicar el mismo cambio
 document.addEventListener('keydown', async function(event) {

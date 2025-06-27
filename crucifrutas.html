@@ -3272,6 +3272,7 @@ function handleDirectWin() {
     stopTimer();
     playWinnerSound();
     launchConfetti();
+    limpiarAbandonoLocal();
     
     // Mostrar mensaje de victoria
     Swal.fire({
@@ -4793,7 +4794,7 @@ function handleLocalWinner() {
     // Efectos de victoria
     playWinnerSound();
     launchConfetti();
-    
+    limpiarAbandonoLocal();
     // Mostrar mensaje de victoria
     Swal.fire({
         title: '¡Eres el GANADOR! 🎉',
@@ -4900,6 +4901,7 @@ function handleLocalLoser() {
     stopTimer();
     stopRankingUpdates();
     stopAllAudio();
+    limpiarAbandonoLocal();
     
     console.log('👤 Usuario perdedor:', userName);
     
@@ -6465,40 +6467,45 @@ function setGameInactive() {
 }
 
 // Reemplazar el event listener beforeunload existente:
-
 window.addEventListener('beforeunload', function(event) {
-    const userName = getUserName();
-    
-    console.log('🚪 === BEFOREUNLOAD DETECTADO ===');
-    console.log('Usuario:', userName);
-    console.log('Juego activo:', gameIsActive);
-    console.log('Ya procesado:', abandonoDetectado);
-    
-    // 🆕 LIMPIAR CELDA F INDEPENDIENTEMENTE DEL ESTADO
-    if (userName && userName !== 'Invitado') {
-        console.log('🧹 LIMPIEZA FORZADA en beforeunload');
-        
-        // Doble envío para asegurar que llegue
+    const userData = getUserData();
+    const userName = userData.username;
+    const sessionId = userData.sessionId;
+
+    // 1. Detener actualizaciones de ranking
+    stopRankingUpdates();
+
+    // 2. Limpiar broadcast de ganador
+    try {
+        localStorage.removeItem('crucigrama_winner_broadcast');
+    } catch (error) {}
+
+    // 3. Marcar abandono local
+    if (userName && sessionId) {
+        marcarAbandonoLocal();
+    }
+
+    // 4. Limpiar sesión y estado en el servidor
+    if (userName && userName !== 'Invitado' && gameIsActive) {
+        if (window.gameStartTime && Date.now() - window.gameStartTime > 60000) {
+            navigator.sendBeacon(scriptURL, JSON.stringify({
+                action: 'clearUserSession',
+                username: userName
+            }));
+        }
+        // Limpieza forzada de celda F y sesión
         const limpiezaData = JSON.stringify({
             action: 'clearWinnerStatus',
             username: userName
         });
-        
         const sesionData = JSON.stringify({
-            action: 'clearUserSession', 
+            action: 'clearUserSession',
             username: userName
         });
-        
-        // Intentar con sendBeacon primero (más confiable)
         try {
             navigator.sendBeacon(scriptURL, limpiezaData);
             navigator.sendBeacon(scriptURL, sesionData);
-            console.log('📤 Limpieza enviada con sendBeacon');
-        } catch (error) {
-            console.error('❌ Error con sendBeacon:', error);
-        }
-        
-        // Backup con fetch + keepalive
+        } catch (error) {}
         try {
             fetch(scriptURL, {
                 method: 'POST',
@@ -6506,27 +6513,18 @@ window.addEventListener('beforeunload', function(event) {
                 body: limpiezaData,
                 keepalive: true
             });
-            
             fetch(scriptURL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain' },
                 body: sesionData,
                 keepalive: true
             });
-            console.log('📤 Backup con fetch+keepalive enviado');
-        } catch (error) {
-            console.error('❌ Error con fetch:', error);
-        }
+        } catch (error) {}
     }
-    
-    // Solo procesar lógica de abandono si es necesario
-    if (userName && 
-        userName !== 'Invitado' && 
-        gameIsActive && 
-        !abandonoDetectado) {
-        
+
+    // 5. Marca de abandono detectado
+    if (userName && userName !== 'Invitado' && gameIsActive && !abandonoDetectado) {
         abandonoDetectado = true;
-        console.log('✅ Señal de abandono procesada para: ' + userName);
     }
 });
 // Event listener adicional para pagehide (navegación hacia atrás)

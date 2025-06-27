@@ -7064,6 +7064,61 @@ function handleWinnerDetected() {
     });
 }
 
+// ...existing code...
+
+async function checkUserCanParticipate() {
+    const userData = getUserData();
+    const userName = userData.username;
+    if (!userName || userName === 'Invitado') return true; // Invitados pueden jugar
+
+    // Consulta al servidor
+    const response = await fetch(scriptURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+            action: 'canUserEdit',
+            username: userName
+        })
+    });
+    const data = await response.json();
+    if (!data.canEdit) {
+        let motivo = '';
+        if (data.status === 'PERDEDOR') motivo = 'Has perdido esta partida.';
+        else if (data.status === 'GANADOR') motivo = 'Ya has ganado esta partida.';
+        else if (data.status === 'ABANDONADO') motivo = 'Has abandonado esta partida.';
+        else motivo = 'No puedes participar en esta sesión.';
+
+        await Swal.fire({
+            title: 'Ya no puedes participar',
+            text: motivo + ' Espera a que termine la partida para volver a jugar.',
+            icon: 'error',
+            confirmButtonText: 'Salir',
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        });
+        // Redirigir o cerrar
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
+        return false;
+    }
+    return true;
+}
+
+// Llama a esta función antes de initializeGame()
+// Por ejemplo, en showWelcomeDialog o donde el usuario confirma jugar:
+async function intentarEntrarAlJuego() {
+    const puede = await checkUserCanParticipate();
+    if (puede) {
+        document.body.classList.remove('oculto-por-dialogo');
+        initializeGame();
+        startAbandonWinnerPolling();
+    }
+}
+
+
     </script>
 </body>
 </html>

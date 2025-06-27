@@ -3607,11 +3607,6 @@ function cerrarIframeYSalir() {
     }
 }
 
-// También detener cuando se abandona la página
-window.addEventListener('beforeunload', function () {
-    stopRankingUpdates();
-    // ... resto del código existente ...
-});
 
 
 
@@ -4177,17 +4172,65 @@ async function waitForRival(sessionName) {
 
 
 
-window.addEventListener('beforeunload', function () {
-    const userName = getUserName();
-    if (!userName) return;
-    const postData = {
-        action: 'clearUserSession',
-        username: userName
-    };
-    navigator.sendBeacon(
-        scriptURL,
-        new Blob([JSON.stringify(postData)], { type: 'text/plain' })
-    );
+window.addEventListener('beforeunload', function(event) {
+    const userData = getUserData();
+    const userName = userData.username;
+    const sessionId = userData.sessionId;
+
+    // 1. Detener actualizaciones de ranking
+    stopRankingUpdates();
+
+    // 2. Limpiar broadcast de ganador
+    try {
+        localStorage.removeItem('crucigrama_winner_broadcast');
+    } catch (error) {}
+
+    // 3. Marcar abandono local
+    if (userName && sessionId) {
+        marcarAbandonoLocal();
+    }
+
+    // 4. Limpiar sesión y estado en el servidor
+    if (userName && userName !== 'Invitado' && gameIsActive) {
+        if (window.gameStartTime && Date.now() - window.gameStartTime > 60000) {
+            navigator.sendBeacon(scriptURL, JSON.stringify({
+                action: 'clearUserSession',
+                username: userName
+            }));
+        }
+        // Limpieza forzada de celda F y sesión
+        const limpiezaData = JSON.stringify({
+            action: 'clearWinnerStatus',
+            username: userName
+        });
+        const sesionData = JSON.stringify({
+            action: 'clearUserSession',
+            username: userName
+        });
+        try {
+            navigator.sendBeacon(scriptURL, limpiezaData);
+            navigator.sendBeacon(scriptURL, sesionData);
+        } catch (error) {}
+        try {
+            fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: limpiezaData,
+                keepalive: true
+            });
+            fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: sesionData,
+                keepalive: true
+            });
+        } catch (error) {}
+    }
+
+    // 5. Marca de abandono detectado
+    if (userName && userName !== 'Invitado' && gameIsActive && !abandonoDetectado) {
+        abandonoDetectado = true;
+    }
 });
 
 
@@ -7067,9 +7110,28 @@ function handleWinnerDetected() {
 async function checkUserCanParticipate() {
     const userData = getUserData();
     const userName = userData.username;
-    if (!userName || userName === 'Invitado') return true; // Invitados pueden jugar
+    const sessionId = userData.sessionId;
+    if (!userName || userName === 'Invitado') return true;
 
-    // Consulta al servidor
+    // 1. Chequeo local de abandono
+    if (localStorage.getItem(`abandono_${userName}_${sessionId}`) === '1') {
+        await Swal.fire({
+            title: 'Ya no puedes participar',
+            text: 'Has abandonado esta partida. Espera a que termine la partida para volver a jugar.',
+            icon: 'error',
+            confirmButtonText: 'Salir',
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        });
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
+        } else {
+            window.location.href = 'https://fawzinoo.github.io/Rep/pre.html';
+        }
+        return false;
+    }
+
+    // 2. Consulta al servidor (por si quieres mantener la lógica para PERDEDOR/GANADOR)
     const response = await fetch(scriptURL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
@@ -7079,7 +7141,6 @@ async function checkUserCanParticipate() {
         })
     });
     const data = await response.json();
-    // SOLO bloquear si el estado es ABANDONADO
     if (data.status === 'ABANDONADO') {
         await Swal.fire({
             title: 'Ya no puedes participar',
@@ -7089,7 +7150,6 @@ async function checkUserCanParticipate() {
             allowOutsideClick: false,
             allowEscapeKey: false
         });
-        // Redirigir o cerrar
         if (window.parent !== window) {
             window.parent.postMessage({ type: 'CLOSE_GAME' }, '*');
         } else {
@@ -7117,7 +7177,11 @@ function limpiarAbandonoLocal() {
     localStorage.removeItem(`abandono_${userData.username}_${userData.sessionId}`);
 }
 
-// Llama a esta función cuando termina la partida (por ejemplo, cuando hay un ganador)
+function marcarAbandonoLocal() {
+    const userData = getUserData();
+    if (!userData.username || !userData.sessionId) return;
+    localStorage.setItem(`abandono_${userData.username}_${userData.sessionId}`, '1');
+}
 
     </script>
 </body>

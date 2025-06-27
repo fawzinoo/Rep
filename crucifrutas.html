@@ -4173,67 +4173,6 @@ async function waitForRival(sessionName) {
 
 
 
-window.addEventListener('beforeunload', function(event) {
-    const userData = getUserData();
-    const userName = userData.username;
-    const sessionId = userData.sessionId;
-
-    // 1. Detener actualizaciones de ranking
-    stopRankingUpdates();
-
-    // 2. Limpiar broadcast de ganador
-    try {
-        localStorage.removeItem('crucigrama_winner_broadcast');
-    } catch (error) {}
-
-    // 3. Marcar abandono local
-    if (userName && sessionId) {
-        marcarAbandonoLocal();
-    }
-
-    // 4. Limpiar sesión y estado en el servidor
-    if (userName && userName !== 'Invitado' && gameIsActive) {
-        if (window.gameStartTime && Date.now() - window.gameStartTime > 60000) {
-            navigator.sendBeacon(scriptURL, JSON.stringify({
-                action: 'clearUserSession',
-                username: userName
-            }));
-        }
-        // Limpieza forzada de celda F y sesión
-        const limpiezaData = JSON.stringify({
-            action: 'clearWinnerStatus',
-            username: userName
-        });
-        const sesionData = JSON.stringify({
-            action: 'clearUserSession',
-            username: userName
-        });
-        try {
-            navigator.sendBeacon(scriptURL, limpiezaData);
-            navigator.sendBeacon(scriptURL, sesionData);
-        } catch (error) {}
-        try {
-            fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: limpiezaData,
-                keepalive: true
-            });
-            fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: sesionData,
-                keepalive: true
-            });
-        } catch (error) {}
-    }
-
-    // 5. Marca de abandono detectado
-    if (userName && userName !== 'Invitado' && gameIsActive && !abandonoDetectado) {
-        abandonoDetectado = true;
-    }
-});
-
 
 
 
@@ -6466,7 +6405,6 @@ function setGameInactive() {
     console.log('❌ Juego INACTIVO - Detección de abandono deshabilitada');
 }
 
-// Reemplazar el event listener beforeunload existente:
 window.addEventListener('beforeunload', function(event) {
     const userData = getUserData();
     const userName = userData.username;
@@ -6506,20 +6444,7 @@ window.addEventListener('beforeunload', function(event) {
             navigator.sendBeacon(scriptURL, limpiezaData);
             navigator.sendBeacon(scriptURL, sesionData);
         } catch (error) {}
-        try {
-            fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: limpiezaData,
-                keepalive: true
-            });
-            fetch(scriptURL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: sesionData,
-                keepalive: true
-            });
-        } catch (error) {}
+        // No uses fetch aquí, solo sendBeacon
     }
 
     // 5. Marca de abandono detectado

@@ -1130,13 +1130,14 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxrSJmFGu11Y6wTb40n-ykKOQvSVaWTwhzd-OweDqxqLz8wHadV-nNyyeP3ozx0jCuOaA/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbwDzG9HIfJdD8r_x02HD11wYauTMwUVg2yglomTbl_lA3pT1CupIKZ5jki4380ddK73rg/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
 
     async function getSessionNameFromServer() {
     const sessionBaseName = document.title;
+    const scriptURL = 'TU_SCRIPT_URL'; // Cambia por tu URL real
     const postData = {
         action: 'getOrCreateSession',
         sessionBaseName: sessionBaseName
@@ -1979,7 +1980,6 @@ async function initializeGame() {
     startTimer(); 
     handleDeviceOptimizations();
     updateScoreDisplay();
-    showSessionInfo();
     
     if (gameInitializationStopped) return;
     
@@ -4136,46 +4136,39 @@ async function waitForRival(sessionName) {
     let alone = await checkIfAloneInSession(sessionName);
 
     if (alone) {
-        document.body.classList.add('oculto-por-dialogo');
-        
-        // 🆕 MENSAJE ESPECÍFICO SEGÚN EL NÚMERO DE SESIÓN
-        const sessionNumber = sessionName.split('_')[1];
-        let titleText = 'Espera a tu rival';
-        let bodyText = 'Aún no hay otro jugador en tu sesión. Espera un momento...';
-        
-        if (parseInt(sessionNumber) > 1) {
-            titleText = '⏳ Esperando nueva partida';
-            bodyText = `Estás en ${sessionName}. Hay una partida activa en curso. Espera a que termine para comenzar una nueva.`;
-        }
-        
+         document.body.classList.add('oculto-por-dialogo');
         waitingAlert = Swal.fire({
-            title: titleText,
-            text: bodyText,
+            title: 'Espera a tu rival',
+            text: 'Aún no hay otro jugador en tu sesión. Espera un momento...',
             icon: 'info',
             allowOutsideClick: false,
             showConfirmButton: false
         });
 
-        // Polling cada 3 segundos
+        // Polling cada 2 segundos
         const interval = setInterval(async () => {
             const stillAlone = await checkIfAloneInSession(sessionName);
             if (!stillAlone) {
                 clearInterval(interval);
                 Swal.close();
                 
+                // 🆕 INICIAR JUEGO CON POLLING DE ABANDONO
                 initializeGame();
+                // 🆕 ACTIVAR POLLING DE ABANDONO TAMBIÉN AQUÍ
                 startAbandonWinnerPolling();
-                console.log(`🤝 Rival encontrado en ${sessionName} - Juego iniciado`);
+                console.log('🤝 Rival encontrado - Polling de abandono activado');
             }
-        }, 3000);
+        }, 2000);
     } else {
         Swal.close();
         initializeGame();
         startWinnerPolling();
+        // 🆕 ACTIVAR POLLING DE ABANDONO TAMBIÉN AQUÍ
         startAbandonWinnerPolling();
-        console.log(`🤝 Unido a ${sessionName} con rival activo`);
+        console.log('🤝 Unido al juego con rival - Polling de abandono activado');
     }
 }
+
 
 
 
@@ -7069,28 +7062,6 @@ function handleWinnerDetected() {
         // Aquí puedes limpiar estado y redirigir si hace falta
         salirDelJuego();
     });
-}
-
-// Función mejorada para mostrar el número de usuarios en sesión
-async function showSessionInfo() {
-    const sessionName = await getSessionNameFromServer();
-    console.log(`📍 Sesión actual: ${sessionName}`);
-    
-    // Opcional: Obtener conteo de usuarios en la sesión
-    try {
-        const response = await fetch(scriptURL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'countUsersInSession',
-                sessionName: sessionName
-            })
-        });
-        const data = await response.json();
-        console.log(`👥 Usuarios en ${sessionName}: ${data.count} (ILIMITADOS)`);
-    } catch (error) {
-        console.error('Error obteniendo conteo:', error);
-    }
 }
 
 

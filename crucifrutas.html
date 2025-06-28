@@ -1130,14 +1130,13 @@ input[type="text"]:focus {
 
 
 
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbyeoDytTQgiXAbnDJMzYVZMlx-IxpSHWidk_V5lgzbYDOszgrjKaDG9UYX9HufGJTFayA/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxnJUv5wqmVhV7wnyU8p6ZefFewKx30sldozbvgycWd1t-3gTwzchM_nBRX6oMHBAweQQ/exec';
 let hasShownAutoWinner = false;
     let hasShownLoserMessage = false;
     let isAbandoning = false;
 
     async function getSessionNameFromServer() {
     const sessionBaseName = document.title;
-
     const postData = {
         action: 'getOrCreateSession',
         sessionBaseName: sessionBaseName
@@ -3647,13 +3646,9 @@ function showWelcomeDialog() {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                 checkIfUserIsBlocked().then(isBlocked => {
-            if (!isBlocked) {
                 document.body.classList.remove('oculto-por-dialogo');
                 initializeGame();
                 startAbandonWinnerPolling();
-                  }
-                  });
             } else if (result.dismiss === Swal.DismissReason.cancel) {
                 cerrarIframeYSalir();
             }
@@ -7068,57 +7063,7 @@ function handleWinnerDetected() {
     });
 }
 
-// ...dentro de showWelcomeDialog, justo antes de initializeGame()...
 
-async function checkIfUserIsBlocked() {
-    const userData = getUserData();
-    const userName = userData.username;
-    if (!userName || userName === 'Invitado') return false;
-
-    // Obtener el nombre de la sesión desde el servidor
-    let sessionName;
-    try {
-        sessionName = await getSessionNameFromServer();
-    } catch (e) {
-        sessionName = document.title + "_1";
-    }
-
-    // DEBUG: Mostrar los valores que se envían
-    console.log('🔎 Comprobando bloqueo:', { userName, sessionName });
-
-    // Consultar al backend si el usuario está bloqueado de esta sesión
-    const response = await fetch(scriptURL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-            action: 'checkCanJoinSession',
-            username: userName,
-            sessionName: sessionName
-        })
-    });
-    const data = await response.json();
-    console.log('🔎 Respuesta del backend:', data);
-
-    if (data && data.canJoin === false) {
-        Swal.fire({
-            title: 'Acceso bloqueado',
-            html: `
-                <div style="text-align:center;">
-                    <p style="font-size:18px;color:#dc2626;">Ya has abandonado esta partida.</p>
-                    <p style="font-size:16px;color:#4b5563;">No puedes volver a jugar hasta que termine el juego actual.</p>
-                </div>
-            `,
-            icon: 'error',
-            confirmButtonText: 'Salir',
-            allowOutsideClick: false,
-            allowEscapeKey: false
-        }).then(() => {
-            cerrarIframeYSalir();
-        });
-        return true; // Está bloqueado
-    }
-    return false; // No está bloqueado
-}
     </script>
 </body>
 </html>

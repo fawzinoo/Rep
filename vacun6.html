@@ -94,13 +94,19 @@
         }
 
     
-    /* AGREGAR ESTOS ESTILOS AL FINAL */
-    #content {
-        display: none; /* Oculta el contenido hasta que se verifique el acceso */
+   #content {
+        display: none;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    #content.show {
+        display: block;
+        opacity: 1;
     }
     
     .access-denied {
-        display: flex;
+        display: none; /* Cambiar de flex a none inicialmente */
         justify-content: center;
         align-items: center;
         height: 100vh;
@@ -109,6 +115,13 @@
         font-family: Arial, sans-serif;
         text-align: center;
         font-size: 18px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .access-denied.show {
+        display: flex;
+        opacity: 1;
     }
     
     .access-denied h1 {
@@ -120,7 +133,32 @@
         margin: 10px 0;
         font-size: 16px;
     }
-
+    
+    /* Loading screen mientras se verifica */
+    .loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(135deg, #6a11cb, #2575fc);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-family: Arial, sans-serif;
+        z-index: 9999;
+    }
+    
+    .loading-spinner {
+        font-size: 24px;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
     </style>
 </head>
 <body>
@@ -167,6 +205,7 @@
     </div>
 </div>
 
+/* filepath: /Users/faouzielhilali/Documents/prueba.html */
 <script>
 // ====== SISTEMA DE PROTECCIÓN ANTI-PIRATERÍA ======
 
@@ -228,7 +267,7 @@
         }
     }
     
-    // 5. VERIFICACIÓN PRINCIPAL DE ACCESO
+    // 5. VERIFICACIÓN PRINCIPAL DE ACCESO - MEJORADA
     function verifyAccess() {
         const hasValidReferrer = checkReferrer();
         const hasValidSession = checkSessionToken();
@@ -244,28 +283,74 @@
         // Debe cumplir al menos UNA condición para acceder
         if (hasValidReferrer || hasValidSession || hasValidParams) {
             showContent();
+            return true;
         } else {
             blockAccess('Unauthorized access attempt');
+            return false;
         }
     }
     
     // 6. MOSTRAR CONTENIDO AUTORIZADO
-    function showContent() {
+function showContent() {
+    const loadingScreen = document.getElementById('loading-screen');
+    const accessDenied = document.getElementById('access-denied-screen');
+    const content = document.getElementById('content');
+    
+    // Ocultar loading y access denied
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    accessDenied.style.display = 'none';
+    accessDenied.classList.remove('show');
+    
+    // Mostrar contenido con animación
+    content.style.display = 'block';
+    setTimeout(() => {
+        content.classList.add('show');
+    }, 50);
+    
+    // Marcar sesión como válida
+    sessionStorage.setItem('pageAccess', 'granted');
+}
+
+// 7. BLOQUEAR ACCESO NO AUTORIZADO - MEJORADA
+function blockAccess(reason) {
+    console.warn('Access blocked:', reason);
+    
+    const loadingScreen = document.getElementById('loading-screen');
+    const accessDenied = document.getElementById('access-denied-screen');
+    const content = document.getElementById('content');
+    
+    // Ocultar loading y content
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    content.style.display = 'none';
+    content.classList.remove('show');
+    
+    // Mostrar access denied con animación
+    accessDenied.style.display = 'flex';
+    setTimeout(() => {
+        accessDenied.classList.add('show');
+    }, 50);
+}
+    
+    // 8. VERIFICACIÓN INMEDIATA AL CARGAR - NUEVA FUNCIÓN
+    function verificacionInicial() {
+        // Ocultar ambas pantallas inicialmente
         document.getElementById('access-denied-screen').style.display = 'none';
-        document.getElementById('content').style.display = 'block';
-        
-        // Marcar sesión como válida
-        sessionStorage.setItem('pageAccess', 'granted');
-    }
-    
-    // 7. BLOQUEAR ACCESO NO AUTORIZADO
-    function blockAccess(reason) {
-        console.warn('Access blocked:', reason);
-        document.getElementById('access-denied-screen').style.display = 'flex';
         document.getElementById('content').style.display = 'none';
+        
+        // Verificar acceso inmediatamente
+        const tieneAcceso = verifyAccess();
+        
+        // Si no tiene acceso, mostrar pantalla de denegado después de un momento
+        if (!tieneAcceso) {
+            setTimeout(() => {
+                if (document.getElementById('content').style.display === 'none') {
+                    document.getElementById('access-denied-screen').style.display = 'flex';
+                }
+            }, 100);
+        }
     }
     
-    // 8. PROTECCIÓN CONTRA CLIC DERECHO Y TECLAS
+    // 9. PROTECCIÓN CONTRA CLIC DERECHO Y TECLAS
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         return false;
@@ -283,18 +368,29 @@
         }
     });
     
-    // 9. VERIFICACIÓN CONTINUA
+    // 10. VERIFICACIÓN CONTINUA
     setInterval(detectDevTools, 1000);
     setInterval(verifyAccess, 5000); // Re-verificar cada 5 segundos
     
-    // 10. INICIALIZACIÓN
-    document.addEventListener('DOMContentLoaded', function() {
-        setTimeout(verifyAccess, 100);
+    // 11. INICIALIZACIÓN INMEDIATA - MODIFICADA
+    // Ejecutar verificación tan pronto como sea posible
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', verificacionInicial);
+    } else {
+        verificacionInicial();
+    }
+    
+    // También ejecutar cuando el DOM esté completamente cargado
+    window.addEventListener('load', function() {
+        // Solo re-verificar si no se ha mostrado contenido aún
+        if (document.getElementById('content').style.display === 'none') {
+            verifyAccess();
+        }
     });
     
 })();
 
-// ====== FUNCIONES ORIGINALES (MANTENER) ======
+// ====== FUNCIONES ORIGINALES (MANTENER SIN CAMBIOS) ======
 
 function verifyPassword(element) {
     const redirectUrl = element.getAttribute('data-url');
@@ -386,7 +482,10 @@ function verifyPassword1(element) {
     });
 }
 
-
+// Auto-reload cada minuto
+setTimeout(function(){
+    location.reload();
+}, 60000);
 
 </script>
 </body>

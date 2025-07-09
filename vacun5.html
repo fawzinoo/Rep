@@ -93,29 +93,298 @@
             flex-direction: row-reverse; /* Invertir el orden de los botones */
         }
 
+    
+   #content {
+        display: none;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    #content.show {
+        display: block;
+        opacity: 1;
+    }
+    
+    .access-denied {
+        display: none; /* Cambiar de flex a none inicialmente */
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        font-size: 18px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .access-denied.show {
+        display: flex;
+        opacity: 1;
+    }
+    
+    .access-denied h1 {
+        font-size: 48px;
+        margin-bottom: 20px;
+    }
+    
+    .access-denied p {
+        margin: 10px 0;
+        font-size: 16px;
+    }
+    
+    /* Loading screen mientras se verifica */
+    .loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(135deg, #6a11cb, #2575fc);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-family: Arial, sans-serif;
+        z-index: 9999;
+    }
+    
+    .loading-spinner {
+        font-size: 24px;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
     </style>
 </head>
 <body>
 
-    <div class="gallery">
- 
+<!-- PANTALLA DE ACCESO DENEGADO -->
+<div id="access-denied-screen" class="access-denied">
+    <div>
+        <h1>🚫 Acceso Denegado</h1>
+        <p>Esta página solo es accesible desde la aplicación principal.</p>
+        <p>Código: 403 - Forbidden</p>
+    </div>
+</div>
 
-        <div class="card">
+<!-- CONTENIDO PRINCIPAL (OCULTO INICIALMENTE) -->
+<div id="content">
+    <div class="gallery">
+              <div class="card">
     <a href="https://fawzinoo.github.io/Rep/arbol.html">
         <img src="https://fawzinoo.github.io/Fotos/arbol.webp" alt="hoy">
         <h1>árbol genealógico (A1)</h1>
     </a>
 </div>
- 
-
-        
     </div>
+</div>
 
-    <script>
 
-  
+<script>
+    const MODO_DESARROLLO = false;
+// ====== SISTEMA DE PROTECCIÓN ANTI-PIRATERÍA ======
+
+(function() {
+    'use strict';
+    
+    // ✅ AGREGAR ESTA PARTE QUE TE FALTA:
+    // Si está en modo desarrollo, mostrar contenido directamente
+    if (MODO_DESARROLLO) {
+        console.log('🔧 MODO DESARROLLO ACTIVADO - Protección deshabilitada');
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('access-denied-screen').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('content').classList.add('show');
+        });
+        return; // Salir del script de protección
+    }
+    
+    // 1. VERIFICACIÓN DE REFERRER
+    function checkReferrer() {
+        const allowedDomains = [
+            'fawzinoo.github.io',
+            'localhost', 
+            '127.0.0.1'
+        ];
         
- function verifyPassword(element) {
+        const referrer = document.referrer;
+        if (!referrer) return false;
+        
+        try {
+            const referrerDomain = new URL(referrer).hostname;
+            return allowedDomains.some(domain => referrerDomain.includes(domain));
+        } catch {
+            return false;
+        }
+    }
+    
+    // 2. VERIFICACIÓN DE TOKEN DE SESIÓN
+    function checkSessionToken() {
+        const validTokens = [
+            'authenticated',
+            'validAccess',
+            'userLoggedIn'
+        ];
+        
+        return validTokens.some(token => 
+            sessionStorage.getItem(token) === 'true' || 
+            localStorage.getItem(token) === 'true'
+        );
+    }
+    
+    // 3. VERIFICACIÓN DE PARÁMETROS URL
+    function checkUrlParams() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const accessKey = urlParams.get('access');
+        const validKey = btoa('valid_access_' + new Date().toDateString()).substring(0, 16);
+        
+        return accessKey && (accessKey === validKey || accessKey === 'authorized');
+    }
+    
+    // 4. DETECCIÓN DE HERRAMIENTAS DE DESARROLLADOR
+    let devToolsOpen = false;
+    
+    function detectDevTools() {
+        const threshold = 160;
+        
+        if (window.outerHeight - window.innerHeight > threshold || 
+            window.outerWidth - window.innerWidth > threshold) {
+            devToolsOpen = true;
+            blockAccess('Developer tools detected');
+        }
+    }
+    
+    // 5. VERIFICACIÓN PRINCIPAL DE ACCESO - MEJORADA
+    function verifyAccess() {
+        const hasValidReferrer = checkReferrer();
+        const hasValidSession = checkSessionToken();
+        const hasValidParams = checkUrlParams();
+        
+        // Debug (quitar en producción)
+        console.log('Verificación:', {
+            referrer: hasValidReferrer,
+            session: hasValidSession,
+            params: hasValidParams
+        });
+        
+        // Debe cumplir al menos UNA condición para acceder
+        if (hasValidReferrer || hasValidSession || hasValidParams) {
+            showContent();
+            return true;
+        } else {
+            blockAccess('Unauthorized access attempt');
+            return false;
+        }
+    }
+    
+    // 6. MOSTRAR CONTENIDO AUTORIZADO
+function showContent() {
+    const loadingScreen = document.getElementById('loading-screen');
+    const accessDenied = document.getElementById('access-denied-screen');
+    const content = document.getElementById('content');
+    
+    // Ocultar loading y access denied
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    accessDenied.style.display = 'none';
+    accessDenied.classList.remove('show');
+    
+    // Mostrar contenido con animación
+    content.style.display = 'block';
+    setTimeout(() => {
+        content.classList.add('show');
+    }, 50);
+    
+    // Marcar sesión como válida
+    sessionStorage.setItem('pageAccess', 'granted');
+}
+
+// 7. BLOQUEAR ACCESO NO AUTORIZADO - MEJORADA
+function blockAccess(reason) {
+    console.warn('Access blocked:', reason);
+    
+    const loadingScreen = document.getElementById('loading-screen');
+    const accessDenied = document.getElementById('access-denied-screen');
+    const content = document.getElementById('content');
+    
+    // Ocultar loading y content
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    content.style.display = 'none';
+    content.classList.remove('show');
+    
+    // Mostrar access denied con animación
+    accessDenied.style.display = 'flex';
+    setTimeout(() => {
+        accessDenied.classList.add('show');
+    }, 50);
+}
+    
+    // 8. VERIFICACIÓN INMEDIATA AL CARGAR - NUEVA FUNCIÓN
+    function verificacionInicial() {
+        // Ocultar ambas pantallas inicialmente
+        document.getElementById('access-denied-screen').style.display = 'none';
+        document.getElementById('content').style.display = 'none';
+        
+        // Verificar acceso inmediatamente
+        const tieneAcceso = verifyAccess();
+        
+        // Si no tiene acceso, mostrar pantalla de denegado después de un momento
+        if (!tieneAcceso) {
+            setTimeout(() => {
+                if (document.getElementById('content').style.display === 'none') {
+                    document.getElementById('access-denied-screen').style.display = 'flex';
+                }
+            }, 100);
+        }
+    }
+    
+    // 9. PROTECCIÓN CONTRA CLIC DERECHO Y TECLAS
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        return false;
+    });
+    
+    document.addEventListener('keydown', function(e) {
+        // Bloquear F12, Ctrl+Shift+I, Ctrl+U, etc.
+        if (e.key === 'F12' || 
+            (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+            (e.ctrlKey && e.shiftKey && e.key === 'C') ||
+            (e.ctrlKey && e.key === 'U')) {
+            e.preventDefault();
+            blockAccess('Attempted to open developer tools');
+            return false;
+        }
+    });
+    
+    // 10. VERIFICACIÓN CONTINUA
+    setInterval(detectDevTools, 1000);
+    setInterval(verifyAccess, 5000); // Re-verificar cada 5 segundos
+    
+    // 11. INICIALIZACIÓN INMEDIATA - MODIFICADA
+    // Ejecutar verificación tan pronto como sea posible
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', verificacionInicial);
+    } else {
+        verificacionInicial();
+    }
+    
+    // También ejecutar cuando el DOM esté completamente cargado
+    window.addEventListener('load', function() {
+        // Solo re-verificar si no se ha mostrado contenido aún
+        if (document.getElementById('content').style.display === 'none') {
+            verifyAccess();
+        }
+    });
+    
+})();
+
+// ====== FUNCIONES ORIGINALES (MANTENER SIN CAMBIOS) ======
+
+function verifyPassword(element) {
     const redirectUrl = element.getAttribute('data-url');
 
     Swal.fire({
@@ -132,13 +401,11 @@
         },
         buttonsStyling: true
     }).then((result) => {
-        
         const encodedPassword = "MDAwMw==";  
         const decodedPassword = atob(encodedPassword);  
 
         if (result.isConfirmed) {
             if (result.value === decodedPassword) {
-                
                 sessionStorage.setItem('authenticated', 'true');
 
                 Swal.fire({
@@ -162,7 +429,7 @@
     });
 }
 
-         function verifyPassword1(element) {
+function verifyPassword1(element) {
     const redirectUrl = element.getAttribute('data-url');
 
     Swal.fire({
@@ -179,13 +446,11 @@
         },
         buttonsStyling: true
     }).then((result) => {
-        
         const encodedPassword = "MTFhMjI=";  
         const decodedPassword = atob(encodedPassword);  
 
         if (result.isConfirmed) {
             if (result.value === decodedPassword) {
-                
                 sessionStorage.setItem('authenticated', 'true');
 
                 Swal.fire({
@@ -209,9 +474,6 @@
     });
 }
 
-        setTimeout(function(){
-        location.reload();
-    }, 60000); // 60000 ms = 1 minuto
 
 </script>
 </body>

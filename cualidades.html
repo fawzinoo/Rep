@@ -2153,91 +2153,122 @@ function updateAudiosWithCache() {
     }
     // --- FIN FUNCIONES AUXILIARES ---
 
-    // --- VERIFICAR SI TODO ESTÁ EN CACHE ---
-    function checkIfCached() {
-        for (let img of imgElements) {
-            if (!localStorage.getItem('imgcache_' + img.src)) return false;
+    // --- OPTIMIZACIÓN DE CACHÉ PARA FLUIDEZ ---
+    const resourceCache = { images: {}, audios: {} };
+
+    // 1. Carga todo el localStorage a un caché en memoria una sola vez.
+    function populateCacheFromLocalStorage() {
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+            if (key.startsWith('imgcache_')) {
+                const originalSrc = key.replace('imgcache_', '');
+                resourceCache.images[originalSrc] = localStorage.getItem(key);
+            } else if (key.startsWith('audiocache_')) {
+                const originalSrc = key.replace('audiocache_', '');
+                resourceCache.audios[originalSrc] = localStorage.getItem(key);
+            }
+        });
+    }
+
+    // 2. Aplica los recursos desde el caché en memoria (muy rápido).
+    function applyResourcesFromMemoryCache() {
+        imgElements.forEach(img => {
+            if (resourceCache.images[img.src]) {
+                img.src = resourceCache.images[img.src];
+            }
+        });
+        updateAudiosWithCache(); // Esta función ya usa el caché en memoria indirectamente
+        updateEffectAudios();
+    }
+
+    // 3. Verifica si todos los recursos necesarios están en el caché de memoria.
+    function areAllResourcesCached() {
+        for (const img of imgElements) {
+            if (!resourceCache.images[img.src]) return false;
         }
-        for (let audioUrl of audioUrls) {
+        for (const audioUrl of audioUrls) {
             const fullUrl = baseUrl + audioUrl;
-            if (!localStorage.getItem('audiocache_' + fullUrl)) return false;
+            if (!resourceCache.audios[fullUrl]) return false;
         }
         return true;
     }
 
-    // --- SI TODO ESTÁ EN CACHE, OCULTAR LOADING Y MOSTRAR BOTONES ---
-    if (checkIfCached()) {
-        imgElements.forEach(img => {
-            const cached = localStorage.getItem('imgcache_' + img.src);
-            if (cached) img.src = cached;
+    // --- LÓGICA DE CARGA PRINCIPAL REFACTORIZADA ---
+    populateCacheFromLocalStorage();
+
+    if (areAllResourcesCached()) {
+        console.log("Todos los recursos están en caché. Cargando desde memoria.");
+        applyResourcesFromMemoryCache();
+        loadingOverlay.style.display = 'none';
+        buttonContainer.style.display = 'flex';
+    } else {
+        console.log("Recursos faltantes. Descargando y guardando en caché...");
+        buttonContainer.style.display = 'none';
+        const totalResources = imgElements.length + audioUrls.length;
+        let loaded = 0;
+
+        const updateLoading = () => {
+            const percent = Math.round((loaded / totalResources) * 100);
+            loadingText.textContent = `${percent}%`;
+            loadingBar.style.width = `${percent}%`;
+            if (loaded >= totalResources) {
+                setTimeout(() => { // Pequeño delay para que el usuario vea el 100%
+                    loadingOverlay.style.display = 'none';
+                    buttonContainer.style.display = 'flex';
+                }, 300);
+            }
+        };
+
+        const cacheResource = async (url, type) => {
+            try {
+                const response = await fetch(url, { cache: 'reload' });
+                const blob = await response.blob();
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64 = reader.result;
+                    const cacheKey = `${type}cache_${url}`;
+                    localStorage.setItem(cacheKey, base64);
+                    if (type === 'img') resourceCache.images[url] = base64;
+                    if (type === 'audio') resourceCache.audios[url] = base64;
+                    loaded++;
+                    updateLoading();
+                };
+                reader.readAsDataURL(blob);
+            } catch (e) {
+                console.error(`Error al cachear ${url}:`, e);
+                loaded++; // Contar como cargado incluso si hay error para no bloquear la barra
+                updateLoading();
+            }
+        };
+
+        const imagePromises = imgElements.map(img => cacheResource(img.src, 'img'));
+        const audioPromises = audioUrls.map(audioUrl => cacheResource(baseUrl + audioUrl, 'audio'));
+
+        Promise.all([...imagePromises, ...audioPromises]).then(() => {
+            console.log("Proceso de cacheo completado.");
+            applyResourcesFromMemoryCache();
         });
-        updateAudiosWithCache();
-        loadingOverlay.style.display = 'none';
-        buttonContainer.style.display = 'flex';
-        return;
-    }
-
-    // --- SI NO, HACER EL LOADING NORMAL ---
-    buttonContainer.style.display = 'none';
-    const totalResources = imgElements.length + audioUrls.length;
-    let loaded = 0;
-
-    function updateLoading() {
-        const percent = Math.round((loaded / totalResources) * 100);
-        loadingText.textContent = `${percent}%`;
-        loadingBar.style.width = percent + "%";
-if (loaded >= totalResources) {
-    loadingOverlay.style.display = 'none';
-    buttonContainer.style.display = 'flex';
-
-}
-    }
-
- async function cacheImage(img) {
-    // Precarga la imagen sin usar localStorage ni base64
-    const src = img.src;
-    try {
-        const response = await fetch(src, {cache: "reload"});
-        if (response.ok) {
-            img.src = src; // Usa la URL original
-        }
-    } catch (e) {}
-    loaded++;
-    updateLoading();
-}
-  async function cacheAudio(audioUrl) {
-    // Precarga el audio sin usar localStorage ni base64
-    loaded++;
-    updateLoading();
-}
-
-    // --- INICIAR CARGA SI NO ESTÁN EN CACHE ---
-    try {
-        const imagePromises = imgElements.map(img => cacheImage(img));
-        const audioPromises = audioUrls.map(audioUrl => cacheAudio(audioUrl));
-        await Promise.all([...imagePromises, ...audioPromises]);
-    } catch (error) {
-        loadingOverlay.style.display = 'none';
-        buttonContainer.style.display = 'flex';
     }
 });
 
 // **FUNCIÓN OPTIMIZADA PARA LIMPIAR EL CACHE**
 function clearCacheResources() {
     console.log('Limpiando cache de recursos...');
-    
     try {
         const keys = Object.keys(localStorage);
         let removedCount = 0;
-        
         keys.forEach(key => {
             if (key.startsWith('imgcache_') || key.startsWith('audiocache_')) {
                 localStorage.removeItem(key);
                 removedCount++;
             }
         });
-        
-        console.log(`Cache limpiado: ${removedCount} elementos eliminados`);
+        // Limpiar también el caché en memoria
+        resourceCache.images = {};
+        resourceCache.audios = {};
+        console.log(`Cache limpiado: ${removedCount} elementos eliminados de localStorage y caché de memoria reseteado.`);
+        alert('Cache limpiado. La página se recargará.');
+        location.reload();
     } catch (error) {
         console.error('Error al limpiar el cache:', error);
     }

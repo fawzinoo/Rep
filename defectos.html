@@ -1,0 +1,2546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><script type="text/javascript" src="/___vscode_livepreview_injected_script"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <title>Defectos</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #1f3658, #3558e3);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+             position: relative;
+            transform-style: preserve-3d;
+                transition: transform 0.9s cubic-bezier(0.68, -0.55, 0.27, 1.55), box-shadow 0.5s;
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(67,198,172,0.12), 0 2px 8px rgba(0,0,0,0.12);
+            will-change: transform, box-shadow;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    width: 100%;
+    background: linear-gradient(to bottom, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9)); /* Fondo azul oscuro */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 3rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Sombra más pronunciada */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* Sombra del texto más fuerte */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 100%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.3); /* Círculos más claros y visibles */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+
+        .flashcard.flipped::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    border-radius: 20px;
+    box-shadow: 0 0 80px 20px #e0eafc99;
+    opacity: 0.4;
+    transition: opacity 0.5s;
+    z-index: 1;
+}
+    
+/* Contenedor de botones */
+.button-container {
+    width: 100%;
+    max-width: 370px;
+    display: flex;
+    justify-content: space-evenly; /* Espacio uniforme entre todos los botones */
+    align-items: center;
+    padding: 10px 0px;
+    background-color: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+
+/* Contenedor en pantalla completa */
+.button-container.fullscreen {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 90%; /* Ancho ajustado para fullscreen */
+}
+
+/* Botones individuales */
+.button {
+    padding: 10px 15px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 50px;
+    background-color: #3498db;
+    color: #fff;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+     
+        .button.yes { background-color: #27ae60; margin-right: 25px;}
+        .button.no { background-color: #e74c3c;margin-right: 10px; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+.results-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 100;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(to right, #f4e2d8, #ba5370);
+    color: #fff;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+
+#completion-message {
+    display: none; /* Inicialmente ocultos */
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+#final-review-message {
+    display: none; /* Inicialmente oculto */
+    position: absolute;
+    width: 100%;                                     
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: white;
+    color: #2c3e50;
+    font-size: 2em;
+    font-weight: bold;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+        #start-exposure-button {
+  border-radius: 50%;  /* Hacer el botón redondo */
+  padding: 10px;         /* Ajustar el padding para que el icono se vea bien */
+  margin-left: 15px;
+  
+}
+
+.button.disabled {
+    background-color: #bdc3c7;  /* Gris */
+    cursor: not-allowed; 
+    opacity: 0.5;  /* Opcional: Si deseas dar un toque más opaco */
+}
+
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+        color: black; /* color negro al inicio */
+    }
+    50% {
+        opacity: 0.5;
+        color: orange; /* color naranja en la mitad del parpadeo */
+    }
+    100% {
+        opacity: 1;
+        color: black; /* color negro al final */
+    }
+}
+
+.playing {
+    animation: blink 1s infinite;
+}
+
+
+.overlay-text {
+    position: absolute;
+    z-index: 1; /* Colocar por encima del contenido */
+    color: white; /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con los clics */
+    margin: 5%; /* Margen relativo */
+    line-height: 1.5; /* Espaciado entre líneas */
+    top: 40%; /* Posición específica desde arriba */
+    left: 0%; /* Posición específica desde la izquierda */
+}
+
+/* Estilos para .overlay-text1 */
+.overlay-text1 {
+    position: absolute;
+    top: 5px;
+    z-index: 1;
+    color: rgb(185, 232, 203); /* Color específico */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: center; /* Centrado */
+    pointer-events: none; /* No interferir con clics */
+    display: inline-block; /* Comportamiento inline */
+    animation: pulse 1.5s infinite; /* Animación pulsante */
+}
+
+/* Estilos para .overlay-text2 */
+.overlay-text2 {
+    position: absolute;
+    z-index: 1;
+    color: white; /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra del texto */
+    text-align: left; /* Alineación a la izquierda */
+    pointer-events: none; /* No interferir con clics */
+    margin: 30px; /* Márgenes específicos */
+    top: 40%; /* Posición específica desde arriba */
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes moveLeftToRight {
+  0% {
+    transform: translateX(0); /* Posición inicial */
+  }
+  50% {
+    transform: translateX(10px); /* Mueve hacia la derecha */
+  }
+  100% {
+    transform: translateX(0); /* Vuelve a la posición original */
+  }
+}
+@keyframes smoke {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(0, 255, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+
+
+
+
+@keyframes smoke1 {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1); /* Inicio */
+    }
+    50% {
+        opacity: 0.7;
+        transform: translate(0, -100px) scale(2); /* Mover hacia arriba */
+    }
+    80% {
+        opacity: 0.5;
+        transform: translate(0, -200px) scale(3); /* Subir más */
+    }
+    100% {
+        opacity: 0.2;
+        transform: translate(0, -250px) scale(4); /* Subir mucho más alto */
+    }
+}
+
+.smoke1 {
+    position: absolute;
+    top: 50%; /* Centrado inicial en el botón */
+    left: 50%; /* Centrado inicial en el botón */
+    width: 30px; /* Tamaño inicial */
+    height: 30px; /* Tamaño inicial */
+    border-radius: 50%; /* Forma circular */
+    background: rgba(255, 0, 0, 0.6); /* Rojo translúcido */
+    display: flex;
+    justify-content: center; /* Centrar texto horizontalmente */
+    align-items: center; /* Centrar texto verticalmente */
+    transform-origin: center;
+    animation: smoke1 2s ease-out forwards; /* Animación */
+    pointer-events: none; /* No interferir con eventos del mouse */
+}
+
+.smoke1 span {
+    font-size: 10px; /* Tamaño inicial del texto */
+    color: white; /* Color del texto */
+    font-weight: bold;
+    opacity: 1; /* Comienza completamente visible */
+    transition: font-size 2s ease, opacity 2s ease; /* Transición suave */
+}
+
+
+/* Agregar estos estilos CSS en la sección <style> */
+.back-arrow {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 1001;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+    font-size: 20px;
+    color: #333;
+}
+
+.back-arrow:hover {
+    background-color: #fff;
+    transform: scale(1.1);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.back-arrow i {
+    color: #333;
+}
+
+        .divider {
+    width: 120%; /* Ajusta el ancho de la línea */
+    border: 0;
+    height: 2px;
+    background-color: #e1d4d4; /* Color de la línea */
+    margin: 80px 0;
+}
+.divider1 {
+    width: 120%; /* Ajusta el ancho de la línea */
+    border: 0;
+    height: 2px;
+    background-color: #e1d4d4; /* Color de la línea */
+    margin: 0px 0;
+}
+/* Tarjeta especial elegante */
+.fade-card {
+    background: linear-gradient(135deg, #f8ffae 0%, #43c6ac 100%);
+    color: #222;
+    font-size: 2.8rem;
+    font-weight: bold;
+    border-radius: 25px;
+    box-shadow: 0 8px 32px rgba(67, 198, 172, 0.25), 0 2px 8px rgba(0,0,0,0.12);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    animation: fadeOutCard 4s forwards;
+    letter-spacing: 2px;
+    border: 2px solid #fff;
+}
+
+.fade-text {
+    width: 100%;
+    text-align: center;
+    font-family: 'Playfair Display', serif;
+    text-shadow: 0 2px 8px rgba(67,198,172,0.2), 0 1px 2px #fff;
+}
+
+@keyframes fadeOutCard {
+    0% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+@keyframes loadingPulse {
+    0%, 100% { transform:translate(-50%,-50%) scale(1); }
+    50% { transform:translate(-50%,-50%) scale(1.02); }
+}
+
+@keyframes loadingDot {
+    0%, 80%, 100% { transform:scale(0.8); opacity:0.5; }
+    40% { transform:scale(1.2); opacity:1; }
+}
+
+@keyframes loadingShimmer {
+    0% { background-position:200% 0; }
+    100% { background-position:-200% 0; }
+}
+
+.button-container {
+    width: 100%;
+    max-width: 370px;
+    display: none; /* Oculto inicialmente */
+    justify-content: space-evenly;
+    align-items: center;
+    padding: 10px 0px;
+    background-color: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+.top-status-bar {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 20px auto 5px auto;
+    gap: 2px;
+    position: relative;
+    z-index: 10;
+}
+
+.pill {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 1.0em;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    background: #fff;
+    min-width: 60px;
+    justify-content: center;
+    letter-spacing: 0.3px;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+
+.pill-faltan {
+    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(255,107,53,0.15);
+    gap: 8px;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.pill-faltan i {
+    font-size: 0.9em;
+}
+
+/* Efecto de luz brillante para el contador T: */
+.pill-faltan.light-burst {
+    animation: lightBurst 0.8s ease-out;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.4);
+}
+
+@keyframes lightBurst {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 2px 6px rgba(255,107,53,0.15);
+    }
+    30% {
+        transform: scale(1.1);
+        box-shadow: 0 0 30px rgba(255, 215, 0, 1), 0 0 40px rgba(255, 215, 0, 0.8), 0 0 50px rgba(255, 215, 0, 0.6);
+        background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+    }
+    60% {
+        transform: scale(1.05);
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.9), 0 0 35px rgba(255, 215, 0, 0.7), 0 0 45px rgba(255, 215, 0, 0.5);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 2px 6px rgba(255,107,53,0.15);
+        background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+    }
+}
+
+/* Efecto de partículas de luz */
+.pill-faltan::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    background: rgba(255, 215, 0, 0.8);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    animation: sparkle 0.6s ease-out;
+}
+
+@keyframes sparkle {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+    }
+    50% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(3);
+        box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+    }
+}
+
+/* Efecto de texto que brilla */
+.pill-faltan span {
+    position: relative;
+    z-index: 1;
+}
+
+.pill-faltan.light-burst span {
+    animation: textGlow 0.8s ease-out;
+}
+
+@keyframes textGlow {
+    0% {
+        text-shadow: none;
+    }
+    50% {
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 215, 0, 0.6);
+        color: #fff;
+    }
+    100% {
+        text-shadow: none;
+        color: #fff;
+    }
+}
+
+/* Efecto de ondas de luz */
+.pill-faltan.light-burst::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle, rgba(255, 215, 0, 0.3) 0%, transparent 70%);
+    border-radius: 20px;
+    animation: lightWave 0.8s ease-out;
+}
+
+@keyframes lightWave {
+    0% {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+    }
+    100% {
+        transform: scale(1.5);
+        opacity: 0;
+    }
+}
+
+
+.pill-progreso {
+    background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(78,205,196,0.15);
+    font-weight: 600;
+    font-size: 1.0em;
+    min-width: 60px;
+    text-align: center;
+    transition: all 0.3s ease;
+    border: none;
+}
+
+.pill-progreso:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(78,205,196,0.2);
+}   
+.efecto-glow {
+    font-size: 2.8rem;
+    font-weight: bold;
+    color: #3558e3;
+    text-shadow: 0 0 18px #a3bffa, 0 0 32px #e0eafc;
+    letter-spacing: 1.5px;
+    position: relative;
+    z-index: 2;
+    animation: glowAnim 1.5s infinite alternate;
+}
+
+@keyframes glowAnim {
+    0% { text-shadow: 0 0 18px #a3bffa, 0 0 32px #e0eafc; }
+    100% { text-shadow: 0 0 32px #3558e3, 0 0 48px #e0eafc; }
+}
+
+.efecto-underline {
+    display: block;
+    width: 80%;
+    height: 5px;
+    margin-top: 12px;
+    background: linear-gradient(90deg, #3558e3 0%, transparent 50%, #3558e3 100%);
+    border-radius: 8px;
+    box-shadow: 0 0 12px #e0eafc;
+    animation: underlineAnim 2s infinite alternate;
+}
+
+@keyframes underlineAnim {
+    0% { width: 60%; opacity: 0.7; }
+    100% { width: 90%; opacity: 1; }
+} 
+
+.language-select {
+    padding: 10px 6px; /* 10px arriba/abajo, 18px derecha/izquierda */
+    border-radius: 18px;
+    font-size: 1.2rem;
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    color: #3558e3;
+    background: linear-gradient(90deg,#e0eafc,#cfdef3);
+    border: none;
+    box-shadow: 0 2px 12px rgba(67,198,172,0.18);
+    outline: none;
+    text-align: center;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+    width: 140px;
+    transition: box-shadow 0.2s, border 0.2s;
+    position: relative;
+}
+
+
+.language-select option[value="es"] { color: #f7931e; font-weight: bold; }
+.language-select option[value="en"] { color: rgb(118, 118, 9); font-weight: bold; }
+.language-select option[value="fr"] { color: #ba5370; font-weight: bold; }
+.language-select option[value="ar"] { color: #27ae60; font-weight: bold; }
+/* Para Firefox */
+.language-select:-moz-dropdown-list,
+.language-select option {
+    background: #f7fafd;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.15rem;
+    border-radius: 12px;
+}
+/* Estilos Choices.js para el select de idioma */
+.choices__inner {
+    background: linear-gradient(90deg, #f7fafd 60%, #e0eafc 100%) !important;
+    border-radius: 18px !important;
+    font-size: 1.15rem !important;
+    font-family: 'Playfair Display', serif !important;
+    font-weight: 700 !important;
+    color: #3558e3 !important;
+    border: 1.5px solid #dbeafe !important;
+    box-shadow: 0 4px 18px rgba(67,198,172,0.10), 0 1px 2px #e0eafc !important;
+    outline: none !important;
+    margin-bottom: 18px !important;
+    text-align: center !important;
+    cursor: pointer !important;
+}
+
+.choices__list--dropdown {
+    background: linear-gradient(90deg, #f7fafd 60%, #e0eafc 100%) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 2px 12px rgba(67,198,172,0.18) !important;
+    border: none !important;
+}
+
+.choices__item--selectable {
+    color: #3558e3 !important;
+    font-family: 'Playfair Display', serif !important;
+    font-size: 1.15rem !important;
+    padding: 12px 0 !important;
+    border-radius: 12px !important;
+    transition: background 0.2s !important;
+}
+
+.choices__item--selectable.is-highlighted {
+    background: #e0eafc !important;
+    color: #3558e3 !important;
+}
+</style>
+ 
+</head>
+<body>
+
+    <div class="back-arrow" onclick="goBack()">
+        <i class="fas fa-arrow-left"></i>
+    </div>
+<!-- Debajo de #total-cards-container -->
+
+
+
+<!-- Debajo de #total-cards-container -->
+<div class="top-status-bar">
+  <div class="pill pill-faltan">
+    <span>T: <span id="total-cards"></span></span>
+  </div>
+  <div class="pill pill-progreso" id="porcentaje-guardado"></div>
+</div>
+
+
+
+<div id="flashcard-container-wrapper">
+
+<!--------------------------------------------------------------------->
+<div id="flashcard-container">
+
+
+<!-- Tarjetas de  defectos -->
+  <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Deshonestidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Deshonesto</span></div></div>
+   <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Envidia</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Envidioso</span></div></div>
+    <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Mentira</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Mentiroso</span></div></div>
+     <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Crueldad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Cruel</span></div></div>
+  <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Malhumor</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Malhumorado</span></div></div>
+ <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Tacañería</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Tacaño</span></div></div>
+ <div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Despiste</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Despistado</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Irresponsabilidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Irresponsable</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Egoísmo</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Egoísta</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Desorganización</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Desorganizado</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Aburrimiento</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Aburrido</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Antipatía</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Antipático</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Impuntualidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Impuntual</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Indisciplina</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Indisciplinado</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Torpeza</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Torpe</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Impaciencia</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Impaciente</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Conformidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Conformista</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Nervios</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Nervioso</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Introversión</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Introvertido</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Antipatía</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Antipático</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Insociabilidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Insociable</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Desorden</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Desordenado</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Imperfeccionamiento</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Imperfeccionista</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Suciedad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Sucio</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Desinterés</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Desinteresado</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Desagrado</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Desagradable</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">irrespetuosidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Irrespetuoso</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">infidelidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Infiel</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Inestabilidad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Inestable</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Cobardía</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Cobarde</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Altivez</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Altivo</span></div></div>
+<div class="flashcard" style="background: linear-gradient(135deg, #ffe0e0 0%, #f3cfcf 100%); box-shadow: 0 8px 32px rgba(198,67,67,0.12); border-radius: 20px;"><div class="front" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;"><div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);z-index:2;"><select class="language-select" id="language-select"><option value="es" data-color="#f7931e">🇪🇸 Español</option><option value="en" data-color="rgb(118, 118, 9)">🇬🇧 English</option><option value="fr" data-color="#ba5370">🇫🇷 Français</option><option value="ar" data-color="#27ae60">🇸🇦 العربية</option></select></div><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;width:100%;"><span class="front-word efecto-glow" style="font-size:2rem;">Agresividad</span><span class="efecto-underline"></span></div></div><div class="back" style="font-size:2.5rem;font-family:'Playfair Display',serif;color:#fff;background:linear-gradient(135deg,#c64343 0%,#ffaeae 100%);box-shadow:0 4px 16px rgba(198,67,67,0.15);border-radius:15px;display:flex;align-items:center;justify-content:center;"><span style="padding:10px 30px;background:rgba(255,255,255,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(198,67,67,0.10);font-weight:bold;">Agresivo</span></div></div>
+
+
+
+
+
+<div id="loading-overlay" style="
+    position:fixed;
+    top:40%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    min-width:250px;
+    min-height:90px;
+    background:rgba(255,255,255,0.1);
+    border-radius:20px;
+    backdrop-filter:blur(10px);
+    box-shadow:0 12px 40px rgba(67,198,172,0.25), 0 4px 16px rgba(0,0,0,0.3);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    z-index:2000;
+    color:#fff;
+    font-size:1.1em;
+    border:1px solid rgba(255,255,255,0.2);
+    animation:loadingPulse 2s ease-in-out infinite;
+    ">
+    <div style="display:flex;align-items:center;margin-bottom:15px;">
+        <div style="
+            width:10px;
+            height:10px;
+            background:#43c6ac;
+            border-radius:50%;
+            margin-right:6px;
+            animation:loadingDot 1.5s infinite;
+        "></div>
+<div id="loading-text" style="
+    font-weight:600;
+    letter-spacing:1.2px;
+    font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background:linear-gradient(45deg, #43c6ac, #f8ffae);
+    background-clip:text;
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+">0%</div>
+    </div>
+    <div style="
+        width:180px;
+        background:rgba(255,255,255,0.1);
+        height:6px;
+        border-radius:10px;
+        overflow:hidden;
+        box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);
+        ">
+        <div id="loading-bar" style="
+            height:100%;
+            width:0%;
+            background:linear-gradient(90deg,#43c6ac,#f8ffae,#43c6ac);
+            background-size:200% 100%;
+            border-radius:10px;
+            transition:width 0.4s ease;
+            animation:loadingShimmer 1.8s infinite;
+        "></div>
+   </div> 
+</div>
+
+
+
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="final-review-message" style="display: none; text-align: center; font-size: 2em; font-weight: bold; color: #fff; background-color: #27ae60; padding: 20px; border-radius: 15px;">
+        ¡Repaso Finalizado! 🎉
+    </div>
+    
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
+    <audio id="startExposureSound" src="https://fawzinoo.github.io/audios/start.mp3" preload="auto"></audio>
+
+
+    <audio id="soundYesButton" src="https://fawzinoo.github.io/audios/click-124467.mp3" preload="auto"></audio>
+    <audio id="soundNoButton" src="https://fawzinoo.github.io/audios/bubble-popping-229138.mp3" preload="auto"></audio>
+
+
+   
+    <audio id="finalMessageSound" src="https://fawzinoo.github.io/audios/level-win-6416.mp3" preload="auto"></audio>
+
+    <audio id="buttonSound" src="https://fawzinoo.github.io/audios/goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" style="background-color: rgb(161, 117, 4);" id="start-exposure-button">
+            <i class="fas fa-play"></i> 
+        </button> 
+       
+
+        <button class="button" id="enlarge-button" style="background-color: #3498db;">
+            <i class="fas fa-expand"></i>
+        </button>             
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+
+
+document.querySelectorAll('img').forEach(img => {
+    if (
+        img.src.includes('Onegros.jpeg') ||
+        img.src.includes('Omarrones.jpeg') ||
+        img.src.includes('Omiel.jpeg') ||
+        img.src.includes('Oazules.jpeg') ||
+        img.src.includes('Overdes.jpeg') ||
+        img.src.includes('O.jpeg')
+    ) {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'absolute';
+        overlay.style.right = '10px';
+        overlay.style.bottom = '12px';
+        overlay.style.width = '38px';
+        overlay.style.height = '38px';
+        overlay.style.background = 'black'; // <-- Color de piel moreno
+        overlay.style.borderRadius = '50%';
+        overlay.style.zIndex = '10';
+        img.parentElement.style.position = 'relative';
+        img.parentElement.appendChild(overlay);
+    }
+});
+
+function mostrarTarjetaEspecial(texto, callback, duracionMs = 4000) {
+    // Desactivar los botones Sí y No
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    // Crear la tarjeta especial
+    const tarjeta = document.createElement('div');
+    tarjeta.className = 'flashcard fade-card is-visible';
+    tarjeta.innerHTML = `<div class="fade-text">${texto}</div>`;
+    tarjeta.style.display = 'flex';
+    tarjeta.style.justifyContent = 'center';
+    tarjeta.style.alignItems = 'center';
+    tarjeta.style.position = 'absolute';
+    tarjeta.style.top = '0';
+    tarjeta.style.left = '0';
+    tarjeta.style.width = '100%';
+    tarjeta.style.height = '100%';
+    tarjeta.style.zIndex = '100';
+
+    // Mostrarla en el contenedor
+    const contenedor = document.getElementById('flashcard-container');
+    contenedor.appendChild(tarjeta);
+
+    // Ocultarla después de la duración indicada y ejecutar el callback (si lo hay)
+    setTimeout(() => {
+        tarjeta.remove();
+
+        // Reactivar los botones Sí y No
+        yesButton.disabled = false;
+        noButton.disabled = false;
+        yesButton.classList.remove('disabled');
+        noButton.classList.remove('disabled');
+
+        if (typeof callback === 'function') callback();
+    }, duracionMs);
+}
+
+function goBack() {
+    // Puedes personalizar esta función según lo que necesites
+    if (document.referrer) {
+        window.history.back(); // Regresa a la página anterior
+    } else {
+        // Si no hay página anterior, puedes redirigir a una página específica
+        window.location.href = 'https://fawzinoo.github.io/Rep/Vocabulario.html'; // Cambia por la URL que necesites
+    }
+}
+
+
+
+// Seleccionar todas las tarjetas
+const Flashcards = Array.from(document.querySelectorAll('.flashcard'));
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    Flashcards.forEach(card => {
+        const audio = card.audio; // Usar el objeto de audio asociado
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+        }
+    });
+}
+
+
+Flashcards.forEach(card => {
+    // Obtener el audio correspondiente de la tarjeta
+    const audioSrc = card.getAttribute('data-audio');
+    if (audioSrc) {
+        card.audio = new Audio(audioSrc); // Asociar el objeto de audio a la tarjeta
+    }
+
+    let isFlipped = true; // Bandera para verificar si la tarjeta ya fue volteada
+    let isTransitioning = false; // Controlar si la tarjeta está en transición
+    let waveContainer; // Referencia al contenedor de ondas
+
+ 
+
+    card.addEventListener('click', () => {
+        if (isTransitioning) {
+            console.log('Transición en curso, espere...');
+            return;
+        }
+
+        isTransitioning = true;
+
+        if (!isFlipped) {
+            // Voltear a la cara "back"
+            card.classList.add('flipped');
+            console.log('Volteando a la cara "back".');
+
+            // Añadir las ondas tipo Wi-Fi
+            addWifiWaves(card);
+
+            setTimeout(() => {
+                stopAllAudios1();
+
+                if (card.audio) {
+                    card.audio.currentTime = 0; // Reiniciar el audio
+                    card.audio.play().catch(error => console.log('Error al reproducir el audio:', error));
+                }
+                console.log('Audio reproducido para la cara "back".');
+                isTransitioning = false;
+            }, 1000);
+        } else {
+            // Voltear a la cara "front"
+            card.classList.remove('flipped');
+            console.log('Volteando a la cara "front".');
+
+            // Detener las ondas si están activas
+            if (waveContainer) {
+                waveContainer.remove();
+                waveContainer = null; // Eliminar referencia
+            }
+
+            stopAllAudios1();
+
+            setTimeout(() => {
+                console.log('Cara "front" lista.');
+                isTransitioning = false;
+            }, 1000);
+        }
+
+        isFlipped = !isFlipped;
+    });
+});
+
+// Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container {
+    position: absolute;
+    top: 70%;
+    left: 40%;  
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 2px solid rgba(255, 215, 0, 0.8); /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+document.head.appendChild(style);
+
+
+
+function stopAllAudios1() {
+    const allAudios = document.querySelectorAll('[data-audio]');
+    allAudios.forEach(audio => {
+        const audioElement = audio.audio || new Audio(audio.getAttribute('data-audio'));
+        audioElement.pause();
+        audioElement.currentTime = 0; // Reiniciar el audio
+    });
+}
+
+// En la sección de JavaScript, actualizar la configuración de audios:
+
+const baseUrl = 'https://fawzinoo.github.io/audios/';
+const audios = [
+    'defectos--01.mp3', 'defectos--02.mp3', 'defectos--03.mp3', 'defectos--04.mp3', 'defectos--05.mp3',
+    'defectos--06.mp3', 'defectos--07.mp3', 'defectos--08.mp3', 'defectos--09.mp3', 'defectos--10.mp3',
+    'defectos--11.mp3', 'defectos--12.mp3', 'defectos--13.mp3', 'defectos--14.mp3', 'defectos--15.mp3',
+    'defectos--16.mp3', 'defectos--17.mp3', 'defectos--18.mp3', 'defectos--19.mp3', 'defectos--20.mp3',
+    'defectos--21.mp3', 'defectos--22.mp3', 'defectos--23.mp3', 'defectos--24.mp3', 'defectos--25.mp3',
+    'defectos--26.mp3', 'defectos--27.mp3', 'defectos--28.mp3', 'defectos--29.mp3', 'defectos--30.mp3',
+    'defectos--31.mp3', 'defectos--32.mp3'
+].map(file => new Audio(baseUrl + file));
+
+
+
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    flashcards.forEach((card, index) => {
+    let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+    let waveContainer1; // Referencia al contenedor de ondas Wi-Fi
+
+    // Función para añadir las ondas Wi-Fi en la cara trasera
+    function addWifiWaves1(card) {
+        waveContainer1 = document.createElement('div');
+        waveContainer1.classList.add('wifi-waves-container1');
+
+        for (let i = 1; i <= 3; i++) {
+            const wave = document.createElement('div');
+            wave.classList.add('wifi-wave1');
+            wave.style.animationDelay = `${i * 0.5}s`; // Retraso entre ondas
+            waveContainer1.appendChild(wave);
+        }
+
+      // Estilos para las ondas Wi-Fi
+const style = document.createElement('style');
+style.innerHTML = `
+.wifi-waves-container1 {
+    position: absolute;
+    top: 70%;
+    left: 43%;  
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wifi-wave1 {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 2px solid gold; /* Color dorado translúcido */
+    border-radius: 50%;
+    animation: wifiWaveAnimation 1.2s infinite;
+    opacity: 0;
+}
+
+@keyframes wifiWaveAnimation {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4); /* Incremento del tamaño de la onda */
+        opacity: 0; /* Desaparece gradualmente */
+    }
+}
+`;
+
+
+        document.head.appendChild(style);
+
+        card.querySelector('.back').appendChild(waveContainer1); // Añadir ondas a la cara trasera
+
+        // Remover las ondas después de 5 segundos
+        setTimeout(() => {
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+        }, 3000);
+    }
+
+    card.addEventListener('click', () => {
+        card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+        if (card.classList.contains('flipped')) {
+            // Reproducir el audio inmediatamente
+            if (audios[index]) {
+                stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                audios[index].play();
+                isAudioPlaying = true;
+            }
+
+            // Agregar las ondas Wi-Fi en la cara trasera
+            addWifiWaves1(card);
+
+            console.log('click2: Se hizo clic en el reverso de la tarjeta.');
+        } else {
+            // Detener el audio si la tarjeta se voltea de nuevo
+            if (isAudioPlaying && audios[index]) {
+                audios[index].pause();
+                audios[index].currentTime = 0; // Reiniciar el audio
+                isAudioPlaying = false;
+            }
+
+            // Eliminar las ondas si están activas
+            if (waveContainer1) {
+                waveContainer1.remove();
+                waveContainer1 = null; // Limpiar referencia
+            }
+
+            console.log('click1: Se hizo clic en el frente de la tarjeta.');
+        }
+    });
+});
+
+
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+    yesButton.addEventListener('click', stopAllAudios1);
+    noButton.addEventListener('click', stopAllAudios1);
+
+    const enlargeButton = document.getElementById('enlarge-button');
+    const buttonContainer = document.querySelector('.button-container');
+const flashcardContainer = document.getElementById('flashcard-container');
+let isEnlarged = false; // Estado inicial
+
+const updateOverlayStyles = (isFullscreen) => {
+    // Seleccionar todos los elementos con las clases correspondientes
+    const overlayTexts = document.querySelectorAll('.overlay-text');
+    const overlayTexts1 = document.querySelectorAll('.overlay-text1');
+    const overlayTexts2 = document.querySelectorAll('.overlay-text2');
+
+    // Detectar si es una pantalla grande
+    const isLargeScreen = window.innerWidth > 1024; // Define el límite para pantallas grandes
+
+    // Iterar sobre cada grupo de elementos y aplicar los estilos
+    overlayTexts.forEach((overlayText) => {
+        if (isFullscreen && isLargeScreen) {
+            // Estilos para pantalla completa en pantallas grandes
+            overlayText.style.fontSize = '2.5rem';
+            overlayText.style.textAlign = 'center'; // Centrado horizontal dentro del contenedor
+            overlayText.style.top = '40%'; // Centrado vertical aproximado
+            overlayText.style.left = '50%'; // Coloca el texto en el centro horizontal
+            overlayText.style.transform = 'translate(-50%, -30%)'; // Ajusta para centrar el texto completamente
+        } else {
+            // Restaurar estilos originales o mantener diseño para móviles
+            overlayText.style.fontSize = '2rem';
+            overlayText.style.top = '40%';
+            overlayText.style.left = '0%';
+            overlayText.style.transform = 'translate(0, 0)';
+            overlayText.style.textAlign = 'left';
+           
+        }
+    });
+
+    overlayTexts1.forEach((overlayText1) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '20px';
+            overlayText1.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText1.style.fontSize = '2.5rem';
+            overlayText1.style.top = '5px'
+            overlayText1.style.textAlign = 'center'; // Alineación izquierda para móviles
+        }
+    });
+
+    overlayTexts2.forEach((overlayText2) => {
+        if (isFullscreen && isLargeScreen) {
+            overlayText2.style.fontSize = '2.5rem';
+            overlayText2.style.margin = '50px';
+            overlayText2.style.top = '35%';
+            overlayText2.style.textAlign = 'center'; // Centrado solo para pantallas grandes
+        } else {
+            overlayText2.style.fontSize = '2rem';
+            overlayText2.style.margin = '30px';
+            overlayText2.style.textAlign = 'left'; // Alineación izquierda para móviles
+        }
+    });
+};
+
+
+
+
+// Manejar clic en el botón para agrandar/contraer
+enlargeButton.addEventListener('click', () => {
+    if (isEnlarged) {
+        // Volver al tamaño original
+        flashcardContainer.style.position = '';
+        flashcardContainer.style.top = '';
+        flashcardContainer.style.left = '';
+        flashcardContainer.style.width = '100%';
+        flashcardContainer.style.height = '500px';
+        flashcardContainer.style.maxWidth = '600px';
+        flashcardContainer.style.maxHeight = '500px';
+        enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+        buttonContainer.classList.remove('fullscreen');
+        isEnlarged = false;
+
+        // Restaurar estilos de las superposiciones
+        updateOverlayStyles(false);
+        document.querySelector('.top-status-bar').style.display = 'flex'; // Mostrar barra
+    } else {
+        // Agrandar al tamaño completo
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen'); // Aplicar clase de pantalla completa
+        isEnlarged = true;
+
+        // Ajustar estilos de las superposiciones para pantalla completa
+        updateOverlayStyles(true);
+            document.querySelector('.top-status-bar').style.display = 'none'; // Ocultar barra
+    }
+});
+
+
+let exposureInterval;
+let isExposing = false;
+let isPaused = false;
+let currentExposureIndex = 0;
+let timeouts = []; // Array para guardar los IDs de los setTimeout
+
+// Función para iniciar/pausar la exposición de las tarjetas
+document.getElementById('start-exposure-button').addEventListener('click', () => {
+    const icon = document.querySelector('#start-exposure-button i');
+    const startButton = document.getElementById('start-exposure-button');
+
+    if (!isExposing) {
+        // Guardar el estado de pantalla completa antes de recargar
+        if (isEnlarged) {
+            sessionStorage.setItem('fullscreenMode', 'true'); // Indicar que estaba en pantalla completa
+        } else {
+            sessionStorage.removeItem('fullscreenMode'); // Quitar indicador si no está en pantalla completa
+        }
+
+        // Guardar indicador de iniciar exposición después de recargar
+        sessionStorage.setItem('startExposureAfterReload', 'true');
+
+        // Reproducir el sonido de inicio de exposición antes de recargar
+        const startExposureSound = document.getElementById('startExposureSound');
+        startExposureSound.play().catch(error => {
+            console.log('Error al reproducir el sonido de inicio:', error);
+        });
+
+        // Evitar que el sonido de reinicio se reproduzca
+        sessionStorage.setItem('skipResetSound', 'true');
+
+        setTimeout(() => {
+            location.reload(); // Recargar la página después de reproducir el sonido
+        }, 500); // Ajuste breve para permitir que el sonido se reproduzca
+        return; // Salir para esperar la recarga
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play'); // Mostrar ícono de play
+        icon.classList.add('playing'); // Añadir efecto de parpadeo
+        console.log("Reanudando exposición...");
+        resumeExposure();
+    } else {
+        isPaused = true;
+        icon.classList.add('fa-sync-alt');
+        icon.classList.remove('fa-play'); // Cambiar ícono a pausa
+        icon.classList.remove('playing'); // Quitar efecto de parpadeo
+        console.log("Pausando exposición...");
+        stopExposure();
+    }
+});
+
+
+window.addEventListener('load', () => {
+    // Forzar el estado inicial a no pantalla completa
+    flashcardContainer.style.position = '';
+    flashcardContainer.style.top = '';
+    flashcardContainer.style.left = '';
+    flashcardContainer.style.width = '100%';
+    flashcardContainer.style.height = '500px';
+    flashcardContainer.style.maxWidth = '600px';
+    flashcardContainer.style.maxHeight = '500px';
+    enlargeButton.innerHTML = '<i class="fas fa-expand"></i>';
+    buttonContainer.classList.remove('fullscreen');
+    isEnlarged = false;
+
+    // Evitar el sonido de reinicio si está indicado
+    const skipResetSound = sessionStorage.getItem('skipResetSound');
+    if (skipResetSound === 'true') {
+        sessionStorage.removeItem('skipResetSound'); // Limpiar indicador
+    } else {
+        const soundResetButton = document.getElementById('soundResetButton');
+        soundResetButton.play().catch(error => {
+            console.log('Error al reproducir el sonido tras la recarga:', error);
+        });
+    }
+
+    // Iniciar exposición automáticamente si el indicador está activo
+    if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+        sessionStorage.removeItem('startExposureAfterReload');
+        console.log("Iniciando exposición automáticamente después de recargar.");
+        const startButton = document.getElementById('start-exposure-button');
+        const icon = document.querySelector('#start-exposure-button i');
+        isExposing = true;
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.add('fa-play');
+        icon.classList.add('playing');
+        startButton.style.backgroundColor = "gold";
+        startButton.disabled = true;
+        startExposure(); // Iniciar exposición
+    }
+});
+
+
+// Función para iniciar la exposición
+function startExposure() {
+    console.log("Iniciando exposición...");
+    const startButton = document.getElementById('start-exposure-button');
+    const icon = document.querySelector('#start-exposure-button i');
+
+    isExposing = true;
+    isPaused = false;
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.add('fa-play');
+    icon.classList.add('playing');
+    startButton.style.backgroundColor = "gold";
+    startButton.disabled = true;
+
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    const flipDelay = currentExposureIndex === 0 ? 3000 : 4000; // 3 segundos para la primera tarjeta, 4 segundos para las siguientes
+    const preAudioDelay = 0; // 0 segundos antes del audio
+    const postAudioDelay = 10000; // 10 segundos después del audio
+
+    // Reproducir audio de la cara frontal antes de voltear la tarjeta
+    const currentCard = flashcards[currentExposureIndex];
+    const frontAudioSrc = currentCard.getAttribute('data-audio');
+    if (frontAudioSrc) {
+        const frontAudio = new Audio(frontAudioSrc);
+        frontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
+        frontAudio.onended = () => {
+            console.log('Audio de la cara frontal terminado.');
+            proceedToBackAudio(); // Continuar con el audio de la parte trasera
+        };
+    } else {
+        console.log('No hay audio para la cara frontal. Procediendo directamente.');
+        proceedToBackAudio();
+    }
+
+    function proceedToBackAudio() {
+        let timeoutId = setTimeout(() => {
+            flipCard(currentExposureIndex, true); // Voltear la tarjeta
+
+            let repetitions = 0;
+            const audioDuration = audios[currentExposureIndex].duration * 20; // Duración del audio en milisegundos
+
+            const playAudioWithDelays = () => {
+                setTimeout(() => {
+                    // Repetir el audio varias veces
+                    const audioRepetitionInterval = setInterval(() => {
+                        audios[currentExposureIndex].play();
+                        repetitions++;
+
+                        if (repetitions >= 2) { // Número de repeticiones del audio
+                            clearInterval(audioRepetitionInterval);
+
+                            console.log("Audio terminado, esperando antes de la siguiente tarjeta...");
+                            setTimeout(() => {
+                                moveToNextCard(); // Pasar a la siguiente tarjeta después del postAudioDelay
+                            }, postAudioDelay);
+                        }
+                    }, audioDuration); // Intervalo para reproducir el audio
+                }, preAudioDelay); // PreAudioDelay antes de reproducir el audio
+            };
+
+            const moveToNextCard = () => {
+                currentExposureIndex++;
+
+                if (currentExposureIndex >= audios.length) {
+                    currentExposureIndex = 0;
+                    yesButton.disabled = false;
+                    noButton.disabled = false;
+                    yesButton.classList.remove('disabled');
+                    noButton.classList.remove('disabled');
+                    isExposing = false;
+
+                    showFinalReviewMessage();
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+
+                    startButton.style.backgroundColor = "";
+                    startButton.disabled = false;
+                    icon.classList.remove('playing');
+                } else {
+                    startExposure(); // Continuar con la siguiente tarjeta
+                }
+                updateTotalCardsCounter();
+            };
+
+            playAudioWithDelays();
+        }, flipDelay); // Retraso inicial para voltear la tarjeta
+
+        timeouts.push(timeoutId); // Guardar el ID del timeout
+    }
+}
+
+
+// Función para pausar la exposición
+function stopExposure() {
+    clearInterval(exposureInterval);
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+}
+
+// Función para reanudar la exposición
+function resumeExposure() {
+    startExposure();
+}
+
+// Función para restablecer valores sin recargar
+function resetExposureValues() {
+    console.log("Restableciendo valores para la exposición.");
+    isExposing = false;
+    isPaused = false;
+    currentExposureIndex = 0;
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+    
+}
+
+
+// Función para mostrar la tarjeta en la posición indicada
+function showCard(index) {
+    flashcards.forEach((card, i) => {
+        card.classList.remove('is-visible');
+        if (i === index && !completedCards.has(i)) {
+            card.classList.add('is-visible');
+            card.classList.remove('flipped'); // AGREGAR ESTA LÍNEA
+        }
+    });
+    resultsCard.style.display = 'none';
+    completionMessage.style.display = 'none';
+}
+
+// Función para voltear la tarjeta
+function flipCard(index, flipped) {
+    const card = flashcards[index];
+    if (flipped) {
+        card.classList.add('flipped'); // Voltea la tarjeta
+    } else {
+        card.classList.remove('flipped'); // Muestra la cara frontal
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+    }
+}
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    audios.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0; // Reiniciar al inicio
+    });
+}
+
+// Función para reproducir audio final
+function playFinalMessageAudio() {
+    const finalMessageSound = document.getElementById('finalMessageSound');
+    finalMessageSound.play();
+}
+
+        const resetButton = document.getElementById('reset-button');
+        const soundResetButton = document.getElementById('soundResetButton');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+function updateTotalCardsCounter() {
+    // Selecciona solo las tarjetas verídicas (no especiales)
+    const tarjetasVeridicas = flashcards.filter(card => 
+        !card.classList.contains('fade-card')
+    );
+    
+    const newCount = tarjetasVeridicas.length - completedCards.size;
+    const currentCount = parseInt(totalCardsSpan.textContent) || 0;
+    
+    // Solo activar el efecto si el contador cambió
+    if (newCount !== currentCount) {
+        // Activar el efecto de luz brillante
+        const pillFaltan = document.querySelector('.pill-faltan');
+        pillFaltan.classList.add('light-burst');
+        
+        // Crear partículas de luz adicionales
+        createLightParticles(pillFaltan);
+        
+        // Remover la clase después de la animación
+        setTimeout(() => {
+            pillFaltan.classList.remove('light-burst');
+        }, 800);
+    }
+    
+    totalCardsSpan.textContent = newCount;
+}
+
+function createLightParticles(element) {
+    for (let i = 0; i < 6; i++) {
+        const particle = document.createElement('div');
+        particle.style.position = 'absolute';
+        particle.style.width = '3px';
+        particle.style.height = '3px';
+        particle.style.background = 'rgba(255, 215, 0, 0.9)';
+        particle.style.borderRadius = '50%';
+        particle.style.pointerEvents = 'none';
+        particle.style.zIndex = '1000';
+        
+        // Posición aleatoria alrededor del elemento
+        const angle = (i * 60) * Math.PI / 180; // 60 grados entre partículas
+        const radius = 30 + Math.random() * 20;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        
+        particle.style.left = '50%';
+        particle.style.top = '50%';
+        particle.style.transform = `translate(-50%, -50%)`;
+        
+        element.appendChild(particle);
+        
+        // Animar la partícula
+        setTimeout(() => {
+            particle.style.transition = 'all 0.6s ease-out';
+            particle.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(0)`;
+            particle.style.opacity = '0';
+        }, 50);
+        
+        // Remover la partícula después de la animación
+        setTimeout(() => {
+            particle.remove();
+        }, 700);
+    }
+}
+    
+function moveToNextCard() {
+    do {
+        currentCardIndex++;
+        if (currentCardIndex >= flashcards.length) {
+            currentCardIndex = 0;
+        }
+    } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+
+    // Mostrar la tarjeta indicadora roja antes de la primera pospuesta (solo una vez)
+    if (
+        postponedCards.size > 0 &&
+        postponedCards.has(currentCardIndex) &&
+        !noIndicatorShown
+    ) {
+        noIndicatorShown = true;
+        mostrarTarjetaNoMemorizadas(() => {
+            // Después de mostrar la tarjeta roja, mostrar la primera pospuesta
+            showCard(currentCardIndex);
+        });
+        return; // Detener aquí para esperar el callback
+    }
+
+    if (completedCards.size === flashcards.length) {
+        showCompletionMessage();
+        setTimeout(showResultsCard, 3000);
+        disableButtons();
+    } else {
+        const currentCard = flashcards[currentCardIndex];
+        currentCard.classList.remove('flipped'); // Forzar que se muestre la cara frontal
+        showCard(currentCardIndex);
+    }
+}
+    
+noButton.addEventListener('click', () => {
+    const soundNoButton = document.getElementById('soundNoButton');
+    soundNoButton.pause();
+    soundNoButton.currentTime = 0;
+    soundNoButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón No:', error);
+    });
+
+    // Si la tarjeta ya estaba pospuesta (segunda vuelta)
+    if (postponedCards.has(currentCardIndex)) {
+        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+        if (lastPostponedCard === currentCardIndex) {
+            // Marcar como completada
+            completedCards.add(currentCardIndex);
+            updateTotalCardsCounter();
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            disableButtons();
+        } else {
+            // Marcar como completada
+            completedCards.add(currentCardIndex);
+            updateTotalCardsCounter();
+            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        moveToNextCard();
+
+        // Crear el efecto de espumas
+        createSmokeEffect1(noButton);
+    }
+});
+
+
+yesButton.addEventListener('click', () => {
+    const soundYesButton = document.getElementById('soundYesButton');
+    soundYesButton.pause();
+    soundYesButton.currentTime = 0;
+    soundYesButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Sí:', error);
+    });
+
+
+
+
+
+    // Lógica normal para el resto
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    }
+
+    completedCards.add(currentCardIndex);
+    updateTotalCardsCounter();
+    moveToNextCard();
+    createSmokeEffect(yesButton);
+});
+function createSmokeEffect(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke = document.createElement('div');
+        smoke.className = 'smoke'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -30; // Desplazamiento vertical inicial (0px a -30px)
+
+        // Estilo de la burbuja
+        smoke.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke.style.zIndex = '10';
+
+        // Crear el texto "Sí" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'Sí';
+        smoke.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke.remove(), 2000);
+    }
+}
+
+function createSmokeEffect1(button) {
+    const bubbleCount = 3; // Número de burbujas a crear
+
+    for (let i = 0; i < bubbleCount; i++) {
+        const smoke1 = document.createElement('div');
+        smoke1.className = 'smoke1'; // Clase para las burbujas
+
+        // Generar posición aleatoria alrededor del botón
+        const offsetX = (Math.random() - 0.5) * 50; // Desplazamiento horizontal aleatorio (-25px a 25px)
+        const offsetY = Math.random() * -50; // Desplazamiento vertical inicial (0px a -50px)
+
+        // Estilo inicial de la burbuja
+        smoke1.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1)`;
+        smoke1.style.zIndex = '10';
+
+        // Crear el texto "No" dentro de la burbuja
+        const text = document.createElement('span');
+        text.textContent = 'No';
+        smoke1.appendChild(text);
+
+        // Agregar la burbuja al botón
+        button.appendChild(smoke1);
+
+        // Eliminar la burbuja después de 2 segundos
+        setTimeout(() => smoke1.remove(), 2000);
+    }
+}
+
+
+    
+resetButton.addEventListener('click', () => {
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    const soundResetButton = document.getElementById('soundResetButton');
+    
+    soundResetButton.pause(); // Detener cualquier reproducción anterior
+    soundResetButton.currentTime = 0; // Reiniciar el tiempo al principio
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Reiniciar:', error);
+    });
+
+    // Recargar la página y asegurarnos que el sonido se reproduzca después de la recarga
+    location.reload(); // Recarga la página inmediatamente
+});
+
+// Después de la recarga, reproducir el sonido de inmediato
+window.addEventListener('load', () => {
+    const soundResetButton = document.getElementById('soundResetButton');
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido tras la recarga:', error);
+    });
+});
+
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+function showResultsCard() {
+    resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+    totalCardsInfo.textContent = flashcards.length;
+    cardsRemembered.textContent = noCounter;
+    cardsNotRemembered.textContent = yesCounter;
+
+    // Calcular porcentaje y actualizar el progreso circular
+    const percentage = (yesCounter / flashcards.length) * 100;
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+    progressCircle.style.setProperty('--progress', `${percentage}deg`);
+
+    // Guardar el porcentaje en LocalStorage
+    localStorage.setItem('defectos', Math.round(percentage));
+
+    // Actualizar el div de porcentaje visible
+    updatePorcentajeDiv();
+
+    // Desactivar el botón después de mostrar el resumen
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;
+    startButton.classList.add('disabled');
+}
+   
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+// Función para mostrar el mensaje de "Repaso Finalizado"
+function showFinalReviewMessage() {
+    console.log('Mensaje de repaso finalizado a punto de mostrarse');
+    const finalReviewMessage = document.getElementById('final-review-message');
+    finalReviewMessage.style.display = 'flex';
+
+    // Efecto de confeti
+    confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+    });
+
+    // Reproducir el audio de "Repaso Finalizado"
+    playFinalMessageAudio();
+
+    // Desactivar el botón después de mostrar el mensaje de repaso finalizado
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;
+    startButton.classList.add('disabled');  // Añadir clase 'disabled'
+
+    setTimeout(() => {
+        console.log('Ocultando el mensaje de repaso finalizado');
+        finalReviewMessage.style.display = 'none';
+    }, 3000);
+}
+
+function playAudio(index) {
+    console.log('Reproduciendo audio de la tarjeta', index);
+    if (audios[index]) {
+        stopAllAudios();
+        audios[index].play();
+
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) {
+                console.log('Última tarjeta terminada, mostrando mensaje');
+                showFinalReviewMessage();
+                resetFlashcards();
+            }
+        };
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+
+        // Si es el último audio, mostrar el mensaje de repaso finalizado
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) { // Si es la última tarjeta
+                showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
+                resetFlashcards(); // Regresar a la primera tarjeta
+            }
+        };
+    }
+}
+
+// Función para reiniciar las tarjetas (volver a la primera tarjeta)
+function resetFlashcards() {
+    currentExposureIndex = 0;
+    showCard(currentExposureIndex); // Mostrar la primera tarjeta
+    flipCard(currentExposureIndex, false); // Voltear la tarjeta
+    updateTotalCardsCounter(); 
+    // Actualizar el contador
+}
+
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+window.addEventListener('DOMContentLoaded', async () => {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+    const loadingBar = document.getElementById('loading-bar');
+    const buttonContainer = document.querySelector('.button-container');
+    
+    // Obtener todas las imágenes
+    const imgElements = Array.from(document.querySelectorAll('.flashcard .front img'));
+    
+    
+    // Crear array de audios para precargar
+const audioUrls = [
+    'defectos--01.mp3', 'defectos--02.mp3', 'defectos--03.mp3', 'defectos--04.mp3', 'defectos--05.mp3',
+    'defectos--06.mp3', 'defectos--07.mp3', 'defectos--08.mp3', 'defectos--09.mp3', 'defectos--10.mp3',
+    'defectos--11.mp3', 'defectos--12.mp3', 'defectos--13.mp3', 'defectos--14.mp3', 'defectos--15.mp3',
+    'defectos--16.mp3', 'defectos--17.mp3', 'defectos--18.mp3', 'defectos--19.mp3', 'defectos--20.mp3',
+    'defectos--21.mp3', 'defectos--22.mp3', 'defectos--23.mp3', 'defectos--24.mp3', 'defectos--25.mp3',
+    'defectos--26.mp3', 'defectos--27.mp3', 'defectos--28.mp3', 'defectos--29.mp3', 'defectos--30.mp3',
+    'defectos--31.mp3', 'defectos--32.mp3'
+];
+    const baseUrl = 'https://fawzinoo.github.io/audios/';
+
+    // --- FUNCIONES AUXILIARES ---
+function updateAudiosWithCache() {
+    const audioFiles = audioUrls; // Cargar TODOS los audios, no solo 21
+    if (typeof audios === 'undefined') window.audios = [];
+    audios.length = 0;
+    audioFiles.forEach(file => {
+        const fullUrl = baseUrl + file;
+        const cached = localStorage.getItem('audiocache_' + fullUrl);
+        const audio = new Audio(cached || fullUrl);
+        audios.push(audio);
+    });
+    updateEffectAudios();
+}
+    function updateEffectAudios() {
+        const effectAudios = [
+            'soundResetButton', 'startExposureSound', 'soundYesButton', 
+            'soundNoButton', 'finalMessageSound', 'buttonSound'
+        ];
+        effectAudios.forEach(id => {
+            const audioElement = document.getElementById(id);
+            if (audioElement) {
+                const cached = localStorage.getItem('audiocache_' + audioElement.src);
+                if (cached) audioElement.src = cached;
+            }
+        });
+    }
+    // --- FIN FUNCIONES AUXILIARES ---
+
+    // --- VERIFICAR SI TODO ESTÁ EN CACHE ---
+    function checkIfCached() {
+        for (let img of imgElements) {
+            if (!localStorage.getItem('imgcache_' + img.src)) return false;
+        }
+        for (let audioUrl of audioUrls) {
+            const fullUrl = baseUrl + audioUrl;
+            if (!localStorage.getItem('audiocache_' + fullUrl)) return false;
+        }
+        return true;
+    }
+
+    // --- SI TODO ESTÁ EN CACHE, OCULTAR LOADING Y MOSTRAR BOTONES ---
+    if (checkIfCached()) {
+        imgElements.forEach(img => {
+            const cached = localStorage.getItem('imgcache_' + img.src);
+            if (cached) img.src = cached;
+        });
+        updateAudiosWithCache();
+        loadingOverlay.style.display = 'none';
+        buttonContainer.style.display = 'flex';
+        return;
+    }
+
+    // --- SI NO, HACER EL LOADING NORMAL ---
+    buttonContainer.style.display = 'none';
+    const totalResources = imgElements.length + audioUrls.length;
+    let loaded = 0;
+
+    function updateLoading() {
+        const percent = Math.round((loaded / totalResources) * 100);
+        loadingText.textContent = `${percent}%`;
+        loadingBar.style.width = percent + "%";
+if (loaded >= totalResources) {
+    loadingOverlay.style.display = 'none';
+    buttonContainer.style.display = 'flex';
+
+
+}
+    }
+
+ async function cacheImage(img) {
+    // Precarga la imagen sin usar localStorage ni base64
+    const src = img.src;
+    try {
+        const response = await fetch(src, {cache: "reload"});
+        if (response.ok) {
+            img.src = src; // Usa la URL original
+        }
+    } catch (e) {}
+    loaded++;
+    updateLoading();
+}
+  async function cacheAudio(audioUrl) {
+    // Precarga el audio sin usar localStorage ni base64
+    loaded++;
+    updateLoading();
+}
+
+    // --- INICIAR CARGA SI NO ESTÁN EN CACHE ---
+    try {
+        const imagePromises = imgElements.map(img => cacheImage(img));
+        const audioPromises = audioUrls.map(audioUrl => cacheAudio(audioUrl));
+        await Promise.all([...imagePromises, ...audioPromises]);
+    } catch (error) {
+        loadingOverlay.style.display = 'none';
+        buttonContainer.style.display = 'flex';
+    }
+});
+
+// **FUNCIÓN OPTIMIZADA PARA LIMPIAR EL CACHE**
+function clearCacheResources() {
+    console.log('Limpiando cache de recursos...');
+    
+    try {
+        const keys = Object.keys(localStorage);
+        let removedCount = 0;
+        
+        keys.forEach(key => {
+            if (key.startsWith('imgcache_') || key.startsWith('audiocache_')) {
+                localStorage.removeItem(key);
+                removedCount++;
+            }
+        });
+        
+        console.log(`Cache limpiado: ${removedCount} elementos eliminados`);
+    } catch (error) {
+        console.error('Error al limpiar el cache:', error);
+    }
+}
+
+let noIndicatorShown = false; 
+
+function mostrarTarjetaNoMemorizadas(callback) {
+    // Desactivar los botones Sí y No
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    // Crear la tarjeta especial roja
+    const tarjeta = document.createElement('div');
+    tarjeta.className = 'flashcard fade-card is-visible';
+    tarjeta.innerHTML = `<div class="fade-text">Las tarjetas No memorizadas</div>`;
+    tarjeta.style.display = 'flex';
+    tarjeta.style.justifyContent = 'center';
+    tarjeta.style.alignItems = 'center';
+    tarjeta.style.position = 'absolute';
+    tarjeta.style.top = '0';
+    tarjeta.style.left = '0';
+    tarjeta.style.width = '100%';
+    tarjeta.style.height = '100%';
+    tarjeta.style.zIndex = '100';
+    tarjeta.style.background = 'linear-gradient(135deg, #ff5858 0%, #f857a6 100%)';
+    tarjeta.style.color = 'blue';
+    tarjeta.style.fontSize = '2.5rem';
+    tarjeta.style.fontWeight = 'bold';
+    tarjeta.style.borderRadius = '25px';
+    tarjeta.style.boxShadow = '0 8px 32px rgba(248, 87, 166, 0.25), 0 2px 8px rgba(0,0,0,0.12)';
+
+    // Mostrarla en el contenedor
+    const contenedor = document.getElementById('flashcard-container');
+    contenedor.appendChild(tarjeta);
+
+    // Ocultarla después de 3 segundos y ejecutar el callback (si lo hay)
+    setTimeout(() => {
+        tarjeta.remove();
+
+        // Reactivar los botones Sí y No
+        yesButton.disabled = false;
+        noButton.disabled = false;
+        yesButton.classList.remove('disabled');
+        noButton.classList.remove('disabled');
+
+        if (typeof callback === 'function') callback();
+    }, 3000);
+}
+
+
+function updatePorcentajeDiv() {
+    const div = document.getElementById('porcentaje-guardado');
+    const porcentaje = localStorage.getItem('defectos');
+    if (porcentaje !== null) {
+        div.innerHTML = `<span><b>${porcentaje}%</b></span>`;
+        div.style.display = 'flex';
+    } else {
+        div.textContent = '';
+        div.style.display = 'none';
+    }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    updatePorcentajeDiv();
+});
+
+
+const translations = {
+ "Deshonestidad": {
+        en: "Dishonesty",
+        fr: "Malhonnêteté",
+        ar: "خيانة"
+    },
+    "Envidia": {
+        en: "Envy",
+        fr: "Envie",
+        ar: "حسد"
+    },
+    "Mentira": {
+        en: "Lie",
+        fr: "Mensonge",
+        ar: "كذب"
+    },
+    "Crueldad": {
+        en: "Cruelty",
+        fr: "Cruauté",
+        ar: "قسوة"
+    },
+    "Malhumor": {
+        en: "Bad mood",
+        fr: "Mauvaise humeur",
+        ar: "مزاج سيء"
+    },
+    "Tacañería": {
+        en: "Stinginess",
+        fr: "Avarice",
+        ar: "بخل"
+    },
+    "Despiste": {
+        en: "Absent-mindedness",
+        fr: "Distraction",
+        ar: "شرود الذهن"
+    },
+    "Irresponsabilidad": {
+        en: "Irresponsibility",
+        fr: "Irresponsabilité",
+        ar: "عدم المسؤولية"
+    },
+    "Egoísmo": {
+        en: "Selfishness",
+        fr: "Égoïsme",
+        ar: "أنانية"
+    },
+    "Desorganización": {
+        en: "Disorganization",
+        fr: "Désorganisation",
+        ar: "فوضى"
+    },
+    "Aburrimiento": {
+        en: "Boredom",
+        fr: "Ennui",
+        ar: "ملل"
+    },
+    "Antipatía": {
+        en: "Antipathy",
+        fr: "Antipathie",
+        ar: "نفور"
+    },
+    "Impuntualidad": {
+        en: "Unpunctuality",
+        fr: "Impunctualité",
+        ar: "عدم الانضباط"
+    },
+    "Indisciplina": {
+        en: "Indiscipline",
+        fr: "Indiscipline",
+        ar: "عدم الانضباط"
+    },
+    "Torpeza": {
+        en: "Clumsiness",
+        fr: "Maladresse",
+        ar: "غباء"
+    },
+    "Impaciencia": {
+        en: "Impatience",
+        fr: "Impatience",
+        ar: "نفاد الصبر"
+    },
+    "Conformidad": {
+        en: "Conformity",
+        fr: "Conformité",
+        ar: "امتثال"
+    },
+    "Nervios": {
+        en: "Nerves",
+        fr: "Nerfs",
+        ar: "توتر"
+    },
+    "Introversión": {
+        en: "Introversion",
+        fr: "Introversion",
+        ar: "انطوائية"
+    },
+    "Insociabilidad": {
+        en: "Unsociability",
+        fr: "Insociabilité",
+        ar: "عدم الاجتماعية"
+    },
+    "Desorden": {
+        en: "Disorder",
+        fr: "Désordre",
+        ar: "فوضى"
+    },
+    "Imperfeccionamiento": {
+        en: "Imperfection",
+        fr: "Imparfait",
+        ar: "عدم الإتقان"
+    },
+    "Suciedad": {
+        en: "Dirtiness",
+        fr: "Saleté",
+        ar: "قذارة"
+    },
+    "Desinterés": {
+        en: "Disinterest",
+        fr: "Désintérêt",
+        ar: "عدم الاهتمام"
+    },
+    "Desagrado": {
+        en: "Displeasure",
+        fr: "Déplaisir",
+        ar: "استياء"
+    },
+    "irrespetuosidad": {
+        en: "Disrespect",
+        fr: "Irrespect",
+        ar: "قلة احترام"
+    },
+    "infidelidad": {
+        en: "Infidelity",
+        fr: "Infidélité",
+        ar: "خيانة"
+    },
+    "Inestabilidad": {
+        en: "Instability",
+        fr: "Instabilité",
+        ar: "عدم الاستقرار"
+    },
+    "Cobardía": {
+        en: "Cowardice",
+        fr: "Lâcheté",
+        ar: "جبن"
+    },
+    "Altivez": {
+        en: "Arrogance",
+        fr: "Arrogance",
+        ar: "تكبر"
+    },
+    "Agresividad": {
+        en: "Aggressiveness",
+        fr: "Agressivité",
+        ar: "عدوانية"
+    },
+    // Puedes agregar más palabras aquí si tienes más tarjetas
+};
+
+document.querySelectorAll('.flashcard .front').forEach(front => {
+    const select = front.querySelector('.language-select');
+    const wordSpan = front.querySelector('.front-word');
+    const originalWord = wordSpan.textContent.trim();
+
+    select.addEventListener('change', function() {
+        const lang = this.value;
+        if (lang === 'es') {
+            wordSpan.textContent = originalWord;
+        } else if (translations[originalWord] && translations[originalWord][lang]) {
+            wordSpan.textContent = translations[originalWord][lang];
+        } else {
+            wordSpan.textContent = originalWord;
+        }
+    });
+    });
+
+
+document.querySelectorAll('.language-select').forEach(select => {
+    select.addEventListener('click', function(event) {
+        event.stopPropagation();
+    });
+    select.addEventListener('mousedown', function(event) {
+        event.stopPropagation();
+    });
+    select.addEventListener('touchstart', function(event) {
+        event.stopPropagation();
+    });
+});
+
+document.getElementById('language-select').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    this.style.color = selectedOption.getAttribute('data-color');
+});
+document.getElementById('language-select').dispatchEvent(new Event('change'));
+    </script>
+    
+    
+</body>
+</html>

@@ -2247,9 +2247,49 @@ function updateAudiosWithCache() {
         Promise.all([...imagePromises, ...audioPromises]).then(() => {
             console.log("Proceso de cacheo completado.");
             applyResourcesFromMemoryCache();
+            // Una vez todo cargado, preparamos el desbloqueo de audio para móviles.
+            prepareAudioUnlock();
         });
     }
 });
+
+// --- OPTIMIZACIÓN DE AUDIO PARA MÓVILES ---
+function prepareAudioUnlock() {
+    const allAudioElements = Array.from(document.querySelectorAll('audio'));
+    let audiosUnlocked = false;
+
+    const unlockAudios = () => {
+        if (audiosUnlocked) return;
+        console.log('Primer toque detectado. Desbloqueando y precargando audios...');
+        
+        allAudioElements.forEach(audio => {
+            // Truco para forzar la decodificación: reproducir en silencio y pausar.
+            const originalVolume = audio.volume;
+            audio.volume = 0;
+            const playPromise = audio.play();
+
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = originalVolume; // Restaurar volumen original
+                }).catch(error => {
+                    // Es normal que algunos fallen si el usuario no ha interactuado, lo ignoramos.
+                    audio.volume = originalVolume; // Asegurarse de restaurar el volumen
+                });
+            }
+        });
+
+        audiosUnlocked = true;
+        // Eliminar el listener una vez ejecutado para no interferir más.
+        document.body.removeEventListener('click', unlockAudios);
+        document.body.removeEventListener('touchend', unlockAudios);
+    };
+
+    // Esperar al primer gesto del usuario para desbloquear.
+    document.body.addEventListener('click', unlockAudios, { once: true });
+    document.body.addEventListener('touchend', unlockAudios, { once: true });
+}
 
 // **FUNCIÓN OPTIMIZADA PARA LIMPIAR EL CACHE**
 function clearCacheResources() {

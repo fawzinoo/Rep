@@ -2711,6 +2711,8 @@ const audioUrls = [
 ];
     const baseUrl = 'https://fawzinoo.github.io/audios/';
 
+
+
     // --- FUNCIONES AUXILIARES ---
 function updateAudiosWithCache() {
     const audioFiles = audioUrls; // Cargar TODOS los audios, no solo 21
@@ -2793,39 +2795,47 @@ function updateAudiosWithCache() {
         const totalResources = imgElements.length + audioUrls.length;
         let loaded = 0;
 
-        const updateLoading = () => {
-            const percent = Math.round((loaded / totalResources) * 100);
-            loadingText.textContent = `${percent}%`;
-            loadingBar.style.width = `${percent}%`;
-            if (loaded >= totalResources) {
-                setTimeout(() => { // Pequeño delay para que el usuario vea el 100%
-                    loadingOverlay.style.display = 'none';
-                    buttonContainer.style.display = 'flex';
-                }, 300);
-            }
-        };
+// ...dentro del bloque de caché...
+const updateLoading = () => {
+    const percent = Math.round((loaded / totalResources) * 100);
+    loadingText.textContent = `${percent}%`;
+    loadingBar.style.width = percent + "%";
+    if (loaded >= totalResources) {
+        loadingOverlay.style.display = 'none';
+        buttonContainer.style.display = 'flex';
+        // Mostrar tarjeta especial "Me siento" si quieres
+        mostrarTarjetaEspecial('Me siento', () => {
+            showCard(currentCardIndex);
+        }, 5000);
+    }
+};
 
-        const cacheResource = async (url, type) => {
-            try {
-                const response = await fetch(url, { cache: 'reload' });
-                const blob = await response.blob();
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const base64 = reader.result;
-                    const cacheKey = `${type}cache_${url}`;
-                    localStorage.setItem(cacheKey, base64);
-                    if (type === 'img') resourceCache.images[url] = base64;
-                    if (type === 'audio') resourceCache.audios[url] = base64;
-                    loaded++;
-                    updateLoading();
-                };
-                reader.readAsDataURL(blob);
-            } catch (e) {
-                console.error(`Error al cachear ${url}:`, e);
-                loaded++; // Contar como cargado incluso si hay error para no bloquear la barra
+const cacheResource = async (url, type) => {
+    try {
+        const response = await fetch(url, { cache: 'reload' });
+        if (!response.ok) throw new Error(`No se pudo descargar: ${url}`);
+        if (type === 'img') {
+            const blob = await response.blob();
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result;
+                const cacheKey = `${type}cache_${url}`;
+                localStorage.setItem(cacheKey, base64);
+                resourceCache.images[url] = base64;
+                loaded++;
                 updateLoading();
-            }
-        };
+            };
+            reader.readAsDataURL(blob);
+        } else {
+            // Solo marcar como cargado para audios
+            loaded++;
+            updateLoading();
+        }
+    } catch (e) {
+        loaded++;
+        updateLoading();
+    }
+};
 
         const imagePromises = imgElements.map(img => cacheResource(img.src, 'img'));
         const audioPromises = audioUrls.map(audioUrl => cacheResource(baseUrl + audioUrl, 'audio'));
@@ -2997,11 +3007,7 @@ document.querySelectorAll('.language-select').forEach(select => {
     });
 });
 
-document.getElementById('language-select').addEventListener('change', function() {
-    const selectedOption = this.options[this.selectedIndex];
-    this.style.color = selectedOption.getAttribute('data-color');
-});
-document.getElementById('language-select').dispatchEvent(new Event('change'));
+
     </script>
     
     

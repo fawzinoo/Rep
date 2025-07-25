@@ -1807,6 +1807,7 @@ flashcards.forEach((card, index) => {
                 };
             }
             addWifiWaves(card);
+            iniciarAlternancia(card);
         } else {
             // --- CARA FRONTAL ---
             setTimeout(() => {
@@ -1814,6 +1815,8 @@ flashcards.forEach((card, index) => {
             }, 600);
             stopAllAudios();
             removeWifiWaves();
+             detenerAlternancia(); 
+              mostrarInfinitivoOUE(); 
         }
     });
 });
@@ -2185,9 +2188,12 @@ function showCard(index) {
 function flipCard(index, flipped) {
     const card = flashcards[index];
     if (flipped) {
-        card.classList.add('flipped'); // Voltea la tarjeta
+        card.classList.add('flipped');
+        iniciarAlternancia(card); // <--- Añade esto
     } else {
-        card.classList.remove('flipped'); // Muestra la cara frontal
+        card.classList.remove('flipped');
+        detenerAlternancia();     // <--- Y esto
+        mostrarInfinitivoOUE();
     }
 }
 
@@ -2986,43 +2992,65 @@ function actualizarColoresTarjeta() {
 
 
 
-function alternarTodasOUE() {
+// Alternancia O/UE solo en la tarjeta actual
+let alternanciaInterval = null;
+
+function alternarOUEEnTarjeta(card) {
+  const alternar = card.querySelector('.alternar-o-ue');
+  const rFinal = card.querySelector('.r-final');
+  const seSpan = card.querySelector('.se-pronominal');
+  const seInfinitivo = card.querySelector('.se-infinitivo');
+  const hOler = card.querySelector('.h-oler');
+  const terminacionOriginal = rFinal ? rFinal.getAttribute('data-original') : '';
+  if (!alternar) return;
+
+  if (alternar.textContent === 'O' || alternar.textContent === 'o') {
+    alternar.textContent = 'UE';
+    if (seSpan) seSpan.style.display = 'inline';
+    if (seInfinitivo) seInfinitivo.style.display = 'none';
+    if (hOler) hOler.style.display = 'inline';
+    if (rFinal) {
+      if (terminacionOriginal === 'ER' || terminacionOriginal === 'IR' || terminacionOriginal === 'R') {
+        rFinal.textContent = 'E';
+      } else if (terminacionOriginal === 'AR') {
+        rFinal.textContent = 'A';
+      }
+    }
+  } else {
+    alternar.textContent = 'O';
+    if (seSpan) seSpan.style.display = 'none';
+    if (seInfinitivo) seInfinitivo.style.display = 'inline';
+    if (hOler) hOler.style.display = 'none';
+    if (rFinal) rFinal.textContent = terminacionOriginal;
+  }
+}
+
+function iniciarAlternancia(card) {
+  detenerAlternancia();
+  alternanciaInterval = setInterval(() => alternarOUEEnTarjeta(card), 2000);
+}
+
+function detenerAlternancia() {
+  if (alternanciaInterval) clearInterval(alternanciaInterval);
+  alternanciaInterval = null;
+}
+
+// Siempre mostrar infinitivo al mostrar la tarjeta
+function mostrarInfinitivoOUE() {
   document.querySelectorAll('.alternar-o-ue').forEach(alternar => {
     const rFinal = alternar.parentElement.querySelector('.r-final');
     const seSpan = alternar.parentElement.querySelector('.se-pronominal');
     const seInfinitivo = alternar.parentElement.querySelector('.se-infinitivo');
     const hOler = alternar.parentElement.querySelector('.h-oler');
     const terminacionOriginal = rFinal ? rFinal.getAttribute('data-original') : '';
-    if (alternar.textContent === 'O' || alternar.textContent === 'o') {
-      alternar.textContent = 'UE';
-      alternar.style.fontSize = '0.9em';
-      alternar.style.letterSpacing = '0px';
-      if (seSpan) seSpan.style.display = 'inline';
-      if (seInfinitivo) seInfinitivo.style.display = 'none';
-      if (hOler) hOler.style.display = 'inline'; // Muestra la H
-      if (rFinal) {
-        if (terminacionOriginal === 'ER' || terminacionOriginal === 'IR' || terminacionOriginal === 'R') {
-          rFinal.textContent = 'E';
-        } else if (terminacionOriginal === 'AR') {
-          rFinal.textContent = 'A';
-        }
-      }
-    } else {
-      alternar.textContent = 'O';
-      alternar.style.fontSize = '0.9em';
-      alternar.style.letterSpacing = '0px';
-      if (seSpan) seSpan.style.display = 'none';
-      if (seInfinitivo) seInfinitivo.style.display = 'inline';
-      if (hOler) hOler.style.display = 'none'; // Oculta la H
-      if (rFinal) {
-        rFinal.textContent = terminacionOriginal;
-      }
-    }
+    alternar.textContent = 'O';
+    if (seSpan) seSpan.style.display = 'none';
+    if (seInfinitivo) seInfinitivo.style.display = 'inline';
+    if (hOler) hOler.style.display = 'none';
+    if (rFinal) rFinal.textContent = terminacionOriginal;
   });
-  setTimeout(alternarTodasOUE, 3000);
 }
-alternarTodasOUE();
-
+mostrarInfinitivoOUE();
     </script>
 </body>
 </html>

@@ -1058,6 +1058,7 @@
 </head>
 <body>
 
+
     <div class="back-arrow" onclick="goBack()">
         <i class="fas fa-arrow-left"></i>
     </div>
@@ -1786,49 +1787,86 @@ function goBack() {
         }
     }
 
+let firstFlip = true;
 flashcards.forEach((card, index) => {
     card.addEventListener('click', (event) => {
-        // No voltear si el clic fue en el selector de idioma
-        if (event.target.closest('.language-radio-container')) {
-            return;
-        }
+        if (event.target.closest('.language-radio-container')) return;
 
-        card.classList.toggle('flipped');
-// Reproducir sonido de hoja de cartón al voltear
-const flipSound = document.getElementById('flipCardSound');
-if (flipSound) {
-  flipSound.currentTime = 0;
-  flipSound.play().catch(()=>{});
-}
-        // Vibración al voltear la tarjeta (solo en móviles compatibles)
-        if (window.navigator && navigator.vibrate) {
-            navigator.vibrate(80); // vibra 80ms
-        }
+        if (firstFlip) {
+            setTimeout(() => {
+                card.classList.toggle('flipped');
+                firstFlip = false;
 
-if (card.classList.contains('flipped')) {
-    // --- CARA TRASERA ---
-    if (languageSelector) languageSelector.style.display = 'none';
-    stopAllAudios();
-    if (audios[index]) {
-        audios[index].play();
-        isAudioPlaying = true;
-        audios[index].onended = function() {
-            removeWifiWaves();
-            isAudioPlaying = false;
-        };
-    }
-    addWifiWaves(card);
-    iniciarAlternancia(card);
-} else {
-    // --- CARA FRONTAL ---
-    setTimeout(() => {
-        if (languageSelector) languageSelector.style.display = 'flex';
-    }, 600); // Espera a que termine la animación de giro
-    stopAllAudios();
-    removeWifiWaves();
-    detenerAlternancia(); 
-    mostrarInfinitivoOUE(); 
-}
+                // Reproducir sonido de hoja de cartón al voltear
+                const flipSound = document.getElementById('flipCardSound');
+                if (flipSound) {
+                  flipSound.currentTime = 0;
+                  flipSound.play().catch(()=>{});
+                }
+                // Vibración al voltear la tarjeta (solo en móviles compatibles)
+                if (window.navigator && navigator.vibrate) {
+                    navigator.vibrate(80);
+                }
+
+                if (card.classList.contains('flipped')) {
+                    if (languageSelector) languageSelector.style.display = 'none';
+                    stopAllAudios();
+                    if (audios[index]) {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                        audios[index].onended = function() {
+                            removeWifiWaves();
+                            isAudioPlaying = false;
+                        };
+                    }
+                    addWifiWaves(card);
+                    iniciarAlternancia(card);
+                } else {
+                    setTimeout(() => {
+                        if (languageSelector) languageSelector.style.display = 'flex';
+                    }, 600);
+                    stopAllAudios();
+                    removeWifiWaves();
+                    detenerAlternancia();
+                    mostrarInfinitivoOUE();
+                }
+            }, 80); // o el delay que prefieras
+        } else {
+            card.classList.toggle('flipped');
+            // ...el resto de tu código actual...
+            // (todo lo que tienes después del else, igual que arriba)
+            const flipSound = document.getElementById('flipCardSound');
+            if (flipSound) {
+              flipSound.currentTime = 0;
+              flipSound.play().catch(()=>{});
+            }
+            if (window.navigator && navigator.vibrate) {
+                navigator.vibrate(80);
+            }
+
+            if (card.classList.contains('flipped')) {
+                if (languageSelector) languageSelector.style.display = 'none';
+                stopAllAudios();
+                if (audios[index]) {
+                    audios[index].play();
+                    isAudioPlaying = true;
+                    audios[index].onended = function() {
+                        removeWifiWaves();
+                        isAudioPlaying = false;
+                    };
+                }
+                addWifiWaves(card);
+                iniciarAlternancia(card);
+            } else {
+                setTimeout(() => {
+                    if (languageSelector) languageSelector.style.display = 'flex';
+                }, 600);
+                stopAllAudios();
+                removeWifiWaves();
+                detenerAlternancia();
+                mostrarInfinitivoOUE();
+            }
+        }
     });
 });
     // Detener audios al usar los botones de navegación
@@ -2349,58 +2387,49 @@ function moveToNextCard() {
 }
     
 noButton.addEventListener('click', () => {
-  if (window.navigator && navigator.vibrate) {
-        navigator.vibrate(80); // vibra 80ms
+    if (window.navigator && navigator.vibrate) {
+        navigator.vibrate(80);
     }
     const soundNoButton = document.getElementById('soundNoButton');
     soundNoButton.pause();
     soundNoButton.currentTime = 0;
-    soundNoButton.play().catch(error => {
-        console.log('Error al reproducir el sonido del botón No:', error);
-    });
+    soundNoButton.play().catch(() => {});
 
-    // Si la tarjeta ya estaba pospuesta (segunda vuelta)
     if (postponedCards.has(currentCardIndex)) {
-        // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
         if (lastPostponedCard === currentCardIndex) {
-            // Marcar como completada
             completedCards.add(currentCardIndex);
             updateTotalCardsCounter();
             showCompletionMessage();
-            setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+            setTimeout(showResultsCard, 3000);
             disableButtons();
         } else {
-            // Marcar como completada
             completedCards.add(currentCardIndex);
             updateTotalCardsCounter();
-            moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+            moveToNextCard();
         }
     } else {
         noCounter++;
         noCounterSpan.textContent = noCounter;
         postponedCards.add(currentCardIndex);
-        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        lastPostponedCard = currentCardIndex;
         moveToNextCard();
-
-        // Crear el efecto de espumas
-        createSmokeEffect1(noButton);
     }
+
+    // Efecto de humo asíncrono
+    requestAnimationFrame(() => createSmokeEffect1(noButton));
 });
 
 
 yesButton.addEventListener('click', () => {
     if (window.navigator && navigator.vibrate) {
-        navigator.vibrate(80); // vibra 80ms
+        navigator.vibrate(80);
     }
     const soundYesButton = document.getElementById('soundYesButton');
     soundYesButton.pause();
     soundYesButton.currentTime = 0;
-    soundYesButton.play().catch(error => {
-        console.log('Error al reproducir el sonido del botón Sí:', error);
-    });
+    soundYesButton.play().catch(() => {});
 
-
-    // Lógica normal para el resto
+    // Actualiza contadores y lógica de tarjetas primero
     yesCounter++;
     yesCounterSpan.textContent = yesCounter;
 
@@ -2413,7 +2442,9 @@ yesButton.addEventListener('click', () => {
     completedCards.add(currentCardIndex);
     updateTotalCardsCounter();
     moveToNextCard();
-    createSmokeEffect(yesButton);
+
+    // Lanza el efecto de humo de forma asíncrona y no bloqueante
+    requestAnimationFrame(() => createSmokeEffect(yesButton));
 });
 function createSmokeEffect(button) {
     const bubbleCount = 3; // Número de burbujas a crear
@@ -2670,12 +2701,29 @@ const audioUrls = [
         const percent = Math.round((loaded / totalResources) * 100);
         loadingText.textContent = `${percent}%`;
         loadingBar.style.width = `${percent}%`;
-        if (loaded >= totalResources) {
-            setTimeout(() => {
-                loadingOverlay.style.display = 'none';
-                buttonContainer.style.display = 'flex';
-            }, 300);
+if (loaded >= totalResources) {
+    setTimeout(() => {
+        loadingOverlay.style.display = 'none';
+        buttonContainer.style.display = 'flex';
+
+        // Forzar reflow de la primera tarjeta y su imagen de fondo
+        const firstCard = document.querySelector('.flashcard');
+        if (firstCard) {
+            // Forzar reflow de la imagen de fondo
+            const bgImg = new window.Image();
+            const bgUrl = firstCard.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/);
+            if (bgUrl && bgUrl[1]) {
+                bgImg.src = bgUrl[1];
+                bgImg.onload = () => {
+                    // Forzar reflow del elemento
+                    void firstCard.offsetWidth;
+                };
+            } else {
+                void firstCard.offsetWidth;
+            }
         }
+    }, 300);
+}
     };
 
     // Precarga imágenes de fondo
@@ -3065,6 +3113,8 @@ function mostrarInfinitivoOUE() {
   });
 }
 mostrarInfinitivoOUE();
+
+
     </script>
 </body>
 </html>

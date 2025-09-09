@@ -1242,6 +1242,8 @@ function gradForSyllable(syll) {
 
         const img = document.createElement('img');
         img.src = baseImg + toFile(word) + '.jpg';
+        img.loading = 'lazy'; 
+        img.decoding = 'async'; 
         img.style.cssText =
             'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;border-radius:20px;';
         back.appendChild(img);
@@ -1580,7 +1582,12 @@ const audioFiles = [
 'R-102.mp3',
 'R-103.mp3'
 ];
-    const audios = audioFiles.map(file => new Audio(baseUrl + file));
+const audios = audioFiles.map(file => {
+    const audio = new Audio();
+    audio.preload = 'none';  // <- CAMBIAR de 'auto' a 'none'
+    audio.src = baseUrl + file;
+    return audio;
+});
 
     let isAudioPlaying = false;
     let waveContainer;
@@ -2407,7 +2414,7 @@ function showResultsCard() {
     progressCircle.style.setProperty('--progress', `${percentage}deg`);
 
     // Guardar el porcentaje en LocalStorage
-    localStorage.setItem('invenciones', Math.round(percentage));
+    localStorage.setItem('silabas', Math.round(percentage));
 
     // Actualizar el div de porcentaje visible
     updatePorcentajeDiv();
@@ -2505,187 +2512,51 @@ window.addEventListener('DOMContentLoaded', async () => {
     const loadingText = document.getElementById('loading-text');
     const loadingBar = document.getElementById('loading-bar');
     const buttonContainer = document.querySelector('.button-container');
-    
-    // --- DECLARA PRIMERO LAS VARIABLES ---
-const audioUrls = [
-'R-01.mp3',
-'R-02.mp3',
-'R-03.mp3',
-'R-04.mp3',
-'R-05.mp3',
-'R---06.mp3',
-'R-07.mp3',
-'R-08.mp3',
-'R---09.mp3',
-'R-10.mp3',
-'R-11.mp3',
-'R-12.mp3',
-'R-13.mp3',
-'R-14.mp3',
-'R-15.mp3',
-'R-16.mp3',
-'R-17.mp3',
-'R-18.mp3',
-'R-19.mp3',
-'R-20.mp3',
-'R-21.mp3',
-'R-22.mp3',
-'R-23.mp3',
-'R-24.mp3',
-'R-25.mp3',
-'R-26.mp3',
-'R-27.mp3',
-'R---28.mp3',
-'R-29.mp3',
-'R-30.mp3',
-'R---31.mp3',
-'R---32.mp3',
-'R-33.mp3',
-'R-34.mp3',
-'R-35.mp3',
-'R-36.mp3',
-'R-37.mp3',
-'R-38.mp3',
-'R-39.mp3',
-'R-40.mp3',
-'R-41.mp3',
-'R-42.mp3',
-'R-43.mp3',
-'R-44.mp3',
-'R---45.mp3',
-'R-46.mp3',
-'R-47.mp3',
-'R-48.mp3',
-'R-49.mp3',
-'R-50.mp3',
-'R-51.mp3',
-'R-52.mp3',
-'R---53.mp3',
-'R-54.mp3',
-'R-55.mp3',
-'R-56.mp3',
-'R-57.mp3',
-'R-58.mp3',
-'R-59.mp3',
-'R-60.mp3',
-'R-61.mp3',
-'R-62.mp3',
-'R-63.mp3',
-'R-64.mp3',
-'R-65.mp3',
-'R-66.mp3',
-'R-67.mp3',
-'R-68.mp3',
-'R-69.mp3',
-'R-70.mp3',
-'R-71.mp3',
-'R-72.mp3',
-'R-73.mp3',
-'R-74.mp3',
-'R-75.mp3',
-'R-76.mp3',
-'R-77.mp3',
-'R-78.mp3',
-'R-79.mp3',
-'R-80.mp3',
-'R-81.mp3',
-'R---82.mp3',
-'R-83.mp3',
-'R---84.mp3',
-'R---85.mp3',
-'R-86.mp3',
-'R-87.mp3',
-'R-88.mp3',
-'R-89.mp3',
-'R---90.mp3',
-'R-91.mp3',
-'R-92.mp3',
-'R-93.mp3',
-'R-94.mp3',
-'R-95.mp3',
-'R-96.mp3',
-'R-97.mp3',
-'R-98.mp3',
-'R-99.mp3',
-'R-100.mp3',
-'R-101.mp3',
-'R-102.mp3',
-'R-103.mp3'
 
-];
-    const baseUrl = 'https://fawzinoo.github.io/audios/';
-    const cardBgUrls = Array.from(document.querySelectorAll('.flashcard')).map(card => {
-        const bg = card.style.backgroundImage;
-        const match = bg.match(/url\(["']?(.*?)["']?\)/);
-        return match ? match[1] : null;
-    }).filter(Boolean);
+    // Solo cargar la primera imagen y primer audio
+    const firstImg = document.querySelector('.flashcard .back img');
+    const firstAudioUrl = audioFiles[0] ? baseUrl + audioFiles[0] : null;
 
-    const totalResources = cardBgUrls.length + audioUrls.length;
+    const tasks = [];
+    if (firstImg && firstImg.src) {
+        tasks.push(new Promise(resolve => {
+            const im = new Image();
+            im.onload = resolve;
+            im.onerror = resolve;
+            im.src = firstImg.src;
+        }));
+    }
+    if (firstAudioUrl) {
+        tasks.push(new Promise(resolve => {
+            const a = new Audio();
+            a.preload = 'auto';
+            a.src = firstAudioUrl;
+            a.oncanplaythrough = resolve;
+            a.onerror = resolve;
+            a.load();
+        }));
+    }
+
     let loaded = 0;
-
-    const updateLoading = () => {
-        const percent = Math.round((loaded / totalResources) * 100);
+    const total = tasks.length || 1;
+    const updateProgress = () => {
+        loaded++;
+        const percent = Math.round((loaded / total) * 100);
         loadingText.textContent = `${percent}%`;
         loadingBar.style.width = `${percent}%`;
-if (loaded >= totalResources) {
-    setTimeout(() => {
-        loadingOverlay.style.display = 'none';
-        buttonContainer.style.display = 'flex';
-
-        // Forzar reflow de la primera tarjeta y su imagen de fondo
-        const firstCard = document.querySelector('.flashcard');
-        if (firstCard) {
-            // Forzar reflow de la imagen de fondo
-            const bgImg = new window.Image();
-            const bgUrl = firstCard.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/);
-            if (bgUrl && bgUrl[1]) {
-                bgImg.src = bgUrl[1];
-                bgImg.onload = () => {
-                    // Forzar reflow del elemento
-                    void firstCard.offsetWidth;
-                };
-            } else {
-                void firstCard.offsetWidth;
-            }
-        }
-    }, 300);
-}
     };
+    tasks.forEach(task => task.then(updateProgress));
 
-    // Precarga imágenes de fondo
-    const preloadBgPromises = cardBgUrls.map(url => {
-        return new Promise(resolve => {
-            const img = new window.Image();
-            img.onload = () => { loaded++; updateLoading(); resolve(); };
-            img.onerror = () => { loaded++; updateLoading(); resolve(); };
-            img.src = url;
-        });
-    });
+    await Promise.all(tasks);
 
-    // Precarga audios
-    const preloadAudioPromises = audioUrls.map(file => {
-        return new Promise(resolve => {
-            const audio = new window.Audio(baseUrl + file);
-            audio.oncanplaythrough = () => { loaded++; updateLoading(); resolve(); };
-            audio.onerror = () => { loaded++; updateLoading(); resolve(); };
-            audio.load();
-        });
-    });
-
-    await Promise.all([...preloadBgPromises, ...preloadAudioPromises]);
-    // ...resto de tu lógica...
+    // Mostrar UI inmediatamente
+    loadingOverlay.style.display = 'none';
+    buttonContainer.style.display = 'flex';
 });
 
-flashcards.forEach(card => {
-    // Fuerza el reflow para decodificar el fondo, pero no cambies el display
-    void card.offsetWidth;
-});
-audios.forEach(audio => {
-    audio.volume = 0;
-    audio.play().catch(() => {});
-    setTimeout(() => audio.pause(), 100);
-    audio.volume = 1;
-});
+
+
+
 
 // **FUNCIÓN OPTIMIZADA PARA LIMPIAR EL CACHE**
 function clearCacheResources() {
@@ -2760,7 +2631,7 @@ function mostrarTarjetaNoMemorizadas(callback) {
 
 function updatePorcentajeDiv() {
     const div = document.getElementById('porcentaje-guardado');
-    const porcentaje = localStorage.getItem('invenciones');
+    const porcentaje = localStorage.getItem('silabas');
     if (porcentaje !== null) {
         div.innerHTML = `<span><b>${porcentaje}%</b></span>`;
         div.style.display = 'flex';

@@ -413,6 +413,18 @@
     color: #333;
 }
 
+.intentos-back {
+    position: absolute;
+    top: 18px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #ffd700;
+    z-index: 2;
+    pointer-events: none;
+}
     </style>
  
 </head>
@@ -557,15 +569,12 @@ let correctCount = 0;
 let incorrectCount = 0;
 let currentCardIndex = 0;
 let voiceAttempts = 0; // Contador para los intentos de voz
+let canFlipBack = true;
 
 // Función para normalizar el texto: quitar acentos, puntuación y a minúsculas.
 function normalizeText(text) {
     if (!text) return "";
-    return text
-        .toLowerCase()
-        .normalize("NFD") // Descompone acentos (e.g., "é" -> "e" + "´")
-        .replace(/[\u0300-\u036f]/g, "") // Elimina los diacríticos
-        .replace(/[.,!¡?¿]/g, ''); // Elimina puntuación común
+    return text.trim();
 }
 
 
@@ -575,74 +584,88 @@ async function startVoiceRecognition(targetWord, backElement) {
         return;
     }
 
-    // No reiniciar los intentos aquí, para que persistan entre clics si es necesario,
-    // pero sí asegurarse de que empezamos de cero para una nueva tarjeta.
-    // La lógica de reinicio se manejará mejor al pasar a una nueva tarjeta o al voltear.
-
     try {
-        // 1. Pedir permiso y obtener el stream de audio
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
         isRecording = true;
 
-        // 2. Evento que se dispara cuando hay datos de audio disponibles
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
-        };
+        // Usar SpeechRecognition para detectar el final del habla
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'es-ES';
+        recognition.interimResults = false;
 
-        // 3. Evento que se dispara cuando la grabación se detiene
-        mediaRecorder.onstop = async () => {
-            isRecording = false;
-            console.log("Grabación detenida. Enviando audio al servidor...");
-            showListeningIndicator(backElement, "Procesando...");
-
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.wav');
-
-            try {
-                // 4. Enviar el audio al servidor Python
-                const response = await fetch('http://127.0.0.1:5000/transcribe', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Error del servidor: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                const spokenWord = result.transcription || "";
-                console.log('🗣️ Palabra detectada por Whisper:', spokenWord);
-                
-                // 5. Manejar el resultado
-                handleVoiceResult(spokenWord, targetWord, backElement);
-
-            } catch (error) {
-                console.error('❌ Error al contactar con el servidor de transcripción:', error);
-                alert("No se pudo conectar con el servidor de voz. Asegúrate de que el script de Python se está ejecutando.");
-                // Restaurar la tarjeta a su estado frontal
-                const card = backElement.closest('.flashcard');
-                if (card) {
-                    card.classList.remove('flipped');
-                }
-            }
-             // Detener los tracks del micrófono para que el indicador del navegador desaparezca
-            stream.getTracks().forEach(track => track.stop());
-        };
-
-        // 4. Iniciar la grabación y mostrar indicador
-        mediaRecorder.start();
-        showListeningIndicator(backElement, "Grabando...");
-        console.log("🎙️ Grabación iniciada...");
-
-        // 5. Detener la grabación después de 3 segundos
-        setTimeout(() => {
+        recognition.onend = () => {
             if (mediaRecorder && mediaRecorder.state === "recording") {
+                console.log("Se ha dejado de hablar, deteniendo grabación...");
                 mediaRecorder.stop();
             }
-        }, 3000); // Grabar durante 3 segundos
+        };
+        
+        recognition.onerror = (event) => {
+            // Si no se detecta voz (no-speech), detenemos la grabación.
+            if (event.error === 'no-speech') {
+                console.log("No se detectó voz. Deteniendo.");
+                if (mediaRecorder && mediaRecorder.state === "recording") {
+                    mediaRecorder.stop();
+                }
+            } else {
+                console.error("Error de SpeechRecognition:", event.error);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            isRecording = false;
+            // Detener los tracks del micrófono para que el icono desaparezca
+            stream.getTracks().forEach(track => track.stop());
+            
+            // Solo procesar si se ha grabado algo
+            if (audioChunks.length > 0) {
+                console.log("Grabación detenida. Enviando audio al servidor...");
+                showListeningIndicator(backElement, "Procesando...");
+
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.wav');
+
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/transcribe', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) throw new Error(`Error del servidor: ${response.statusText}`);
+
+                    const result = await response.json();
+                    const spokenWord = result.transcription || "";
+                    console.log('🗣️ Palabra detectada por Whisper:', spokenWord);
+                    
+                    handleVoiceResult(spokenWord, targetWord, backElement);
+
+                } catch (error) {
+                    console.error('❌ Error al contactar con el servidor de transcripción:', error);
+                    alert("No se pudo conectar con el servidor de voz. Asegúrate de que el script de Python se está ejecutando.");
+                    const card = backElement.closest('.flashcard');
+                    if (card) card.classList.remove('flipped');
+                }
+            } else {
+                // Si no hay chunks de audio, significa que no se dijo nada.
+                console.log("No se grabó audio. Reiniciando escucha.");
+                startVoiceRecognition(targetWord, backElement);
+            }
+        };
+
+        mediaRecorder.ondataavailable = event => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
+
+        // Iniciar todo
+        mediaRecorder.start();
+        recognition.start();
+        showListeningIndicator(backElement, "Grabando...");
+        console.log("🎙️ Grabación iniciada, esperando a que el usuario hable...");
 
     } catch (err) {
         console.error('❌ Error al acceder al micrófono:', err);
@@ -651,58 +674,88 @@ async function startVoiceRecognition(targetWord, backElement) {
 }
 
 function handleVoiceResult(spokenWord, targetWord, backElement) {
-    const normalizedSpoken = normalizeText(spokenWord);
-    const normalizedTarget = normalizeText(targetWord);
+    if (!spokenWord || spokenWord.trim() === "") {
+        removeListeningIndicator();
+        setBackAttempts(backElement, 2 - voiceAttempts);
+        backElement.classList.remove('hidden-text');
+        setTimeout(() => {
+            const card = backElement.closest('.flashcard');
+            if (card && card.classList.contains('flipped')) {
+                startVoiceRecognition(targetWord, backElement);
+            }
+        }, 2000);
+        return;
+    }
+const normalizedSpoken = spokenWord.trim();
+const normalizedTarget = targetWord.trim();
     const card = backElement.closest('.flashcard');
 
-    console.log(`🔍 Comparando: "${normalizedSpoken}" (dicho) vs "${normalizedTarget}" (objetivo)`);
-
-    if (normalizedSpoken.includes(normalizedTarget)) {
-        console.log('✅ ¡Palabra correcta detectada!');
+    if (palabrasSimilares(normalizedSpoken, normalizedTarget)) {
         correctCount++;
+        voiceAttempts = 0;
+        canFlipBack = true; 
         playSuccessSound();
-        
-        const cardIndex = flashcards.indexOf(card);
-        
-        backElement.classList.remove('hidden-text'); // Mostrar la palabra correcta
-        console.log('📝 Texto mostrado.');
-        
+
+        // Mostrar contador y nombre del país debajo SOLO si acierta
+        backElement.innerHTML = '';
+        setBackAttempts(backElement, 2);
+        const nombrePais = document.createElement('div');
+        nombrePais.style.marginTop = '40px';
+        nombrePais.textContent = targetWord;
+        backElement.appendChild(nombrePais);
+        backElement.classList.remove('hidden-text');
+
         setTimeout(() => {
-            if (audios[cardIndex]) {
+            if (audios[flashcards.indexOf(card)]) {
                 stopAllAudios();
-                audios[cardIndex].play().catch(e => console.error('Error al reproducir audio:', e));
-                
-                audios[cardIndex].addEventListener('ended', () => {
-                    showCountdown(card);
-                }, { once: true });
+                audios[flashcards.indexOf(card)].play().catch(e => {});
+                audios[flashcards.indexOf(card)].addEventListener('ended', () => showCountdown(card), { once: true });
             } else {
                 showCountdown(card);
             }
         }, 1000);
 
     } else {
-        console.log('❌ Palabra incorrecta.');
-        incorrectCount++;
+        voiceAttempts++;
         removeListeningIndicator();
-        
-        // Mostrar "Incorrecto" en la tarjeta
-        backElement.innerHTML = '<span style="color: #ffdddd; font-size: 2.5rem;">Incorrecto</span>';
-        backElement.classList.remove('hidden-text');
 
-        // Esperar un momento para que el usuario vea el mensaje
-        setTimeout(() => {
-            if (card) {
-                card.classList.remove('flipped'); // Voltear al frente
-            }
-            // Pasar a la siguiente tarjeta después de voltear
+        if (voiceAttempts < 2) {
+            // Mostrar "Incorrecto" en el primer intento fallido
+            setBackAttempts(
+                backElement,
+                2 - voiceAttempts,
+                `<span style="color: #ffdddd; font-size: 2.5rem;">Incorrecto</span>`
+            );
+            backElement.classList.remove('hidden-text');
             setTimeout(() => {
+                setBackAttempts(backElement, 2 - voiceAttempts); // Limpia el mensaje después de 2s
+                if (card.classList.contains('flipped')) {
+                    startVoiceRecognition(targetWord, backElement);
+                }
+            }, 2000);
+
+        } else {
+            incorrectCount++;
+            voiceAttempts = 0;
+            canFlipBack = false; 
+            setBackAttempts(
+                backElement,
+                0,
+                `<span style="color: #ffdddd; font-size: 2.5rem;">Incorrecto</span>`
+            );
+            backElement.classList.remove('hidden-text');
+            setTimeout(() => {
+                setBackAttempts(backElement, 0); // Limpia el mensaje antes de pasar
                 goToNextCard();
-            }, 500);
-        }, 1500);
+            }, 1500); 
+        }
     }
     updateCounters();
 }
 
+function palabrasSimilares(a, b) {
+    return a === b;
+}
 
 function showListeningIndicator(backElement, text = '🎤<br>Habla ahora') {
     removeListeningIndicator();
@@ -770,6 +823,9 @@ function goToNextCard() {
     completedCards.add(currentCardIndex);
     updateCardCounter();
     
+    canFlipBack = true; // NUEVO: Permitir voltear en la nueva tarjeta
+    voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
+
     let nextIndex = -1;
     for (let i = 0; i < flashcards.length; i++) {
         if (!completedCards.has(i)) {
@@ -906,37 +962,44 @@ function shuffleCards() {
     }, 10);
 }
 
+
 flashcards.forEach((card) => {
     card.addEventListener('click', () => {
-        // Solo permitir voltear si no se está grabando
-        if (isRecording) {
-            console.log("Ignorando clic, grabación en curso.");
-            return;
-        }
-
-        card.classList.toggle('flipped');
-
+        const backElement = card.querySelector('.back');
+        // Si la tarjeta está mostrando el reverso (flipped)
         if (card.classList.contains('flipped')) {
-            const backElement = card.querySelector('.back');
-            if (backElement) {
-                backElement.classList.add('hidden-text');
-                const correctWord = backElement.textContent.trim();
-                console.log('🔄 Tarjeta volteada. Palabra objetivo:', correctWord);
-                startVoiceRecognition(correctWord, backElement);
-            }
-        } else {
-            // Si se voltea al frente, asegurarse de que todo se detenga
+            // Volteo de back a front: NO detiene grabación, solo voltea y actualiza contador
+            card.classList.remove('flipped');
             removeListeningIndicator();
             stopAllAudios();
+            backElement.innerHTML = '';
+            setBackAttempts(backElement, 2 - voiceAttempts);
+        } else {
+            // Volteo de front a back: inicia grabación solo si quedan intentos
+            if (voiceAttempts < 2) {
+    card.classList.add('flipped');
+    backElement.classList.add('hidden-text');
+    backElement.innerHTML = '';
+    setBackAttempts(backElement, 2 - voiceAttempts);
+    const correctWord = card.querySelector('.front img').alt;
+    // Mostrar siempre el mensaje "Grabando..." al voltear a back
+    showListeningIndicator(backElement, "Grabando...");
+    // Solo inicia grabación si no está ya grabando
+    if (!isRecording) {
+        startVoiceRecognition(correctWord, backElement);
+                }
+            } else {
+                // Si ya no quedan intentos, muestra "Incorrecto" y no inicia grabación
+                backElement.innerHTML = '';
+                setBackAttempts(backElement, 0, `<span style="color: #ffdddd; font-size: 2.5rem;">Incorrecto</span>`);
+                backElement.classList.remove('hidden-text');
+                setTimeout(() => {
+                    goToNextCard();
+                }, 1500);
+            }
         }
     });
 });
-
-document.getElementById('shuffle-button').addEventListener('click', () => {
-    document.getElementById('shuffleSound').play().catch(e => console.log(e));
-    shuffleCards();
-});
-
 window.addEventListener('DOMContentLoaded', () => {
     showCard(currentCardIndex);
     updateCounters();
@@ -966,6 +1029,26 @@ document.getElementById('reset-button').addEventListener('click', () => {
     soundResetButton.play().catch(e => console.log(e));
     setTimeout(() => location.reload(), 500);
 });
+
+function setBackAttempts(backElement, attemptsLeft, mensajeExtra = "") {
+    // Elimina cualquier intento anterior
+    let intentosDiv = backElement.querySelector('.intentos-back');
+    if (!intentosDiv) {
+        intentosDiv = document.createElement('div');
+        intentosDiv.className = 'intentos-back';
+        intentosDiv.style.position = 'absolute';
+        intentosDiv.style.top = '18px';
+        intentosDiv.style.left = '0';
+        intentosDiv.style.width = '100%';
+        intentosDiv.style.textAlign = 'center';
+        intentosDiv.style.fontSize = '1.3rem';
+        intentosDiv.style.fontWeight = 'bold';
+        intentosDiv.style.color = '#ffd700';
+        intentosDiv.style.zIndex = '2';
+        backElement.prepend(intentosDiv);
+    }
+    intentosDiv.innerHTML = `Intentos: ${attemptsLeft}` + (mensajeExtra ? `<br>${mensajeExtra}` : "");
+}
 
     </script>
     

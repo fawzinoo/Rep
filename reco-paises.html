@@ -578,99 +578,35 @@ function normalizeText(text) {
 }
 
 
-async function startVoiceRecognition(targetWord, backElement) {
-    if (isRecording) {
-        console.log("Ya se está grabando.");
+function startVoiceRecognition(targetWord, backElement) {
+    // Web Speech API (reconocimiento de voz del navegador)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert("Tu navegador no soporta reconocimiento de voz.");
         return;
     }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        isRecording = true;
+    showListeningIndicator(backElement, "Grabando...");
 
-        // Usar SpeechRecognition para detectar el final del habla
-        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'es-ES';
-        recognition.interimResults = false;
+    recognition.onresult = function(event) {
+        const spokenWord = event.results[0][0].transcript;
+        handleVoiceResult(spokenWord, targetWord, backElement);
+    };
 
-        recognition.onend = () => {
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                console.log("Se ha dejado de hablar, deteniendo grabación...");
-                mediaRecorder.stop();
-            }
-        };
-        
-        recognition.onerror = (event) => {
-            // Si no se detecta voz (no-speech), detenemos la grabación.
-            if (event.error === 'no-speech') {
-                console.log("No se detectó voz. Deteniendo.");
-                if (mediaRecorder && mediaRecorder.state === "recording") {
-                    mediaRecorder.stop();
-                }
-            } else {
-                console.error("Error de SpeechRecognition:", event.error);
-            }
-        };
+    recognition.onerror = function(event) {
+        removeListeningIndicator();
+        alert("Error de reconocimiento: " + event.error);
+    };
 
-        mediaRecorder.onstop = async () => {
-            isRecording = false;
-            // Detener los tracks del micrófono para que el icono desaparezca
-            stream.getTracks().forEach(track => track.stop());
-            
-            // Solo procesar si se ha grabado algo
-            if (audioChunks.length > 0) {
-                console.log("Grabación detenida. Enviando audio al servidor...");
-                showListeningIndicator(backElement, "Procesando...");
+    recognition.onend = function() {
+        removeListeningIndicator();
+    };
 
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'recording.wav');
-
-                try {
-                    const response = await fetch('http://127.0.0.1:5000/transcribe', {
-                        method: 'POST',
-                        body: formData,
-                    });
-
-                    if (!response.ok) throw new Error(`Error del servidor: ${response.statusText}`);
-
-                    const result = await response.json();
-                    const spokenWord = result.transcription || "";
-                    console.log('🗣️ Palabra detectada por Whisper:', spokenWord);
-                    
-                    handleVoiceResult(spokenWord, targetWord, backElement);
-
-                } catch (error) {
-                    console.error('❌ Error al contactar con el servidor de transcripción:', error);
-                    alert("No se pudo conectar con el servidor de voz. Asegúrate de que el script de Python se está ejecutando.");
-                    const card = backElement.closest('.flashcard');
-                    if (card) card.classList.remove('flipped');
-                }
-            } else {
-                // Si no hay chunks de audio, significa que no se dijo nada.
-                console.log("No se grabó audio. Reiniciando escucha.");
-                startVoiceRecognition(targetWord, backElement);
-            }
-        };
-
-        mediaRecorder.ondataavailable = event => {
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
-            }
-        };
-
-        // Iniciar todo
-        mediaRecorder.start();
-        recognition.start();
-        showListeningIndicator(backElement, "Grabando...");
-        console.log("🎙️ Grabación iniciada, esperando a que el usuario hable...");
-
-    } catch (err) {
-        console.error('❌ Error al acceder al micrófono:', err);
-        alert('⚠️ No se pudo acceder al micrófono. Por favor, permite el acceso en tu navegador.');
-    }
+    recognition.start();
 }
 
 function handleVoiceResult(spokenWord, targetWord, backElement) {
@@ -754,7 +690,12 @@ const normalizedTarget = targetWord.trim();
 }
 
 function palabrasSimilares(a, b) {
-    return a === b;
+    // Coincidencia exacta
+    if (a === b) return true;
+    // Permitir 'ni' como equivalente a 'ñ' (pero no 'n')
+    const bWithNi = b.replace(/ñ/g, 'ni').replace(/Ñ/g, 'NI');
+    if (a === bWithNi) return true;
+    return false;
 }
 
 function showListeningIndicator(backElement, text = '🎤<br>Habla ahora') {
@@ -1024,10 +965,18 @@ function stopAllAudios() {
     });
 }
 
+
 document.getElementById('reset-button').addEventListener('click', () => {
     const soundResetButton = document.getElementById('soundResetButton');
     soundResetButton.play().catch(e => console.log(e));
     setTimeout(() => location.reload(), 500);
+});
+
+// Listener para el botón Mezclar
+document.getElementById('shuffle-button').addEventListener('click', () => {
+    const shuffleSound = document.getElementById('shuffleSound');
+    if (shuffleSound) shuffleSound.play().catch(e => {});
+    shuffleCards();
 });
 
 function setBackAttempts(backElement, attemptsLeft, mensajeExtra = "") {

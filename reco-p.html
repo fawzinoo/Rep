@@ -1100,6 +1100,7 @@ function normalizeText(text) {
 
 
 function startVoiceRecognition(targetWord, backElement) {
+    // Web Speech API (reconocimiento de voz del navegador)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         alert("Tu navegador no soporta reconocimiento de voz.");
@@ -1114,23 +1115,29 @@ function startVoiceRecognition(targetWord, backElement) {
 
     recognition.onresult = function(event) {
         const spokenWord = event.results[0][0].transcript;
-        // handleVoiceResult ahora recibe recognition para poder reiniciarlo si es necesario
-        handleVoiceResult(spokenWord, targetWord, backElement, recognition);
+        handleVoiceResult(spokenWord, targetWord, backElement);
     };
 
     recognition.onerror = function(event) {
+        console.error("Error de reconocimiento:", event.error); // Muestra el error en la consola para depuración
         removeListeningIndicator();
-        // Si la tarjeta ya fue respondida correctamente o bloqueada, no reiniciar
-        if (backElement.dataset.locked === "1") return;
-        // Reinicia el reconocimiento para seguir escuchando
-        startVoiceRecognition(targetWord, backElement);
+        const card = backElement.closest('.flashcard');
+
+        // Si el error es 'no-speech' o un problema de red, simplemente voltea la tarjeta
+        // para que el usuario pueda volver a intentarlo haciendo clic de nuevo.
+        if (event.error === "no-speech" || event.error === "network") {
+            if (card && card.classList.contains('flipped')) {
+                card.classList.remove('flipped');
+            }
+            return;
+        }
+        
+        // Para otros errores, no hacemos nada drástico, solo paramos.
+        // El alert() se ha eliminado para no interrumpir al usuario.
     };
 
     recognition.onend = function() {
-        // Si la tarjeta ya fue respondida correctamente o bloqueada, no reiniciar
-        if (backElement.dataset.locked === "1") return;
-        // Reinicia el reconocimiento para seguir escuchando
-        startVoiceRecognition(targetWord, backElement);
+        removeListeningIndicator();
     };
 
     recognition.start();
@@ -1236,10 +1243,9 @@ backElement.appendChild(mensajeError);
 
 // 3. Después de un delay, muestra SOLO la respuesta correcta (sin ningún contador)
 setTimeout(() => {
-    // Marca el reverso como bloqueado para evitar contadores residuales
-    backElement.dataset.locked = "1";
+    // Elimina cualquier contador de intentos y residuos
     backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-    backElement.innerHTML = '';
+    backElement.innerHTML = ''; // LIMPIA TODO
     const respuestaCorrecta = document.createElement('div');
     respuestaCorrecta.textContent = targetWord;
     respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
@@ -1410,18 +1416,15 @@ function goToNextCard() {
 
 function showCard(index) {
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
-    flashcards.forEach(card => {
-        card.classList.remove('is-visible', 'flipped');
-        const back = card.querySelector('.back');
-        // Elimina cualquier contador de intentos
-        back.querySelectorAll('.intentos-back').forEach(el => el.remove());
-        // Elimina cualquier bloqueo de contador residual
-        back.removeAttribute('data-locked');
-        // Restaura el texto original del reverso
-        if (card.dataset.answer) {
-            back.innerHTML = card.dataset.answer;
-        }
-    });
+flashcards.forEach(card => {
+    card.classList.remove('is-visible', 'flipped');
+    const back = card.querySelector('.back');
+    // Elimina cualquier contador de intentos
+    back.querySelectorAll('.intentos-back').forEach(el => el.remove());
+    if (card.dataset.answer) {
+        back.innerHTML = card.dataset.answer;
+    }
+});
 
     if (flashcards[index]) {
         flashcards[index].classList.add('is-visible');
@@ -1592,31 +1595,32 @@ flashcards.forEach((card) => {
         vibrar(60); 
         const backElement = card.querySelector('.back');
         if (card.classList.contains('flipped')) {
-            // Volteo de back a front: limpia cualquier contador de intentos
+            // Volteo de back a front: NO elimines el indicador ni el innerHTML
             card.classList.remove('flipped');
             stopAllAudios();
-            backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-            // NO LLAMES a setBackAttempts aquí
+            setBackAttempts(backElement, 2 - voiceAttempts);
+            // NO detengas ni reinicies el reconocimiento de voz aquí
         } else {
             // Volteo de front a back: solo si quedan intentos
-            if (voiceAttempts < 2) {
-                card.classList.add('flipped');
-                backElement.classList.add('hidden-text');
-                setBackAttempts(backElement, 2 - voiceAttempts);
-                const correctWord = card.dataset.answer;
-                showListeningIndicator(backElement, "Grabando...");
-                if (!isRecording) {
-                    startVoiceRecognition(correctWord, backElement);
-                }
-            } else {
-                incorrectCount++;
-                voiceAttempts = 0;
-                backElement.innerHTML = '';
-                backElement.classList.remove('hidden-text');
-                setTimeout(() => {
-                    goToNextCard();
-                }, 1500);
-            }
+if (voiceAttempts < 2) {
+    card.classList.add('flipped');
+    backElement.classList.add('hidden-text');
+    setBackAttempts(backElement, 2 - voiceAttempts);
+    const correctWord = card.dataset.answer;
+    showListeningIndicator(backElement, "Grabando...");
+    if (!isRecording) {
+        startVoiceRecognition(correctWord, backElement);
+    }
+} else {
+    incorrectCount++;
+    voiceAttempts = 0;
+    backElement.innerHTML = '';
+    // NO LLAMES a setBackAttempts aquí
+    backElement.classList.remove('hidden-text');
+    setTimeout(() => {
+        goToNextCard();
+    }, 1500);
+}
         }
     });
 });
@@ -1664,9 +1668,7 @@ document.getElementById('reset-button').addEventListener('click', () => {
 
 // ...existing code...
 function setBackAttempts(backElement, attemptsLeft, mensajeExtra = "") {
-    // Si el reverso está bloqueado, NO añadas el contador
-    if (backElement.dataset.locked === "1") return;
-
+    // Elimina TODOS los contadores de intentos antes de crear uno nuevo
     backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
 
     // Si no hay intentos y no hay mensaje extra, no muestres nada

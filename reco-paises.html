@@ -1296,15 +1296,21 @@
         <div class="back">Marruecos</div>
     </div>
 
-    <!-- 2. Marruecos -->
+     <!-- 3. México -->
     <div class="flashcard">
         <div class="front">
-            <img src="https://flagcdn.com/w640/ma.png" alt="Marruecos" loading="lazy">
+            <img src="https://flagcdn.com/w640/mx.png" alt="México" loading="lazy">
         </div>
-        <div class="back">Marruecos</div>
+        <div class="back">México</div>
     </div>
- 
- 
+
+    <!-- 4. Argentina -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/ar.png" alt="Argentina" loading="lazy">
+        </div>
+        <div class="back">Argentina</div>
+    </div>
 
 
 
@@ -1375,6 +1381,7 @@ let incorrectCount = 0;
 let currentCardIndex = 0;
 let voiceAttempts = 0; // Contador para los intentos de voz
 let canFlipBack = true;
+let canFlip = true; // Controla si se puede voltear la tarjeta
 
 // Función para normalizar el texto: quitar acentos, puntuación y a minúsculas.
 function normalizeText(text) {
@@ -1469,6 +1476,8 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         nombrePais.textContent = targetWord;
         backElement.appendChild(nombrePais);
         backElement.classList.remove('hidden-text');
+        
+        canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
 
         setTimeout(() => {
             if (audios[flashcards.indexOf(card)]) {
@@ -1517,6 +1526,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
             
             voiceAttempts = 0;
             canFlipBack = false;
+            canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
             removeListeningIndicator(backElement);
 
             // 1. Limpia TODO el contenido del reverso (incluyendo contadores)
@@ -1532,6 +1542,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
             // 3. Después de un delay, muestra SOLO la respuesta correcta (sin ningún contador)
             setTimeout(() => {
+                canFlip = false; // Deshabilitar volteo cuando se muestra la respuesta
                 // Elimina cualquier contador de intentos y residuos
                 backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
                 backElement.innerHTML = ''; // LIMPIA TODO
@@ -1640,14 +1651,20 @@ function showCountdown(card) {
     const back = card.querySelector('.back');
     back.querySelectorAll('.countdown-inline').forEach(el => el.remove());
 
+    // Verificar si es la última tarjeta
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const remainingCards = flashcards.filter((_, index) => !completedCards.has(index)).length;
+    const isLastCard = remainingCards <= 1; // 1 porque la actual aún no se ha marcado como completada
+
     // Crea el contenedor del timer
     const timerDiv = document.createElement('div');
     timerDiv.className = 'countdown-inline';
+    const messageText = isLastCard ? 'Finalizando...' : 'Siguiente tarjeta en...';
     timerDiv.innerHTML = `
         <div class="countdown-inline-circle">
             <span class="countdown-inline-number">3</span>
         </div>
-        <div class="countdown-inline-text">Siguiente tarjeta en...</div>
+        <div class="countdown-inline-text">${messageText}</div>
     `;
     back.appendChild(timerDiv);
 
@@ -1682,6 +1699,8 @@ function goToNextCard() {
     updateCardCounter();
     
     canFlipBack = true; // Permitir voltear en la nueva tarjeta
+    canFlip = true; // Rehabilitar volteo para la nueva tarjeta
+    updateCounters();
     voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
 
     let nextIndex = -1;
@@ -2560,6 +2579,15 @@ flashcards.forEach((card) => {
     }
 
     card.addEventListener('click', () => {
+        if (!canFlip) {
+            // Opcional: Agregar feedback visual cuando no se puede voltear
+            card.style.transform = 'scale(0.98)';
+            setTimeout(() => {
+                card.style.transform = '';
+            }, 150);
+            return; // No permitir voltear si canFlip es false
+        }
+        
         vibrar(60); 
         const backElement = card.querySelector('.back');
 if (card.classList.contains('flipped')) {
@@ -2581,6 +2609,7 @@ if (voiceAttempts < 2) {
         startVoiceRecognition(correctWord, backElement);
     }
 } else {
+    canFlip = false; // Deshabilitar volteo cuando se agotan intentos
     incorrectCount++;
     voiceAttempts = 0;
     backElement.innerHTML = '';

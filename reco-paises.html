@@ -2016,6 +2016,13 @@ function normalizeText(text) {
 
 
 function startVoiceRecognition(targetWord, backElement) {
+    // Verificar que la tarjeta esté volteada (en back) antes de permitir reconocimiento
+    const card = backElement.closest('.flashcard');
+    if (!card || !card.classList.contains('flipped')) {
+        console.log("No se puede iniciar reconocimiento: la tarjeta no está volteada");
+        return;
+    }
+    
     // Web Speech API (reconocimiento de voz del navegador)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -2026,15 +2033,17 @@ function startVoiceRecognition(targetWord, backElement) {
     recognition.lang = 'es-ES';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    
-    // Intentar reducir los sonidos del sistema (no garantizado)
-    recognition.continuous = false;
-    recognition.soundStart = false; // No estándar, pero algunos navegadores lo respetan
-    recognition.soundEnd = false;   // No estándar, pero algunos navegadores lo respetan
 
     showListeningIndicator(backElement, "Grabando...");
 
     recognition.onresult = function(event) {
+        // Verificar que la tarjeta sigue volteada antes de procesar el resultado
+        const card = backElement.closest('.flashcard');
+        if (!card || !card.classList.contains('flipped')) {
+            console.log("Ignorando resultado: la tarjeta ya no está volteada");
+            return;
+        }
+        
         const spokenWord = event.results[0][0].transcript;
         handleVoiceResult(spokenWord, targetWord, backElement);
     };
@@ -2064,6 +2073,13 @@ function startVoiceRecognition(targetWord, backElement) {
     recognition.start();
 }
 function handleVoiceResult(spokenWord, targetWord, backElement) {
+    // Verificar que la tarjeta sigue volteada antes de procesar
+    const card = backElement.closest('.flashcard');
+    if (!card || !card.classList.contains('flipped')) {
+        console.log("Ignorando resultado de voz: la tarjeta no está volteada");
+        return;
+    }
+    
     // Desactiva el botón de mezclar en el primer intento.
     document.getElementById('shuffle-button').disabled = true;
 
@@ -2072,7 +2088,6 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         setBackAttempts(backElement, 2 - voiceAttempts);
         backElement.classList.remove('hidden-text');
         setTimeout(() => {
-            const card = backElement.closest('.flashcard');
             if (card && card.classList.contains('flipped')) {
                 startVoiceRecognition(targetWord, backElement);
             }
@@ -2081,7 +2096,6 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
     }
     const normalizedSpoken = spokenWord.trim();
     const normalizedTarget = targetWord.trim();
-    const card = backElement.closest('.flashcard');
 
     if (palabrasSimilares(normalizedSpoken, normalizedTarget)) {
         correctCount++;

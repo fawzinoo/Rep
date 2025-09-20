@@ -899,6 +899,29 @@
     }
 }
 
+@keyframes modernFadeInOut {
+    0% { 
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8);
+        filter: blur(2px);
+    }
+    15% { 
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.05);
+        filter: blur(0px);
+    }
+    85% { 
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+        filter: blur(0px);
+    }
+    100% { 
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+        filter: blur(1px);
+    }
+}
+
 .mensaje-error {
     position: absolute;
     top: 50% !important;
@@ -1992,29 +2015,7 @@
         <div class="back">Marruecos</div>
     </div>
 
-    <!-- 3. México -->
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://flagcdn.com/w640/mx.png" alt="México" loading="lazy">
-        </div>
-        <div class="back">México</div>
-    </div>
-
-    <!-- 4. Argentina -->
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://flagcdn.com/w640/ar.png" alt="Argentina" loading="lazy">
-        </div>
-        <div class="back">Argentina</div>
-    </div>
-
-    <!-- 5. Colombia -->
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://flagcdn.com/w640/co.png" alt="Colombia" loading="lazy">
-        </div>
-        <div class="back">Colombia</div>
-    </div>
+  
     
     <style>
         /* Icono solo para el de arriba; no rompe el texto que actualiza el JS */
@@ -4054,12 +4055,18 @@ function showPillHints() {
 function resetGame() {
     // Si el tablero fue reemplazado por una pantalla final, restaurarlo
     reinitFlashcardsDOMIfMissing();
-    // Guardar el avance actual como "Avance anterior" antes de reiniciar
-    saveLastGamePercentage();
+    
+    // Solo guardar el avance si hay un juego completado (no al reiniciar desde 0)
+    const totalAttempts = correctCount + incorrectCount;
+    if (totalAttempts > 0) {
+        saveLastGamePercentage();
+    }
+    
     // Limpiar timeouts de stats box si estuvieran activos
     if (statsShowTimeoutId) { clearTimeout(statsShowTimeoutId); statsShowTimeoutId = null; }
     if (statsHideTimeoutId) { clearTimeout(statsHideTimeoutId); statsHideTimeoutId = null; }
     if (percentageUpdateTimeoutId) { clearTimeout(percentageUpdateTimeoutId); percentageUpdateTimeoutId = null; }
+    
     // Resetear todas las variables del juego
     currentCardIndex = 0;
     voiceAttempts = 0;
@@ -4111,10 +4118,19 @@ function resetGame() {
     if (correctasPill) correctasPill.setAttribute('data-prev', '0');
     if (incorrectasPill) incorrectasPill.setAttribute('data-prev', '0');
     
-    // Resetear porcentaje de aciertos
-    updateSuccessPercentage();
+    // Actualizar porcentaje actual (pero NO el "avance anterior" que ya se guardó)
+    const totalCards = flashcards.length;
+    const percentage = 0; // Siempre 0 al reiniciar
+    const porcentajeDiv = document.getElementById('porcentaje-guardado');
+    const porcentajeSpan = document.getElementById('current-percentage');
+    if (porcentajeDiv && porcentajeSpan) {
+        porcentajeSpan.textContent = `${percentage}%`;
+        porcentajeDiv.style.background = 'rgba(255,255,255,0.08)';
+        porcentajeDiv.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+        porcentajeDiv.style.boxShadow = 'none';
+    }
     
-    // Mezclar tarjetas
+    // Mezclar tarjetas sin sonido (el sonido es solo para el botón mezclar)
     shuffleCards();
     
     // Actualizar contadores
@@ -4145,8 +4161,75 @@ document.getElementById('reset-button').addEventListener('click', () => {
     vibrar(80);
     const soundResetButton = document.getElementById('soundResetButton');
     soundResetButton.play().catch(e => console.log(e));
+
+    const overlaysPresent = (
+        document.getElementById('euforia-maxima-overlay') ||
+        document.getElementById('euforia-overlay') ||
+        document.getElementById('perdida-overlay') ||
+        document.getElementById('empate-overlay')
+    );
     
-    // Resetear el juego sin recargar la página
+    // Verificar si se muestra la pantalla final de showCompletionMessage
+    const container = document.getElementById('flashcard-container');
+    const hasCompletionScreen = container && !container.querySelector('.flashcard');
+    
+    // Calcular finalización de forma robusta con el DOM actual
+    const totalCardsNow = document.querySelectorAll('.flashcard').length;
+    const finished = overlaysPresent || hasCompletionScreen || (totalCardsNow > 0 && completedCards.size >= totalCardsNow);
+    const started = ((correctCount + incorrectCount) > 0) || (voiceAttempts > 0);
+
+    if (!finished) {
+        if (started) {
+            const existing = document.getElementById('reset-guard-toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.id = 'reset-guard-toast';
+            toast.innerHTML = `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 12px;
+                    font-size: 16px;
+                    font-weight: 600;
+                ">
+                    <div style="
+                        font-size: 24px;
+                        filter: drop-shadow(0 0 8px rgba(255,152,0,0.6));
+                    ">⏳</div>
+                    <span>Finaliza el juego primero</span>
+                </div>
+            `;
+            toast.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
+                color: #fff;
+                padding: 20px 28px;
+                border-radius: 16px;
+                font-weight: 600;
+                font-size: 16px;
+                letter-spacing: 0.3px;
+                z-index: 10000;
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(255,152,0,0.3);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1);
+                animation: modernFadeInOut 2.2s ease;
+                min-width: 280px;
+                text-align: center;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2200);
+            return; // bloquear si empezó
+        }
+        // Si no ha empezado, sí podemos reiniciar y mezclar
+        resetGame();
+        return;
+    }
+
+    // Resetear el juego sin recargar la página (solo al finalizar)
     resetGame();
 });
 

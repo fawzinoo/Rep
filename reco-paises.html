@@ -3681,6 +3681,8 @@ const audios = audioFiles.map(file => {
     return audio;
 });
 
+// Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
+let originalFlashcardsHTML = null;
 const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 
 function shuffleCards() {
@@ -3764,72 +3766,82 @@ function getCountryText(backElement) {
     return clone.textContent.trim();
 }
 
-flashcards.forEach((card) => {
-    // Guardar la respuesta correcta original en un atributo data-answer SOLO una vez
-    if (!card.dataset.answer) {
-        const back = card.querySelector('.back');
-        card.dataset.answer = back.textContent.trim();
-    }
+function attachFlashcardHandlers() {
+    flashcards.forEach((card) => {
+        // Guardar la respuesta correcta original en un atributo data-answer SOLO una vez
+        if (!card.dataset.answer) {
+            const back = card.querySelector('.back');
+            card.dataset.answer = back.textContent.trim();
+        }
 
-    card.addEventListener('click', () => {
-        if (!canFlip) {
-            // Opcional: Agregar feedback visual cuando no se puede voltear
-            card.style.transform = 'scale(0.98)';
-            setTimeout(() => {
-                card.style.transform = '';
-            }, 150);
-            return; // No permitir voltear si canFlip es false
-        }
-        
-        vibrar(80); 
-        const backElement = card.querySelector('.back');
-if (card.classList.contains('flipped')) {
-    card.classList.remove('flipped');
-    stopAllAudios();
-    // Limpia cualquier contador de intentos al volver a front
-    backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-            setBackAttempts(backElement, 2 - voiceAttempts);
-            // NO detengas ni reinicies el reconocimiento de voz aquí
-        } else {
-            // Volteo de front a back: solo si quedan intentos
-if (voiceAttempts < 2) {
-    card.classList.add('flipped');
-    backElement.classList.add('hidden-text');
-    setBackAttempts(backElement, 2 - voiceAttempts);
-    const correctWord = card.dataset.answer;
-    showListeningIndicator(backElement, "Grabando...");
-    if (!isRecording) {
-        startVoiceRecognition(correctWord, backElement);
-    }
-} else {
-    canFlip = false; // Deshabilitar volteo cuando se agotan intentos
-    incorrectCount++;
-    voiceAttempts = 0;
-    backElement.innerHTML = '';
-    // NO LLAMES a setBackAttempts aquí
-    backElement.classList.remove('hidden-text');
-    
-    // Mostrar la respuesta correcta con efecto de brillo
-    const respuestaCorrecta = document.createElement('div');
-    respuestaCorrecta.textContent = card.dataset.answer;
-    respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
-    respuestaCorrecta.style.marginTop = '40px';
-    backElement.appendChild(respuestaCorrecta);
-    
-    // Reproducir audio si existe y después mostrar countdown
-    const audioIndex = flashcards.indexOf(card);
-    if (audios[audioIndex]) {
-        stopAllAudios();
-        audios[audioIndex].play().catch(() => {});
-        audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-    } else {
-        showCountdown(card);
-    }
-}
-        }
+        card.addEventListener('click', () => {
+            if (!canFlip) {
+                // Opcional: Agregar feedback visual cuando no se puede voltear
+                card.style.transform = 'scale(0.98)';
+                setTimeout(() => {
+                    card.style.transform = '';
+                }, 150);
+                return; // No permitir voltear si canFlip es false
+            }
+            
+            vibrar(80); 
+            const backElement = card.querySelector('.back');
+            if (card.classList.contains('flipped')) {
+                card.classList.remove('flipped');
+                stopAllAudios();
+                // Limpia cualquier contador de intentos al volver a front
+                backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                setBackAttempts(backElement, 2 - voiceAttempts);
+                // NO detengas ni reinicies el reconocimiento de voz aquí
+            } else {
+                // Volteo de front a back: solo si quedan intentos
+                if (voiceAttempts < 2) {
+                    card.classList.add('flipped');
+                    backElement.classList.add('hidden-text');
+                    setBackAttempts(backElement, 2 - voiceAttempts);
+                    const correctWord = card.dataset.answer;
+                    showListeningIndicator(backElement, "Grabando...");
+                    if (!isRecording) {
+                        startVoiceRecognition(correctWord, backElement);
+                    }
+                } else {
+                    canFlip = false; // Deshabilitar volteo cuando se agotan intentos
+                    incorrectCount++;
+                    voiceAttempts = 0;
+                    backElement.innerHTML = '';
+                    // NO LLAMES a setBackAttempts aquí
+                    backElement.classList.remove('hidden-text');
+                    
+                    // Mostrar la respuesta correcta con efecto de brillo
+                    const respuestaCorrecta = document.createElement('div');
+                    respuestaCorrecta.textContent = card.dataset.answer;
+                    respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
+                    respuestaCorrecta.style.marginTop = '40px';
+                    backElement.appendChild(respuestaCorrecta);
+                    
+                    // Reproducir audio si existe y después mostrar countdown
+                    const audioIndex = flashcards.indexOf(card);
+                    if (audios[audioIndex]) {
+                        stopAllAudios();
+                        audios[audioIndex].play().catch(() => {});
+                        audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+                    } else {
+                        showCountdown(card);
+                    }
+                }
+            }
+        });
     });
-});
+}
+
+// Anclar manejadores de tarjetas al cargar
+attachFlashcardHandlers();
 window.addEventListener('DOMContentLoaded', () => {
+    // Guardar HTML original del tablero de tarjetas por si luego se reemplaza
+    const container = document.getElementById('flashcard-container');
+    if (container && !originalFlashcardsHTML) {
+        originalFlashcardsHTML = container.innerHTML;
+    }
     // Cargar último porcentaje de aciertos desde localStorage
     const savedPercentage = localStorage.getItem('lastSuccessPercentage');
     const porcentajeDiv = document.getElementById('porcentaje-guardado');
@@ -4040,6 +4052,14 @@ function showPillHints() {
 }
 
 function resetGame() {
+    // Si el tablero fue reemplazado por una pantalla final, restaurarlo
+    reinitFlashcardsDOMIfMissing();
+    // Guardar el avance actual como "Avance anterior" antes de reiniciar
+    saveLastGamePercentage();
+    // Limpiar timeouts de stats box si estuvieran activos
+    if (statsShowTimeoutId) { clearTimeout(statsShowTimeoutId); statsShowTimeoutId = null; }
+    if (statsHideTimeoutId) { clearTimeout(statsHideTimeoutId); statsHideTimeoutId = null; }
+    if (percentageUpdateTimeoutId) { clearTimeout(percentageUpdateTimeoutId); percentageUpdateTimeoutId = null; }
     // Resetear todas las variables del juego
     currentCardIndex = 0;
     voiceAttempts = 0;
@@ -4103,6 +4123,22 @@ function resetGame() {
     
     // Mostrar la primera tarjeta
     showCard(0);
+}
+
+// Restaura el DOM de tarjetas si fue reemplazado por pantallas de fin de juego
+function reinitFlashcardsDOMIfMissing() {
+    const container = document.getElementById('flashcard-container');
+    if (!container) return;
+    const hasCards = container.querySelectorAll('.flashcard').length > 0;
+    if (!hasCards && originalFlashcardsHTML) {
+        container.innerHTML = originalFlashcardsHTML;
+        // Volver a poblar el arreglo global (const) sin reasignar
+        const newCards = Array.from(container.querySelectorAll('.flashcard'));
+        flashcards.length = 0;
+        newCards.forEach(c => flashcards.push(c));
+        // Reanclar manejadores de clic
+        attachFlashcardHandlers();
+    }
 }
 
 document.getElementById('reset-button').addEventListener('click', () => {

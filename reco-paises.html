@@ -1922,7 +1922,37 @@
         <div class="back">España</div>
     </div>
 
+ <!-- 2. Marruecos -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/ma.png" alt="Marruecos" loading="lazy">
+        </div>
+        <div class="back">Marruecos</div>
+    </div>
 
+    <!-- 3. México -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/mx.png" alt="México" loading="lazy">
+        </div>
+        <div class="back">México</div>
+    </div>
+
+    <!-- 4. Argentina -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/ar.png" alt="Argentina" loading="lazy">
+        </div>
+        <div class="back">Argentina</div>
+    </div>
+
+    <!-- 5. Colombia -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/co.png" alt="Colombia" loading="lazy">
+        </div>
+        <div class="back">Colombia</div>
+    </div>
 
 
 
@@ -2046,6 +2076,14 @@ function startVoiceRecognition(targetWord, backElement) {
     }, 5000); // 5 segundos para pruebas
 
     recognition.onresult = function(event) {
+        // Verificar que la tarjeta siga volteada antes de procesar
+        const card = backElement.closest('.flashcard');
+        if (!card || !card.classList.contains('flipped')) {
+            console.log("Ignorando resultado: la tarjeta ya no está volteada");
+            clearTimeout(autoFlipTimer);
+            return;
+        }
+        
         // Cancelar auto-volteo porque hay respuesta
         clearTimeout(autoFlipTimer);
         
@@ -2080,10 +2118,18 @@ function startVoiceRecognition(targetWord, backElement) {
     recognition.start();
 }
 function handleVoiceResult(spokenWord, targetWord, backElement) {
+    // Verificar que la tarjeta siga volteada antes de procesar
+    const cardElement = backElement.closest('.flashcard');
+    if (!cardElement || !cardElement.classList.contains('flipped')) {
+        console.log("Ignorando respuesta: la tarjeta ya no está volteada");
+        removeListeningIndicator();
+        return;
+    }
+    
     // Desactiva el botón de mezclar en el primer intento.
     document.getElementById('shuffle-button').disabled = true;
     
-    const card = backElement.closest('.flashcard');
+    const card = cardElement;
 
     if (!spokenWord || spokenWord.trim() === "") {
         removeListeningIndicator();
@@ -2199,18 +2245,16 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 backElement.appendChild(respuestaCorrecta);
 
-                // Reproduce el audio si existe
+                // Reproduce el audio si existe y después muestra countdown
                 const audioIndex = flashcards.indexOf(card);
                 if (audios[audioIndex]) {
                     stopAllAudios();
                     audios[audioIndex].play().catch(() => {});
+                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+                } else {
+                    showCountdown(card);
                 }
             }, 2000);
-
-            // 4. Avanza a la siguiente tarjeta después de todo
-            setTimeout(() => {
-                goToNextCard();
-            }, 5000);
         }
     }
     updateCounters();
@@ -3531,14 +3575,31 @@ if (voiceAttempts < 2) {
     backElement.innerHTML = '';
     // NO LLAMES a setBackAttempts aquí
     backElement.classList.remove('hidden-text');
-    setTimeout(() => {
-        goToNextCard();
-    }, 1500);
+    
+    // Mostrar la respuesta correcta con efecto de brillo
+    const respuestaCorrecta = document.createElement('div');
+    respuestaCorrecta.textContent = card.dataset.answer;
+    respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
+    respuestaCorrecta.style.marginTop = '40px';
+    backElement.appendChild(respuestaCorrecta);
+    
+    // Reproducir audio si existe y después mostrar countdown
+    const audioIndex = flashcards.indexOf(card);
+    if (audios[audioIndex]) {
+        stopAllAudios();
+        audios[audioIndex].play().catch(() => {});
+        audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+    } else {
+        showCountdown(card);
+    }
 }
         }
     });
 });
 window.addEventListener('DOMContentLoaded', () => {
+    // Mezclar tarjetas automáticamente al cargar la página
+    shuffleCards();
+    
     showCard(currentCardIndex);
     updateCounters();
     if (audios[0]) {
@@ -3577,6 +3638,10 @@ document.getElementById('reset-button').addEventListener('click', () => {
     vibrar(80);
     const soundResetButton = document.getElementById('soundResetButton');
     soundResetButton.play().catch(e => console.log(e));
+    
+    // Mezclar tarjetas antes de reiniciar
+    shuffleCards();
+    
     setTimeout(() => location.reload(), 500);
 });
 

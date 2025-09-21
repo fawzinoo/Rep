@@ -2284,7 +2284,6 @@
         </div>
         <div class="back">Perú</div>
     </div>
-
   
     
     <style>
@@ -2458,6 +2457,9 @@
 
     <div class="button-container">
         <button class="button" id="reset-button">Reiniciar</button>
+        <button class="button" id="skip-button" style="background-color: #e67e22;">
+            <i class="fas fa-forward"></i> No sé
+        </button>
         <button class="button" id="shuffle-button" style="background-color: #9b59b6;">
             <i class="fas fa-random"></i> Mezclar
         </button>
@@ -2529,6 +2531,84 @@ let canFlip = true; // Controla si se puede voltear la tarjeta
 let percentageUpdateTimeoutId = null;
 let statsShowTimeoutId = null;
 let statsHideTimeoutId = null;
+
+// Estado: ventana entre 1er y 2º intento
+let betweenAttempts = false;
+// Timeouts para gestionar ventana entre intentos
+let errorDelayTimeoutId = null;       // 2s de mensaje Incorrecto tras primer fallo
+let resumeRecognitionTimeoutId = null; // ~100ms antes de reanudar reconocimiento
+
+// Flags para controlar el botón "No sé" en estados de back
+let showingErrorMessage = false;           // true mientras se muestra el mensaje "Incorrecto"
+let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo intento fallido hasta pasar de tarjeta
+let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
+
+function setSkipEnabled(enabled) {
+    const skipBtn = document.getElementById('skip-button');
+    if (!skipBtn) return;
+    skipBtn.disabled = !enabled;
+    skipBtn.style.opacity = enabled ? '1' : '0.5';
+    skipBtn.style.pointerEvents = enabled ? 'auto' : 'none';
+}
+
+// Habilita "No sé" solo en dos momentos:
+// 1) Cuando la tarjeta visible está en front (antes del primer intento)
+// 2) Tras el primer fallo, en la ventana entre intentos (betweenAttempts=true)
+function updateSkipButtonState() {
+    const card = document.querySelector('.flashcard.is-visible');
+    if (!card) { setSkipEnabled(false); return; }
+    const isFront = !card.classList.contains('flipped');
+    if (isFront) {
+        // Permitido al estar en front (antes del 1er intento)
+        setSkipEnabled(true);
+        return;
+    }
+    // Back: activar por defecto salvo condiciones de bloqueo
+    // Bloqueos explícitos: mientras se muestran mensajes de error, y después del segundo incorrecto
+    if (showingErrorMessage || lockedAfterSecondIncorrect || lockedAfterCorrect) { setSkipEnabled(false); return; }
+    // En la ventana entre intentos tras el primer fallo: activo
+    if (betweenAttempts && voiceAttempts === 1) { setSkipEnabled(true); return; }
+    // Si no estamos escuchando o no hay reconocimiento activo, permitir (otros casos de back)
+    setSkipEnabled(true);
+}
+
+// Permitir saltar tarjeta como "No sé"
+function skipCurrentCardAsUnknown() {
+    // Respetar estado de habilitación del botón
+    const btn = document.getElementById('skip-button');
+    if (btn && btn.disabled) return;
+    // Cancelar timeouts pendientes de la ventana entre intentos
+    if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
+    if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
+    // Evitar doble procesamiento si no hay tarjetas o ya está completada
+    const flashcardsList = Array.from(document.querySelectorAll('.flashcard'));
+    if (flashcardsList.length === 0) return;
+    if (completedCards.has(currentCardIndex)) {
+        // Si ya está completada, simplemente avanza
+        goToNextCard();
+        return;
+    }
+
+    // Marcar como incorrecta
+    try {
+        const currentCard = flashcardsList[currentCardIndex];
+        const back = currentCard.querySelector('.back');
+        const targetWord = currentCard.dataset.answer || (back ? back.textContent.trim() : '');
+        if (targetWord) {
+            incorrectWords.push(targetWord);
+        }
+    } catch (e) {}
+    incorrectCount += 1;
+    completedCards.add(currentCardIndex);
+
+    // Persistir y actualizar UI
+    saveGameProgress();
+    updateCounters();
+    updateCardCounter();
+
+    // Avanzar a la siguiente tarjeta
+    goToNextCard();
+}
 
 function scheduleStatsBoxUpdate() {
     const statsBox = document.getElementById('stats-box');
@@ -2663,6 +2743,9 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
     if (palabrasSimilares(normalizedSpoken, normalizedTarget)) {
         correctCount++;
+        betweenAttempts = false;
+        lockedAfterCorrect = true;
+        updateSkipButtonState();
         
         // AGREGAR la palabra a la lista de correctas
         correctWords.push(targetWord);
@@ -2749,13 +2832,24 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
             backElement.appendChild(mensajeError);
             backElement.classList.remove('hidden-text');
 
+            // Durante el mensaje de error, desactivar botón
+            showingErrorMessage = true;
+            updateSkipButtonState();
+
             // Eliminar el mensaje después de 2 segundos y reiniciar la grabación
-            setTimeout(() => {
+            errorDelayTimeoutId = setTimeout(() => {
                 mensajeError.remove(); // Elimina solo el mensaje de error
                 if (card.classList.contains('flipped')) {
+                    // Abrir ventana entre intentos: permitir pulsar "No sé" antes de reanudar
+                    betweenAttempts = true;
+                    showingErrorMessage = false; // terminó el mensaje
+                    updateSkipButtonState();
                     // Mostrar indicador nuevamente antes de reiniciar reconocimiento
                     showListeningIndicator(backElement);
-                    setTimeout(() => {
+                    resumeRecognitionTimeoutId = setTimeout(() => {
+                        // Vamos a reanudar: cerrar ventana entre intentos
+                        betweenAttempts = false;
+                        updateSkipButtonState();
                         startVoiceRecognition(targetWord, backElement);
                     }, 100);
                 }
@@ -2806,8 +2900,16 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 <div>Incorrecto</div>`;
             backElement.appendChild(mensajeError);
 
+            // Bloquear "No sé" mientras se muestra el mensaje final de incorrecto y posterior respuesta
+            showingErrorMessage = true;
+            lockedAfterSecondIncorrect = true;
+            updateSkipButtonState();
+
             // 3. Después de un delay, muestra SOLO la respuesta correcta (sin ningún contador)
             setTimeout(() => {
+                betweenAttempts = false;
+                showingErrorMessage = false;
+                updateSkipButtonState(); // sigue bloqueado por lockedAfterSecondIncorrect
                 canFlip = false; // Deshabilitar volteo cuando se muestra la respuesta
                 // Elimina cualquier contador de intentos y residuos
                 backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
@@ -2991,6 +3093,16 @@ document.getElementById('shuffle-button').addEventListener('click', () => {
     setTimeout(() => { isShuffling = false; }, 800); // Evita abusos rápidos
 });
 
+// Botón "No sé"
+const skipBtn = document.getElementById('skip-button');
+if (skipBtn) {
+    skipBtn.addEventListener('click', () => {
+        vibrar(60);
+        playButtonSound();
+        skipCurrentCardAsUnknown();
+    });
+}
+
 function playSuccessSound() {
     const successAudio = new Audio('https://fawzinoo.github.io/audios/win.mp3');
     successAudio.volume = 0.7;
@@ -3056,6 +3168,12 @@ function goToNextCard() {
     canFlip = true; // Rehabilitar volteo para la nueva tarjeta
     updateCounters();
     voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
+    // Cancelar cualquier timeout entre intentos por seguridad
+    if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
+    if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
+    showingErrorMessage = false;
+    lockedAfterSecondIncorrect = false;
+    lockedAfterCorrect = false;
 
     // Buscar la siguiente tarjeta pendiente empezando DESPUÉS de la actual (búsqueda circular)
     const total = flashcards.length;
@@ -3107,6 +3225,9 @@ flashcards.forEach(card => {
         flashcards[index].classList.add('is-visible');
     }
     updateCounters();
+    // Al mostrar una tarjeta, estamos en front: habilitar skip
+    betweenAttempts = false;
+    updateSkipButtonState();
 }
 
 function updateProgress() {
@@ -3203,7 +3324,7 @@ function showCompletionEuforiaMaxima() {
     });
     
     // Segundo confeti con delay
-    setTimeout(() => {
+    const confettiTimeoutId = setTimeout(() => {
         confetti({
             particleCount: 150,
             spread: 80,
@@ -3212,18 +3333,36 @@ function showCompletionEuforiaMaxima() {
     }, 500);
     
     // DETENER la animación de la copa después de 3 segundos
-    setTimeout(() => {
+    const trophyTimeoutId = setTimeout(() => {
         const trophyContainer = fullScreenOverlay.querySelector('#trophy-container');
         if (trophyContainer) {
             trophyContainer.style.animation = 'none';
         }
     }, 3000);
     
-    // Después de 7 segundos, quitar el overlay y mostrar el mensaje final
-    setTimeout(() => {
-        fullScreenOverlay.remove();
+    // Permitir salto por clic o toque en cualquier parte
+    let skipped = false;
+    const clearAll = () => {
+        if (skipped) return; skipped = true;
+        try { audioVictoriaMaxima.pause(); audioVictoriaMaxima.currentTime = 0; } catch (e) {}
+        try { clearTimeout(confettiTimeoutId); } catch (e) {}
+        try { clearTimeout(trophyTimeoutId); } catch (e) {}
+        if (typeof confetti === 'function' && typeof confetti.reset === 'function') {
+            try { confetti.reset(); } catch (e) {}
+        }
+        if (fullScreenOverlay && fullScreenOverlay.parentNode) {
+            fullScreenOverlay.remove();
+        }
+        document.removeEventListener('click', onSkip, true);
+        document.removeEventListener('touchstart', onSkip, true);
         showCompletionMessage();
-    }, 7000);
+    };
+    const onSkip = () => clearAll();
+    document.addEventListener('click', onSkip, true);
+    document.addEventListener('touchstart', onSkip, true);
+    
+    // Fallback automático
+    const finishTimeoutId = setTimeout(() => { clearAll(); }, 7000);
 }
 
 function showCompletioneuforia() {
@@ -3279,11 +3418,26 @@ function showCompletioneuforia() {
         origin: { y: 0.6 }
     });
     
-    // Después de 7 segundos, quitar el overlay y mostrar el mensaje final
-    setTimeout(() => {
-        fullScreenOverlay.remove();
+    // Permitir salto por clic o toque en cualquier parte
+    let skipped = false;
+    const clearAll = () => {
+        if (skipped) return; skipped = true;
+        try { audioVictoriaNormal.pause(); audioVictoriaNormal.currentTime = 0; } catch (e) {}
+        if (typeof confetti === 'function' && typeof confetti.reset === 'function') {
+            try { confetti.reset(); } catch (e) {}
+        }
+        if (fullScreenOverlay && fullScreenOverlay.parentNode) {
+            fullScreenOverlay.remove();
+        }
+        document.removeEventListener('click', onSkip, true);
+        document.removeEventListener('touchstart', onSkip, true);
         showCompletionMessage();
-    }, 7000);
+    };
+    const onSkip = () => clearAll();
+    document.addEventListener('click', onSkip, true);
+    document.addEventListener('touchstart', onSkip, true);
+    
+    const finishTimeoutId = setTimeout(() => { clearAll(); }, 7000);
 }
 
 function showCompletionPerdida() {
@@ -3334,11 +3488,23 @@ function showCompletionPerdida() {
     
     // NO hay confeti para perdida
     
-    // Después de 3 segundos, quitar el overlay y mostrar el mensaje final
-    setTimeout(() => {
-        fullScreenOverlay.remove();
+    // Permitir salto por clic o toque en cualquier parte
+    let skipped = false;
+    const clearAll = () => {
+        if (skipped) return; skipped = true;
+        try { audioDerrota.pause(); audioDerrota.currentTime = 0; } catch (e) {}
+        if (fullScreenOverlay && fullScreenOverlay.parentNode) {
+            fullScreenOverlay.remove();
+        }
+        document.removeEventListener('click', onSkip, true);
+        document.removeEventListener('touchstart', onSkip, true);
         showCompletionMessage();
-    }, 7000);
+    };
+    const onSkip = () => clearAll();
+    document.addEventListener('click', onSkip, true);
+    document.addEventListener('touchstart', onSkip, true);
+    
+    const finishTimeoutId = setTimeout(() => { clearAll(); }, 7000);
 }
 
 function showCompletionEmpate() {
@@ -3389,11 +3555,23 @@ function showCompletionEmpate() {
     
     // NO hay confeti para empate
     
-    // Después de 3 segundos, quitar el overlay y mostrar el mensaje final
-    setTimeout(() => {
-        fullScreenOverlay.remove();
+    // Permitir salto por clic o toque en cualquier parte
+    let skipped = false;
+    const clearAll = () => {
+        if (skipped) return; skipped = true;
+        try { audioEmpate.pause(); audioEmpate.currentTime = 0; } catch (e) {}
+        if (fullScreenOverlay && fullScreenOverlay.parentNode) {
+            fullScreenOverlay.remove();
+        }
+        document.removeEventListener('click', onSkip, true);
+        document.removeEventListener('touchstart', onSkip, true);
         showCompletionMessage();
-    }, 9000);
+    };
+    const onSkip = () => clearAll();
+    document.addEventListener('click', onSkip, true);
+    document.addEventListener('touchstart', onSkip, true);
+    
+    const finishTimeoutId = setTimeout(() => { clearAll(); }, 9000);
 }
 function showCompletionMessage() {
     const container = document.getElementById('flashcard-container');
@@ -3780,7 +3958,7 @@ function showCorrectWords() {
     
     const wordsHtml = correctWords.length > 0 
         ? correctWords.map(word => `
-            <div class="word-card correct-word" onclick="vibrar(50); playButtonSound(); showCountryFlag('${word}')">
+            <div class="word-card correct-word" onclick="vibrar(50); playButtonSound(); showItemImage('${word}')">
                 <span class="word-text">${word}</span>
                 <div class="word-checkmark">✓</div>
             </div>
@@ -3844,7 +4022,7 @@ function showIncorrectWords() {
     
     const wordsHtml = incorrectWords.length > 0 
         ? incorrectWords.map(word => `
-            <div class="word-card incorrect-word" onclick="vibrar(50); playButtonSound(); showCountryFlag('${word}')">
+            <div class="word-card incorrect-word" onclick="vibrar(50); playButtonSound(); showItemImage('${word}')">
                 <span class="word-text">${word}</span>
                 <div class="word-checkmark">✗</div>
             </div>
@@ -4177,8 +4355,106 @@ const countryFlags = {
     'Australia': 'au'
 };
 
+// Helper: normalizar nombre de país (minúsculas, sin tildes, trim)
+function normalizeCountryKey(str) {
+    return (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}+/gu, '') // quitar acentos
+        .trim();
+}
+
+// Índice normalizado para lookup robusto (soporta con/sin acentos)
+const countryFlagsByKey = {};
+Object.keys(countryFlags).forEach(name => {
+    countryFlagsByKey[normalizeCountryKey(name)] = countryFlags[name];
+});
+
 // Variable global para el overlay de bandera
 let currentFlagOverlay = null;
+
+// Base opcional para imágenes genéricas (png/jpg/webp). Puedes cambiar esta URL.
+const baseImagesUrl = 'https://fawzinoo.github.io/Fotos/';
+
+// Mostrar imagen genérica o bandera si existe
+function showItemImage(name) {
+    const candidates = [];
+    const key = normalizeAudioKey(name); // minúsculas, sin tildes, con guiones
+
+    // 1) Preferir la imagen actual de la tarjeta (front) si existe
+    try {
+        const match = flashcards.find(card => {
+            const ans = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
+            return normalizeAudioKey(ans) === key;
+        });
+        const frontSrc = match?.querySelector('.front img')?.src;
+        if (frontSrc) candidates.push(frontSrc);
+    } catch (e) {}
+
+    // 2) Intentar recursos locales/genéricos por nombre normalizado en varios formatos
+    ['png','jpg','jpeg','webp'].forEach(ext => {
+        candidates.push(`${baseImagesUrl}${key}.${ext}`);
+    });
+
+    // 3) Finalmente, bandera si hay código conocido
+    const code = countryFlags[name] || countryFlagsByKey[normalizeCountryKey(name)];
+    if (code) {
+        candidates.push(`https://flagcdn.com/w640/${code}.png`);
+    }
+    
+    // Función para probar en cadena hasta cargar una
+    const tryNext = (idx) => {
+        if (idx >= candidates.length) {
+            // Fallback: imagen inline de no disponible
+            openImageModal('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y4ZjlmYSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzZiNzI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+SW1hZ2VuIG5vIGRpc3BvbmlibGU8L3RleHQ+PC9zdmc+');
+            return;
+        }
+        const url = candidates[idx];
+        const testImg = new Image();
+        testImg.onload = () => openImageModal(url, name);
+        testImg.onerror = () => tryNext(idx + 1);
+        testImg.src = url;
+    };
+    tryNext(0);
+}
+
+function openImageModal(src, name = '') {
+    // Cerrar anterior si existe
+    if (currentFlagOverlay) { currentFlagOverlay.remove(); currentFlagOverlay = null; }
+    const overlay = document.createElement('div');
+    overlay.id = 'flag-modal-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.9); backdrop-filter: blur(10px);
+        display: flex; justify-content: center; align-items: center;
+        z-index: 15000; opacity: 0; animation: fadeInOverlay 0.3s ease-out forwards;`;
+    currentFlagOverlay = overlay;
+    overlay.innerHTML = `
+        <div class="flag-card-container">
+            <div class="flag-controls-floating">
+                <button class="flag-control-btn fullscreen-btn" title="Pantalla completa"> 
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                </button>
+                <button class="flag-control-btn restore-btn" title="Restituir" style="display: none;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <button class="flag-control-btn close-btn" title="Cerrar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="flag-card-body-full">
+                <img id="flag-image" src="${src}" alt="${name ? 'Imagen de '+name : 'Imagen'}" class="flag-display" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y4ZjlmYSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzZiNzI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+SW1hZ2VuIG5vIGRpc3BvbmlibGU8L3RleHQ+PC9zdmc+'" />
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const fullscreenBtn = overlay.querySelector('.fullscreen-btn');
+    const restoreBtn = overlay.querySelector('.restore-btn');
+    const closeBtn = overlay.querySelector('.close-btn');
+    if (fullscreenBtn) fullscreenBtn.addEventListener('click', () => { vibrar(50); playButtonSound(); toggleFullscreen(); });
+    if (restoreBtn) restoreBtn.addEventListener('click', () => { vibrar(50); playButtonSound(); exitFullscreen(); });
+    if (closeBtn) closeBtn.addEventListener('click', () => { vibrar(50); playButtonSound(); closeFlagModal(); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { vibrar(50); playButtonSound(); closeFlagModal(); }});
+}
 
 // Función para mostrar la bandera del país
 function showCountryFlag(countryName) {
@@ -4188,7 +4464,8 @@ function showCountryFlag(countryName) {
         currentFlagOverlay = null;
     }
     
-    const flagCode = countryFlags[countryName];
+    // Buscar por clave exacta o clave normalizada (para soportar tildes)
+    const flagCode = countryFlags[countryName] || countryFlagsByKey[normalizeCountryKey(countryName)];
     if (!flagCode) {
         console.log(`No se encontró código de bandera para: ${countryName}`);
         return;
@@ -4546,6 +4823,8 @@ function attachFlashcardHandlers() {
                 removeListeningIndicator(backElement);
                 setBackAttempts(backElement, 2 - voiceAttempts);
                 // NO detengas ni reinicies el reconocimiento de voz aquí
+                betweenAttempts = false;
+                updateSkipButtonState();
             } else {
                 // Volteo de front a back: SIEMPRE permitir voltear para mostrar indicador
                 console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
@@ -4603,6 +4882,8 @@ function attachFlashcardHandlers() {
                         showCountdown(card);
                     }
                 }
+                // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
+                updateSkipButtonState();
             }
         });
     });

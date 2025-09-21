@@ -300,6 +300,24 @@
             color: transparent;
             text-shadow: none;
         }
+        
+        /* Asegurar que el indicador NUNCA se oculte ni herede color transparente */
+        .back.hidden-text .super-pulse-indicator {
+            color: #fff !important; /* Forzar color visible */
+            -webkit-text-fill-color: #fff !important; /* Safari/iOS */
+            opacity: 1 !important;
+            display: block !important;
+            visibility: visible !important;
+        }
+        /* Permitir que las letras usen su propio color aunque el contenedor fuerce el fill a blanco */
+        .back.hidden-text .super-pulse-indicator .floating-emoji {
+            -webkit-text-fill-color: currentColor !important; /* usa el color de .e1..e7 */
+        }
+        /* Asegurar que el emoji del micrófono no herede color transparente */
+        .back.hidden-text .mic-emoji {
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+        }
 
         /* Indicador de escucha de voz */
         .listening-indicator {
@@ -574,21 +592,31 @@
   animation: intentosWarningFlash 0.7s;
 }
 .super-pulse-indicator {
-    position: fixed !important; /* Usar fixed en lugar de absolute */
+    position: absolute !important; /* Dentro del lado back */
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
     text-align: center;
-    z-index: 999 !important; /* Z-index muy alto */
-    width: 100%;
+    z-index: 9999 !important; /* Z-index muy alto para estar por encima de todo */
+    width: auto;
     pointer-events: none; /* Para que no interfiera con los clics */
+    display: block !important; /* Forzar visibilidad */
+    opacity: 1 !important; /* Forzar opacidad */
+    visibility: visible !important; /* Forzar visibilidad */
 }
 
 .super-pulse-container {
     position: relative;
-    width: 120px;
-    height: 120px;
-    margin: 0 auto 25px;
+    width: 140px;   /* más espacio para una órbita segura */
+    height: 140px;  /* más espacio para una órbita segura */
+    margin: 0 auto 30px; /* separar de mensajes inferiores */
+    /* Variables para controlar una órbita estable (tipo luna-tierra) */
+    --center-size: 70px;           /* Tamaño del círculo blanco (pulse-center) */
+    --center-scale-max: 1.1;       /* Escala máxima por animación centerBounce */
+    --letter-size: 1.1rem;         /* Igual que .floating-emoji font-size para cálculo preciso */
+    --safety-gap: 16px;            /* Más separación para asegurar que no invada el círculo */
+    /* Radio real de la órbita: mitad del centro (con su escala máxima) + semi ancho de letra + gap */
+    --orbit-radius: calc((var(--center-size) * var(--center-scale-max) / 2) + (var(--letter-size) / 2) + var(--safety-gap));
 }
 
 .pulse-ring {
@@ -660,6 +688,7 @@
     border-radius: 50%;
     width: 70px;
     height: 70px;
+    z-index: 10; /* Asegura que el mic y el centro estén por encima de la órbita */
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -723,57 +752,51 @@
 
 .floating-emojis {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     pointer-events: none;
+    /* El radio de la órbita se calcula para NO entrar en el círculo central en ningún momento */
+    --radius: var(--orbit-radius);
+    transform-origin: 50% 50%;
+    /* NO hay animación aquí - cada letra orbita individualmente */
+    z-index: 4; /* por debajo del centro para no tapar el micrófono */
 }
 
 .floating-emoji {
     position: absolute;
-    font-size: 1.2rem;
-    animation: floatAround 4s ease-in-out infinite;
-    opacity: 0.8;
+    top: 50%;
+    left: 50%;
+    font-size: 1.1rem; /* ligeramente menor para mayor claridad */
+    opacity: 0.9;
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    transform-origin: 50% 50%; /* rota desde el centro del contenedor */
+    -webkit-text-fill-color: currentColor !important; /* asegurar que el color de texto real sea el propio */
+    /* Cada letra orbita individualmente para mantener el centro fijo */
+    animation: letterOrbit 24s linear infinite;
+    pointer-events: none;
+}
+ 
+/* Distribución equidistante de E-S-P-A-Ñ-O-L (360/7 ≈ 51.4286°) */
+/* Colores elegantes desde el primer intento */
+.e1 { color: #8B5CF6 !important; font-weight: 700; animation-delay: -6s; text-shadow: 0 0 8px rgba(139, 92, 246, 0.4); }     /* E - Púrpura elegante */
+.e2 { color: #06B6D4 !important; font-weight: 700; animation-delay: -9.43s; text-shadow: 0 0 8px rgba(6, 182, 212, 0.4); }  /* S - Cian vibrante */
+.e3 { color: #F59E0B !important; font-weight: 700; animation-delay: -12.86s; text-shadow: 0 0 8px rgba(245, 158, 11, 0.4); } /* P - Ámbar dorado */
+.e4 { color: #EF4444 !important; font-weight: 700; animation-delay: -16.29s; text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } /* A - Rojo coral */
+.e5 { color: #10B981 !important; font-weight: 700; animation-delay: -19.71s; text-shadow: 0 0 8px rgba(16, 185, 129, 0.4); } /* Ñ - Esmeralda */
+.e6 { color: #3B82F6 !important; font-weight: 700; animation-delay: -23.14s; text-shadow: 0 0 8px rgba(59, 130, 246, 0.4); } /* O - Azul real */
+.e7 { color: #EC4899 !important; font-weight: 700; animation-delay: -2.57s; text-shadow: 0 0 8px rgba(236, 72, 153, 0.4); }  /* L - Rosa magenta */
+
+/* Se eliminan bailes individuales para que todos giren en la misma órbita */
+
+/* Órbita individual de cada letra manteniendo el centro fijo */
+@keyframes letterOrbit {
+    0%   { transform: translate(-50%, -50%) rotate(0deg) translateX(var(--radius)) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg) translateX(var(--radius)) rotate(-360deg); }
 }
 
-.e1 { 
-    top: 10%; 
-    left: 10%; 
-    animation-delay: 0s;
-    animation-duration: 3s;
-}
-.e2 { 
-    top: 20%; 
-    right: 10%; 
-    animation-delay: 0.5s;
-    animation-duration: 3.5s;
-}
-.e3 {
-    bottom: 10%;
-    left: 10%;
-    animation-delay: 1s;
-    animation-duration: 4s;
-    animation-name: floatAroundE3 !important;
-}
-.e4 { 
-    bottom: 10%; 
-    right: 15%; 
-    animation-delay: 1.5s;
-    animation-duration: 3.2s;
-}
-.e5 { 
-    top: 50%; 
-    left: -10%; 
-    animation-delay: 2s;
-    animation-duration: 3.8s;
-}
-.e6 { 
-    top: 50%; 
-    right: -10%; 
-    animation-delay: 2.5s;
-    animation-duration: 3.3s;
+/* Animación anterior mantenida por compatibilidad */
+@keyframes slowOrbit {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 @keyframes floatAround {
@@ -844,11 +867,23 @@
 
 .super-pulse-subtitle {
     color: #ffeb3b;
-    font-size: 1.0rem;
-    font-weight: 500;
+    font-size: 1.05rem;
+    font-weight: 600; /* mismo peso visual que el segundo intento */
     animation: subtitleSlide 4s ease-in-out infinite;
     text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-    margin-top: 5px;
+    margin-top: 6px;
+}
+
+/* Forzar que el subtítulo mantenga su color amarillo en cualquier intento */
+.super-pulse-indicator .super-pulse-subtitle {
+    color: #ffeb3b !important;
+    -webkit-text-fill-color: #ffeb3b !important; /* Safari/iOS */
+}
+
+/* Si el back está en hidden-text, mantener el color del subtítulo */
+.back.hidden-text .super-pulse-indicator .super-pulse-subtitle {
+    color: #ffeb3b !important;
+    -webkit-text-fill-color: #ffeb3b !important;
 }
 
 @keyframes subtitleSlide {
@@ -2202,20 +2237,52 @@
 <!--------------------------------------------------------------------->
 
 <div id="flashcard-container">
-       <div class="flashcard">
+    <div class="editor-name">@Faouzi ElHilali</div>
+  <div class="flashcard">
         <div class="front">                 
             <img src="https://flagcdn.com/w640/es.png" alt="España" loading="lazy">
         </div>
         <div class="back">España</div>
     </div>
 
-
- <!-- 2. Marruecos -->
+    <!-- 2. Marruecos -->
     <div class="flashcard">
         <div class="front">
             <img src="https://flagcdn.com/w640/ma.png" alt="Marruecos" loading="lazy">
         </div>
         <div class="back">Marruecos</div>
+    </div>
+
+    <!-- 3. México -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/mx.png" alt="México" loading="lazy">
+        </div>
+        <div class="back">México</div>
+    </div>
+
+    <!-- 4. Argentina -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/ar.png" alt="Argentina" loading="lazy">
+        </div>
+        <div class="back">Argentina</div>
+    </div>
+
+    <!-- 5. Colombia -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/co.png" alt="Colombia" loading="lazy">
+        </div>
+        <div class="back">Colombia</div>
+    </div>
+
+    <!-- 6. Perú -->
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://flagcdn.com/w640/pe.png" alt="Perú" loading="lazy">
+        </div>
+        <div class="back">Perú</div>
     </div>
 
   
@@ -2304,6 +2371,29 @@
         @keyframes hintFadeOut {
             0%   { opacity: 1; transform: translateY(-50%) translateX(0); filter: blur(0); }
             100% { opacity: 0; transform: translateY(-50%) translateX(-6px); filter: blur(2px); }
+        }
+    </style>
+
+    <!-- Firma del editor dentro del contenedor de tarjetas -->
+    <style>
+        .editor-name {
+            position: absolute;
+            bottom: 5px;
+            left: 15px; /* abajo izquierda del contenedor */
+            font-size: 9px;
+            animation: colorTintineo 3s infinite;
+            font-weight: bold;
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+            z-index: 21; /* sobre el contenido base */
+            pointer-events: none; /* no bloquea clics */
+        }
+        @keyframes colorTintineo {
+            0% { color: #ff0000; }
+            20% { color: #ffff00; }
+            40% { color: #0000ff; }
+            60% { color: #ffffff; }
+            80% { color: #000000; }
+            100% { color: #ff0000; }
         }
     </style>
 
@@ -2492,37 +2582,32 @@ function startVoiceRecognition(targetWord, backElement) {
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    // Mostrar indicador apropiado DESPUÉS de limpiar cualquier indicador previo
-    showListeningIndicator(backElement);
+    // El indicador se muestra solamente al voltear a back, no aquí
 
     // Timeout para auto-voltear si no hay respuesta (igual que en PC)
     const autoFlipTimer = setTimeout(() => {
         const card = backElement.closest('.flashcard');
         if (card && card.classList.contains('flipped')) {
             card.classList.remove('flipped');
-            removeListeningIndicator();
+            removeListeningIndicator(backElement);
         }
     }, 5000); // 5 segundos para pruebas
 
     recognition.onresult = function(event) {
-        // Verificar que la tarjeta siga volteada antes de procesar
+        // Solo procesar si la tarjeta sigue volteada (no permitir contestar en front)
+        clearTimeout(autoFlipTimer);
         const card = backElement.closest('.flashcard');
         if (!card || !card.classList.contains('flipped')) {
-            console.log("Ignorando resultado: la tarjeta ya no está volteada");
-            clearTimeout(autoFlipTimer);
+            // Ignorar resultado si se volvió a front
             return;
         }
-        
-        // Cancelar auto-volteo porque hay respuesta
-        clearTimeout(autoFlipTimer);
-        
         const spokenWord = event.results[0][0].transcript;
         handleVoiceResult(spokenWord, targetWord, backElement);
     };
 
     recognition.onerror = function(event) {
         console.error("Error de reconocimiento:", event.error); // Muestra el error en la consola para depuración
-        removeListeningIndicator();
+        // NO eliminar el indicador automáticamente, que persista
         clearTimeout(autoFlipTimer); // Limpiar timer
         const card = backElement.closest('.flashcard');
 
@@ -2540,18 +2625,16 @@ function startVoiceRecognition(targetWord, backElement) {
     };
 
     recognition.onend = function() {
-        removeListeningIndicator();
+        // NO eliminar el indicador automáticamente, que persista
         clearTimeout(autoFlipTimer); // Limpiar timer
     };
 
     recognition.start();
 }
 function handleVoiceResult(spokenWord, targetWord, backElement) {
-    // Verificar que la tarjeta siga volteada antes de procesar
+    // Bloquear procesamiento si la tarjeta NO está volteada (no se puede contestar en front)
     const cardElement = backElement.closest('.flashcard');
     if (!cardElement || !cardElement.classList.contains('flipped')) {
-        console.log("Ignorando respuesta: la tarjeta ya no está volteada");
-        removeListeningIndicator();
         return;
     }
     
@@ -2561,12 +2644,16 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
     const card = cardElement;
 
     if (!spokenWord || spokenWord.trim() === "") {
-        removeListeningIndicator();
+        // NO eliminar el indicador, mantenerlo visible
         setBackAttempts(backElement, 2 - voiceAttempts);
         backElement.classList.remove('hidden-text');
         setTimeout(() => {
             if (card && card.classList.contains('flipped')) {
-                startVoiceRecognition(targetWord, backElement);
+                // Mostrar indicador nuevamente antes de reiniciar reconocimiento
+                showListeningIndicator(backElement);
+                setTimeout(() => {
+                    startVoiceRecognition(targetWord, backElement);
+                }, 100);
             }
         }, 2000);
         return;
@@ -2584,7 +2671,10 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         playSuccessSound();
 
         // Mostrar contador y nombre del país debajo SOLO si acierta
-        backElement.innerHTML = '';
+        clearBackContent(backElement);
+        
+        // Eliminar indicador cuando aparece la respuesta
+        removeListeningIndicator(backElement);
         
         // Si se acierta al primer intento (voiceAttempts es 0), el contador se pone a 1.
         // Si se acierta al segundo (voiceAttempts es 1), el contador se pone a 0.
@@ -2602,6 +2692,27 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         
         canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
 
+        // ANTI-TRUCO: Marcar la tarjeta como completada inmediatamente
+        // para evitar que un refresco durante la cuenta regresiva la cuente como restante
+        if (!completedCards.has(currentCardIndex)) {
+            completedCards.add(currentCardIndex);
+            updateCardCounter();
+            saveGameProgress();
+        }
+
+        // Si esta era la última tarjeta, actualizar el "avance anterior" en el momento 0
+        // para no perder el resultado si el usuario refresca o cierra la página.
+        // Al haber marcado la tarjeta como completada arriba, si no quedan restantes, 
+        // el porcentaje del partido actual ya es definitivo.
+        (function() {
+            try {
+                const remainingAfter = flashcards.length - completedCards.size;
+                if (remainingAfter === 0) {
+                    saveLastGamePercentage();
+                }
+            } catch (e) { /* noop */ }
+        })();
+
         setTimeout(() => {
             if (audios[flashcards.indexOf(card)]) {
                 stopAllAudios();
@@ -2615,19 +2726,18 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         // Programar la aparición/actualización/ocultación del cuadro de stats
         scheduleStatsBoxUpdate();
         
-        // GUARDAR PROGRESO AUTOMÁTICAMENTE
-        saveGameProgress();
-    } else {
-        voiceAttempts++;
-        removeListeningIndicator();
-
-        // GUARDAR PROGRESO DESPUÉS DE INCREMENTAR voiceAttempts
+        // GUARDAR PROGRESO AUTOMÁTICAMENTE (ya guardado arriba al marcar completada)
+        } else {
+            voiceAttempts++;
+            // NO eliminar el indicador, mantenerlo visible        // GUARDAR PROGRESO DESPUÉS DE INCREMENTAR voiceAttempts
         saveGameProgress();
 
         if (voiceAttempts < 2) {
             playErrorSound();
             // Primer intento fallido: solo muestra el mensaje de error elegante y centrado
-            backElement.innerHTML = '';
+            clearBackContent(backElement);
+            // Eliminar indicador cuando aparece el mensaje de error
+            removeListeningIndicator(backElement);
             setBackAttempts(backElement, 2 - voiceAttempts); // Solo actualiza el contador de intentos
             
             const mensajeError = document.createElement('div');
@@ -2643,7 +2753,11 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
             setTimeout(() => {
                 mensajeError.remove(); // Elimina solo el mensaje de error
                 if (card.classList.contains('flipped')) {
-                    startVoiceRecognition(targetWord, backElement);
+                    // Mostrar indicador nuevamente antes de reiniciar reconocimiento
+                    showListeningIndicator(backElement);
+                    setTimeout(() => {
+                        startVoiceRecognition(targetWord, backElement);
+                    }, 100);
                 }
             }, 2000);
 
@@ -2658,10 +2772,31 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
             voiceAttempts = 0;
             canFlipBack = false;
             canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
-            removeListeningIndicator(backElement);
+            // NO eliminar el indicador, mantenerlo visible
+
+            // ANTI-TRUCO: Marcar la tarjeta como completada inmediatamente
+            // para evitar que un refresco durante la cuenta regresiva la cuente como restante
+            if (!completedCards.has(currentCardIndex)) {
+                completedCards.add(currentCardIndex);
+                updateCardCounter();
+                saveGameProgress();
+            }
+
+            // Si esta era la última tarjeta, actualizar el "avance anterior" en el momento 0 del mensaje de error
+            // para no perder el resultado si el usuario refresca o cierra la página en la última tarjeta.
+            (function() {
+                try {
+                    const remainingAfter = flashcards.length - completedCards.size;
+                    if (remainingAfter === 0) {
+                        saveLastGamePercentage();
+                    }
+                } catch (e) { /* noop */ }
+            })();
 
             // 1. Limpia TODO el contenido del reverso (incluyendo contadores)
-            backElement.innerHTML = '';
+            clearBackContent(backElement);
+            // Eliminar indicador cuando aparece el mensaje de incorrecto
+            removeListeningIndicator(backElement);
             backElement.classList.remove('hidden-text');
 
             // 2. Muestra el mensaje de "Incorrecto"
@@ -2676,7 +2811,9 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 canFlip = false; // Deshabilitar volteo cuando se muestra la respuesta
                 // Elimina cualquier contador de intentos y residuos
                 backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-                backElement.innerHTML = ''; // LIMPIA TODO
+                clearBackContent(backElement); // LIMPIA TODO preservando indicador
+                // Eliminar indicador definitivamente cuando aparece la respuesta final
+                removeListeningIndicator(backElement);
                 const respuestaCorrecta = document.createElement('div');
                 respuestaCorrecta.textContent = targetWord;
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
@@ -2715,11 +2852,28 @@ function palabrasSimilares(a, b) {
 }
 
 function showListeningIndicator(backElement, text = 'Habla ahora') {
-    // Primero limpiar cualquier indicador previo
+    console.log(`showListeningIndicator llamada con voiceAttempts: ${voiceAttempts}`);
+    if (!backElement) {
+        console.log('Error: backElement es null');
+        return;
+    }
+    // Limpiar cualquier indicador previo dentro de este back
     backElement.querySelectorAll('.listening-indicator').forEach(el => el.remove());
     
     const indicator = document.createElement('div');
     indicator.className = 'listening-indicator super-pulse-indicator';
+    // Forzar visibilidad con estilos inline para mayor robustez
+    indicator.style.cssText = `
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        z-index: 9999 !important;
+        display: block !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: none !important;
+    `;
     
     // Determinar el texto a mostrar basado en el número de intentos
     let displayText, subtitleText;
@@ -2751,19 +2905,66 @@ function showListeningIndicator(backElement, text = 'Habla ahora') {
                 <span class="wave-dot"></span>
             </div>
         </div>
-        <div class="floating-emojis">
-            <span class="floating-emoji e1">🤖</span>
-            <span class="floating-emoji e2">🦄</span>
-            <span class="floating-emoji e3">🚀</span>
-            <span class="floating-emoji e4">🧠</span>
-            <span class="floating-emoji e5">💡</span>
-            <span class="floating-emoji e6">🥳</span>
+        <div class="floating-emojis" aria-hidden="true">
+            <span class="floating-emoji e1">E</span> <!-- Norte -->
+            <span class="floating-emoji e2">S</span> <!-- Noreste -->
+            <span class="floating-emoji e3">P</span> <!-- Este -->
+            <span class="floating-emoji e4">A</span> <!-- Sureste -->
+            <span class="floating-emoji e5">Ñ</span> <!-- Sur -->
+            <span class="floating-emoji e6">O</span> <!-- Suroeste -->
+            <span class="floating-emoji e7">L</span> <!-- Oeste -->
         </div>
     </div>
     <div class="super-pulse-text">${displayText}</div>
     <div class="super-pulse-subtitle">${subtitleText}</div>
 `;
+    // Adjuntar dentro del lado back para que no sea global
     backElement.appendChild(indicator);
+    console.log(`Indicador agregado al back. Elementos con clase 'listening-indicator': ${backElement.querySelectorAll('.listening-indicator').length}`);
+    
+    // Verificar visibilidad del indicador
+    setTimeout(() => {
+        const indicatorInDOM = backElement.querySelector('.listening-indicator');
+        if (indicatorInDOM) {
+            const styles = window.getComputedStyle(indicatorInDOM);
+            console.log(`Indicador en DOM - Display: ${styles.display}, Opacity: ${styles.opacity}, Visibility: ${styles.visibility}`);
+        } else {
+            console.log('Error: Indicador no encontrado en DOM después de agregarlo');
+        }
+    }, 100);
+}
+
+// Función para asegurar que el indicador esté presente en el back
+function ensureIndicatorVisible(backElement) {
+    if (!backElement) return;
+    
+    const existingIndicator = backElement.querySelector('.listening-indicator, .super-pulse-indicator');
+    if (!existingIndicator) {
+        console.log('Indicador desaparecido, recreando...');
+        showListeningIndicator(backElement);
+    } else {
+        console.log('Indicador ya presente');
+    }
+}
+
+// Función para limpiar el contenido del back preservando el indicador
+function clearBackContent(backElement) {
+    // Preservar todos los indicadores y elementos importantes
+    const indicators = backElement.querySelectorAll('.listening-indicator, .super-pulse-indicator');
+    const indicatorsData = Array.from(indicators).map(ind => ({
+        html: ind.outerHTML,
+        element: ind.cloneNode(true)
+    }));
+    
+    // Limpiar contenido
+    backElement.innerHTML = '';
+    
+    // Restaurar indicadores
+    indicatorsData.forEach(data => {
+        backElement.appendChild(data.element);
+    });
+    
+    console.log(`Contenido limpiado, indicadores preservados: ${indicatorsData.length}`);
 }
 
 // --- FIN DEL NUEVO SISTEMA DE VOZ ---
@@ -2771,9 +2972,12 @@ function showListeningIndicator(backElement, text = 'Habla ahora') {
 function removeListeningIndicator(backElement = null) {
     if (backElement) {
         backElement.querySelectorAll('.listening-indicator').forEach(el => el.remove());
-    } else {
-        // Eliminación global para cualquier indicador que haya quedado en el DOM
-        document.querySelectorAll('.listening-indicator').forEach(el => el.remove());
+        return;
+    }
+    // Como fallback, intenta limpiar en la tarjeta visible
+    const visibleBack = document.querySelector('.flashcard.is-visible .back');
+    if (visibleBack) {
+        visibleBack.querySelectorAll('.listening-indicator').forEach(el => el.remove());
     }
 }
 let isShuffling = false;
@@ -2798,10 +3002,10 @@ function showCountdown(card) {
     const back = card.querySelector('.back');
     back.querySelectorAll('.countdown-inline').forEach(el => el.remove());
 
-    // Verificar si es la última tarjeta
+    // Verificar si es la última tarjeta (tras marcar la actual como completada, remaining debe ser 0 si era la última)
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
     const remainingCards = flashcards.filter((_, index) => !completedCards.has(index)).length;
-    const isLastCard = remainingCards <= 1; // 1 porque la actual aún no se ha marcado como completada
+    const isLastCard = remainingCards <= 0;
 
     // Crea el contenedor del timer
     const timerDiv = document.createElement('div');
@@ -2853,8 +3057,11 @@ function goToNextCard() {
     updateCounters();
     voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
 
+    // Buscar la siguiente tarjeta pendiente empezando DESPUÉS de la actual (búsqueda circular)
+    const total = flashcards.length;
     let nextIndex = -1;
-    for (let i = 0; i < flashcards.length; i++) {
+    for (let step = 1; step <= total; step++) {
+        const i = (currentCardIndex + step) % total;
         if (!completedCards.has(i)) {
             nextIndex = i;
             break;
@@ -3749,6 +3956,9 @@ function restoreGameState(gameState) {
             });
         }
         
+        // Reasignar audios a cada tarjeta según su respuesta (por si el orden se cambió)
+        reassignAudiosToCards();
+
         // IMPORTANTE: Resetear el estado de las tarjetas al restaurar
         flashcards.forEach(card => {
             card.classList.remove('is-visible', 'flipped');
@@ -3758,6 +3968,17 @@ function restoreGameState(gameState) {
             back.classList.remove('hidden-text');
         });
         
+        // Si el índice actual apunta a una tarjeta ya completada, avanzar a la primera pendiente empezando desde la siguiente (circular)
+        try {
+            const total = flashcards.length;
+            if (total > 0 && completedCards.has(currentCardIndex)) {
+                for (let step = 1; step <= total; step++) {
+                    const i = (currentCardIndex + step) % total;
+                    if (!completedCards.has(i)) { currentCardIndex = i; break; }
+                }
+            }
+        } catch (e) {}
+
         // Actualizar interfaz
         updateCounters();
         updateCardCounter();
@@ -4171,6 +4392,29 @@ const audios = audioFiles.map(file => {
     return audio;
 });
 
+// Normalizador y mapa para resolver el audio correcto según el nombre del país
+function normalizeAudioKey(str) {
+    return (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // quitar acentos
+        .replace(/\s+/g, '-')             // espacios -> guiones
+        .replace(/[^a-z-]/g, '');          // solo letras y guiones
+}
+
+const audioFilenameByKey = {};
+audioFiles.forEach(file => {
+    const base = file.replace(/\.mp3$/i, '');
+    const key = normalizeAudioKey(base);
+    audioFilenameByKey[key] = file; // guarda el nombre de archivo original
+});
+
+function getAudioSrcForCountryName(countryName) {
+    const key = normalizeAudioKey(countryName);
+    const file = audioFilenameByKey[key];
+    return file ? (baseUrl + file) : null;
+}
+
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
 let originalFlashcardsHTML = null;
 const flashcards = Array.from(document.querySelectorAll('.flashcard'));
@@ -4185,8 +4429,7 @@ const allCardData = flashcards.map((card, index) => ({
     frontImg: card.querySelector('.front img').src,
     frontAlt: card.querySelector('.front img').alt,
     // CORRECTO: usar el texto del reverso real
-    backText: card.querySelector('.back').textContent.trim(),
-    audio: audios[index]
+    backText: card.querySelector('.back').textContent.trim()
 }));
 
     // 2. Separar los datos de las tarjetas en pendientes y completadas.
@@ -4222,7 +4465,19 @@ back.querySelectorAll('.intentos-back').forEach(el => el.remove());
 back.innerHTML = data.backText;
     // --- ACTUALIZA EL data-answer TAMBIÉN ---
     card.dataset.answer = data.backText;
-    audios[index] = data.audio;
+        // Reasignar el audio CORRECTO según el nombre del país
+        const src = getAudioSrcForCountryName(data.backText);
+        if (src) {
+            try { audios[index].pause(); } catch {}
+            audios[index].currentTime = 0;
+            audios[index].preload = 'none';
+            audios[index].src = src;
+        } else {
+            // Si no hay audio mapeado, limpiar para evitar desincronización
+            try { audios[index].pause(); } catch {}
+            audios[index].currentTime = 0;
+            audios[index].src = '';
+        }
 });
 
     // 6. Actualizar el estado para reflejar el nuevo orden.
@@ -4235,7 +4490,11 @@ back.innerHTML = data.backText;
         }
         
         completedCards = newCompletedCards; // Reemplazar el set antiguo por el nuevo.
-        currentCardIndex = 0; // Empezar desde la primera tarjeta pendiente.
+        // Empezar desde la primera PENDIENTE real
+        currentCardIndex = 0;
+        for (let i = 0; i < flashcards.length; i++) {
+            if (!completedCards.has(i)) { currentCardIndex = i; break; }
+        }
         
         showCard(currentCardIndex);
         updateCounters(); // Actualizar los contadores en la UI sin reiniciarlos.
@@ -4265,7 +4524,9 @@ function attachFlashcardHandlers() {
         }
 
         card.addEventListener('click', () => {
+            console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
             if (!canFlip) {
+                console.log('Volteo bloqueado por canFlip');
                 // Opcional: Agregar feedback visual cuando no se puede voltear
                 card.style.transform = 'scale(0.98)';
                 setTimeout(() => {
@@ -4281,27 +4542,49 @@ function attachFlashcardHandlers() {
                 stopAllAudios();
                 // Limpia cualquier contador de intentos al volver a front
                 backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                // Eliminar indicador de escucha al volver al frente
+                removeListeningIndicator(backElement);
                 setBackAttempts(backElement, 2 - voiceAttempts);
                 // NO detengas ni reinicies el reconocimiento de voz aquí
             } else {
-                // Volteo de front a back: solo si quedan intentos
+                // Volteo de front a back: SIEMPRE permitir voltear para mostrar indicador
+                console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
+                card.classList.add('flipped');
+                
+                // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
+                if (card.dataset.answer) {
+                    backElement.innerHTML = card.dataset.answer;
+                }
+                backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
+                backElement.classList.remove('hidden-text');
+                setBackAttempts(backElement, 2 - voiceAttempts);
+                
+                // Mostrar SIEMPRE el indicador al voltear a back
+                console.log(`Mostrando indicador para voiceAttempts: ${voiceAttempts}`);
+                showListeningIndicator(backElement);
+                
+                // Solo iniciar reconocimiento si quedan intentos
                 if (voiceAttempts < 2) {
-                    card.classList.add('flipped');
-                    backElement.classList.add('hidden-text');
-                    setBackAttempts(backElement, 2 - voiceAttempts);
+                    // Pequeño delay para permitir pintar el indicador y luego ocultar el texto
                     const correctWord = card.dataset.answer;
-                    
-                    // IMPORTANTE: No mostrar indicador inmediatamente, iniciar reconocimiento directamente
-                    if (!isRecording) {
-                        startVoiceRecognition(correctWord, backElement);
-                    }
+                    setTimeout(() => {
+                        backElement.classList.add('hidden-text');
+                        if (!isRecording) {
+                            startVoiceRecognition(correctWord, backElement);
+                        }
+                    }, 150);
                 } else {
-                    canFlip = false; // Deshabilitar volteo cuando se agotan intentos
-                    incorrectCount++;
-                    voiceAttempts = 0;
-                    backElement.innerHTML = '';
-                    // NO LLAMES a setBackAttempts aquí
-                    backElement.classList.remove('hidden-text');
+                    // No quedan intentos - mostrar respuesta directamente
+                    console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
+                    // Eliminar indicador cuando aparece la respuesta directa
+                    removeListeningIndicator(backElement);
+
+                    // ANTI-TRUCO (refuerzo): marcar como completada al mostrar respuesta directa
+                    if (!completedCards.has(currentCardIndex)) {
+                        completedCards.add(currentCardIndex);
+                        updateCardCounter();
+                        saveGameProgress();
+                    }
                     
                     // Mostrar la respuesta correcta con efecto de brillo
                     const respuestaCorrecta = document.createElement('div');
@@ -4336,6 +4619,8 @@ window.addEventListener('DOMContentLoaded', () => {
     
     // VERIFICAR SI HAY PROGRESO GUARDADO ANTES DE INICIALIZAR
     if (hasProgressSaved()) {
+        // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
+        updateLastGamePillFromStorage();
         // Mostrar modal de continuación si hay progreso
         setTimeout(() => {
             showContinueGameModal();
@@ -4376,40 +4661,80 @@ function initializePage() {
         }
     }
     
-    // Cargar porcentaje del último partido jugado
-    const lastGamePercentage = localStorage.getItem('paises1');
-    const lastGameDiv = document.getElementById('last-game-percentage');
-    const lastGamePill = document.getElementById('last-game-pill');
-    
-    if (lastGamePercentage && lastGameDiv) {
-        const gamePercentage = parseInt(lastGamePercentage);
-        lastGameDiv.textContent = `${gamePercentage}%`;
-        
-        // Cambiar color según el porcentaje del último partido
-        // Fondo transparente como el cuadro; solo resaltar borde según nivel
-        lastGamePill.style.background = 'rgba(255,255,255,0.08)';
-        if (gamePercentage >= 80) {
-            lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
-            lastGamePill.style.boxShadow = '0 4px 12px rgba(0, 200, 81, 0.25)';
-        } else if (gamePercentage >= 60) {
-            lastGamePill.style.borderColor = 'rgba(255, 215, 0, 0.6)';
-            lastGamePill.style.boxShadow = '0 4px 12px rgba(255, 215, 0, 0.25)';
-        } else {
-            lastGamePill.style.borderColor = 'rgba(255, 53, 71, 0.6)';
-            lastGamePill.style.boxShadow = '0 4px 12px rgba(255, 53, 71, 0.25)';
-        }
-    }
+    // Pintar el porcentaje del último partido (avance anterior)
+    updateLastGamePillFromStorage();
     
     // Mezclar tarjetas automáticamente al cargar la página
     shuffleCards();
     
+    // Asegurar mapeo audio→tarjeta tras mezcla inicial
+    reassignAudiosToCards();
+
     showCard(currentCardIndex);
     updateCounters();
-    if (audios[0]) {
-        audios[0].load();
+    // Precargar audio correcto para la tarjeta visible tras primera mezcla
+    const firstBack = document.querySelector('.flashcard.is-visible .back');
+    const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
+    const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
+    if (visibleSrc && audios[currentCardIndex]) {
+        try { audios[currentCardIndex].pause(); } catch {}
+        audios[currentCardIndex].currentTime = 0;
+        audios[currentCardIndex].preload = 'auto';
+        audios[currentCardIndex].src = visibleSrc;
+        audios[currentCardIndex].load();
     }
     // Mostrar hints secuenciales al cargar
     showPillHints();
+}
+
+// Helper: pintar el "avance anterior" desde localStorage en su pill
+function updateLastGamePillFromStorage() {
+    const lastGamePercentage = localStorage.getItem('paises1');
+    const lastGameDiv = document.getElementById('last-game-percentage');
+    const lastGamePill = document.getElementById('last-game-pill');
+    if (lastGamePercentage !== null && lastGameDiv && lastGamePill) {
+        const gamePercentage = parseInt(lastGamePercentage);
+        lastGameDiv.textContent = `${isNaN(gamePercentage) ? 0 : gamePercentage}%`;
+        // Estilo visual del pill según nivel
+        lastGamePill.style.background = 'rgba(255,255,255,0.08)';
+        if (!isNaN(gamePercentage)) {
+            if (gamePercentage >= 80) {
+                lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
+                lastGamePill.style.boxShadow = '0 4px 12px rgba(0, 200, 81, 0.25)';
+            } else if (gamePercentage >= 60) {
+                lastGamePill.style.borderColor = 'rgba(255, 215, 0, 0.6)';
+                lastGamePill.style.boxShadow = '0 4px 12px rgba(255, 215, 0, 0.25)';
+            } else {
+                lastGamePill.style.borderColor = 'rgba(255, 53, 71, 0.6)';
+                lastGamePill.style.boxShadow = '0 4px 12px rgba(255, 53, 71, 0.25)';
+            }
+        } else {
+            lastGamePill.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            lastGamePill.style.boxShadow = 'none';
+        }
+    }
+}
+
+// Reasignar audios a tarjetas según el texto del reverso (data-answer)
+function reassignAudiosToCards() {
+    try {
+        flashcards.forEach((card, index) => {
+            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
+            const src = getAudioSrcForCountryName(answer);
+            if (src) {
+                try { audios[index].pause(); } catch {}
+                audios[index].currentTime = 0;
+                audios[index].preload = 'none';
+                audios[index].src = src;
+            } else {
+                try { audios[index].pause(); } catch {}
+                audios[index].currentTime = 0;
+                audios[index].src = '';
+            }
+        });
+    } catch (e) {
+        console.warn('No se pudo reasignar audios:', e);
+    }
 }
 
 function updateCardCounter() {

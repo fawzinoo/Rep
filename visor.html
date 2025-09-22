@@ -1,0 +1,309 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Visor PDF Profesional</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		
+		body {
+			font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			background: #000;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			position: relative;
+			touch-action: none;
+			user-select: none;
+		}
+		
+		.pdf-viewer-container {
+			width: 100vw;
+			height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: relative;
+			overflow: hidden;
+		}
+		
+		.floating-controls {
+			position: absolute;
+			top: 20px;
+			right: 20px;
+			display: flex;
+			gap: 10px;
+			z-index: 1000;
+		}
+		
+		.page-counter {
+			position: absolute;
+			bottom: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			background: rgba(0, 0, 0, 0.6);
+			color: white;
+			padding: 8px 16px;
+			border-radius: 20px;
+			font-size: 14px;
+			font-weight: 500;
+			z-index: 1000;
+			backdrop-filter: blur(10px);
+			transition: all 0.3s ease;
+		}
+		
+		.floating-controls button {
+			width: 50px;
+			height: 50px;
+			border-radius: 50%;
+			background: rgba(0, 0, 0, 0.6);
+			border: none;
+			color: white;
+			font-size: 18px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: all 0.3s ease;
+			backdrop-filter: blur(10px);
+		}
+		
+		.floating-controls button:hover {
+			background: rgba(0, 0, 0, 0.8);
+			transform: scale(1.1);
+		}
+		
+		#pdf-canvas {
+			width: 100vw !important;
+			height: 100vh !important;
+			border: none;
+			display: block;
+			background: #fff;
+			object-fit: contain;
+		}
+		
+		.loading {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: white;
+			font-size: 18px;
+			font-weight: 500;
+		}
+		
+		@media (max-width: 768px) {
+			.floating-controls {
+				top: 15px;
+				right: 15px;
+				gap: 8px;
+			}
+			
+			.floating-controls button {
+				width: 45px;
+				height: 45px;
+				font-size: 16px;
+			}
+		}
+		
+		@media (max-width: 480px) {
+			.floating-controls {
+				top: 10px;
+				right: 10px;
+				gap: 6px;
+			}
+			
+			.floating-controls button {
+				width: 40px;
+				height: 40px;
+				font-size: 14px;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="pdf-viewer-container">
+		<div class="floating-controls">
+			<button id="prev-page" title="Página anterior">←</button>
+			<button id="next-page" title="Página siguiente">→</button>
+			<button id="zoom-out" title="Zoom -">−</button>
+			<button id="zoom-in" title="Zoom +">+</button>
+		</div>
+		
+		<div class="page-counter" id="page-counter">Cargando...</div>
+		<div class="loading" id="loading">Cargando PDF...</div>
+		
+		<canvas id="pdf-canvas"></canvas>
+	</div>
+	<script>
+		// Configurar PDF.js worker
+		pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+		
+		// Variables globales
+		const urlDefault = 'https://fawzinoo.github.io/Rep/U11.pdf';
+		let pdfDoc = null;
+		let currentPage = 1;
+		let totalPages = 0;
+		let zoomLevel = 1.0; // Empezar con zoom 1.0 para pantalla completa
+		let canvas = null;
+		let ctx = null;
+		
+		// Inicializar canvas
+		canvas = document.getElementById('pdf-canvas');
+		ctx = canvas.getContext('2d');
+		
+		// Función para renderizar página con alta resolución
+		function renderPage(pageNum) {
+			const loading = document.getElementById('loading');
+			loading.style.display = 'block';
+
+			pdfDoc.getPage(pageNum).then(function(page) {
+				// Obtener dimensiones de la pantalla
+				const containerWidth = window.innerWidth;
+				const containerHeight = window.innerHeight;
+				const dpr = window.devicePixelRatio || 1;
+
+				// Calcular el scale para que ocupe toda la pantalla
+				const viewport = page.getViewport({ scale: 1 });
+				const scaleX = containerWidth / viewport.width;
+				const scaleY = containerHeight / viewport.height;
+				const scale = Math.min(scaleX, scaleY) * dpr * zoomLevel;
+
+				// Viewport escalado para alta resolución
+				const scaledViewport = page.getViewport({ scale: scale });
+
+				// Ajustar el tamaño interno del canvas (alta resolución)
+				canvas.width = scaledViewport.width;
+				canvas.height = scaledViewport.height;
+
+				// Ajustar el tamaño visual del canvas (pantalla)
+				canvas.style.width = (scaledViewport.width / dpr) + 'px';
+				canvas.style.height = (scaledViewport.height / dpr) + 'px';
+				canvas.style.objectFit = 'contain';
+
+				const renderContext = {
+					canvasContext: ctx,
+					viewport: scaledViewport
+				};
+
+				page.render(renderContext).promise.then(function() {
+					loading.style.display = 'none';
+					updatePageCounter();
+				});
+			});
+		}
+		
+		// Actualizar contador de páginas
+		function updatePageCounter() {
+			const pageCounter = document.getElementById('page-counter');
+			pageCounter.textContent = `Página ${currentPage} de ${totalPages}`;
+			
+			// Habilitar/deshabilitar botones
+			document.getElementById('prev-page').style.opacity = currentPage <= 1 ? '0.3' : '1';
+			document.getElementById('next-page').style.opacity = currentPage >= totalPages ? '0.3' : '1';
+		}
+		
+		// Navegación por páginas
+		function nextPage() {
+			if (currentPage < totalPages) {
+				currentPage++;
+				renderPage(currentPage);
+			}
+		}
+		
+		function prevPage() {
+			if (currentPage > 1) {
+				currentPage--;
+				renderPage(currentPage);
+			}
+		}
+		
+		// Controles de zoom
+		function zoomIn() {
+			if (zoomLevel < 2.0) {
+				zoomLevel += 0.2;
+				renderPage(currentPage);
+			}
+		}
+		
+		function zoomOut() {
+			if (zoomLevel > 0.6) {
+				zoomLevel -= 0.2;
+				renderPage(currentPage);
+			}
+		}
+		
+		// Event listeners
+		document.getElementById('next-page').addEventListener('click', nextPage);
+		document.getElementById('prev-page').addEventListener('click', prevPage);
+		document.getElementById('zoom-in').addEventListener('click', zoomIn);
+		document.getElementById('zoom-out').addEventListener('click', zoomOut);
+		
+		// Navegación con teclado
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'ArrowRight' || e.key === ' ') {
+				e.preventDefault();
+				nextPage();
+			} else if (e.key === 'ArrowLeft') {
+				e.preventDefault();
+				prevPage();
+			}
+		});
+		
+		// Bloquear scroll
+		document.addEventListener('wheel', function(e) {
+			e.preventDefault();
+		}, { passive: false });
+		
+		document.addEventListener('touchmove', function(e) {
+			e.preventDefault();
+		}, { passive: false });
+		
+		// Ocultar controles automáticamente
+		let hideControlsTimeout;
+		
+		function showControls() {
+			const controls = document.querySelector('.floating-controls');
+			const pageCounter = document.querySelector('.page-counter');
+			controls.style.opacity = '1';
+			pageCounter.style.opacity = '1';
+			clearTimeout(hideControlsTimeout);
+			hideControlsTimeout = setTimeout(() => {
+				controls.style.opacity = '0.3';
+				pageCounter.style.opacity = '0.3';
+			}, 3000);
+		}
+		
+		document.addEventListener('mousemove', showControls);
+		document.addEventListener('touchstart', showControls);
+		
+		// Cargar PDF
+		pdfjsLib.getDocument(urlDefault).promise.then(function(pdfDoc_) {
+			pdfDoc = pdfDoc_;
+			totalPages = pdfDoc.numPages;
+			
+			// Renderizar primera página
+			renderPage(currentPage);
+			showControls();
+		}).catch(function(error) {
+			console.error('Error cargando PDF:', error);
+			document.getElementById('loading').textContent = 'Error: No se pudo cargar el PDF';
+		});
+		
+		// Redimensionar al cambiar tamaño de ventana
+		window.addEventListener('resize', function() {
+			if (pdfDoc) {
+				renderPage(currentPage);
+			}
+		});
+	</script>
+</body>
+</html>

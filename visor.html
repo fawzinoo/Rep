@@ -83,11 +83,14 @@
 		
 		#pdf-canvas {
 			width: 100vw !important;
-			height: 100vh !important;
 			border: none;
 			display: block;
 			background: #fff;
 			object-fit: contain;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
 		}
 		
 		.loading {
@@ -160,45 +163,50 @@
 		canvas = document.getElementById('pdf-canvas');
 		ctx = canvas.getContext('2d');
 		
-		// Función para renderizar página con alta resolución
+
+		// Permitir modificar el ancho y el alto visual de la página PDF
+		const widthFactor = 1.0; // Cambia este valor para hacer la página más ancha (>1) o más estrecha (<1)
+		const heightFactor = 0.8; // Ligeramente más alto que el original
+
 		function renderPage(pageNum) {
-			const loading = document.getElementById('loading');
-			loading.style.display = 'block';
+		   const loading = document.getElementById('loading');
+		   loading.style.display = 'block';
 
-			pdfDoc.getPage(pageNum).then(function(page) {
-				// Obtener dimensiones de la pantalla
-				const containerWidth = window.innerWidth;
-				const containerHeight = window.innerHeight;
-				const dpr = window.devicePixelRatio || 1;
+		   pdfDoc.getPage(pageNum).then(function(page) {
+			   // Obtener dimensiones de la pantalla
+			   const containerWidth = window.innerWidth;
+			   const containerHeight = window.innerHeight;
+			   const dpr = window.devicePixelRatio || 1;
 
-				// Calcular el scale para que ocupe toda la pantalla
-				const viewport = page.getViewport({ scale: 1 });
-				const scaleX = containerWidth / viewport.width;
-				const scaleY = containerHeight / viewport.height;
-				const scale = Math.min(scaleX, scaleY) * dpr * zoomLevel;
+			   // Calcular el scale para que ocupe toda la pantalla
+			   const viewport = page.getViewport({ scale: 1 });
+			   const scaleX = (containerWidth / viewport.width) * widthFactor;
+			   const scaleY = containerHeight / viewport.height;
+			   // Priorizar el alto y aumentar un 25% para que la página se vea aún más alta
+			   const scale = scaleY * 1.25 * dpr * zoomLevel;
 
-				// Viewport escalado para alta resolución
-				const scaledViewport = page.getViewport({ scale: scale });
+			   // Viewport escalado para alta resolución
+			   const scaledViewport = page.getViewport({ scale: scale });
 
-				// Ajustar el tamaño interno del canvas (alta resolución)
-				canvas.width = scaledViewport.width;
-				canvas.height = scaledViewport.height;
+			   // Ajustar el tamaño interno del canvas (alta resolución)
+			   canvas.width = scaledViewport.width;
+			   canvas.height = scaledViewport.height;
 
-				// Ajustar el tamaño visual del canvas (pantalla)
-				canvas.style.width = (scaledViewport.width / dpr) + 'px';
-				canvas.style.height = (scaledViewport.height / dpr) + 'px';
-				canvas.style.objectFit = 'contain';
+			   // Ajustar el tamaño visual del canvas (pantalla)
+			   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
+			   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
+			   canvas.style.objectFit = 'fill';
 
-				const renderContext = {
-					canvasContext: ctx,
-					viewport: scaledViewport
-				};
+			   const renderContext = {
+				   canvasContext: ctx,
+				   viewport: scaledViewport
+			   };
 
-				page.render(renderContext).promise.then(function() {
-					loading.style.display = 'none';
-					updatePageCounter();
-				});
-			});
+			   page.render(renderContext).promise.then(function() {
+				   loading.style.display = 'none';
+				   updatePageCounter();
+			   });
+		   });
 		}
 		
 		// Actualizar contador de páginas

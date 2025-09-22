@@ -332,60 +332,51 @@
 
 		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
 		function showImageByNumber(n) {
-			const url = imageLinks[n-1];
-			if (!url) {
-				// fallback
-				document.getElementById('exercise-img').style.display = 'none';
-				document.getElementById('pdf-canvas').style.display = 'block';
-				renderPage(currentPage);
-				return;
+			// Construir candidatos de nombre (sin dependencias frágiles)
+			const base = baseImageUrl.replace(/\/$/, '');
+			const candidates = [];
+			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
+			candidates.push(`${base}/U1E${n}.png`);
+			candidates.push(`${base}/U1E${n}.jpg`);
+			candidates.push(`${base}/U1E${n}.jpeg`);
+			if (n < 10) {
+				const nn = `0${n}`;
+				candidates.push(`${base}/U1E${nn}.png`);
+				candidates.push(`${base}/U1E${nn}.jpg`);
+				candidates.push(`${base}/U1E${nn}.jpeg`);
 			}
 
-			// Preload: usar Image() para comprobar existencia y dimensiones antes de mostrar
-			const probe = new Image();
-			probe.crossOrigin = 'anonymous';
-			probe.onload = function() {
-				// Ocultar canvas y mostrar imagen con transición de opacidad
-				document.getElementById('pdf-canvas').style.display = 'none';
-				exerciseImg.style.display = 'block';
-				exerciseImg.style.opacity = '0';
-				exerciseImg.src = probe.src; // asignar la URL ya cargada
-				// Forzar repaint y luego animar la opacidad
-				requestAnimationFrame(() => {
-					exerciseImg.style.opacity = '1';
-				});
-			};
-
-			probe.onerror = function() {
-				// Si falla png, intentar jpg
-				if (url.endsWith('.png')) {
-					const alt = url.replace(/\.png$/, '.jpg');
-					const probe2 = new Image();
-					probe2.crossOrigin = 'anonymous';
-					probe2.onload = function() {
-						document.getElementById('pdf-canvas').style.display = 'none';
-						exerciseImg.style.display = 'block';
-						exerciseImg.style.opacity = '0';
-						exerciseImg.src = probe2.src;
-						requestAnimationFrame(() => { exerciseImg.style.opacity = '1'; });
-					};
-					probe2.onerror = function() {
-						// fallback final a PDF
-						exerciseImg.style.display = 'none';
-						document.getElementById('pdf-canvas').style.display = 'block';
-						renderPage(currentPage);
-					};
-					probe2.src = alt;
-				} else {
-					// fallback a PDF
+			let tried = 0;
+			function tryNext() {
+				if (tried >= candidates.length) {
+					// ninguna encontrada: fallback a PDF con aviso
+					alert(`Imagen U1E${n} no encontrada. Se muestra PDF como fallback.`);
 					exerciseImg.style.display = 'none';
 					document.getElementById('pdf-canvas').style.display = 'block';
 					renderPage(currentPage);
+					return;
 				}
-			};
 
-			// Iniciar probe con la URL original
-			probe.src = url;
+				const url = candidates[tried++];
+				const probe = new Image();
+				probe.onload = function() {
+					// mostrar la imagen real en el <img>
+					document.getElementById('pdf-canvas').style.display = 'none';
+					exerciseImg.style.display = 'block';
+					exerciseImg.style.opacity = '0';
+					exerciseImg.src = url;
+					exerciseImg.onload = function() {
+						adjustImageSize();
+						exerciseImg.style.opacity = '1';
+					};
+				};
+				probe.onerror = function() {
+					// intentar siguiente
+					tryNext();
+				};
+				probe.src = url;
+			}
+			tryNext();
 		}
 		
 		// Actualizar contador de páginas
@@ -512,6 +503,49 @@
 			}
 		});
 		
+		// Ajustar tamaño de la imagen para caber en el área visible (entre selector superior y contador inferior)
+		function adjustImageSize() {
+			const img = document.getElementById('exercise-img');
+			if (!img || img.style.display === 'none') return;
+			// calcular espacio ocupado por la interfaz
+			const selector = document.getElementById('exercise-selector');
+			const counter = document.getElementById('page-counter');
+			const selectorRect = selector.getBoundingClientRect();
+			const counterRect = counter.getBoundingClientRect();
+			// espacio visible entre bottom de selector y top de contador
+			const visibleTop = Math.max(0, selectorRect.bottom);
+			const visibleBottom = Math.min(window.innerHeight, counterRect.top);
+			const availableHeight = Math.max(100, visibleBottom - visibleTop);
+
+			// Preferir ocupar todo el alto disponible en móviles y ajustar ancho proporcional
+			if (window.innerWidth <= 768) {
+				img.style.height = availableHeight + 'px';
+				img.style.width = 'auto';
+				img.style.maxWidth = '100vw';
+				img.style.top = visibleTop + 'px';
+				img.style.left = '50%';
+				img.style.transform = 'translateX(-50%)';
+			} else {
+				// Desktop: ajustar al ancho de la ventana, y limitar altura al availableHeight
+				img.style.width = '100vw';
+				img.style.height = 'auto';
+				if (img.naturalHeight && img.naturalWidth) {
+					const renderedHeight = (window.innerWidth * img.naturalHeight) / img.naturalWidth;
+					if (renderedHeight > availableHeight) {
+						// si la altura resultante excede el espacio, bajar el scale
+						img.style.height = availableHeight + 'px';
+						img.style.width = 'auto';
+					}
+				}
+				img.style.top = (visibleTop + (availableHeight/2)) + 'px';
+				img.style.left = '50%';
+				img.style.transform = 'translate(-50%, -50%)';
+			}
+		}
+
+		window.addEventListener('resize', function() {
+			adjustImageSize();
+		});
 		// Bloquear scroll
 		document.addEventListener('wheel', function(e) {
 			e.preventDefault();

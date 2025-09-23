@@ -6,6 +6,8 @@
 	<title>Visor PDF Profesional</title>
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+	<!-- jsPDF para generar un PDF de una sola página desde canvas -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 	<style>
 		* {
 			margin: 0;
@@ -64,55 +66,6 @@
 		.left-arrow { left: 10px; }
 		.right-arrow { right: 10px; }
 		
-		.floating-controls {
-			position: absolute;
-			top: 20px;
-			right: 20px;
-			display: flex;
-			flex-direction: column;
-			gap: 10px;
-			z-index: 1000;
-		}
-		
-		.exercise-input {
-			width: 150px;
-			padding: 8px 12px;
-			border-radius: 20px;
-			background: rgba(0, 0, 0, 0.6);
-			border: none;
-			color: white;
-			font-size: 14px;
-			font-weight: 500;
-			backdrop-filter: blur(10px);
-			outline: none;
-		}
-		
-		.select-btn {
-			padding: 8px 12px;
-			border-radius: 12px;
-			background: rgba(255,255,255,0.06);
-			color: #fff;
-			border: 1px solid rgba(255,255,255,0.06);
-			cursor: pointer;
-		}
-		
-		.showall-btn {
-			padding: 8px 12px;
-			border-radius: 12px;
-			background: rgba(0,0,0,0.6);
-			color: #fff;
-			border: none;
-			cursor: pointer;
-		}
-		
-		.zone-rect {
-			position: absolute;
-			border: 2px dashed rgba(255,255,255,0.9);
-			background: rgba(255,255,255,0.06);
-			pointer-events: none;
-			z-index: 2500;
-		}
-		
 		.page-counter {
 			position: absolute;
 			bottom: 20px;
@@ -128,27 +81,52 @@
 			backdrop-filter: blur(10px);
 			transition: all 0.3s ease;
 		}
-		
-		.floating-controls button {
-			width: 50px;
-			height: 50px;
-			border-radius: 50%;
-			background: rgba(0, 0, 0, 0.6);
+
+		/* Top bar compacta y moderna */
+		.top-bar {
+			background: linear-gradient(135deg, #434343 0%, #000000 100%);
+			padding: 10px 14px;
+			border-radius: 0 0 20px 20px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
+			box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+			width: min(940px, calc(100% - 12px));
+			margin: 0 auto;
+		}
+		.bar-group {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.label-chip {
+			color: #fff;
+			font-weight: 700;
+			font-size: 16px;
+			margin: 0 6px 0 2px;
+		}
+
+		/* Botones compactos en la barra (📖, ⬇️) */
+		.round-icon-btn {
+			width: 38px;
+			height: 38px;
+			border-radius: 12px;
 			border: none;
-			color: white;
-			font-size: 18px;
+			background: linear-gradient(135deg, #666 0%, #444 100%);
+			color: #fff;
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			font-size: 18px;
 			cursor: pointer;
-			transition: all 0.3s ease;
-			backdrop-filter: blur(10px);
+			box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+			transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
 		}
-		
-		.floating-controls button:hover {
-			background: rgba(0, 0, 0, 0.8);
-			transform: scale(1.1);
-		}
+		.round-icon-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+		#download-page-btn.round-icon-btn { background: linear-gradient(135deg, #4c8bf5 0%, #1a73e8 100%); }
+		#download-page-btn.round-icon-btn:hover { box-shadow: 0 6px 20px rgba(26,115,232,0.6); }
+
 		
 		#pdf-canvas {
 			width: 100vw !important;
@@ -188,44 +166,6 @@
 			font-weight: 500;
 		}
 		
-		@media (max-width: 768px) {
-			.floating-controls {
-				top: 15px;
-				right: 15px;
-				gap: 8px;
-			}
-			
-			.floating-controls button {
-				width: 45px;
-				height: 45px;
-				font-size: 16px;
-			}
-		}
-		
-		@media (max-width: 480px) {
-			.floating-controls {
-				top: 10px;
-				right: 10px;
-				gap: 6px;
-			}
-			
-			.floating-controls button {
-				width: 40px;
-				height: 40px;
-				font-size: 14px;
-			}
-		}
-		
-		@media (max-width: 600px) {
-			.side-arrow {
-				width: 44px;
-				height: 44px;
-				font-size: 1.7rem;
-			}
-			.left-arrow { left: 2px; }
-			.right-arrow { right: 2px; }
-		}
-
 		/* En móviles: la imagen debe ocupar todo el alto y ajustar el ancho proporcionalmente */
 		@media (max-width: 768px) {
 			#exercise-img {
@@ -237,24 +177,226 @@
 				max-width: 100vw; /* evitar desbordes horizontales */
 				max-height: none; /* ya fijamos altura */
 			}
+			
+			.pdf-viewer-container > div:first-of-type > div {
+				padding: 10px 15px !important;
+				gap: 10px !important;
+				border-radius: 0 0 20px 20px !important;
+			}
+			
+			.pdf-viewer-container > div:first-of-type span {
+				font-size: 16px !important;
+				margin-right: 5px !important;
+			}
+			
+			#exercise-input,
+			#page-input {
+				width: 76px !important;
+				height: 36px !important;
+				font-size: 16px !important;
+			}
+			
+			.pdf-viewer-container > div:first-of-type button {
+				padding: 8px 12px !important;
+				font-size: 14px !important;
+			}
+		}
+
+		/* Estilos para los botones del menú superior */
+		#show-exercise-btn:hover {
+			background: linear-gradient(135deg, #e6850e 0%, #e55a00 100%) !important;
+			transform: translateY(-2px);
+			box-shadow: 0 6px 20px rgba(255,149,0,0.6) !important;
+		}
+		
+		#show-all-btn:hover {
+			background: linear-gradient(135deg, #555 0%, #333 100%) !important;
+			transform: translateY(-2px);
+			box-shadow: 0 6px 20px rgba(102,102,102,0.6) !important;
+		}
+		
+		@media (max-width: 480px) {
+			.side-arrow {
+				width: 44px;
+				height: 44px;
+				font-size: 1.7rem;
+			}
+			.left-arrow { left: 2px; }
+			.right-arrow { right: 2px; }
+		}
+
+		/* Inputs con icono integrado */
+		.input-with-icon {
+			position: relative;
+			display: inline-block;
+		}
+		.input-with-icon .has-icon {
+			padding-right: 40px !important; /* espacio para la lupita (más compacto) */
+		}
+		.input-with-icon .icon-btn {
+			position: absolute;
+			right: 4px;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 28px;
+			height: 28px;
+			padding: 0 !important; /* anula paddings previos inline */
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 14px;
+			border: none;
+			border-radius: 8px;
+			cursor: pointer;
+			background: transparent;
+			color: #444;
+		}
+		/* Hover sutil sin fondo para la lupita */
+		.input-with-icon .icon-btn:hover {
+			background: transparent;
+			color: #111;
+			transform: translateY(-50%) scale(1.05);
+		}
+
+		/* Anular degradado previo en hover para el botón de ejercicio y de página */
+		#show-exercise-btn:hover,
+		#goto-page-btn:hover {
+			background: transparent !important;
+			box-shadow: none !important;
+		}
+
+		/* Modal elegante para errores */
+		.error-modal {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100vw;
+			height: 100vh;
+			background: rgba(0, 0, 0, 0.8);
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 10000;
+			backdrop-filter: blur(10px);
+			animation: fadeIn 0.3s ease;
+		}
+
+		.error-modal-content {
+			background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+			border-radius: 20px;
+			padding: 30px;
+			max-width: 400px;
+			width: 90%;
+			text-align: center;
+			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+		}
+
+		.error-icon {
+			font-size: 60px;
+			margin-bottom: 20px;
+			opacity: 0.8;
+		}
+
+		.error-title {
+			color: #fff;
+			font-size: 24px;
+			font-weight: 700;
+			margin-bottom: 15px;
+		}
+
+		.error-message {
+			color: #ccc;
+			font-size: 16px;
+			line-height: 1.5;
+			margin-bottom: 25px;
+		}
+
+		.error-button {
+			background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%);
+			color: white;
+			border: none;
+			padding: 12px 30px;
+			border-radius: 12px;
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.3s ease;
+			box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+		}
+
+		.error-button:hover {
+			background: linear-gradient(135deg, #ff5252 0%, #e53935 100%);
+			transform: translateY(-2px);
+			box-shadow: 0 8px 25px rgba(255, 107, 107, 0.6);
+		}
+
+		@keyframes fadeIn {
+			from { opacity: 0; }
+			to { opacity: 1; }
+		}
+
+		@keyframes slideUp {
+			from {
+				transform: translateY(30px);
+				opacity: 0;
+			}
+			to {
+				transform: translateY(0);
+				opacity: 1;
+			}
 		}
 	</style>
 </head>
 <body>
 	<div class="pdf-viewer-container">
-		<button class="side-arrow left-arrow" id="prev-page" title="Página anterior">&#8592;</button>
-		<button class="side-arrow right-arrow" id="next-page" title="Página siguiente">&#8594;</button>
-		<div id="exercise-selector" style="position:absolute;top:18px;left:50%;transform:translateX(-50%);z-index:3000;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.7);padding:8px 14px;border-radius:18px;">
-			<label style="color:#fff;font-weight:600;margin-right:6px;">Ejercicio</label>
-			<input id="exercise-input" type="number" min="1" max="28" value="1" style="width:56px;padding:6px;border-radius:8px;border:none;outline:none;font-size:1rem;" />
-			<button id="show-exercise-btn" style="background:#ffb300;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;">Ver</button>
-			<button id="show-all-btn" style="background:#666;color:#fff;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;">Todo</button>
-			<button id="check-missing-btn" title="Comprobar imágenes faltantes" style="background:#444;color:#fff;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;">Ver faltantes</button>
+		<button class="side-arrow left-arrow" id="prev-page" title="Página anterior" aria-label="Página anterior">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<!-- Arco/cayado (báculo) hacia la izquierda -->
+				<path d="M18 4C10 4 10 20 18 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+				<!-- Punta en forma de chevrón curvo -->
+				<path d="M11 8L6 12L11 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+		</button>
+		<button class="side-arrow right-arrow" id="next-page" title="Página siguiente" aria-label="Página siguiente">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<!-- Arco/cayado (báculo) hacia la derecha -->
+				<path d="M6 4C14 4 14 20 6 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+				<!-- Punta en forma de chevrón curvo -->
+				<path d="M13 8L18 12L13 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+		</button>
+		
+		<!-- Menú estilo original centrado (compacto) -->
+		<div style="position: absolute; top: 0; left: 0; right: 0; z-index: 3000; padding: 0;">
+			<div style="background: linear-gradient(135deg, #434343 0%, #000000 100%); padding: 12px 16px; border-radius: 0 0 22px 22px; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);">
+				<span style="color: #fff; font-weight: 700; font-size: 16px; margin-right: 6px;">Ej.</span>
+				<span class="input-with-icon">
+					<input id="exercise-input" type="number" min="1" max="28" value="1" class="has-icon" style="width: 74px; height: 32px; padding: 6px 8px; border-radius: 10px; border: none; outline: none; font-size: 15px; font-weight: 700; text-align: center; background: #fff; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);" />
+					<button id="show-exercise-btn" class="icon-btn" title="Ir al ejercicio">🔍</button>
+				</span>
+
+				<span style="color: #fff; font-weight: 700; font-size: 16px; margin-left: 4px;">Pág.</span>
+				<span class="input-with-icon">
+					<input id="page-input" type="number" min="1" value="1" class="has-icon" style="width: 74px; height: 32px; padding: 6px 8px; border-radius: 10px; border: none; outline: none; font-size: 15px; font-weight: 700; text-align: center; background: #fff; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);" />
+					<button id="goto-page-btn" class="icon-btn" title="Ir a la página">🔍</button>
+				</span>
+				<button id="show-all-btn" style="background: linear-gradient(135deg, #666 0%, #444 100%); color: #fff; border: none; padding: 8px 12px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 16px; transition: all 0.2s; box-shadow: 0 3px 10px rgba(102,102,102,0.4);" title="Mostrar PDF">📖</button>
+				<button id="download-page-btn" style="background: linear-gradient(135deg, #4c8bf5 0%, #1a73e8 100%); color: #fff; border: none; padding: 8px 12px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 16px; transition: all 0.2s; box-shadow: 0 3px 10px rgba(26,115,232,0.4);" title="Descargar esta página en PDF">⬇️</button>
+			</div>
 		</div>
-		<div class="floating-controls">
-			<button id="zoom-out" title="Zoom -">−</button>
-			<button id="zoom-in" title="Zoom +">+</button>
+
+		<!-- Modal elegante para errores -->
+		<div class="error-modal" id="error-modal">
+			<div class="error-modal-content">
+				<div class="error-icon">📚</div>
+				<div class="error-title">Imagen no disponible</div>
+				<div class="error-message" id="error-message">La imagen del ejercicio no se encuentra disponible en este momento.</div>
+				<button class="error-button" onclick="closeErrorModal()">¡Entendido!</button>
+			</div>
 		</div>
+
 		
 		<div class="page-counter" id="page-counter">Cargando...</div>
 		<div class="loading" id="loading">Cargando PDF...</div>
@@ -274,11 +416,87 @@
 		let zoomLevel = 1.0; // Empezar con zoom 1.0 para pantalla completa
 		let canvas = null;
 		let ctx = null;
+		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
+		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
+
+		// Funciones para gestionar historial con localStorage
+		function saveUserState(type, data) {
+			const state = {
+				type: type, // 'pdf' o 'exercise'
+				data: data, // { page: number } para PDF, { exerciseNumber: number } para ejercicio
+				timestamp: Date.now()
+			};
+			localStorage.setItem('visorUserState', JSON.stringify(state));
+		}
+
+		// Guardar/leer último ejercicio válido mostrado
+		function setLastValidExercise(n) {
+			try { localStorage.setItem('lastValidExercise', String(n)); } catch (e) {}
+		}
+		function getLastValidExercise() {
+			try {
+				const v = localStorage.getItem('lastValidExercise');
+				return v ? parseInt(v, 10) : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		function getUserState() {
+			try {
+				const saved = localStorage.getItem('visorUserState');
+				return saved ? JSON.parse(saved) : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		function restoreUserState() {
+			const savedState = getUserState();
+			if (!savedState) {
+				// Si no hay estado guardado, asegurar que el PDF esté visible
+				document.getElementById('exercise-img').style.display = 'none';
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.transition = '';
+				pdfCanvas.style.opacity = '1';
+				pdfCanvas.style.transform = 'translateX(-50%)';
+				return;
+			}
+
+			if (savedState.type === 'pdf') {
+				// Restaurar PDF en la página guardada
+				currentPage = savedState.data.page || 1;
+				document.getElementById('exercise-img').style.display = 'none';
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.transition = '';
+				pdfCanvas.style.opacity = '1';
+				pdfCanvas.style.transform = 'translateX(-50%)';
+				renderPage(currentPage);
+			} else if (savedState.type === 'exercise') {
+				// Si el último estado fue un ejercicio, recupéralo automáticamente
+				const exerciseNum = savedState.data.exerciseNumber;
+				document.getElementById('exercise-input').value = exerciseNum;
+				// Mostrar directamente el ejercicio que estaba viendo
+				showImageByNumber(exerciseNum);
+			}
+		}
 
 		// Base de imágenes (ajusta si guardas en otro sitio)
 		const baseImageUrl = 'https://fawzinoo.github.io/Fotos/';
 		const imageLinks = Array.from({ length: 28 }, (_, i) => `${baseImageUrl}U1E${i+1}.png`);
 		const exerciseImg = document.getElementById('exercise-img');
+		// Mapeo de ejercicios a páginas del PDF
+		const exerciseToPage = {
+			1: 1, 2: 1, 3: 1, 4: 1,
+			5: 2, 6: 2, 7: 2,
+			9: 3, 10: 3, 12: 3, 13: 3, 14: 3,
+			15: 4, 16: 4,
+			17: 5, 18: 5, 19: 5,
+			21: 6, 22: 6, 23: 6,
+			24: 7, 25: 7, 26: 7
+		};
 		
 		// Inicializar canvas
 		canvas = document.getElementById('pdf-canvas');
@@ -326,12 +544,18 @@
 			   page.render(renderContext).promise.then(function() {
 				   loading.style.display = 'none';
 				   updatePageCounter();
+				   // Guardar estado del PDF
+				   saveUserState('pdf', { page: currentPage });
 			   });
 		   });
 		}
 
 		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
-		function showImageByNumber(n) {
+		function showImageByNumber(n, options = {}) {
+			const { suppressError = false, onFail, onSuccess } = options;
+			exerciseBeforeError = n; // Guardar el ejercicio que se está intentando abrir
+			currentExerciseTarget = n; // Marcar el objetivo actual para bloquear duplicados
+			
 			// Construir candidatos de nombre (sin dependencias frágiles)
 			const base = baseImageUrl.replace(/\/$/, '');
 			const candidates = [];
@@ -348,33 +572,48 @@
 
 			let tried = 0;
 			function tryNext() {
-				if (tried >= candidates.length) {
-					// ninguna encontrada: fallback a PDF con aviso
-					alert(`Imagen U1E${n} no encontrada. Se muestra PDF como fallback.`);
-					exerciseImg.style.display = 'none';
-					document.getElementById('pdf-canvas').style.display = 'block';
-					renderPage(currentPage);
+					if (tried >= candidates.length) {
+					// ninguna encontrada
+						currentExerciseTarget = null; // limpiar objetivo al fallar
+					if (suppressError) {
+						if (typeof onFail === 'function') onFail();
+					} else {
+						showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+					}
 					return;
 				}
 
 				const url = candidates[tried++];
-				const probe = new Image();
-				probe.onload = function() {
-					// mostrar la imagen real en el <img>
-					document.getElementById('pdf-canvas').style.display = 'none';
-					exerciseImg.style.display = 'block';
-					exerciseImg.style.opacity = '0';
+				const testImg = new Image();
+				testImg.onload = function() {
+					// Imagen encontrada, mostrarla directamente
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					const exerciseImg = document.getElementById('exercise-img');
+					
+					// Ocultar PDF
+					pdfCanvas.style.display = 'none';
+					
+					// Configurar y mostrar imagen
 					exerciseImg.src = url;
+					exerciseImg.style.display = 'block';
+					exerciseImg.style.opacity = '1';
+					exerciseImg.style.transition = '';
+					
+					// Ajustar tamaño cuando la imagen se carga
 					exerciseImg.onload = function() {
 						adjustImageSize();
-						exerciseImg.style.opacity = '1';
+						saveUserState('exercise', { exerciseNumber: n });
+						setLastValidExercise(n);
+						// Registrar el ejercicio mostrado actualmente
+						try { exerciseImg.dataset.exerciseNumber = String(n); } catch (e) {}
+						try { if (typeof onSuccess === 'function') onSuccess(); } catch(e) {}
 					};
 				};
-				probe.onerror = function() {
+				testImg.onerror = function() {
 					// intentar siguiente
 					tryNext();
 				};
-				probe.src = url;
+				testImg.src = url;
 			}
 			tryNext();
 		}
@@ -383,6 +622,13 @@
 		function updatePageCounter() {
 			const pageCounter = document.getElementById('page-counter');
 			pageCounter.textContent = `Página ${currentPage} de ${totalPages}`;
+
+			// Sincronizar el input de página si existe
+			const pageInput = document.getElementById('page-input');
+			if (pageInput) {
+				pageInput.value = String(currentPage);
+				if (totalPages) pageInput.max = String(totalPages);
+			}
 			
 			// Habilitar/deshabilitar botones
 			document.getElementById('prev-page').style.opacity = currentPage <= 1 ? '0.3' : '1';
@@ -404,23 +650,24 @@
 			}
 		}
 		
-		// Controles de zoom
-		function zoomIn() {
-			if (zoomLevel < 2.0) {
-				zoomLevel += 0.2;
-				renderPage(currentPage);
-			}
-		}
+
 		
-		function zoomOut() {
-			if (zoomLevel > 0.6) {
-				zoomLevel -= 0.2;
-				renderPage(currentPage);
-			}
+		// Sonido para botones (navegación, acciones y cierre de modal) con debounce
+		const pageSound = new Audio('https://fawzinoo.github.io/audios/botonn.mp3');
+		pageSound.preload = 'auto';
+		let lastSoundAt = 0;
+		function playButtonSound(minIntervalMs = 350) {
+			const now = Date.now();
+			// si el sonido ya se está reproduciendo recientemente, no reiniciar
+			if (!pageSound.paused && (now - lastSoundAt < 1000)) return;
+			if (now - lastSoundAt < minIntervalMs) return; // debounce
+			lastSoundAt = now;
+			try {
+				pageSound.pause();
+				pageSound.currentTime = 0;
+				pageSound.play();
+			} catch (e) {}
 		}
-		
-		// Sonido de paso de página
-		const pageSound = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa4c3b.mp3');
 		
 		// Animación de transición tipo libro
 		function animatePage(direction) {
@@ -433,65 +680,212 @@
 				canvas.style.transform = 'translateX(-50%)';
 			}, 450);
 		}
+
+		// Renderizar una página del PDF a un canvas fuera de pantalla, a buena resolución
+		async function renderPageToCanvas(pageNum, scale = 2) {
+			if (!pdfDoc) throw new Error('PDF no cargado');
+			const page = await pdfDoc.getPage(pageNum);
+			const viewport = page.getViewport({ scale });
+			const off = document.createElement('canvas');
+			const offCtx = off.getContext('2d');
+			off.width = viewport.width;
+			off.height = viewport.height;
+			await page.render({ canvasContext: offCtx, viewport }).promise;
+			return off;
+		}
+
+		// Descargar la página actual o la mapeada desde ejercicio como PDF de una sola página
+		async function downloadCurrentPdfPage() {
+			try {
+				// Determinar la página destino: si hay ejercicio visible, usar mapeo; de lo contrario, currentPage
+				let exNum = null;
+				const exEl = document.getElementById('exercise-img');
+				const isExerciseVisible = exEl && exEl.style.display !== 'none';
+				if (isExerciseVisible) {
+					if (exEl.dataset && exEl.dataset.exerciseNumber) {
+						exNum = parseInt(exEl.dataset.exerciseNumber, 10);
+					} else if (currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					} else {
+						exNum = getLastValidExercise();
+					}
+				}
+				let pageNum = (exNum && exerciseToPage[exNum]) ? exerciseToPage[exNum] : currentPage;
+				// Renderizar a canvas fuera de pantalla
+				const offCanvas = await renderPageToCanvas(pageNum, 2);
+				// Calcular tamaño en puntos (asumiendo 96 dpi para CSS px)
+				const pxToPt = 72 / 96;
+				const widthPt = offCanvas.width * pxToPt;
+				const heightPt = offCanvas.height * pxToPt;
+				const dataUrl = offCanvas.toDataURL('image/jpeg', 0.95);
+				const { jsPDF } = window.jspdf;
+				const pdf = new jsPDF({ unit: 'pt', format: [widthPt, heightPt] });
+				pdf.addImage(dataUrl, 'JPEG', 0, 0, widthPt, heightPt);
+				pdf.save(`pagina_${pageNum}.pdf`);
+			} catch (e) {
+				alert('No se pudo descargar la página: ' + (e && e.message ? e.message : e));
+			}
+		}
 		
 		// Event listeners
+		let isPaging = false;
 		document.getElementById('next-page').onclick = function() {
+			if (isPaging || currentPage >= totalPages) return; // no hay cambio
+			isPaging = true;
 			animatePage('right');
-			pageSound.currentTime = 0; pageSound.play();
-			setTimeout(nextPage, 220);
+			playButtonSound();
+			setTimeout(() => { nextPage(); isPaging = false; }, 220);
 		};
 		
 		document.getElementById('prev-page').onclick = function() {
+			if (isPaging || currentPage <= 1) return; // no hay cambio
+			isPaging = true;
 			animatePage('left');
-			pageSound.currentTime = 0; pageSound.play();
-			setTimeout(prevPage, 220);
+			playButtonSound();
+			setTimeout(() => { prevPage(); isPaging = false; }, 220);
 		};
 		
-		document.getElementById('zoom-in').addEventListener('click', zoomIn);
-		document.getElementById('zoom-out').addEventListener('click', zoomOut);
+
 
 		document.getElementById('show-exercise-btn').onclick = function() {
 			const n = parseInt(document.getElementById('exercise-input').value, 10);
 			if (!n || n < 1 || n > imageLinks.length) return alert('Número entre 1 y ' + imageLinks.length);
+			// Si ya estamos viendo ese mismo ejercicio, no reproducir sonido ni recargar
+			const exerciseImgEl = document.getElementById('exercise-img');
+			const isExerciseVisible = exerciseImgEl && exerciseImgEl.style.display !== 'none';
+			const currentExercise = exerciseImgEl && exerciseImgEl.dataset && exerciseImgEl.dataset.exerciseNumber
+				? parseInt(exerciseImgEl.dataset.exerciseNumber, 10)
+				: getLastValidExercise();
+			if ((isExerciseVisible && currentExercise === n) || currentExerciseTarget === n) {
+				return;
+			}
+			// Reproducir sonido inmediatamente en el clic (gesto del usuario)
+			playButtonSound();
 			showImageByNumber(n);
 		};
 
 		document.getElementById('show-all-btn').onclick = function() {
-			document.getElementById('exercise-img').style.display = 'none';
-			document.getElementById('pdf-canvas').style.display = 'block';
-			renderPage(currentPage);
+			// Animación de transición elegante de la imagen al PDF
+			if (exerciseImg.style.display !== 'none') {
+				playButtonSound();
+				// Fase 1: Desvanecer la imagen con zoom out
+				exerciseImg.style.transition = 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.6s ease';
+				exerciseImg.style.transform = exerciseImg.style.transform.replace('scale(1)', 'scale(0.9)');
+				exerciseImg.style.opacity = '0';
+				
+				setTimeout(() => {
+					// Ocultar imagen y preparar PDF
+					exerciseImg.style.display = 'none';
+					// Calcular página destino según el ejercicio visible/solicitado/guardado
+					let exNum = null;
+					try {
+						if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
+							exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
+						}
+						if (!exNum && currentExerciseTarget) {
+							exNum = parseInt(currentExerciseTarget, 10);
+						}
+						if (!exNum) {
+							exNum = getLastValidExercise();
+						}
+					} catch (e) {}
+					const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
+					// Ya podemos limpiar el objetivo, tras haber calculado targetPage
+					currentExerciseTarget = null;
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					pdfCanvas.style.display = 'block';
+					pdfCanvas.style.opacity = '0';
+					pdfCanvas.style.transform = 'translateX(-50%) scale(1.1)';
+					
+					// Fase 2: Aparecer el PDF con zoom in elegante
+					setTimeout(() => {
+						pdfCanvas.style.transition = 'transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.7s ease';
+						pdfCanvas.style.opacity = '1';
+						pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
+						if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
+							currentPage = targetPage;
+						}
+						renderPage(currentPage);
+					}, 50);
+				}, 600);
+			} else {
+				// Si no hay imagen, ya estamos en PDF: calcular si hay un destino mapeado reciente
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				let exNum = null;
+				try {
+					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
+						exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
+					}
+					if (!exNum && currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					}
+					if (!exNum) {
+						exNum = getLastValidExercise();
+					}
+				} catch (e) {}
+				const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
+				if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
+					currentPage = targetPage;
+				}
+				renderPage(currentPage);
+			}
 		};
 
+		// Descargar página actual/mapeada
+		document.getElementById('download-page-btn').onclick = function() {
+			playButtonSound();
+			downloadCurrentPdfPage();
+		};
 
+		// Ir a página específica
+		document.getElementById('goto-page-btn').onclick = function() {
+			const input = document.getElementById('page-input');
+			if (!input) return;
+			let n = parseInt(input.value, 10);
+			if (!Number.isFinite(n)) return;
+			if (n < 1) n = 1;
+			if (totalPages && n > totalPages) n = totalPages;
+			if (n === currentPage) return; // no cambio → no sonido
+			// Si hay una imagen de ejercicio visible, cambiar a PDF antes
+			const exEl = document.getElementById('exercise-img');
+			const wasExerciseVisible = exEl && exEl.style.display !== 'none';
+			playButtonSound();
+			if (wasExerciseVisible) {
+				// Ocultar imagen con una leve transición y mostrar PDF
+				exEl.style.transition = 'opacity 0.3s ease';
+				exEl.style.opacity = '0';
+				setTimeout(() => {
+					exEl.style.display = 'none';
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					pdfCanvas.style.display = 'block';
+					pdfCanvas.style.opacity = '1';
+					pdfCanvas.style.transform = 'translateX(-50%)';
+					currentPage = n;
+					renderPage(currentPage);
+				}, 300);
+			} else {
+				currentPage = n;
+				renderPage(currentPage);
+			}
+		};
 
-		// Comprobar qué imágenes faltan (útil para depuración)
-		function checkMissingImages() {
-			const missing = [];
-			let checked = 0;
-			imageLinks.forEach((url, idx) => {
-				const p = new Image();
-				p.crossOrigin = 'anonymous';
-				p.onload = function() {
-					checked++;
-					if (checked === imageLinks.length) {
-						if (missing.length) alert('Faltan imágenes para: ' + missing.join(', '));
-						else alert('Todas las imágenes responden correctamente.');
-					}
-				};
-				p.onerror = function() {
-					missing.push(idx+1);
-					checked++;
-					if (checked === imageLinks.length) {
-						if (missing.length) alert('Faltan imágenes para: ' + missing.join(', '));
-						else alert('Todas las imágenes responden correctamente.');
-					}
-				};
-				p.src = url;
-			});
-		}
+		// Enter en input de página → Ir
+		document.getElementById('page-input').addEventListener('keypress', function(e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				document.getElementById('goto-page-btn').click();
+			}
+		});
 
-		document.getElementById('check-missing-btn').addEventListener('click', checkMissingImages);
-		
+		// Permitir presionar Enter en el campo de ejercicio para ejecutar "Ir"
+		document.getElementById('exercise-input').addEventListener('keypress', function(e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				document.getElementById('show-exercise-btn').click();
+			}
+		});
+
 		// Navegación con teclado
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'ArrowRight' || e.key === ' ') {
@@ -508,12 +902,11 @@
 			const img = document.getElementById('exercise-img');
 			if (!img || img.style.display === 'none') return;
 			// calcular espacio ocupado por la interfaz
-			const selector = document.getElementById('exercise-selector');
+			const menuHeight = 80; // Altura del nuevo menú superior con gradiente
 			const counter = document.getElementById('page-counter');
-			const selectorRect = selector.getBoundingClientRect();
 			const counterRect = counter.getBoundingClientRect();
-			// espacio visible entre bottom de selector y top de contador
-			const visibleTop = Math.max(0, selectorRect.bottom);
+			// espacio visible entre menú superior y contador inferior
+			const visibleTop = menuHeight;
 			const visibleBottom = Math.min(window.innerHeight, counterRect.top);
 			const availableHeight = Math.max(100, visibleBottom - visibleTop);
 
@@ -546,6 +939,44 @@
 		window.addEventListener('resize', function() {
 			adjustImageSize();
 		});
+
+		// Intentar cargar una versión de mayor resolución si la imagen se va a escalar mucho
+		function attemptHiRes(originalUrl, imgEl, displayWidth) {
+			if (!originalUrl) return;
+			// construir variantes comunes de alta resolución
+			const variants = [];
+			// ejemplo: image.png -> image@2x.png, image_2x.png, image-2x.png
+			const m = originalUrl.match(/(.+)\.(png|jpe?g)$/i);
+			if (!m) return;
+			const prefix = m[1];
+			const ext = m[2];
+			variants.push(`${prefix}@2x.${ext}`);
+			variants.push(`${prefix}_2x.${ext}`);
+			variants.push(`${prefix}-2x.${ext}`);
+
+			// si la imagen naturalWidth es menor que el displayWidth, intentar hi-res
+			if (imgEl.naturalWidth && imgEl.naturalWidth < displayWidth * 1.5) {
+				( async function tryVariants() {
+					for (const v of variants) {
+						try {
+							await new Promise((res, rej) => {
+								const p = new Image();
+								p.onload = () => res(p);
+								p.onerror = () => rej();
+								p.src = v;
+							});
+							// si existe, usar srcset para permitir browser seleccionar mejor
+							imgEl.srcset = `${v} 2x, ${originalUrl} 1x`;
+							imgEl.src = v; // forzar reemplazo inmediato
+							return;
+						} catch (e) {
+							// ignora y prueba siguiente
+						}
+					}
+				})();
+			}
+		}
+
 		// Bloquear scroll
 		document.addEventListener('wheel', function(e) {
 			e.preventDefault();
@@ -561,12 +992,12 @@
 		function showControls() {
 			const controls = document.querySelector('.floating-controls');
 			const pageCounter = document.querySelector('.page-counter');
-			controls.style.opacity = '1';
-			pageCounter.style.opacity = '1';
+			if (controls) controls.style.opacity = '1';
+			if (pageCounter) pageCounter.style.opacity = '1';
 			clearTimeout(hideControlsTimeout);
 			hideControlsTimeout = setTimeout(() => {
-				controls.style.opacity = '0.3';
-				pageCounter.style.opacity = '0.3';
+				if (controls) controls.style.opacity = '0.3';
+				if (pageCounter) pageCounter.style.opacity = '0.3';
 			}, 3000);
 		}
 		
@@ -590,6 +1021,66 @@
 		window.addEventListener('resize', function() {
 			if (pdfDoc) {
 				renderPage(currentPage);
+			}
+		});
+
+		// Funciones para la modal elegante de errores
+		function showErrorModal(title, message) {
+			document.getElementById('error-modal').querySelector('.error-title').textContent = title + ' no disponible';
+			document.getElementById('error-message').textContent = message;
+			document.getElementById('error-modal').style.display = 'flex';
+		}
+
+		let isClosingModal = false;
+		function closeErrorModal() {
+			if (isClosingModal) return; // evitar reentradas
+			isClosingModal = true;
+			const modal = document.getElementById('error-modal');
+			const modalContent = modal.querySelector('.error-modal-content');
+			
+			// Animación elegante: zoom out + fade
+			modalContent.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease';
+			modalContent.style.transform = 'translateY(0) scale(0.9)';
+			modalContent.style.opacity = '0';
+			
+			// Fade del fondo
+			modal.style.transition = 'opacity 0.4s ease';
+			modal.style.opacity = '0';
+			
+			setTimeout(() => {
+				modal.style.display = 'none';
+				modal.style.opacity = '1';
+				modalContent.style.transform = 'translateY(0) scale(1)';
+				modalContent.style.opacity = '1';
+				modalContent.style.transition = '';
+				modal.style.transition = '';
+				
+				// Si ya hay un ejercicio visible detrás del modal, no recargar; solo cerrar
+				const exerciseImgEl = document.getElementById('exercise-img');
+				if (exerciseImgEl && exerciseImgEl.style.display !== 'none') {
+					isClosingModal = false;
+					return;
+				}
+
+				// Preferir volver al último ejercicio válido; si no, restaurar estado general
+				const last = getLastValidExercise();
+				if (last) {
+					// Solo reproducir sonido si efectivamente vamos a cambiar a un ejercicio (no estamos ya en él)
+					playButtonSound();
+					showImageByNumber(last, { suppressError: true, onFail: () => restoreUserState() });
+				} else {
+					// También reproducir si vamos a restaurar el PDF u otro estado
+					playButtonSound();
+					restoreUserState();
+				}
+				isClosingModal = false;
+			}, 400);
+		}
+
+		// Cerrar modal con Escape
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && document.getElementById('error-modal').style.display === 'flex') {
+				closeErrorModal();
 			}
 		});
 	</script>

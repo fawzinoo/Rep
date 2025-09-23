@@ -576,6 +576,12 @@ input[type="number"]::-webkit-outer-spin-button {
 		let keyboardOpen = false;
 		let stableViewport = { width: window.innerWidth, height: window.innerHeight };
 		let pendingKeyboardCloseRender = false;
+		// Cola / control de render estable
+		let __isRendering = false;
+		let __pendingPage = null;
+		// Modo estable configurable
+		const STABLE_MODE = true; // fuerza secuencial y evita saltos
+		const NO_FLIP_ANIMATION = true; // desactiva la animación rotateY para máxima estabilidad
 		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
 		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
 		let showImageRequestId = 0; // Control de concurrencia para carga de ejercicios
@@ -669,6 +675,10 @@ input[type="number"]::-webkit-outer-spin-button {
 		const heightFactor = 0.8; // Ligeramente más alto que el original
 
 		function renderPage(pageNum) {
+		   if (STABLE_MODE) {
+		   	if (__isRendering) { __pendingPage = pageNum; return; }
+		   	__isRendering = true;
+		   }
 		   const loading = document.getElementById('loading');
 		   loading.style.display = 'block';
 
@@ -718,8 +728,15 @@ input[type="number"]::-webkit-outer-spin-button {
 			   page.render(renderContext).promise.then(function() {
 				   loading.style.display = 'none';
 				   updatePageCounter();
-				   // Guardar estado del PDF
 				   saveUserState('pdf', { page: currentPage });
+			   }).catch(()=>{}).finally(()=>{
+				   if (STABLE_MODE) {
+				   	__isRendering = false;
+				   	if (__pendingPage != null && __pendingPage !== currentPage) {
+				   		const next = __pendingPage; __pendingPage = null; renderPage(next); return;
+				   	}
+				   	__pendingPage = null;
+				   }
 			   });
 		   });
 		}
@@ -900,6 +917,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		// Animación de transición tipo libro
 		function animatePage(direction) {
+			if (NO_FLIP_ANIMATION) return; // desactivar animación para estabilidad
 			if (!window.__pageFlip) initPageFlipHelper();
 			window.__pageFlip.start(direction);
 		}

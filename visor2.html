@@ -44,9 +44,23 @@
 	}
 
 	body.keyboard-open #pdf-canvas {
-		/* Congelar visualmente el canvas para evitar saltos visibles */
-		transition: none !important;
-		will-change: auto;
+		/* Congelación absoluta: ocultar canvas real */
+		visibility: hidden !important;
+	}
+
+	body.keyboard-open #canvas-freeze {
+		/* Mostrar imagen estática congelada */
+		display: block !important;
+		position: absolute;
+		top: 0;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 2350;
+		pointer-events: none;
+	}
+
+	#canvas-freeze {
+		display: none;
 	}
 		
 		.side-arrow {
@@ -569,6 +583,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		<div class="loading" id="loading">Cargando PDF...</div>
 		
 		<canvas id="pdf-canvas"></canvas>
+		<img id="canvas-freeze" alt="PDF congelado" />
 		<img id="exercise-img" alt="Ejercicio" />
 	</div>
 	<script>
@@ -1331,86 +1346,73 @@ input[type="number"]::-webkit-outer-spin-button {
 			document.getElementById('loading').textContent = 'Error: No se pudo cargar el PDF';
 		});
 		
-		// --- Manejo inteligente de resize para evitar que el teclado móvil encoja el PDF ---
+		// --- Bloqueo TOTAL de resize durante input focus ---
 		let baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-		let pendingRenderAfterKeyboard = false;
-		let lastOrientation = window.screen ? window.screen.orientation && window.screen.orientation.type : null;
-		let inputFocusFlag = false; // true mientras un input del menú está enfocado
-
-		function isKeyboardResize(){
-			const vv = window.visualViewport;
-			const current = vv ? vv.height : window.innerHeight;
-			// Menor umbral (90px) y además considerar si hay input de menú enfocado
-			const active = document.activeElement;
-			const menuInputFocused = inputFocusFlag || (active && active.closest && active.closest('.top-menu-wrapper') && (active.tagName === 'INPUT'));
-			return menuInputFocused && (baseViewportHeight - current) > 90;
-		}
+		let inputBlockingResize = false; // FLAG ABSOLUTO: true = NO renders bajo ninguna circunstancia
+		let resizeListenersActive = true;
 
 		function safeRenderCurrentPage(){
+			if (inputBlockingResize) return; // BLOQUEO ABSOLUTO
 			if (pdfDoc) renderPage(currentPage);
 		}
 
-		function handleResponsiveResize(){
+		function handleOrientationOnly(){
+			// Solo para cambios de orientación real (no teclado)
+			if (inputBlockingResize) return;
 			const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-			const orientationChanged = (window.screen && window.screen.orientation && window.screen.orientation.type !== lastOrientation);
-			if (orientationChanged) {
-				lastOrientation = window.screen.orientation.type;
-				baseViewportHeight = vvH; // actualizar baseline completa
-				// actualizar variable CSS
-				try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
-				pendingRenderAfterKeyboard = false;
-				safeRenderCurrentPage();
-				return;
-			}
-			if (isKeyboardResize()) {
-				// No re-render ahora; lo haremos cuando el teclado se cierre
-				try { document.body.classList.add('keyboard-open'); } catch(e) {}
-				pendingRenderAfterKeyboard = true;
-				return;
-			}
-			// Si aún hay un input enfocado, evitar re-render innecesario aunque el umbral no se cumpla
-			if (inputFocusFlag) {
-				pendingRenderAfterKeyboard = true;
-				try { document.body.classList.add('keyboard-open'); } catch(e) {}
-				return;
-			}
-			// Si no es teclado (o teclado se cerró) y había render pendiente, ejecutar
-			if (pendingRenderAfterKeyboard) {
-				pendingRenderAfterKeyboard = false;
-				safeRenderCurrentPage();
-			}
-			else {
-				safeRenderCurrentPage();
-			}
-			// Actualizar baseline si la altura es mayor (teclado cerrado) o cercana a la original
-			if (vvH >= baseViewportHeight - 40) {
-				baseViewportHeight = vvH;
-				try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
-			}
-			// Quitar marca de teclado si ya recuperó altura
-			if (!inputFocusFlag) {
-				try { document.body.classList.remove('keyboard-open'); } catch(e) {}
-			}
+			baseViewportHeight = vvH;
+			try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
+			safeRenderCurrentPage();
 		}
 
-		window.addEventListener('resize', handleResponsiveResize);
-		if (window.visualViewport) window.visualViewport.addEventListener('resize', handleResponsiveResize);
+		function enableResizeListeners(){
+			if (resizeListenersActive) return;
+			window.addEventListener('resize', handleOrientationOnly);
+			if (window.visualViewport) window.visualViewport.addEventListener('resize', handleOrientationOnly);
+			resizeListenersActive = true;
+		}
+
+		function disableResizeListeners(){
+			if (!resizeListenersActive) return;
+			window.removeEventListener('resize', handleOrientationOnly);
+			if (window.visualViewport) window.visualViewport.removeEventListener('resize', handleOrientationOnly);
+			resizeListenersActive = false;
+		}
+
+		// Inicializar listeners
+		enableResizeListeners();
 
 		// Al perder foco los inputs, si había render pendiente, hacerlo
 		['exercise-input','page-input'].forEach(id => {
 			const el = document.getElementById(id);
 			if (el) {
-				el.addEventListener('focusin', () => { inputFocusFlag = true; });
+				el.addEventListener('focusin', () => {
+					inputBlockingResize = true; // BLOQUEO TOTAL
+					disableResizeListeners(); // Quitar listeners completamente
+					// Congelar canvas como imagen estática
+					try {
+						const canvas = document.getElementById('pdf-canvas');
+						const freezeImg = document.getElementById('canvas-freeze');
+						if (canvas && freezeImg) {
+							freezeImg.src = canvas.toDataURL('image/jpeg', 0.8);
+							freezeImg.style.width = canvas.style.width;
+							freezeImg.style.height = canvas.style.height;
+						}
+						document.body.classList.add('keyboard-open');
+					} catch(e) {}
+				});
 				el.addEventListener('blur', () => {
-					inputFocusFlag = false;
-					if (pendingRenderAfterKeyboard) {
-						pendingRenderAfterKeyboard = false;
-						// actualizar baseline a la nueva altura completa
+					// Esperar un frame antes de reactivar para evitar race conditions
+					setTimeout(() => {
+						inputBlockingResize = false;
+						enableResizeListeners();
+						// Actualizar altura base tras cerrar teclado
 						baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
 						try { document.documentElement.style.setProperty('--app-h', baseViewportHeight + 'px'); } catch(e) {}
-						handleResponsiveResize();
-					}
-					try { document.body.classList.remove('keyboard-open'); } catch(e) {}
+						try { document.body.classList.remove('keyboard-open'); } catch(e) {}
+						// Render diferido tras estabilización
+						setTimeout(() => safeRenderCurrentPage(), 50);
+					}, 16); // ~1 frame
 				});
 			}
 		});

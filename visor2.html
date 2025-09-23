@@ -24,17 +24,30 @@
 			position: relative;
 			touch-action: none;
 			user-select: none;
+				/* Altura estable basada en una variable que se ajusta una sola vez o en orientation change */
+				height: var(--app-h, 100vh);
 		}
 		
 		.pdf-viewer-container {
 			width: 100vw;
-			height: 100vh;
+			height: var(--app-h, 100vh);
 			display: flex;
 			align-items: center;
 			justify-content: center;
 			position: relative;
 			overflow: hidden;
 		}
+
+	body.keyboard-open .pdf-viewer-container {
+		/* Mientras el teclado está abierto mantenemos la altura original sin recalcular */
+		height: var(--app-h);
+	}
+
+	body.keyboard-open #pdf-canvas {
+		/* Congelar visualmente el canvas para evitar saltos visibles */
+		transition: none !important;
+		will-change: auto;
+	}
 		
 		.side-arrow {
 			position: absolute;
@@ -1343,30 +1356,40 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (orientationChanged) {
 				lastOrientation = window.screen.orientation.type;
 				baseViewportHeight = vvH; // actualizar baseline completa
+				// actualizar variable CSS
+				try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
 				pendingRenderAfterKeyboard = false;
 				safeRenderCurrentPage();
 				return;
 			}
 			if (isKeyboardResize()) {
 				// No re-render ahora; lo haremos cuando el teclado se cierre
+				try { document.body.classList.add('keyboard-open'); } catch(e) {}
 				pendingRenderAfterKeyboard = true;
 				return;
 			}
 			// Si aún hay un input enfocado, evitar re-render innecesario aunque el umbral no se cumpla
 			if (inputFocusFlag) {
 				pendingRenderAfterKeyboard = true;
+				try { document.body.classList.add('keyboard-open'); } catch(e) {}
 				return;
 			}
 			// Si no es teclado (o teclado se cerró) y había render pendiente, ejecutar
 			if (pendingRenderAfterKeyboard) {
 				pendingRenderAfterKeyboard = false;
 				safeRenderCurrentPage();
-			} else {
+			}
+			else {
 				safeRenderCurrentPage();
 			}
 			// Actualizar baseline si la altura es mayor (teclado cerrado) o cercana a la original
 			if (vvH >= baseViewportHeight - 40) {
 				baseViewportHeight = vvH;
+				try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
+			}
+			// Quitar marca de teclado si ya recuperó altura
+			if (!inputFocusFlag) {
+				try { document.body.classList.remove('keyboard-open'); } catch(e) {}
 			}
 		}
 
@@ -1384,11 +1407,16 @@ input[type="number"]::-webkit-outer-spin-button {
 						pendingRenderAfterKeyboard = false;
 						// actualizar baseline a la nueva altura completa
 						baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+						try { document.documentElement.style.setProperty('--app-h', baseViewportHeight + 'px'); } catch(e) {}
 						handleResponsiveResize();
 					}
+					try { document.body.classList.remove('keyboard-open'); } catch(e) {}
 				});
 			}
 		});
+
+		// Inicializar variable CSS al cargar
+		try { document.documentElement.style.setProperty('--app-h', baseViewportHeight + 'px'); } catch(e) {}
 
 		// Funciones para la modal elegante de errores
 		function showErrorModal(title, message) {

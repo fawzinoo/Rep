@@ -1105,6 +1105,17 @@ input[type="number"]::-webkit-outer-spin-button {
 		};
 
 		// Ir a página específica
+		function renderPageStable(targetPage){
+			// Si teclado abierto, diferimos (ya existe mecanismo global pendingKeyboardCloseRender)
+			if (keyboardOpen) {
+				pendingKeyboardCloseRender = true;
+				currentPage = targetPage;
+				return;
+			}
+			currentPage = targetPage;
+			renderPage(currentPage);
+		}
+
 		document.getElementById('goto-page-btn').onclick = function() {
 			const input = document.getElementById('page-input');
 			if (!input) return;
@@ -1112,16 +1123,13 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (!Number.isFinite(n)) return;
 			if (n < 1) n = 1;
 			if (totalPages && n > totalPages) n = totalPages;
-			if (n === currentPage) return; // no cambio → no sonido
-			// Asegurar que cualquier animación de paso anterior no "volque" el canvas
+			if (n === currentPage) return;
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
-			// Si hay una imagen de ejercicio visible, cambiar a PDF antes
 			const exEl = document.getElementById('exercise-img');
 			const wasExerciseVisible = exEl && exEl.style.display !== 'none';
 			playButtonSound();
 			if (wasExerciseVisible) {
-				// Ocultar imagen con una leve transición y mostrar PDF
-				exEl.style.transition = 'opacity 0.3s ease';
+				exEl.style.transition = 'opacity 0.25s ease';
 				exEl.style.opacity = '0';
 				setTimeout(() => {
 					exEl.style.display = 'none';
@@ -1129,12 +1137,10 @@ input[type="number"]::-webkit-outer-spin-button {
 					pdfCanvas.style.display = 'block';
 					pdfCanvas.style.opacity = '1';
 					pdfCanvas.style.transform = 'translateX(-50%)';
-					currentPage = n;
-					renderPage(currentPage);
-				}, 300);
+					renderPageStable(n);
+				}, 260);
 			} else {
-				currentPage = n;
-				renderPage(currentPage);
+				renderPageStable(n);
 			}
 		};
 

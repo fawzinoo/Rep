@@ -1322,15 +1322,15 @@ input[type="number"]::-webkit-outer-spin-button {
 		let baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
 		let pendingRenderAfterKeyboard = false;
 		let lastOrientation = window.screen ? window.screen.orientation && window.screen.orientation.type : null;
+		let inputFocusFlag = false; // true mientras un input del menú está enfocado
 
 		function isKeyboardResize(){
 			const vv = window.visualViewport;
-			if (!vv) return false;
-			const current = vv.height;
-			// Consideramos teclado si se reduce más de 140px respecto al baseline y hay input enfocado
+			const current = vv ? vv.height : window.innerHeight;
+			// Menor umbral (90px) y además considerar si hay input de menú enfocado
 			const active = document.activeElement;
-			const menuInputFocused = active && active.closest && active.closest('.top-menu-wrapper') && (active.tagName === 'INPUT');
-			return menuInputFocused && (baseViewportHeight - current) > 140;
+			const menuInputFocused = inputFocusFlag || (active && active.closest && active.closest('.top-menu-wrapper') && (active.tagName === 'INPUT'));
+			return menuInputFocused && (baseViewportHeight - current) > 90;
 		}
 
 		function safeRenderCurrentPage(){
@@ -1349,6 +1349,11 @@ input[type="number"]::-webkit-outer-spin-button {
 			}
 			if (isKeyboardResize()) {
 				// No re-render ahora; lo haremos cuando el teclado se cierre
+				pendingRenderAfterKeyboard = true;
+				return;
+			}
+			// Si aún hay un input enfocado, evitar re-render innecesario aunque el umbral no se cumpla
+			if (inputFocusFlag) {
 				pendingRenderAfterKeyboard = true;
 				return;
 			}
@@ -1372,9 +1377,13 @@ input[type="number"]::-webkit-outer-spin-button {
 		['exercise-input','page-input'].forEach(id => {
 			const el = document.getElementById(id);
 			if (el) {
+				el.addEventListener('focusin', () => { inputFocusFlag = true; });
 				el.addEventListener('blur', () => {
+					inputFocusFlag = false;
 					if (pendingRenderAfterKeyboard) {
 						pendingRenderAfterKeyboard = false;
+						// actualizar baseline a la nueva altura completa
+						baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
 						handleResponsiveResize();
 					}
 				});

@@ -732,10 +732,9 @@ input[type="number"]::-webkit-outer-spin-button {
 					if (suppressError) {
 						if (typeof onFail === 'function') onFail();
 					} else {
-						// Guardar el estado previo (PDF o ejercicio) para decidir a qué volver tras el modal
+						// Guardar estado previo genérico para restaurar tras cerrar la modal
 						try {
-							window.__lastStateBeforeExerciseError = getUserState();
-							window.__exerciseErrorAttempt = n;
+							window.__errorContext = { previous: getUserState(), type: 'exercise', attempt: n };
 						} catch(e) {}
 						showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
 					}
@@ -1029,8 +1028,12 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (!input) return;
 			let n = parseInt(input.value, 10);
 			if (!Number.isFinite(n)) return;
-			if (n < 1) n = 1;
-			if (totalPages && n > totalPages) n = totalPages;
+			// Validar rango; si fuera de rango mostrar modal y restaurar al estado previo
+			if (n < 1 || (totalPages && n > totalPages)) {
+				try { window.__errorContext = { previous: getUserState(), type: 'page', attempt: n }; } catch(e) {}
+				showErrorModal(`Página ${n}`, 'La página solicitada no existe en este documento.');
+				return;
+			}
 			if (n === currentPage) return; // no cambio → no sonido
 			// Si hay una imagen de ejercicio visible, cambiar a PDF antes
 			const exEl = document.getElementById('exercise-img');
@@ -1315,10 +1318,66 @@ input[type="number"]::-webkit-outer-spin-button {
 			document.getElementById('loading').textContent = 'Error: No se pudo cargar el PDF';
 		});
 		
-		// Redimensionar al cambiar tamaño de ventana
-		window.addEventListener('resize', function() {
-			if (pdfDoc) {
-				renderPage(currentPage);
+		// --- Manejo inteligente de resize para evitar que el teclado móvil encoja el PDF ---
+		let baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+		let pendingRenderAfterKeyboard = false;
+		let lastOrientation = window.screen ? window.screen.orientation && window.screen.orientation.type : null;
+
+		function isKeyboardResize(){
+			const vv = window.visualViewport;
+			if (!vv) return false;
+			const current = vv.height;
+			// Consideramos teclado si se reduce más de 140px respecto al baseline y hay input enfocado
+			const active = document.activeElement;
+			const menuInputFocused = active && active.closest && active.closest('.top-menu-wrapper') && (active.tagName === 'INPUT');
+			return menuInputFocused && (baseViewportHeight - current) > 140;
+		}
+
+		function safeRenderCurrentPage(){
+			if (pdfDoc) renderPage(currentPage);
+		}
+
+		function handleResponsiveResize(){
+			const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+			const orientationChanged = (window.screen && window.screen.orientation && window.screen.orientation.type !== lastOrientation);
+			if (orientationChanged) {
+				lastOrientation = window.screen.orientation.type;
+				baseViewportHeight = vvH; // actualizar baseline completa
+				pendingRenderAfterKeyboard = false;
+				safeRenderCurrentPage();
+				return;
+			}
+			if (isKeyboardResize()) {
+				// No re-render ahora; lo haremos cuando el teclado se cierre
+				pendingRenderAfterKeyboard = true;
+				return;
+			}
+			// Si no es teclado (o teclado se cerró) y había render pendiente, ejecutar
+			if (pendingRenderAfterKeyboard) {
+				pendingRenderAfterKeyboard = false;
+				safeRenderCurrentPage();
+			} else {
+				safeRenderCurrentPage();
+			}
+			// Actualizar baseline si la altura es mayor (teclado cerrado) o cercana a la original
+			if (vvH >= baseViewportHeight - 40) {
+				baseViewportHeight = vvH;
+			}
+		}
+
+		window.addEventListener('resize', handleResponsiveResize);
+		if (window.visualViewport) window.visualViewport.addEventListener('resize', handleResponsiveResize);
+
+		// Al perder foco los inputs, si había render pendiente, hacerlo
+		['exercise-input','page-input'].forEach(id => {
+			const el = document.getElementById(id);
+			if (el) {
+				el.addEventListener('blur', () => {
+					if (pendingRenderAfterKeyboard) {
+						pendingRenderAfterKeyboard = false;
+						handleResponsiveResize();
+					}
+				});
 			}
 		});
 
@@ -1353,28 +1412,28 @@ input[type="number"]::-webkit-outer-spin-button {
 				modalContent.style.transition = '';
 				modal.style.transition = '';
 				
-				// Si ya hay un ejercicio visible detrás del modal, no recargar; solo cerrar
+				// Determinar contexto de error (página o ejercicio)
+				let ctx = null;
+				try { ctx = window.__errorContext || null; } catch(e) {}
 				const exerciseImgEl = document.getElementById('exercise-img');
-				if (exerciseImgEl && exerciseImgEl.style.display !== 'none') {
-					// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
+				// Caso rápido: si hay ejercicio visible y el error fue de página o ejercicio, lo mantenemos
+				if (exerciseImgEl && exerciseImgEl.style.display !== 'none' && ctx) {
 					try { if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal(); } catch(e) {}
+					playButtonSound();
+					try { delete window.__errorContext; } catch(e) {}
 					isClosingModal = false;
 					return;
 				}
 
-				// Decidir a qué volver según estado previo antes del error
-				let prior = null;
-				try { prior = window.__lastStateBeforeExerciseError || getUserState(); } catch(e) {}
 				playButtonSound();
+				let prior = ctx ? ctx.previous : getUserState();
 				if (prior && prior.type === 'pdf') {
-					// Volver al PDF en la página previa
 					currentPage = prior.data && prior.data.page ? prior.data.page : currentPage;
 					document.getElementById('exercise-img').style.display = 'none';
 					const pdfCanvas = document.getElementById('pdf-canvas');
 					pdfCanvas.style.display = 'block';
 					renderPage(currentPage);
 				} else if (prior && prior.type === 'exercise') {
-					// Volver al ejercicio previo válido
 					const exNum = prior.data && prior.data.exerciseNumber ? prior.data.exerciseNumber : getLastValidExercise();
 					if (exNum) {
 						showImageByNumber(exNum, { suppressError: true, onFail: () => restoreUserState() });
@@ -1382,11 +1441,9 @@ input[type="number"]::-webkit-outer-spin-button {
 						restoreUserState();
 					}
 				} else {
-					// Fallback: restaurar lo que se tenga
 					restoreUserState();
 				}
-				// Limpiar referencias temporales
-				try { delete window.__lastStateBeforeExerciseError; delete window.__exerciseErrorAttempt; } catch(e) {}
+				try { delete window.__errorContext; } catch(e) {}
 				// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
 				try {
 					if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal();

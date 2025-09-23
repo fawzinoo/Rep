@@ -690,6 +690,8 @@ input[type="number"]::-webkit-outer-spin-button {
 		const heightFactor = 0.8; // Ligeramente más alto que el original
 
 		function renderPage(pageNum) {
+		   // BLOQUEO ABSOLUTO: No renderizar si hay inputs enfocados
+		   if (window.inputBlockingResize) return;
 		   const loading = document.getElementById('loading');
 		   loading.style.display = 'block';
 
@@ -1348,17 +1350,17 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		// --- Bloqueo TOTAL de resize durante input focus ---
 		let baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-		let inputBlockingResize = false; // FLAG ABSOLUTO: true = NO renders bajo ninguna circunstancia
+		window.inputBlockingResize = false; // FLAG ABSOLUTO GLOBAL: true = NO renders bajo ninguna circunstancia
 		let resizeListenersActive = true;
 
 		function safeRenderCurrentPage(){
-			if (inputBlockingResize) return; // BLOQUEO ABSOLUTO
+			if (window.inputBlockingResize) return; // BLOQUEO ABSOLUTO
 			if (pdfDoc) renderPage(currentPage);
 		}
 
 		function handleOrientationOnly(){
 			// Solo para cambios de orientación real (no teclado)
-			if (inputBlockingResize) return;
+			if (window.inputBlockingResize) return;
 			const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 			baseViewportHeight = vvH;
 			try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
@@ -1387,7 +1389,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			const el = document.getElementById(id);
 			if (el) {
 				el.addEventListener('focusin', () => {
-					inputBlockingResize = true; // BLOQUEO TOTAL
+					window.inputBlockingResize = true; // BLOQUEO TOTAL GLOBAL
 					disableResizeListeners(); // Quitar listeners completamente
 					// Congelar canvas como imagen estática
 					try {
@@ -1404,7 +1406,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				el.addEventListener('blur', () => {
 					// Esperar un frame antes de reactivar para evitar race conditions
 					setTimeout(() => {
-						inputBlockingResize = false;
+						window.inputBlockingResize = false;
 						enableResizeListeners();
 						// Actualizar altura base tras cerrar teclado
 						baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);

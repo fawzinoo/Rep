@@ -24,44 +24,17 @@
 			position: relative;
 			touch-action: none;
 			user-select: none;
-				/* Altura estable basada en una variable que se ajusta una sola vez o en orientation change */
-				height: var(--app-h, 100vh);
 		}
 		
 		.pdf-viewer-container {
 			width: 100vw;
-			height: var(--app-h, 100vh);
+			height: 100vh;
 			display: flex;
 			align-items: center;
 			justify-content: center;
 			position: relative;
 			overflow: hidden;
 		}
-
-	body.keyboard-open .pdf-viewer-container {
-		/* Mientras el teclado está abierto mantenemos la altura original sin recalcular */
-		height: var(--app-h);
-	}
-
-	body.keyboard-open #pdf-canvas {
-		/* Congelación absoluta: ocultar canvas real */
-		visibility: hidden !important;
-	}
-
-	body.keyboard-open #canvas-freeze {
-		/* Mostrar imagen estática congelada */
-		display: block !important;
-		position: absolute;
-		top: 0;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 2350;
-		pointer-events: none;
-	}
-
-	#canvas-freeze {
-		display: none;
-	}
 		
 		.side-arrow {
 			position: absolute;
@@ -583,7 +556,6 @@ input[type="number"]::-webkit-outer-spin-button {
 		<div class="loading" id="loading">Cargando PDF...</div>
 		
 		<canvas id="pdf-canvas"></canvas>
-		<img id="canvas-freeze" alt="PDF congelado" />
 		<img id="exercise-img" alt="Ejercicio" />
 	</div>
 	<script>
@@ -600,6 +572,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		let ctx = null;
 		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
 		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
+		let showImageRequestId = 0; // Control de concurrencia para carga de ejercicios
 
 		// Funciones para gestionar historial con localStorage
 		function saveUserState(type, data) {
@@ -690,8 +663,6 @@ input[type="number"]::-webkit-outer-spin-button {
 		const heightFactor = 0.8; // Ligeramente más alto que el original
 
 		function renderPage(pageNum) {
-		   // BLOQUEO ABSOLUTO: No renderizar si hay inputs enfocados
-		   if (window.inputBlockingResize) return;
 		   const loading = document.getElementById('loading');
 		   loading.style.display = 'block';
 
@@ -737,8 +708,19 @@ input[type="number"]::-webkit-outer-spin-button {
 		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
 		function showImageByNumber(n, options = {}) {
 			const { suppressError = false, onFail, onSuccess } = options;
+			const myReq = ++showImageRequestId;
 			exerciseBeforeError = n; // Guardar el ejercicio que se está intentando abrir
 			currentExerciseTarget = n; // Marcar el objetivo actual para bloquear duplicados
+
+			// Bloquear botón "Ir" mientras se resuelve y dar feedback visual
+			const irBtn = document.getElementById('show-exercise-btn');
+			if (irBtn) {
+				irBtn.disabled = true;
+				if (!irBtn.dataset.prevText) irBtn.dataset.prevText = irBtn.textContent || 'Ir';
+				irBtn.textContent = 'Cargando…';
+				irBtn.style.opacity = '0.7';
+				irBtn.style.cursor = 'wait';
+			}
 			
 			// Construir candidatos de nombre (sin dependencias frágiles)
 			const base = baseImageUrl.replace(/\/$/, '');
@@ -759,13 +741,16 @@ input[type="number"]::-webkit-outer-spin-button {
 					if (tried >= candidates.length) {
 					// ninguna encontrada
 						currentExerciseTarget = null; // limpiar objetivo al fallar
+						// Restaurar botón solo si sigue siendo la última petición
+						if (irBtn && myReq === showImageRequestId) {
+							irBtn.disabled = false;
+							irBtn.textContent = irBtn.dataset.prevText || 'Ir';
+							irBtn.style.opacity = '';
+							irBtn.style.cursor = '';
+						}
 					if (suppressError) {
 						if (typeof onFail === 'function') onFail();
 					} else {
-						// Guardar estado previo genérico para restaurar tras cerrar la modal
-						try {
-							window.__errorContext = { previous: getUserState(), type: 'exercise', attempt: n };
-						} catch(e) {}
 						showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
 					}
 					return;
@@ -773,7 +758,14 @@ input[type="number"]::-webkit-outer-spin-button {
 
 				const url = candidates[tried++];
 				const testImg = new Image();
+				let timeoutId;
+				function cleanup(){
+					try { testImg.onload = null; testImg.onerror = null; } catch(e) {}
+					if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+				}
 				testImg.onload = function() {
+					// Si ya hay otra petición más nueva, ignorar este resultado
+					if (myReq !== showImageRequestId) { cleanup(); return; }
 					// Imagen encontrada, mostrarla directamente
 					const pdfCanvas = document.getElementById('pdf-canvas');
 					const exerciseImg = document.getElementById('exercise-img');
@@ -789,18 +781,30 @@ input[type="number"]::-webkit-outer-spin-button {
 					
 					// Ajustar tamaño cuando la imagen se carga
 					exerciseImg.onload = function() {
+						if (myReq !== showImageRequestId) { return; }
 						adjustImageSize();
 						saveUserState('exercise', { exerciseNumber: n });
 						setLastValidExercise(n);
 						// Registrar el ejercicio mostrado actualmente
 						try { exerciseImg.dataset.exerciseNumber = String(n); } catch (e) {}
 						try { if (typeof onSuccess === 'function') onSuccess(); } catch(e) {}
+						// Restaurar botón si sigue siendo la última petición
+						if (irBtn && myReq === showImageRequestId) {
+							irBtn.disabled = false;
+							irBtn.textContent = irBtn.dataset.prevText || 'Ir';
+							irBtn.style.opacity = '';
+							irBtn.style.cursor = '';
+						}
 					};
+					cleanup();
 				};
 				testImg.onerror = function() {
+					cleanup();
 					// intentar siguiente
 					tryNext();
 				};
+				// Timeout por si el onerror no dispara en redes lentas
+				timeoutId = setTimeout(() => { try { testImg.src = ''; } catch(e) {}; testImg.onerror && testImg.onerror(); }, 4000);
 				testImg.src = url;
 			}
 			tryNext();
@@ -940,10 +944,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			isPaging = true;
 			animatePage('right');
 			playButtonSound();
-			// Reiniciar temporizador de la cinta si está abierta (es una interacción)
-			if (document.body.classList.contains('menu-open') && typeof scheduleInactivity === 'function') {
-				scheduleInactivity();
-			}
+			// Si la cinta está abierta, cuenta como interacción: no la cierres y reinicia timer
+			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { nextPage(); isPaging = false; }, 220);
 		};
 		
@@ -952,10 +954,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			isPaging = true;
 			animatePage('left');
 			playButtonSound();
-			// Reiniciar temporizador de la cinta si está abierta (es una interacción)
-			if (document.body.classList.contains('menu-open') && typeof scheduleInactivity === 'function') {
-				scheduleInactivity();
-			}
+			// Si la cinta está abierta, cuenta como interacción: no la cierres y reinicia timer
+			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { prevPage(); isPaging = false; }, 220);
 		};
 		
@@ -1058,12 +1058,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (!input) return;
 			let n = parseInt(input.value, 10);
 			if (!Number.isFinite(n)) return;
-			// Validar rango; si fuera de rango mostrar modal y restaurar al estado previo
-			if (n < 1 || (totalPages && n > totalPages)) {
-				try { window.__errorContext = { previous: getUserState(), type: 'page', attempt: n }; } catch(e) {}
-				showErrorModal(`Página ${n}`, 'La página solicitada no existe en este documento.');
-				return;
-			}
+			if (n < 1) n = 1;
+			if (totalPages && n > totalPages) n = totalPages;
 			if (n === currentPage) return; // no cambio → no sonido
 			// Si hay una imagen de ejercicio visible, cambiar a PDF antes
 			const exEl = document.getElementById('exercise-img');
@@ -1232,11 +1228,12 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Respetar período de gracia post-modal
 				const graceUntil = (typeof window.__menuGraceUntil === 'number') ? window.__menuGraceUntil : 0;
 				if (Date.now() < graceUntil) return;
-				// No cerrar si es clic en flechas laterales (son interacciones válidas)
-				const isArrow = e.target.closest('.side-arrow');
+				// No cerrar cuando el clic proviene de flechas laterales (interacción válida)
+				const isSideArrow = e.target.closest && e.target.closest('.side-arrow');
+				if (isSideArrow) { scheduleInactivity(); return; }
 				const isInsideMenu = wrapper.contains(e.target);
 				const isBtn = toggleBtn.contains(e.target);
-				if (!isInsideMenu && !isBtn && !isArrow) setOpen(false);
+				if (!isInsideMenu && !isBtn) setOpen(false);
 				else scheduleInactivity();
 			});
 
@@ -1267,8 +1264,11 @@ input[type="number"]::-webkit-outer-spin-button {
 			// Llamada inicial
 			updateToggleBtnSize();
 
-			// Función global para que otras partes (como la modal) puedan abrir la cinta
-			try { window.showMenuAfterModal = function(){ setOpen(true); }; } catch(e) {}
+			// Funciones globales para interactuar con el menú desde otros componentes
+			try {
+				window.showMenuAfterModal = function(){ setOpen(true); };
+				window.__resetMenuInactivity = function(){ scheduleInactivity(); };
+			} catch(e) {}
 		})();
 
 		// Intentar cargar una versión de mayor resolución si la imagen se va a escalar mucho
@@ -1348,79 +1348,12 @@ input[type="number"]::-webkit-outer-spin-button {
 			document.getElementById('loading').textContent = 'Error: No se pudo cargar el PDF';
 		});
 		
-		// --- Bloqueo TOTAL de resize durante input focus ---
-		let baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-		window.inputBlockingResize = false; // FLAG ABSOLUTO GLOBAL: true = NO renders bajo ninguna circunstancia
-		let resizeListenersActive = true;
-
-		function safeRenderCurrentPage(){
-			if (window.inputBlockingResize) return; // BLOQUEO ABSOLUTO
-			if (pdfDoc) renderPage(currentPage);
-		}
-
-		function handleOrientationOnly(){
-			// Solo para cambios de orientación real (no teclado)
-			if (window.inputBlockingResize) return;
-			const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-			baseViewportHeight = vvH;
-			try { document.documentElement.style.setProperty('--app-h', vvH + 'px'); } catch(e) {}
-			safeRenderCurrentPage();
-		}
-
-		function enableResizeListeners(){
-			if (resizeListenersActive) return;
-			window.addEventListener('resize', handleOrientationOnly);
-			if (window.visualViewport) window.visualViewport.addEventListener('resize', handleOrientationOnly);
-			resizeListenersActive = true;
-		}
-
-		function disableResizeListeners(){
-			if (!resizeListenersActive) return;
-			window.removeEventListener('resize', handleOrientationOnly);
-			if (window.visualViewport) window.visualViewport.removeEventListener('resize', handleOrientationOnly);
-			resizeListenersActive = false;
-		}
-
-		// Inicializar listeners
-		enableResizeListeners();
-
-		// Al perder foco los inputs, si había render pendiente, hacerlo
-		['exercise-input','page-input'].forEach(id => {
-			const el = document.getElementById(id);
-			if (el) {
-				el.addEventListener('focusin', () => {
-					window.inputBlockingResize = true; // BLOQUEO TOTAL GLOBAL
-					disableResizeListeners(); // Quitar listeners completamente
-					// Congelar canvas como imagen estática
-					try {
-						const canvas = document.getElementById('pdf-canvas');
-						const freezeImg = document.getElementById('canvas-freeze');
-						if (canvas && freezeImg) {
-							freezeImg.src = canvas.toDataURL('image/jpeg', 0.8);
-							freezeImg.style.width = canvas.style.width;
-							freezeImg.style.height = canvas.style.height;
-						}
-						document.body.classList.add('keyboard-open');
-					} catch(e) {}
-				});
-				el.addEventListener('blur', () => {
-					// Esperar un frame antes de reactivar para evitar race conditions
-					setTimeout(() => {
-						window.inputBlockingResize = false;
-						enableResizeListeners();
-						// Actualizar altura base tras cerrar teclado
-						baseViewportHeight = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-						try { document.documentElement.style.setProperty('--app-h', baseViewportHeight + 'px'); } catch(e) {}
-						try { document.body.classList.remove('keyboard-open'); } catch(e) {}
-						// Render diferido tras estabilización
-						setTimeout(() => safeRenderCurrentPage(), 50);
-					}, 16); // ~1 frame
-				});
+		// Redimensionar al cambiar tamaño de ventana
+		window.addEventListener('resize', function() {
+			if (pdfDoc) {
+				renderPage(currentPage);
 			}
 		});
-
-		// Inicializar variable CSS al cargar
-		try { document.documentElement.style.setProperty('--app-h', baseViewportHeight + 'px'); } catch(e) {}
 
 		// Funciones para la modal elegante de errores
 		function showErrorModal(title, message) {
@@ -1453,38 +1386,26 @@ input[type="number"]::-webkit-outer-spin-button {
 				modalContent.style.transition = '';
 				modal.style.transition = '';
 				
-				// Determinar contexto de error (página o ejercicio)
-				let ctx = null;
-				try { ctx = window.__errorContext || null; } catch(e) {}
+				// Si ya hay un ejercicio visible detrás del modal, no recargar; solo cerrar
 				const exerciseImgEl = document.getElementById('exercise-img');
-				// Caso rápido: si hay ejercicio visible y el error fue de página o ejercicio, lo mantenemos
-				if (exerciseImgEl && exerciseImgEl.style.display !== 'none' && ctx) {
+				if (exerciseImgEl && exerciseImgEl.style.display !== 'none') {
+					// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
 					try { if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal(); } catch(e) {}
-					playButtonSound();
-					try { delete window.__errorContext; } catch(e) {}
 					isClosingModal = false;
 					return;
 				}
 
-				playButtonSound();
-				let prior = ctx ? ctx.previous : getUserState();
-				if (prior && prior.type === 'pdf') {
-					currentPage = prior.data && prior.data.page ? prior.data.page : currentPage;
-					document.getElementById('exercise-img').style.display = 'none';
-					const pdfCanvas = document.getElementById('pdf-canvas');
-					pdfCanvas.style.display = 'block';
-					renderPage(currentPage);
-				} else if (prior && prior.type === 'exercise') {
-					const exNum = prior.data && prior.data.exerciseNumber ? prior.data.exerciseNumber : getLastValidExercise();
-					if (exNum) {
-						showImageByNumber(exNum, { suppressError: true, onFail: () => restoreUserState() });
-					} else {
-						restoreUserState();
-					}
+				// Preferir volver al último ejercicio válido; si no, restaurar estado general
+				const last = getLastValidExercise();
+				if (last) {
+					// Solo reproducir sonido si efectivamente vamos a cambiar a un ejercicio (no estamos ya en él)
+					playButtonSound();
+					showImageByNumber(last, { suppressError: true, onFail: () => restoreUserState() });
 				} else {
+					// También reproducir si vamos a restaurar el PDF u otro estado
+					playButtonSound();
 					restoreUserState();
 				}
-				try { delete window.__errorContext; } catch(e) {}
 				// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
 				try {
 					if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal();

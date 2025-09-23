@@ -158,15 +158,11 @@
 
 		
 		#pdf-canvas {
-			width: 100vw !important;
 			border: none;
 			display: block;
 			background: #fff;
-			object-fit: contain;
 			position: absolute;
-			top: 0;
-			left: 50%;
-			transform: translateX(-50%);
+			/* El posicionamiento se maneja en JavaScript para mejor control */
 		}
 
 		/* Imagen del ejercicio: cubrir completamente la ventana sin barras negras */
@@ -615,7 +611,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				pdfCanvas.style.display = 'block';
 				pdfCanvas.style.transition = '';
 				pdfCanvas.style.opacity = '1';
-				pdfCanvas.style.transform = 'translateX(-50%)';
+				// El transform se establece en renderPage()
 				return;
 			}
 
@@ -627,7 +623,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				pdfCanvas.style.display = 'block';
 				pdfCanvas.style.transition = '';
 				pdfCanvas.style.opacity = '1';
-				pdfCanvas.style.transform = 'translateX(-50%)';
+				// El transform se establece en renderPage()
 				renderPage(currentPage);
 			} else if (savedState.type === 'exercise') {
 				// Si el último estado fue un ejercicio, recupéralo automáticamente
@@ -658,10 +654,6 @@ input[type="number"]::-webkit-outer-spin-button {
 		ctx = canvas.getContext('2d');
 		
 
-		// Permitir modificar el ancho y el alto visual de la página PDF
-		const widthFactor = 1.0; // Cambia este valor para hacer la página más ancha (>1) o más estrecha (<1)
-		const heightFactor = 0.8; // Ligeramente más alto que el original
-
 		function renderPage(pageNum) {
 		   const loading = document.getElementById('loading');
 		   loading.style.display = 'block';
@@ -672,24 +664,37 @@ input[type="number"]::-webkit-outer-spin-button {
 			   const containerHeight = window.innerHeight;
 			   const dpr = window.devicePixelRatio || 1;
 
-			   // Calcular el scale para que ocupe toda la pantalla
+			   // Obtener viewport original de la página
 			   const viewport = page.getViewport({ scale: 1 });
-			   const scaleX = (containerWidth / viewport.width) * widthFactor;
+			   
+			   // Calcular escalas para ajustar a la pantalla
+			   const scaleX = containerWidth / viewport.width;
 			   const scaleY = containerHeight / viewport.height;
-			   // Priorizar el alto y aumentar un 25% para que la página se vea aún más alta
-			   const scale = scaleY * 1.25 * dpr * zoomLevel;
+			   
+			   // Usar la escala menor para que la página completa sea visible
+			   // Multiplicar por dpr para resolución nítida y por zoomLevel para zoom del usuario
+			   const baseScale = Math.min(scaleX, scaleY);
+			   const finalScale = baseScale * dpr * zoomLevel;
 
-			   // Viewport escalado para alta resolución
-			   const scaledViewport = page.getViewport({ scale: scale });
+			   // Viewport escalado para renderizado
+			   const scaledViewport = page.getViewport({ scale: finalScale });
 
-			   // Ajustar el tamaño interno del canvas (alta resolución)
+			   // Configurar canvas interno (alta resolución)
 			   canvas.width = scaledViewport.width;
 			   canvas.height = scaledViewport.height;
 
-			   // Ajustar el tamaño visual del canvas (pantalla)
-			   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
-			   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
-			   canvas.style.objectFit = 'fill';
+			   // Configurar tamaño visual del canvas (lo que ve el usuario)
+			   const visualWidth = scaledViewport.width / dpr;
+			   const visualHeight = scaledViewport.height / dpr;
+			   
+			   canvas.style.width = visualWidth + 'px';
+			   canvas.style.height = visualHeight + 'px';
+			   
+			   // Centrar el canvas
+			   canvas.style.position = 'absolute';
+			   canvas.style.top = '50%';
+			   canvas.style.left = '50%';
+			   canvas.style.transform = 'translate(-50%, -50%)';
 
 			   const renderContext = {
 				   canvasContext: ctx,
@@ -884,10 +889,10 @@ input[type="number"]::-webkit-outer-spin-button {
 			const canvas = document.getElementById('pdf-canvas');
 			canvas.style.transition = 'transform 0.45s cubic-bezier(.77,0,.18,1)';
 			canvas.style.transform = direction === 'right'
-				? 'translateX(-50%) rotateY(-30deg) scale(0.96)'
-				: 'translateX(-50%) rotateY(30deg) scale(0.96)';
+				? 'translate(-50%, -50%) rotateY(-30deg) scale(0.96)'
+				: 'translate(-50%, -50%) rotateY(30deg) scale(0.96)';
 			setTimeout(() => {
-				canvas.style.transform = 'translateX(-50%)';
+				canvas.style.transform = 'translate(-50%, -50%)';
 			}, 450);
 		}
 
@@ -1015,7 +1020,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					setTimeout(() => {
 						pdfCanvas.style.transition = 'transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.7s ease';
 						pdfCanvas.style.opacity = '1';
-						pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
+						// El transform se establece correctamente en renderPage()
 						if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
 							currentPage = targetPage;
 						}
@@ -1074,7 +1079,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					const pdfCanvas = document.getElementById('pdf-canvas');
 					pdfCanvas.style.display = 'block';
 					pdfCanvas.style.opacity = '1';
-					pdfCanvas.style.transform = 'translateX(-50%)';
+					// El transform se establece en renderPage()
 					currentPage = n;
 					renderPage(currentPage);
 				}, 300);

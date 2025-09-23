@@ -34,6 +34,8 @@
 			justify-content: center;
 			position: relative;
 			overflow: hidden;
+			/* Añadimos perspectiva para que la animación 3D (rotateY) no aplane la página */
+			perspective: 1600px;
 		}
 		
 		.side-arrow {
@@ -158,11 +160,15 @@
 
 		
 		#pdf-canvas {
+			width: 100vw !important;
 			border: none;
 			display: block;
 			background: #fff;
+			object-fit: contain;
 			position: absolute;
-			/* El posicionamiento se maneja en JavaScript para mejor control */
+			top: 0;
+			left: 50%;
+			transform: translateX(-50%);
 		}
 
 		/* Imagen del ejercicio: cubrir completamente la ventana sin barras negras */
@@ -611,7 +617,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				pdfCanvas.style.display = 'block';
 				pdfCanvas.style.transition = '';
 				pdfCanvas.style.opacity = '1';
-				// El transform se establece en renderPage()
+				pdfCanvas.style.transform = 'translateX(-50%)';
 				return;
 			}
 
@@ -623,7 +629,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				pdfCanvas.style.display = 'block';
 				pdfCanvas.style.transition = '';
 				pdfCanvas.style.opacity = '1';
-				// El transform se establece en renderPage()
+				pdfCanvas.style.transform = 'translateX(-50%)';
 				renderPage(currentPage);
 			} else if (savedState.type === 'exercise') {
 				// Si el último estado fue un ejercicio, recupéralo automáticamente
@@ -654,9 +660,18 @@ input[type="number"]::-webkit-outer-spin-button {
 		ctx = canvas.getContext('2d');
 		
 
+		// Permitir modificar el ancho y el alto visual de la página PDF
+		const widthFactor = 1.0; // Cambia este valor para hacer la página más ancha (>1) o más estrecha (<1)
+		const heightFactor = 0.8; // Ligeramente más alto que el original
+
 		function renderPage(pageNum) {
 		   const loading = document.getElementById('loading');
 		   loading.style.display = 'block';
+
+		   // Si hay una animación en curso, la cancelamos para evitar que el canvas quede "volcado"
+		   if (window.__pageFlip && window.__pageFlip.isAnimating) {
+		   	try { window.__pageFlip.cancel(); } catch(e) {}
+		   }
 
 		   pdfDoc.getPage(pageNum).then(function(page) {
 			   // Obtener dimensiones de la pantalla
@@ -664,37 +679,24 @@ input[type="number"]::-webkit-outer-spin-button {
 			   const containerHeight = window.innerHeight;
 			   const dpr = window.devicePixelRatio || 1;
 
-			   // Obtener viewport original de la página
+			   // Calcular el scale para que ocupe toda la pantalla
 			   const viewport = page.getViewport({ scale: 1 });
-			   
-			   // Calcular escalas para ajustar a la pantalla
-			   const scaleX = containerWidth / viewport.width;
+			   const scaleX = (containerWidth / viewport.width) * widthFactor;
 			   const scaleY = containerHeight / viewport.height;
-			   
-			   // Usar la escala menor para que la página completa sea visible
-			   // Multiplicar por dpr para resolución nítida y por zoomLevel para zoom del usuario
-			   const baseScale = Math.min(scaleX, scaleY);
-			   const finalScale = baseScale * dpr * zoomLevel;
+			   // Priorizar el alto y aumentar un 25% para que la página se vea aún más alta
+			   const scale = scaleY * 1.25 * dpr * zoomLevel;
 
-			   // Viewport escalado para renderizado
-			   const scaledViewport = page.getViewport({ scale: finalScale });
+			   // Viewport escalado para alta resolución
+			   const scaledViewport = page.getViewport({ scale: scale });
 
-			   // Configurar canvas interno (alta resolución)
+			   // Ajustar el tamaño interno del canvas (alta resolución)
 			   canvas.width = scaledViewport.width;
 			   canvas.height = scaledViewport.height;
 
-			   // Configurar tamaño visual del canvas (lo que ve el usuario)
-			   const visualWidth = scaledViewport.width / dpr;
-			   const visualHeight = scaledViewport.height / dpr;
-			   
-			   canvas.style.width = visualWidth + 'px';
-			   canvas.style.height = visualHeight + 'px';
-			   
-			   // Centrar el canvas
-			   canvas.style.position = 'absolute';
-			   canvas.style.top = '50%';
-			   canvas.style.left = '50%';
-			   canvas.style.transform = 'translate(-50%, -50%)';
+			   // Ajustar el tamaño visual del canvas (pantalla)
+			   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
+			   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
+			   canvas.style.objectFit = 'fill';
 
 			   const renderContext = {
 				   canvasContext: ctx,
@@ -886,14 +888,44 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		// Animación de transición tipo libro
 		function animatePage(direction) {
+			if (!window.__pageFlip) initPageFlipHelper();
+			window.__pageFlip.start(direction);
+		}
+
+		// Helper para controlar animaciones y poder cancelarlas limpiamente
+		function initPageFlipHelper(){
+			const baseTransform = 'translateX(-50%)';
 			const canvas = document.getElementById('pdf-canvas');
-			canvas.style.transition = 'transform 0.45s cubic-bezier(.77,0,.18,1)';
-			canvas.style.transform = direction === 'right'
-				? 'translate(-50%, -50%) rotateY(-30deg) scale(0.96)'
-				: 'translate(-50%, -50%) rotateY(30deg) scale(0.96)';
-			setTimeout(() => {
-				canvas.style.transform = 'translate(-50%, -50%)';
-			}, 450);
+			window.__pageFlip = {
+				isAnimating: false,
+				_timeout: null,
+				start(dir){
+					if (this.isAnimating) this.cancel();
+					this.isAnimating = true;
+					try { canvas.style.willChange = 'transform'; } catch(e) {}
+					canvas.style.transition = 'transform 0.45s cubic-bezier(.77,0,.18,1)';
+					canvas.style.transform = (dir === 'right')
+						? baseTransform + ' rotateY(-30deg) scale(0.96)'
+						: baseTransform + ' rotateY(30deg) scale(0.96)';
+					this._timeout = setTimeout(() => {
+						canvas.style.transition = 'transform 0.25s ease';
+						canvas.style.transform = baseTransform;
+						setTimeout(() => {
+							this.isAnimating = false;
+							canvas.style.transition = '';
+							canvas.style.willChange = '';
+						}, 260);
+					}, 450);
+				},
+				cancel(){
+					try { clearTimeout(this._timeout); } catch(e) {}
+					this._timeout = null;
+					this.isAnimating = false;
+					canvas.style.transition = '';
+					canvas.style.transform = baseTransform;
+					canvas.style.willChange = '';
+				}
+			};
 		}
 
 		// Renderizar una página del PDF a un canvas fuera de pantalla, a buena resolución
@@ -946,6 +978,8 @@ input[type="number"]::-webkit-outer-spin-button {
 		let isPaging = false;
 		document.getElementById('next-page').onclick = function() {
 			if (isPaging || currentPage >= totalPages) return; // no hay cambio
+			// Cancelar animación previa si el usuario navega muy rápido
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('right');
 			playButtonSound();
@@ -956,6 +990,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		document.getElementById('prev-page').onclick = function() {
 			if (isPaging || currentPage <= 1) return; // no hay cambio
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('left');
 			playButtonSound();
@@ -1020,7 +1055,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					setTimeout(() => {
 						pdfCanvas.style.transition = 'transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.7s ease';
 						pdfCanvas.style.opacity = '1';
-						// El transform se establece correctamente en renderPage()
+						pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
 						if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
 							currentPage = targetPage;
 						}
@@ -1066,6 +1101,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (n < 1) n = 1;
 			if (totalPages && n > totalPages) n = totalPages;
 			if (n === currentPage) return; // no cambio → no sonido
+			// Asegurar que cualquier animación de paso anterior no "volque" el canvas
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			// Si hay una imagen de ejercicio visible, cambiar a PDF antes
 			const exEl = document.getElementById('exercise-img');
 			const wasExerciseVisible = exEl && exEl.style.display !== 'none';
@@ -1079,7 +1116,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					const pdfCanvas = document.getElementById('pdf-canvas');
 					pdfCanvas.style.display = 'block';
 					pdfCanvas.style.opacity = '1';
-					// El transform se establece en renderPage()
+					pdfCanvas.style.transform = 'translateX(-50%)';
 					currentPage = n;
 					renderPage(currentPage);
 				}, 300);

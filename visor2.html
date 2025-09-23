@@ -572,6 +572,10 @@ input[type="number"]::-webkit-outer-spin-button {
 		let zoomLevel = 1.0; // Empezar con zoom 1.0 para pantalla completa
 		let canvas = null;
 		let ctx = null;
+		// Estado para teclado móvil y tamaño de viewport estable
+		let keyboardOpen = false;
+		let stableViewport = { width: window.innerWidth, height: window.innerHeight };
+		let pendingKeyboardCloseRender = false;
 		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
 		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
 		let showImageRequestId = 0; // Control de concurrencia para carga de ejercicios
@@ -673,10 +677,18 @@ input[type="number"]::-webkit-outer-spin-button {
 		   	try { window.__pageFlip.cancel(); } catch(e) {}
 		   }
 
+		   // Si el teclado está abierto y el resize ha reducido artificialmente el viewport, posponer render salvo que sea forzado
+		   if (keyboardOpen) {
+		   	// Mantener tamaño anterior (stableViewport)
+		   	// Mostrar la página actual sin recalcular escala para evitar miniaturas
+		   	// Marcamos que al cerrar el teclado se hará un render correcto
+		   	pendingKeyboardCloseRender = true;
+		   }
+
 		   pdfDoc.getPage(pageNum).then(function(page) {
-			   // Obtener dimensiones de la pantalla
-			   const containerWidth = window.innerWidth;
-			   const containerHeight = window.innerHeight;
+			   // Obtener dimensiones de la pantalla (estables si teclado abierto)
+			   const containerWidth = keyboardOpen ? stableViewport.width : window.innerWidth;
+			   const containerHeight = keyboardOpen ? stableViewport.height : window.innerHeight;
 			   const dpr = window.devicePixelRatio || 1;
 
 			   // Calcular el scale para que ocupe toda la pantalla
@@ -1392,9 +1404,70 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		// Redimensionar al cambiar tamaño de ventana
 		window.addEventListener('resize', function() {
-			if (pdfDoc) {
+			if (!pdfDoc) return;
+			// Si el teclado no está abierto, actualizamos el stableViewport
+			if (!keyboardOpen) {
+				stableViewport.width = window.innerWidth;
+				stableViewport.height = window.innerHeight;
 				renderPage(currentPage);
+			} else {
+				// Ignorar resize intermedios provocados por el teclado
 			}
+		});
+
+		// Detección de teclado móvil usando visualViewport (cuando disponible)
+		(function setupKeyboardDetection(){
+			const vv = window.visualViewport;
+			if (!vv) return; // Fallback: no soportado, no hacemos nada
+			const THRESHOLD = 120; // px de reducción de altura para considerar teclado abierto
+			let lastHeight = vv.height;
+			function check(e){
+				const delta = stableViewport.height - vv.height;
+				if (!keyboardOpen && delta > THRESHOLD) {
+					keyboardOpen = true;
+					// Guardar viewport estable antes del teclado
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+				}
+				else if (keyboardOpen && (stableViewport.height - vv.height) <= THRESHOLD) {
+					// Teclado cerrándose
+					keyboardOpen = false;
+					// Actualizar viewport estable y re-render si había pendiente
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+					if (pendingKeyboardCloseRender) {
+						pendingKeyboardCloseRender = false;
+						setTimeout(() => { try { renderPage(currentPage); } catch(e) {} }, 40);
+					}
+				}
+				lastHeight = vv.height;
+			}
+			vv.addEventListener('resize', check);
+			vv.addEventListener('scroll', check); // algunos navegadores disparan scroll interno
+		})();
+
+		// Focus/blur directo en los inputs como respaldo (por si visualViewport falla)
+		['exercise-input','page-input'].forEach(id => {
+			const el = document.getElementById(id);
+			if (!el) return;
+			el.addEventListener('focus', () => {
+				// Guardar viewport actual antes de potencial teclado
+				stableViewport.width = window.innerWidth;
+				stableViewport.height = window.innerHeight;
+				keyboardOpen = true;
+			});
+			el.addEventListener('blur', () => {
+				// Esperar un tick para que cierre realmente
+				setTimeout(() => {
+					keyboardOpen = false;
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+					if (pendingKeyboardCloseRender) {
+						pendingKeyboardCloseRender = false;
+						try { renderPage(currentPage); } catch(e) {}
+					}
+				}, 120);
+			});
 		});
 
 		// Funciones para la modal elegante de errores

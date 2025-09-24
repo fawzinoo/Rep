@@ -42,7 +42,7 @@
 			position: absolute;
 			top: 50%;
 			transform: translateY(-50%);
-			z-index: 2000;
+			z-index: 5000; /* elevado para estar encima de la imagen de ejercicio (2400) y debajo del menú (4000) -> ahora encima de ambos */
 			width: 60px;
 			height: 60px;
 			border-radius: 50%;
@@ -57,6 +57,25 @@
 			transition: background 0.2s, transform 0.2s;
 			box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 			opacity: 0.8;
+		}
+		/* Variante más clara para flecha izquierda en modo ejercicio (pedida) */
+		.side-arrow.exercise-left-active {
+			/* Fondo sólido (no transparente) en tono más claro que el botón negro base */
+			background: linear-gradient(135deg, #646464 0%, #4a4a4a 100%);
+			color: #fff;
+			box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+		}
+		.side-arrow.exercise-left-active:hover {
+			background: linear-gradient(135deg, #6f6f6f 0%, #535353 100%);
+		}
+		/* Variante clara para flecha derecha en modo ejercicio (simetría solicitada) */
+		.side-arrow.exercise-right-active {
+			background: linear-gradient(135deg, #646464 0%, #4a4a4a 100%);
+			color: #fff;
+			box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+		}
+		.side-arrow.exercise-right-active:hover {
+			background: linear-gradient(135deg, #6f6f6f 0%, #535353 100%);
 		}
 		
 		.side-arrow:hover {
@@ -350,6 +369,13 @@ input[type="number"]::-webkit-outer-spin-button {
 /* Mantén los colores de números */
 #exercise-input { color: #0b3d91; font-weight: 800; caret-color: #0b3d91; }
 #page-input { color: #e53935; font-weight: 800; caret-color: #e53935; }
+		/* Modo guiones para input de ejercicios cuando estamos en vista PDF explícita */
+		#exercise-input.dashes-mode {
+			color: #fff !important;
+			letter-spacing: 2px;
+			font-weight: 800;
+			caret-color: transparent; /* no cursor sobre los guiones */
+		}
 
 		/* ===== Menú superior responsivo (sin desbordes en móviles) ===== */
 		.top-menu-wrapper {
@@ -585,6 +611,38 @@ input[type="number"]::-webkit-outer-spin-button {
 		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
 		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
 		let showImageRequestId = 0; // Control de concurrencia para carga de ejercicios
+		// Caché de resultados exitosos y fracasos definitivos
+		const exerciseImageCache = new Map(); // n -> { url, status: 'ok'|'fail' }
+		const PREFETCH_AHEAD = 1; // cuántos ejercicios adelante prefetch
+		const IMAGE_TIMEOUT_MS = 6500; // ampliar timeout para conexiones lentas
+		const MAX_RETRY_ROUND = 2; // cuántas rondas completas de candidatos antes de declarar fail
+
+		function prefetchExercise(n){
+			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') return;
+			if (n < 1 || n > imageLinks.length) return;
+			const base = baseImageUrl.replace(/\/$/, '');
+			const candidates = [];
+			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
+			candidates.push(`${base}/U1E${n}.png`,`$${'base'}/U1E${n}.jpg`,`$${'base'}/U1E${n}.jpeg`); // intentionally redundant fallback
+			if (n < 10){
+				const nn = `0${n}`;
+				candidates.push(`${base}/U1E${nn}.png`,`$${'base'}/U1E${nn}.jpg`,`$${'base'}/U1E${nn}.jpeg`);
+			}
+			// intentar primer candidato solamente para no saturar
+			const url = candidates[0];
+			const img = new Image();
+			img.onload = ()=>{
+				if (!exerciseImageCache.has(n)) exerciseImageCache.set(n,{url, status:'ok'});
+			};
+			img.src = url;
+		}
+
+		// Helper para saber si el ejercicio está visible (estado real computado)
+		function isExerciseVisible() {
+			const el = document.getElementById('exercise-img');
+			if (!el) return false;
+			return window.getComputedStyle(el).display !== 'none';
+		}
 
 		// Funciones para gestionar historial con localStorage
 		function saveUserState(type, data) {
@@ -669,7 +727,7 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		function getCurrentExerciseNumber(){
 			const img = document.getElementById('exercise-img');
-			if (img && img.style.display !== 'none' && img.dataset && img.dataset.exerciseNumber) {
+			if (img && isExerciseVisible() && img.dataset && img.dataset.exerciseNumber) {
 				return parseInt(img.dataset.exerciseNumber, 10);
 			}
 			return null;
@@ -695,7 +753,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			const exInput = document.getElementById('exercise-input');
 			if (exInput) exInput.value = target;
 			playButtonSound();
-			showImageByNumber(target, { suppressError: false });
+			showImageByNumber(target, { suppressError: false, onSuccess: () => updateNavigationArrows(), onFail: () => updateNavigationArrows() });
+			setTimeout(updateNavigationArrows,0);
 		}
 		
 		// Inicializar canvas
@@ -776,22 +835,85 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
 		function showImageByNumber(n, options = {}) {
+			// Nueva versión: transición inmediata sin estado de "Cargando" en el botón
 			const { suppressError = false, onFail, onSuccess } = options;
 			const myReq = ++showImageRequestId;
-			exerciseBeforeError = n; // Guardar el ejercicio que se está intentando abrir
-			currentExerciseTarget = n; // Marcar el objetivo actual para bloquear duplicados
+			exerciseBeforeError = n;
+			currentExerciseTarget = n;
 
-			// Bloquear botón "Ir" mientras se resuelve y dar feedback visual
-			const irBtn = document.getElementById('show-exercise-btn');
-			if (irBtn) {
-				irBtn.disabled = true;
-				if (!irBtn.dataset.prevText) irBtn.dataset.prevText = irBtn.textContent || 'Ir';
-				irBtn.textContent = 'Cargando…';
-				irBtn.style.opacity = '0.7';
-				irBtn.style.cursor = 'wait';
+			// Si mientras tanto el usuario cambió de idea muy rápido, abortar pronto
+			function isStale(){ return myReq !== showImageRequestId; }
+
+			// Si el ejercicio no está en la lista definida, no iniciar carga de imágenes (evita intentos inútiles)
+			if (!definedExercises.has(n)) {
+				// Marcar fail en caché pero no mostrar modal si no es la solicitud activa
+				if (!isStale()) {
+					exerciseImageCache.set(n,{status:'fail'});
+					if (!suppressError) showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+				}
+				return;
 			}
-			
-			// Construir candidatos de nombre (sin dependencias frágiles)
+
+			// Si ya cacheado OK: mostrar al instante
+			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') {
+				const cached = exerciseImageCache.get(n);
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				const exerciseImgEl = document.getElementById('exercise-img');
+				if (pdfCanvas && pdfCanvas.style.display !== 'none') {
+					pdfCanvas.style.display='none';
+				}
+				exerciseImgEl.style.display='block';
+				exerciseImgEl.src = cached.url;
+				exerciseImgEl.dataset.exerciseNumber = String(n);
+				adjustImageSize();
+				// Sincronizar cuadro de páginas si el ejercicio pertenece a una página
+				const mapped = exerciseToPage[n];
+				if (mapped) {
+					currentPage = mapped;
+					const pageInput = document.getElementById('page-input');
+					if (pageInput) pageInput.value = mapped;
+					const pageCounter = document.getElementById('page-counter');
+					if (pageCounter && totalPages) {
+						pageCounter.innerHTML = `Página <span class="pc-num">${mapped}</span> de <span class="pc-num">${totalPages}</span>`;
+					}
+				}
+				saveUserState('exercise',{exerciseNumber:n});
+				setLastValidExercise(n);
+				if (typeof onSuccess==='function') onSuccess();
+				// Prefetch siguientes
+				for (let i=1;i<=PREFETCH_AHEAD;i++){ prefetchExercise(n+i); }
+				updateNavigationArrows();
+				return;
+			}
+
+			const pdfCanvas = document.getElementById('pdf-canvas');
+			const exerciseImgEl = document.getElementById('exercise-img');
+
+			// Transición inmediata: fade + scale del PDF al contenedor de ejercicio
+			if (pdfCanvas && pdfCanvas.style.display !== 'none') {
+				pdfCanvas.style.transition = 'opacity 0.45s ease, transform 0.45s cubic-bezier(.77,0,.18,1)';
+				pdfCanvas.style.opacity = '0';
+				pdfCanvas.style.transform = 'translateX(-50%) scale(0.96)';
+				setTimeout(() => {
+					pdfCanvas.style.display = 'none';
+				}, 450);
+			}
+
+			// Preparar aparición del ejercicio (incluso antes de que cargue la imagen real)
+			exerciseImgEl.style.display = 'block';
+			exerciseImgEl.style.opacity = '0';
+			// Conservar transform base y añadir scale si procede
+			const baseTransform = exerciseImgEl.style.transform && exerciseImgEl.style.transform.includes('translate')
+				? exerciseImgEl.style.transform.replace(/scale\([^)]*\)/,'').trim() : 'translate(-50%, -50%)';
+			exerciseImgEl.style.transform = baseTransform + ' scale(1.06)';
+			exerciseImgEl.style.transition = 'none';
+			requestAnimationFrame(() => {
+				exerciseImgEl.style.transition = 'opacity 0.55s ease, transform 0.55s cubic-bezier(.19,1,.22,1)';
+				exerciseImgEl.style.opacity = '1';
+				exerciseImgEl.style.transform = baseTransform + ' scale(1)';
+			});
+
+			// Construir candidatos
 			const base = baseImageUrl.replace(/\/$/, '');
 			const candidates = [];
 			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
@@ -806,25 +928,37 @@ input[type="number"]::-webkit-outer-spin-button {
 			}
 
 			let tried = 0;
+			let round = 1;
 			function tryNext() {
-					if (tried >= candidates.length) {
-					// ninguna encontrada
-						currentExerciseTarget = null; // limpiar objetivo al fallar
-						// Restaurar botón solo si sigue siendo la última petición
-						if (irBtn && myReq === showImageRequestId) {
-							irBtn.disabled = false;
-							irBtn.textContent = irBtn.dataset.prevText || 'Ir';
-							irBtn.style.opacity = '';
-							irBtn.style.cursor = '';
-						}
-					if (suppressError) {
-						if (typeof onFail === 'function') onFail();
+				if (tried >= candidates.length) {
+					if (round < MAX_RETRY_ROUND) {
+						tried = 0; round++;
 					} else {
-						showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+						// Antes de mostrar error, comprobar si la petición sigue siendo la actual y si el usuario
+						// continúa intentando ver este ejercicio; si no, silenciosamente abortar.
+						if (isStale() || getCurrentExerciseNumber() !== n) {
+							return; // solicitud desfasada: no mostrar nada
+						}
+						currentExerciseTarget = null;
+						exerciseImageCache.set(n,{status:'fail'});
+						if (!suppressError) {
+							showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+						}
+						if (pdfCanvas) {
+							pdfCanvas.style.display = 'block';
+							pdfCanvas.style.opacity = '0';
+							pdfCanvas.style.transform = 'translateX(-50%) scale(1.04)';
+							requestAnimationFrame(() => {
+								pdfCanvas.style.transition = 'opacity 0.45s ease, transform 0.45s cubic-bezier(.19,1,.22,1)';
+								pdfCanvas.style.opacity = '1';
+								pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
+							});
+						}
+						exerciseImgEl.style.display = 'none';
+						if (typeof onFail === 'function') onFail();
+						return;
 					}
-					return;
 				}
-
 				const url = candidates[tried++];
 				const testImg = new Image();
 				let timeoutId;
@@ -832,48 +966,38 @@ input[type="number"]::-webkit-outer-spin-button {
 					try { testImg.onload = null; testImg.onerror = null; } catch(e) {}
 					if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
 				}
-				testImg.onload = function() {
-					// Si ya hay otra petición más nueva, ignorar este resultado
+				testImg.onload = function(){
 					if (myReq !== showImageRequestId) { cleanup(); return; }
-					// Imagen encontrada, mostrarla directamente
-					const pdfCanvas = document.getElementById('pdf-canvas');
-					const exerciseImg = document.getElementById('exercise-img');
-					
-					// Ocultar PDF
-					pdfCanvas.style.display = 'none';
-					
-					// Configurar y mostrar imagen
-					exerciseImg.src = url;
-					exerciseImg.style.display = 'block';
-					exerciseImg.style.opacity = '1';
-					exerciseImg.style.transition = '';
-					
-					// Ajustar tamaño cuando la imagen se carga
-					exerciseImg.onload = function() {
-						if (myReq !== showImageRequestId) { return; }
-						adjustImageSize();
-						saveUserState('exercise', { exerciseNumber: n });
-						setLastValidExercise(n);
-						// Registrar el ejercicio mostrado actualmente
-						try { exerciseImg.dataset.exerciseNumber = String(n); } catch (e) {}
-						try { if (typeof onSuccess === 'function') onSuccess(); } catch(e) {}
-						// Restaurar botón si sigue siendo la última petición
-						if (irBtn && myReq === showImageRequestId) {
-							irBtn.disabled = false;
-							irBtn.textContent = irBtn.dataset.prevText || 'Ir';
-							irBtn.style.opacity = '';
-							irBtn.style.cursor = '';
+					exerciseImgEl.src = url;
+					exerciseImgEl.dataset.exerciseNumber = String(n);
+					exerciseImageCache.set(n,{url, status:'ok'});
+					adjustImageSize();
+					// Sincronizar cuadro de páginas si el ejercicio pertenece a una página
+					const mapped = exerciseToPage[n];
+					if (mapped) {
+						currentPage = mapped;
+						const pageInput = document.getElementById('page-input');
+						if (pageInput) pageInput.value = mapped;
+						const pageCounter = document.getElementById('page-counter');
+						if (pageCounter && totalPages) {
+							pageCounter.innerHTML = `Página <span class="pc-num">${mapped}</span> de <span class="pc-num">${totalPages}</span>`;
 						}
-					};
+					}
+					saveUserState('exercise',{exerciseNumber:n});
+					setLastValidExercise(n);
+					if (typeof onSuccess==='function') onSuccess();
+					// Prefetch siguientes ejercicios
+					for (let i=1;i<=PREFETCH_AHEAD;i++){ prefetchExercise(n+i); }
+					updateNavigationArrows();
 					cleanup();
 				};
-				testImg.onerror = function() {
+				testImg.onerror = function(){
+					// Si ya no es la solicitud actual, abortar sin continuar reintentos
+					if (isStale()) { cleanup(); return; }
 					cleanup();
-					// intentar siguiente
 					tryNext();
 				};
-				// Timeout por si el onerror no dispara en redes lentas
-				timeoutId = setTimeout(() => { try { testImg.src = ''; } catch(e) {}; testImg.onerror && testImg.onerror(); }, 4000);
+				timeoutId = setTimeout(()=>{ try { testImg.src=''; } catch(e) {}; testImg.onerror && testImg.onerror(); }, IMAGE_TIMEOUT_MS);
 				testImg.src = url;
 			}
 			tryNext();
@@ -891,9 +1015,40 @@ input[type="number"]::-webkit-outer-spin-button {
 				if (totalPages) pageInput.max = String(totalPages);
 			}
 			
-			// Habilitar/deshabilitar botones
-			document.getElementById('prev-page').style.opacity = currentPage <= 1 ? '0.3' : '1';
-			document.getElementById('next-page').style.opacity = currentPage >= totalPages ? '0.3' : '1';
+			updateNavigationArrows();
+		}
+
+		function updateNavigationArrows(){
+			const left = document.getElementById('prev-page');
+			const right = document.getElementById('next-page');
+			if(!left || !right) return;
+			if (isExerciseVisible()) {
+				let ex = getCurrentExerciseNumber();
+				if (!ex && currentExerciseTarget) ex = currentExerciseTarget;
+				if (!ex) {
+					const v = parseInt(document.getElementById('exercise-input').value,10);
+					if (Number.isFinite(v)) ex = v;
+				}
+				let prevValid=null; for (let i=ex-1;i>=1;i--){ if(definedExercises.has(i)){ prevValid=i; break; } }
+				let nextValid=null; for (let i=ex+1;i<=imageLinks.length;i++){ if(definedExercises.has(i)){ nextValid=i; break; } }
+				left.style.opacity = prevValid ? '1':'0.3';
+				right.style.opacity = nextValid ? '1':'0.3';
+				// Aplicar clases claras simétricas cuando hay ejercicios navegables
+				if (prevValid) left.classList.add('exercise-left-active'); else left.classList.remove('exercise-left-active');
+				if (nextValid) right.classList.add('exercise-right-active'); else right.classList.remove('exercise-right-active');
+
+				// Requisito: a partir del ejercicio 2 la flecha izquierda debe verse igual que la derecha (activa),
+				// incluso si momentáneamente aún no se detectó prevValid por asincronía.
+				if (ex >= 2) {
+					left.style.opacity = '1';
+					left.classList.add('exercise-left-active');
+				}
+			} else {
+				left.style.opacity = currentPage <= 1 ? '0.3' : '1';
+				right.style.opacity = currentPage >= totalPages ? '0.3' : '1';
+				left.classList.remove('exercise-left-active');
+				right.classList.remove('exercise-right-active');
+			}
 		}
 		
 		// Navegación por páginas
@@ -1040,8 +1195,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		// Event listeners
 		let isPaging = false;
 		document.getElementById('next-page').onclick = function() {
-			const imgVisible = document.getElementById('exercise-img').style.display !== 'none';
-			if (imgVisible) {
+			if (isExerciseVisible()) {
 				navigateExercise(+1);
 				return;
 			}
@@ -1051,12 +1205,11 @@ input[type="number"]::-webkit-outer-spin-button {
 			animatePage('right');
 			playButtonSound();
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-			setTimeout(() => { nextPage(); isPaging = false; }, 220);
+			setTimeout(() => { nextPage(); isPaging = false; updateNavigationArrows(); }, 220);
 		};
 		
 		document.getElementById('prev-page').onclick = function() {
-			const imgVisible = document.getElementById('exercise-img').style.display !== 'none';
-			if (imgVisible) {
+			if (isExerciseVisible()) {
 				navigateExercise(-1);
 				return;
 			}
@@ -1066,7 +1219,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			animatePage('left');
 			playButtonSound();
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-			setTimeout(() => { prevPage(); isPaging = false; }, 220);
+			setTimeout(() => { prevPage(); isPaging = false; updateNavigationArrows(); }, 220);
 		};
 		
 
@@ -1074,23 +1227,14 @@ input[type="number"]::-webkit-outer-spin-button {
 		document.getElementById('show-exercise-btn').onclick = function() {
 			const n = parseInt(document.getElementById('exercise-input').value, 10);
 			if (!n || n < 1 || n > imageLinks.length) return alert('Número entre 1 y ' + imageLinks.length);
-			// Si ya estamos viendo ese mismo ejercicio, no reproducir sonido ni recargar
-			const exerciseImgEl = document.getElementById('exercise-img');
-			const isExerciseVisible = exerciseImgEl && exerciseImgEl.style.display !== 'none';
-			const currentExercise = exerciseImgEl && exerciseImgEl.dataset && exerciseImgEl.dataset.exerciseNumber
-				? parseInt(exerciseImgEl.dataset.exerciseNumber, 10)
-				: getLastValidExercise();
-			if ((isExerciseVisible && currentExercise === n) || currentExerciseTarget === n) {
-				return;
-			}
-			// Reproducir sonido inmediatamente en el clic (gesto del usuario)
 			playButtonSound();
-			showImageByNumber(n);
+			showImageByNumber(n,{ onSuccess: () => updateNavigationArrows(), onFail: () => updateNavigationArrows() });
+			setTimeout(updateNavigationArrows,0);
 		};
 
 		document.getElementById('show-all-btn').onclick = function() {
 			// Animación de transición elegante de la imagen al PDF
-			if (exerciseImg.style.display !== 'none') {
+			if (isExerciseVisible()) {
 				playButtonSound();
 				// Fase 1: Desvanecer la imagen con zoom out
 				exerciseImg.style.transition = 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.6s ease';
@@ -1190,7 +1334,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (n === currentPage) return;
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			const exEl = document.getElementById('exercise-img');
-			const wasExerciseVisible = exEl && exEl.style.display !== 'none';
+			const wasExerciseVisible = isExerciseVisible();
 			playButtonSound();
 			if (wasExerciseVisible) {
 				exEl.style.transition = 'opacity 0.25s ease';
@@ -1201,6 +1345,10 @@ input[type="number"]::-webkit-outer-spin-button {
 					pdfCanvas.style.display = 'block';
 					pdfCanvas.style.opacity = '1';
 					pdfCanvas.style.transform = 'translateX(-50%)';
+					// Requisito: al pasar a una página desde un ejercicio, mostrar "--" en el input de ejercicios
+					const exInput = document.getElementById('exercise-input');
+					if (exInput) exInput.value = '--';
+					currentExerciseTarget = null;
 					renderPageStable(n);
 				}, 260);
 			} else {
@@ -1224,7 +1372,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 				// Si hay imagen visible, primero ocultarla (similar al botón Ir)
 				const exEl = document.getElementById('exercise-img');
-				const wasExerciseVisible = exEl && exEl.style.display !== 'none';
+				const wasExerciseVisible = isExerciseVisible();
 				playButtonSound();
 				if (wasExerciseVisible) {
 					exEl.style.transition = 'opacity 0.25s ease';
@@ -1251,10 +1399,20 @@ input[type="number"]::-webkit-outer-spin-button {
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'ArrowRight' || e.key === ' ') {
 				e.preventDefault();
-				nextPage();
+				if (isExerciseVisible()) {
+					navigateExercise(+1); updateNavigationArrows();
+				} else {
+					playButtonSound();
+					nextPage(); updateNavigationArrows();
+				}
 			} else if (e.key === 'ArrowLeft') {
 				e.preventDefault();
-				prevPage();
+				if (isExerciseVisible()) {
+					navigateExercise(-1); updateNavigationArrows();
+				} else {
+					playButtonSound();
+					prevPage(); updateNavigationArrows();
+				}
 			}
 		});
 		

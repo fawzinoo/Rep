@@ -262,13 +262,27 @@
 		
 		@media (max-width: 480px) {
 			.side-arrow {
-				width: 44px;
-				height: 44px;
-				font-size: 1.7rem;
+				display: none; /* Ocultar flechas en móvil - usar gestos */
 			}
-			.left-arrow { left: 2px; }
-			.right-arrow { right: 2px; }
 		}
+
+		/* Indicadores visuales para gestos de swipe en móvil */
+		.swipe-indicator {
+			position: fixed;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 4px;
+			height: 80px;
+			background: rgba(255, 255, 255, 0.3);
+			border-radius: 2px;
+			opacity: 0;
+			transition: opacity 0.2s ease;
+			z-index: 1000;
+			pointer-events: none;
+		}
+		.swipe-indicator.left { left: 5px; }
+		.swipe-indicator.right { right: 5px; }
+		.swipe-indicator.active { opacity: 0.7; }
 
 		/* Inputs: el contenedor se convierte en la “caja” blanca */
 .input-with-icon {
@@ -375,6 +389,34 @@ input[type="number"]::-webkit-outer-spin-button {
 			letter-spacing: 2px;
 			font-weight: 800;
 			caret-color: transparent; /* no cursor sobre los guiones */
+		}
+		
+		/* Estilo especial para mostrar el guión de placeholder */
+		#exercise-input.dash-placeholder {
+			color: #0b3d91 !important;
+			font-weight: 900;
+			font-size: clamp(14px, 3.8vw, 16px);
+			text-align: center;
+			letter-spacing: 0;
+		}
+		
+		/* Estilo especial para mostrar el placeholder de ejercicio - MUY VISIBLE */
+		#exercise-input.dash-placeholder {
+			color: #ffffff !important;
+			background-color: #ff4d4d !important;
+			font-weight: 900;
+			font-size: clamp(18px, 4.5vw, 22px);
+			text-align: center;
+			letter-spacing: 2px;
+			border-radius: 8px;
+			animation: pulse 2s infinite;
+			caret-color: #ffffff !important; /* cursor blanco visible */
+		}
+		
+		@keyframes pulse {
+			0% { background-color: #ff4d4d; }
+			50% { background-color: #ff1a1a; }
+			100% { background-color: #ff4d4d; }
 		}
 
 		/* ===== Menú superior responsivo (sin desbordes en móviles) ===== */
@@ -539,6 +581,10 @@ input[type="number"]::-webkit-outer-spin-button {
 				<path d="M13 8L18 12L13 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
 			</svg>
 		</button>
+		
+		<!-- Indicadores de zona de swipe para móvil -->
+		<div class="swipe-indicator left" id="swipe-indicator-left"></div>
+		<div class="swipe-indicator right" id="swipe-indicator-right"></div>
 		
 		<!-- Menú superior responsivo -->
 		<div class="top-menu-wrapper">
@@ -1345,13 +1391,52 @@ input[type="number"]::-webkit-outer-spin-button {
 					pdfCanvas.style.display = 'block';
 					pdfCanvas.style.opacity = '1';
 					pdfCanvas.style.transform = 'translateX(-50%)';
-					// Requisito: al pasar a una página desde un ejercicio, mostrar "--" en el input de ejercicios
+					// SIEMPRE activar el indicador rojo al ir a una página
 					const exInput = document.getElementById('exercise-input');
-					if (exInput) exInput.value = '--';
+					if (exInput) {
+						// Limpiar listeners anteriores si existen
+						if (exInput._removeClass) {
+							exInput.removeEventListener('input', exInput._removeClass);
+						}
+						exInput.value = ''; // Input vacío con cursor parpadeando
+						exInput.classList.add('dash-placeholder');
+						exInput.focus(); // Enfocar para mostrar cursor
+						// Remover la clase cuando el usuario empiece a escribir
+						const removeClass = () => {
+							if (exInput.value !== '') {
+								exInput.classList.remove('dash-placeholder');
+								exInput.removeEventListener('input', removeClass);
+								exInput._removeClass = null;
+							}
+						};
+						exInput._removeClass = removeClass;
+						exInput.addEventListener('input', removeClass);
+					}
 					currentExerciseTarget = null;
 					renderPageStable(n);
 				}, 260);
 			} else {
+				// SIEMPRE activar el indicador rojo al ir a una página (incluso si ya estábamos en PDF)
+				const exInput = document.getElementById('exercise-input');
+				if (exInput) {
+					// Limpiar listeners anteriores si existen
+					if (exInput._removeClass) {
+						exInput.removeEventListener('input', exInput._removeClass);
+					}
+					exInput.value = ''; // Input vacío con cursor parpadeando
+					exInput.classList.add('dash-placeholder');
+					exInput.focus(); // Enfocar para mostrar cursor
+					// Remover la clase cuando el usuario empiece a escribir
+					const removeClass = () => {
+						if (exInput.value !== '') {
+							exInput.classList.remove('dash-placeholder');
+							exInput.removeEventListener('input', removeClass);
+							exInput._removeClass = null;
+						}
+					};
+					exInput._removeClass = removeClass;
+					exInput.addEventListener('input', removeClass);
+				}
 				renderPageStable(n);
 			}
 		};
@@ -1379,9 +1464,46 @@ input[type="number"]::-webkit-outer-spin-button {
 					exEl.style.opacity = '0';
 					setTimeout(() => {
 						exEl.style.display = 'none';
+						// Al ir a una página desde un ejercicio, mostrar input vacío con fondo rojo
+						const exInput = document.getElementById('exercise-input');
+						if (exInput) {
+							exInput.value = ''; // Input vacío con cursor parpadeando
+							exInput.classList.add('dash-placeholder');
+							exInput.focus(); // Enfocar para mostrar cursor
+							// Remover la clase cuando el usuario empiece a escribir
+							const removeClass = () => {
+								if (exInput.value !== '') {
+									exInput.classList.remove('dash-placeholder');
+									exInput.removeEventListener('input', removeClass);
+								}
+							};
+							exInput.addEventListener('input', removeClass);
+						}
+						currentExerciseTarget = null;
 						renderPageStable(n, true); // forzar aunque teclado siga abierto
 					}, 250);
 				} else {
+					// SIEMPRE activar el indicador rojo al ir a una página (incluso si ya estábamos en PDF)
+					const exInput = document.getElementById('exercise-input');
+					if (exInput) {
+						// Limpiar listeners anteriores si existen
+						if (exInput._removeClass) {
+							exInput.removeEventListener('input', exInput._removeClass);
+						}
+						exInput.value = ''; // Input vacío con cursor parpadeando
+						exInput.classList.add('dash-placeholder');
+						exInput.focus(); // Enfocar para mostrar cursor
+						// Remover la clase cuando el usuario empiece a escribir
+						const removeClass = () => {
+							if (exInput.value !== '') {
+								exInput.classList.remove('dash-placeholder');
+								exInput.removeEventListener('input', removeClass);
+								exInput._removeClass = null;
+							}
+						};
+						exInput._removeClass = removeClass;
+						exInput.addEventListener('input', removeClass);
+					}
 					renderPageStable(n, true);
 				}
 			}
@@ -1613,14 +1735,135 @@ input[type="number"]::-webkit-outer-spin-button {
 			}
 		}
 
-		// Bloquear scroll
+		// Bloquear scroll (excepto durante gestos de swipe)
 		document.addEventListener('wheel', function(e) {
 			e.preventDefault();
 		}, { passive: false });
 		
 		document.addEventListener('touchmove', function(e) {
+			// Permitir touchmove durante gestos de swipe
+			if (isSwipeGesture) return;
 			e.preventDefault();
 		}, { passive: false });
+
+		// Gestión de gestos táctiles para navegación en móvil
+		let touchStartX = 0;
+		let touchStartY = 0;
+		let touchStartTime = 0;
+		let isSwipeGesture = false;
+		let activeIndicator = null;
+		const SWIPE_THRESHOLD = 80; // mínima distancia para considerar swipe
+		const SWIPE_VELOCITY_THRESHOLD = 0.5; // mínima velocidad
+		const EDGE_ZONE_WIDTH = 60; // ancho de zona lateral para iniciar swipe (px)
+		const MAX_VERTICAL_DRIFT = 100; // máxima desviación vertical permitida
+
+		// Detectar inicio del gesto táctil
+		document.addEventListener('touchstart', function(e) {
+			if (e.touches.length !== 1) return; // solo gestos de un dedo
+			
+			const touch = e.touches[0];
+			const screenWidth = window.innerWidth;
+			
+			// Solo permitir inicio desde las zonas laterales
+			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
+			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
+			
+			if (!isLeftEdge && !isRightEdge) return;
+			
+			touchStartX = touch.clientX;
+			touchStartY = touch.clientY;
+			touchStartTime = Date.now();
+			isSwipeGesture = true;
+			
+			// Activar indicador visual
+			const leftIndicator = document.getElementById('swipe-indicator-left');
+			const rightIndicator = document.getElementById('swipe-indicator-right');
+			
+			if (isLeftEdge && leftIndicator) {
+				leftIndicator.classList.add('active');
+				activeIndicator = leftIndicator;
+			} else if (isRightEdge && rightIndicator) {
+				rightIndicator.classList.add('active');
+				activeIndicator = rightIndicator;
+			}
+		}, { passive: true });
+
+		// Procesar el movimiento táctil
+		document.addEventListener('touchmove', function(e) {
+			if (!isSwipeGesture || e.touches.length !== 1) return;
+			
+			const touch = e.touches[0];
+			const deltaX = touch.clientX - touchStartX;
+			const deltaY = touch.clientY - touchStartY;
+			
+			// Cancelar si hay mucha desviación vertical
+			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) {
+				isSwipeGesture = false;
+				if (activeIndicator) {
+					activeIndicator.classList.remove('active');
+					activeIndicator = null;
+				}
+				return;
+			}
+			
+			// Prevenir scroll durante el swipe
+			e.preventDefault();
+		}, { passive: false });
+
+		// Finalizar el gesto y ejecutar navegación
+		document.addEventListener('touchend', function(e) {
+			// Limpiar indicador visual
+			if (activeIndicator) {
+				activeIndicator.classList.remove('active');
+				activeIndicator = null;
+			}
+			
+			if (!isSwipeGesture) return;
+			
+			const touch = e.changedTouches[0];
+			const deltaX = touch.clientX - touchStartX;
+			const deltaY = touch.clientY - touchStartY;
+			const deltaTime = Date.now() - touchStartTime;
+			const velocity = Math.abs(deltaX) / deltaTime;
+			
+			isSwipeGesture = false;
+			
+			// Verificar si cumple los requisitos de swipe
+			if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
+			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) return;
+			if (velocity < SWIPE_VELOCITY_THRESHOLD) return;
+			
+			// Determinar dirección y navegar
+			if (deltaX > 0) {
+				// Swipe derecha → página anterior
+				if (isExerciseVisible()) {
+					navigateExercise(-1);
+				} else if (currentPage > 1) {
+					playButtonSound();
+					isPaging = true;
+					animatePage('left');
+					setTimeout(() => { 
+						prevPage(); 
+						isPaging = false; 
+						updateNavigationArrows(); 
+					}, 220);
+				}
+			} else {
+				// Swipe izquierda → página siguiente
+				if (isExerciseVisible()) {
+					navigateExercise(+1);
+				} else if (currentPage < totalPages) {
+					playButtonSound();
+					isPaging = true;
+					animatePage('right');
+					setTimeout(() => { 
+						nextPage(); 
+						isPaging = false; 
+						updateNavigationArrows(); 
+					}, 220);
+				}
+			}
+		}, { passive: true });
 		
 		// Ocultar controles automáticamente
 		let hideControlsTimeout;

@@ -664,6 +664,39 @@ input[type="number"]::-webkit-outer-spin-button {
 			21: 6, 22: 6, 23: 6,
 			24: 7, 25: 7, 26: 7
 		};
+		// Conjunto rápido de ejercicios definidos
+		const definedExercises = new Set(Object.keys(exerciseToPage).map(k => parseInt(k,10)));
+
+		function getCurrentExerciseNumber(){
+			const img = document.getElementById('exercise-img');
+			if (img && img.style.display !== 'none' && img.dataset && img.dataset.exerciseNumber) {
+				return parseInt(img.dataset.exerciseNumber, 10);
+			}
+			return null;
+		}
+
+		function navigateExercise(delta){
+			// Basado en ejercicio actual o input
+			let current = getCurrentExerciseNumber();
+			if (!current) {
+				const last = getLastValidExercise();
+				if (last) current = last; else current = parseInt(document.getElementById('exercise-input').value,10) || 1;
+			}
+			let target = current + delta;
+			// Buscar siguiente válido dentro de límites razonables
+			const MAX = imageLinks.length;
+			while (target >= 1 && target <= MAX && !definedExercises.has(target)) {
+				target += delta;
+			}
+			if (target < 1 || target > MAX) return; // no hace nada si sale de rango
+			// Evitar repetir
+			if (target === currentExerciseTarget || target === current) return;
+			// Actualizar input visual
+			const exInput = document.getElementById('exercise-input');
+			if (exInput) exInput.value = target;
+			playButtonSound();
+			showImageByNumber(target, { suppressError: false });
+		}
 		
 		// Inicializar canvas
 		canvas = document.getElementById('pdf-canvas');
@@ -1007,24 +1040,31 @@ input[type="number"]::-webkit-outer-spin-button {
 		// Event listeners
 		let isPaging = false;
 		document.getElementById('next-page').onclick = function() {
+			const imgVisible = document.getElementById('exercise-img').style.display !== 'none';
+			if (imgVisible) {
+				navigateExercise(+1);
+				return;
+			}
 			if (isPaging || currentPage >= totalPages) return; // no hay cambio
-			// Cancelar animación previa si el usuario navega muy rápido
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('right');
 			playButtonSound();
-			// Si la cinta está abierta, cuenta como interacción: no la cierres y reinicia timer
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { nextPage(); isPaging = false; }, 220);
 		};
 		
 		document.getElementById('prev-page').onclick = function() {
+			const imgVisible = document.getElementById('exercise-img').style.display !== 'none';
+			if (imgVisible) {
+				navigateExercise(-1);
+				return;
+			}
 			if (isPaging || currentPage <= 1) return; // no hay cambio
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('left');
 			playButtonSound();
-			// Si la cinta está abierta, cuenta como interacción: no la cierres y reinicia timer
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { prevPage(); isPaging = false; }, 220);
 		};

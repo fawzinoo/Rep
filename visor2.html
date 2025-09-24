@@ -201,7 +201,6 @@
 			max-height: 100vh; /* evitar desbordes verticales */
 			display: none;
 			z-index: 2400;
-			transition: opacity 220ms ease-in-out, transform 220ms ease-in-out;
 			opacity: 0;
 			background: transparent;
 		}
@@ -881,6 +880,8 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
 		function showImageByNumber(n, options = {}) {
+			console.log('showImageByNumber llamada con:', n); // Debug
+			
 			// Nueva versión: transición inmediata sin estado de "Cargando" en el botón
 			const { suppressError = false, onFail, onSuccess } = options;
 			const myReq = ++showImageRequestId;
@@ -892,23 +893,31 @@ input[type="number"]::-webkit-outer-spin-button {
 
 			// Si el ejercicio no está en la lista definida, no iniciar carga de imágenes (evita intentos inútiles)
 			if (!definedExercises.has(n)) {
+				console.log('Ejercicio no definido:', n); // Debug
 				// Marcar fail en caché pero no mostrar modal si no es la solicitud activa
 				if (!isStale()) {
 					exerciseImageCache.set(n,{status:'fail'});
 					if (!suppressError) showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+					if (typeof onFail === 'function') onFail();
 				}
 				return;
 			}
 
-			// Si ya cacheado OK: mostrar al instante
+			console.log('Ejercicio válido, intentando cargar:', n); // Debug
+
+			// Si ya cacheado OK: mostrar al instante SIN TRANSICIONES
 			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') {
 				const cached = exerciseImageCache.get(n);
 				const pdfCanvas = document.getElementById('pdf-canvas');
 				const exerciseImgEl = document.getElementById('exercise-img');
-				if (pdfCanvas && pdfCanvas.style.display !== 'none') {
+				
+				// Cambio instantáneo
+				if (pdfCanvas) {
 					pdfCanvas.style.display='none';
 				}
 				exerciseImgEl.style.display='block';
+				exerciseImgEl.style.opacity = '1';
+				exerciseImgEl.style.transition = 'none';
 				exerciseImgEl.src = cached.url;
 				exerciseImgEl.dataset.exerciseNumber = String(n);
 				adjustImageSize();
@@ -935,29 +944,19 @@ input[type="number"]::-webkit-outer-spin-button {
 			const pdfCanvas = document.getElementById('pdf-canvas');
 			const exerciseImgEl = document.getElementById('exercise-img');
 
-			// Transición inmediata: fade + scale del PDF al contenedor de ejercicio
-			if (pdfCanvas && pdfCanvas.style.display !== 'none') {
-				pdfCanvas.style.transition = 'opacity 0.45s ease, transform 0.45s cubic-bezier(.77,0,.18,1)';
-				pdfCanvas.style.opacity = '0';
-				pdfCanvas.style.transform = 'translateX(-50%) scale(0.96)';
-				setTimeout(() => {
-					pdfCanvas.style.display = 'none';
-				}, 450);
+			// Transición INSTANTÁNEA: ocultar PDF y mostrar ejercicio directamente
+			if (pdfCanvas) {
+				pdfCanvas.style.display = 'none';
 			}
 
-			// Preparar aparición del ejercicio (incluso antes de que cargue la imagen real)
+			// Mostrar ejercicio inmediatamente sin transiciones
 			exerciseImgEl.style.display = 'block';
-			exerciseImgEl.style.opacity = '0';
-			// Conservar transform base y añadir scale si procede
-			const baseTransform = exerciseImgEl.style.transform && exerciseImgEl.style.transform.includes('translate')
-				? exerciseImgEl.style.transform.replace(/scale\([^)]*\)/,'').trim() : 'translate(-50%, -50%)';
-			exerciseImgEl.style.transform = baseTransform + ' scale(1.06)';
+			exerciseImgEl.style.opacity = '1';
+			exerciseImgEl.style.transform = 'translate(-50%, -50%)';
 			exerciseImgEl.style.transition = 'none';
-			requestAnimationFrame(() => {
-				exerciseImgEl.style.transition = 'opacity 0.55s ease, transform 0.55s cubic-bezier(.19,1,.22,1)';
-				exerciseImgEl.style.opacity = '1';
-				exerciseImgEl.style.transform = baseTransform + ' scale(1)';
-			});
+			
+			// Ajustar tamaño inmediatamente
+			adjustImageSize();
 
 			// Construir candidatos
 			const base = baseImageUrl.replace(/\/$/, '');
@@ -1290,10 +1289,44 @@ input[type="number"]::-webkit-outer-spin-button {
 
 
 		document.getElementById('show-exercise-btn').onclick = function() {
-			const n = parseInt(document.getElementById('exercise-input').value, 10);
-			if (!n || n < 1 || n > imageLinks.length) return alert('Número entre 1 y ' + imageLinks.length);
+			const input = document.getElementById('exercise-input');
+			
+			// Limpiar estado rojo si existe
+			if (input.classList.contains('red-placeholder')) {
+				input.classList.remove('red-placeholder');
+				if (input._removeClass) {
+					input.removeEventListener('input', input._removeClass);
+					input._removeClass = null;
+				}
+			}
+			
+			const n = parseInt(input.value, 10);
+			console.log('Ejercicio solicitado:', n); // Debug
+			
+			if (!n || n < 1 || n > imageLinks.length) {
+				alert('Número entre 1 y ' + imageLinks.length);
+				return;
+			}
+			
 			playButtonSound();
-			showImageByNumber(n,{ onSuccess: () => updateNavigationArrows(), onFail: () => updateNavigationArrows() });
+			
+			// Verificar que el elemento de imagen existe
+			const exerciseImgEl = document.getElementById('exercise-img');
+			if (!exerciseImgEl) {
+				console.error('Elemento exercise-img no encontrado');
+				return;
+			}
+			
+			showImageByNumber(n,{ 
+				onSuccess: () => {
+					console.log('Ejercicio cargado exitosamente:', n);
+					updateNavigationArrows();
+				}, 
+				onFail: () => {
+					console.log('Error cargando ejercicio:', n);
+					updateNavigationArrows();
+				}
+			});
 			setTimeout(updateNavigationArrows,0);
 		};
 

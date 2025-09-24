@@ -17,7 +17,7 @@
 		
 		body {
 			font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-			background: #000;
+			background: #ffffff; /* Fondo unificado para evitar salto visual */
 			margin: 0;
 			padding: 0;
 			overflow: hidden;
@@ -34,7 +34,7 @@
 			justify-content: center;
 			position: relative;
 			overflow: hidden;
-			/* Añadimos perspectiva para que la animación 3D (rotateY) no aplane la página */
+			background: #ffffff; /* Igual que body y canvas */
 			perspective: 1600px;
 		}
 		
@@ -181,13 +181,15 @@
 		#pdf-canvas {
 			width: 100vw !important;
 			border: none;
-			display: block;
-			background: #fff;
+			/* Mantener espacio desde el principio para evitar reflow y usar fade */
+			opacity: 0;
+			background: #ffffff;
 			object-fit: contain;
 			position: absolute;
 			top: 0;
 			left: 50%;
 			transform: translateX(-50%);
+			transition: opacity 70ms ease-out;
 		}
 
 		/* Imagen del ejercicio: cubrir completamente la ventana sin barras negras */
@@ -213,6 +215,7 @@
 			color: white;
 			font-size: 18px;
 			font-weight: 500;
+			display: none; /* Oculto por defecto para evitar parpadeo inicial */
 		}
 		
 		/* En móviles: la imagen debe ocupar todo el alto y ajustar el ancho proporcionalmente */
@@ -226,6 +229,9 @@
 				max-width: 100vw; /* evitar desbordes horizontales */
 				max-height: none; /* ya fijamos altura */
 			}
+			
+			/* Eliminadas reglas que ocultaban el canvas para reducir parpadeo */
+		}
 
 		/* Estilos para los botones del menú superior */
 		/* Botón 'Ir' de ejercicio en azul marino y sin animación */
@@ -624,7 +630,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		</div>
 
 		
-		<div class="page-counter" id="page-counter">Cargando...</div>
+		<div class="page-counter" id="page-counter">Página 1</div>
 		<div class="loading" id="loading">Cargando PDF...</div>
 		
 		<canvas id="pdf-canvas"></canvas>
@@ -633,6 +639,34 @@ input[type="number"]::-webkit-outer-spin-button {
 	<script>
 		// Configurar PDF.js worker
 		pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+		
+		// Inicialización temprana para prevenir parpadeos en móvil
+		let isInitialLoad = true; // Flag para controlar la primera carga
+		let isMobile = window.innerWidth <= 768;
+		
+		// Ocultar elementos problemáticos inmediatamente en móvil
+		if (isMobile) {
+			document.addEventListener('DOMContentLoaded', function() {
+				const container = document.querySelector('.pdf-viewer-container');
+				const canvas = document.getElementById('pdf-canvas');
+				const loading = document.getElementById('loading');
+				
+				if (canvas) canvas.style.display = 'none';
+				if (loading) loading.style.display = 'none';
+				
+				// Solo mostrar contenido cuando esté completamente inicializado
+				setTimeout(() => {
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 2000); // 2 segundos de gracia para carga completa
+				
+				// Backup: mostrar contenido después de máximo 4 segundos sin importar el estado
+				setTimeout(() => {
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 4000);
+			});
+		}
 		
 		// Variables globales
 		const urlDefault = 'https://fawzinoo.github.io/Rep/U11.pdf';
@@ -806,7 +840,10 @@ input[type="number"]::-webkit-outer-spin-button {
 		   	__isRendering = true;
 		   }
 		   const loading = document.getElementById('loading');
-		   loading.style.display = 'block';
+		   // Solo mostrar pantalla de carga después de la carga inicial
+		   if (!isInitialLoad) {
+		   	loading.style.display = 'block';
+		   }
 
 		   // Si hay una animación en curso, la cancelamos para evitar que el canvas quede "volcado"
 		   if (window.__pageFlip && window.__pageFlip.isAnimating) {
@@ -846,15 +883,22 @@ input[type="number"]::-webkit-outer-spin-button {
 		   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
 		   canvas.style.objectFit = 'fill';
 		   
-		   // Mostrar el canvas justo antes de renderizar para evitar parpadeos
-		   canvas.style.display = 'block';
+		   // Asegurar que el canvas está en el flujo (ya no usamos display:none), mantenemos opacity para fade
+		   if (canvas.style.display === 'none') canvas.style.display = 'block';
 
 		   const renderContext = {
 			   canvasContext: ctx,
 			   viewport: scaledViewport
-		   };			   page.render(renderContext).promise.then(function() {
-				   loading.style.display = 'none';
-
+		   };
+		   page.render(renderContext).promise.then(function() {
+			   loading.style.display = 'none';
+			   if (isInitialLoad) {
+				   // Fade ultrarápido para evitar percepción de parpadeo largo
+				   requestAnimationFrame(() => { canvas.style.opacity = '1'; });
+			   } else {
+				   canvas.style.opacity = '1';
+			   }
+			   isInitialLoad = false;
 				   updatePageCounter();
 				   saveUserState('pdf', { page: currentPage });
 			   }).catch(()=>{}).finally(()=>{
@@ -1961,11 +2005,29 @@ input[type="number"]::-webkit-outer-spin-button {
 				renderPage(currentPage);
 				showControls();
 			}
+			
+			// Marcar como completamente cargado en móvil
+			if (isMobile) {
+				setTimeout(() => {
+					const container = document.querySelector('.pdf-viewer-container');
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 500); // Medio segundo después de la carga para asegurar estabilidad
+			}
 		}).catch(function(error) {
 			console.error('Error cargando PDF:', error);
 			const loading = document.getElementById('loading');
 			loading.style.display = 'block';
 			loading.textContent = 'Error: No se pudo cargar el PDF';
+			
+			// También marcar como cargado en caso de error para que se vea el error
+			if (isMobile) {
+				setTimeout(() => {
+					const container = document.querySelector('.pdf-viewer-container');
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 100);
+			}
 		});
 		
 		// Redimensionar al cambiar tamaño de ventana

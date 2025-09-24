@@ -1525,10 +1525,46 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Funciones para la modal elegante de errores
 		function showErrorModal(title, message) {
-			document.getElementById('error-modal').querySelector('.error-title').textContent = title + ' no disponible';
-			document.getElementById('error-message').textContent = message;
-			document.getElementById('error-modal').style.display = 'flex';
+			const modal = document.getElementById('error-modal');
+			const content = modal.querySelector('.error-modal-content');
+			modal.querySelector('.error-title').textContent = title + ' no disponible';
+			modal.querySelector('.error-message').textContent = message;
+			modal.style.display = 'flex';
+			// Reposicionar si teclado abierto en móvil
+			adjustErrorModalPosition();
 		}
+
+		function adjustErrorModalPosition(){
+			const modal = document.getElementById('error-modal');
+			if (modal.style.display !== 'flex') return;
+			const content = modal.querySelector('.error-modal-content');
+			if (!content) return;
+			// Reset
+			content.style.marginTop = '';
+			content.style.transformOrigin = '';
+			// Si teclado abierto, subir el modal
+			if (keyboardOpen) {
+				try {
+					const vv = window.visualViewport;
+					let visibleHeight = vv ? vv.height : window.innerHeight;
+					// Subir un porcentaje de la diferencia
+					const diff = window.innerHeight - visibleHeight; // espacio ocupado por teclado
+					if (diff > 80) { // umbral mínimo
+						// Movemos el contenido hacia arriba proporcionalmente (60% del teclado)
+						const shift = Math.min(diff * 0.6, visibleHeight * 0.35);
+						content.style.marginTop = '-' + Math.round(shift) + 'px';
+						content.style.transformOrigin = 'center bottom';
+					}
+				} catch(e) {}
+			}
+		}
+
+		// Escuchar cambios del visualViewport mientras la modal esté abierta
+		(function observeViewportForModal(){
+			const vv = window.visualViewport;
+			if (!vv) return;
+			['resize','scroll'].forEach(evt => vv.addEventListener(evt, () => adjustErrorModalPosition()));
+		})();
 
 		let isClosingModal = false;
 		function closeErrorModal() {
@@ -1536,6 +1572,9 @@ input[type="number"]::-webkit-outer-spin-button {
 			isClosingModal = true;
 			const modal = document.getElementById('error-modal');
 			const modalContent = modal.querySelector('.error-modal-content');
+			// Limpiar ajustes de posición previos
+			modalContent.style.marginTop = '';
+			modalContent.style.transformOrigin = '';
 			
 			// Animación elegante: zoom out + fade
 			modalContent.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease';

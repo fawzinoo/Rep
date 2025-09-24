@@ -181,7 +181,7 @@
 		#pdf-canvas {
 			width: 100vw !important;
 			border: none;
-			display: block;
+			display: none; /* Oculto por defecto para evitar parpadeo inicial */
 			background: #fff;
 			object-fit: contain;
 			position: absolute;
@@ -213,6 +213,7 @@
 			color: white;
 			font-size: 18px;
 			font-weight: 500;
+			display: none; /* Oculto por defecto para evitar parpadeo inicial */
 		}
 		
 		/* En móviles: la imagen debe ocupar todo el alto y ajustar el ancho proporcionalmente */
@@ -625,7 +626,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		</div>
 
 		
-		<div class="page-counter" id="page-counter">Cargando...</div>
+		<div class="page-counter" id="page-counter">Página 1</div>
 		<div class="loading" id="loading">Cargando PDF...</div>
 		
 		<canvas id="pdf-canvas"></canvas>
@@ -734,23 +735,8 @@ input[type="number"]::-webkit-outer-spin-button {
 				return;
 			}
 
-			if (savedState.type === 'pdf') {
-				// Restaurar PDF en la página guardada
-				currentPage = savedState.data.page || 1;
-				document.getElementById('exercise-img').style.display = 'none';
-				const pdfCanvas = document.getElementById('pdf-canvas');
-				pdfCanvas.style.display = 'block';
-				pdfCanvas.style.transition = '';
-				pdfCanvas.style.opacity = '1';
-				pdfCanvas.style.transform = 'translateX(-50%)';
-				renderPage(currentPage);
-			} else if (savedState.type === 'exercise') {
-				// Si el último estado fue un ejercicio, recupéralo automáticamente
-				const exerciseNum = savedState.data.exerciseNumber;
-				document.getElementById('exercise-input').value = exerciseNum;
-				// Mostrar directamente el ejercicio que estaba viendo
-				showImageByNumber(exerciseNum);
-			}
+			// Esta función ya no es necesaria porque la lógica se maneja en la inicialización
+			// Mantenerla por compatibilidad pero no hacer nada
 		}
 
 		// Base de imágenes (ajusta si guardas en otro sitio)
@@ -816,13 +802,18 @@ input[type="number"]::-webkit-outer-spin-button {
 		const widthFactor = 1.0; // Cambia este valor para hacer la página más ancha (>1) o más estrecha (<1)
 		const heightFactor = 0.8; // Ligeramente más alto que el original
 
+		let isInitialLoad = true; // Flag para controlar la primera carga
+
 		function renderPage(pageNum) {
 		   if (STABLE_MODE) {
 		   	if (__isRendering) { __pendingPage = pageNum; return; }
 		   	__isRendering = true;
 		   }
 		   const loading = document.getElementById('loading');
-		   loading.style.display = 'block';
+		   // Solo mostrar pantalla de carga después de la carga inicial
+		   if (!isInitialLoad) {
+		   	loading.style.display = 'block';
+		   }
 
 		   // Si hay una animación en curso, la cancelamos para evitar que el canvas quede "volcado"
 		   if (window.__pageFlip && window.__pageFlip.isAnimating) {
@@ -853,22 +844,25 @@ input[type="number"]::-webkit-outer-spin-button {
 			   // Viewport escalado para alta resolución
 			   const scaledViewport = page.getViewport({ scale: scale });
 
-			   // Ajustar el tamaño interno del canvas (alta resolución)
-			   canvas.width = scaledViewport.width;
-			   canvas.height = scaledViewport.height;
+		   // Ajustar el tamaño interno del canvas (alta resolución)
+		   canvas.width = scaledViewport.width;
+		   canvas.height = scaledViewport.height;
 
-			   // Ajustar el tamaño visual del canvas (pantalla)
-			   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
-			   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
-			   canvas.style.objectFit = 'fill';
+		   // Ajustar el tamaño visual del canvas (pantalla)
+		   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
+		   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
+		   canvas.style.objectFit = 'fill';
+		   
+		   // Mostrar el canvas justo antes de renderizar para evitar parpadeos
+		   canvas.style.display = 'block';
 
-			   const renderContext = {
-				   canvasContext: ctx,
-				   viewport: scaledViewport
-			   };
-
-			   page.render(renderContext).promise.then(function() {
+		   const renderContext = {
+			   canvasContext: ctx,
+			   viewport: scaledViewport
+		   };			   page.render(renderContext).promise.then(function() {
 				   loading.style.display = 'none';
+				   // Marcar que ya no es la carga inicial después de la primera renderización
+				   isInitialLoad = false;
 				   updatePageCounter();
 				   saveUserState('pdf', { page: currentPage });
 			   }).catch(()=>{}).finally(()=>{
@@ -1265,28 +1259,28 @@ input[type="number"]::-webkit-outer-spin-button {
 		let isPaging = false;
 		document.getElementById('next-page').onclick = function() {
 			if (isExerciseVisible()) {
-				navigateExercise(+1);
+				navigateExercise(+1, true);
 				return;
 			}
 			if (isPaging || currentPage >= totalPages) return; // no hay cambio
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('right');
-			playButtonSound();
+			playSwipeSound();
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { nextPage(); isPaging = false; updateNavigationArrows(); }, 220);
 		};
 		
 		document.getElementById('prev-page').onclick = function() {
 			if (isExerciseVisible()) {
-				navigateExercise(-1);
+				navigateExercise(-1, true);
 				return;
 			}
 			if (isPaging || currentPage <= 1) return; // no hay cambio
 			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
 			isPaging = true;
 			animatePage('left');
-			playButtonSound();
+			playSwipeSound();
 			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
 			setTimeout(() => { prevPage(); isPaging = false; updateNavigationArrows(); }, 220);
 		};
@@ -1336,49 +1330,38 @@ input[type="number"]::-webkit-outer-spin-button {
 		};
 
 		document.getElementById('show-all-btn').onclick = function() {
-			// Animación de transición elegante de la imagen al PDF
+			// Transición instantánea de la imagen al PDF
 			if (isExerciseVisible()) {
 				playButtonSound();
-				// Fase 1: Desvanecer la imagen con zoom out
-				exerciseImg.style.transition = 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.6s ease';
-				exerciseImg.style.transform = exerciseImg.style.transform.replace('scale(1)', 'scale(0.9)');
-				exerciseImg.style.opacity = '0';
 				
-				setTimeout(() => {
-					// Ocultar imagen y preparar PDF
-					exerciseImg.style.display = 'none';
-					// Calcular página destino según el ejercicio visible/solicitado/guardado
-					let exNum = null;
-					try {
-						if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
-							exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
-						}
-						if (!exNum && currentExerciseTarget) {
-							exNum = parseInt(currentExerciseTarget, 10);
-						}
-						if (!exNum) {
-							exNum = getLastValidExercise();
-						}
-					} catch (e) {}
-					const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
-					// Ya podemos limpiar el objetivo, tras haber calculado targetPage
-					currentExerciseTarget = null;
-					const pdfCanvas = document.getElementById('pdf-canvas');
-					pdfCanvas.style.display = 'block';
-					pdfCanvas.style.opacity = '0';
-					pdfCanvas.style.transform = 'translateX(-50%) scale(1.1)';
-					
-					// Fase 2: Aparecer el PDF con zoom in elegante
-					setTimeout(() => {
-						pdfCanvas.style.transition = 'transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.7s ease';
-						pdfCanvas.style.opacity = '1';
-						pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
-						if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
-							currentPage = targetPage;
-						}
-						renderPage(currentPage);
-					}, 50);
-				}, 600);
+				// Ocultar imagen inmediatamente
+				exerciseImg.style.display = 'none';
+				exerciseImg.style.transition = 'none';
+				
+				// Calcular página destino según el ejercicio visible/solicitado/guardado
+				let exNum = null;
+				try {
+					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
+						exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
+					}
+					if (!exNum && currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					}
+					if (!exNum) {
+						exNum = getLastValidExercise();
+					}
+				} catch (e) {}
+				const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
+				// Mostrar PDF inmediatamente sin transiciones elaboradas
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.opacity = '1';
+				pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
+				pdfCanvas.style.transition = 'none';
+				if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
+					currentPage = targetPage;
+				}
+				renderPage(currentPage);
 			} else {
 				// Si no hay imagen, ya estamos en PDF: calcular si hay un destino mapeado reciente
 				const pdfCanvas = document.getElementById('pdf-canvas');
@@ -1579,17 +1562,17 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (e.key === 'ArrowRight' || e.key === ' ') {
 				e.preventDefault();
 				if (isExerciseVisible()) {
-					navigateExercise(+1); updateNavigationArrows();
+					navigateExercise(+1, true); updateNavigationArrows();
 				} else {
-					playButtonSound();
+					playSwipeSound();
 					nextPage(); updateNavigationArrows();
 				}
 			} else if (e.key === 'ArrowLeft') {
 				e.preventDefault();
 				if (isExerciseVisible()) {
-					navigateExercise(-1); updateNavigationArrows();
+					navigateExercise(-1, true); updateNavigationArrows();
 				} else {
-					playButtonSound();
+					playSwipeSound();
 					prevPage(); updateNavigationArrows();
 				}
 			}
@@ -1944,17 +1927,43 @@ input[type="number"]::-webkit-outer-spin-button {
 		document.addEventListener('mousemove', showControls);
 		document.addEventListener('touchstart', showControls);
 		
-		// Cargar PDF
+		// Cargar PDF y restaurar estado previo
 		pdfjsLib.getDocument(urlDefault).promise.then(function(pdfDoc_) {
 			pdfDoc = pdfDoc_;
 			totalPages = pdfDoc.numPages;
 			
-			// Renderizar primera página
-			renderPage(currentPage);
-			showControls();
+			// Verificar estado guardado ANTES de renderizar
+			const savedState = getUserState();
+			let shouldRenderPDF = true;
+			
+			if (savedState) {
+				if (savedState.type === 'exercise') {
+					// Si había un ejercicio, no renderizar PDF y mostrar ejercicio directamente
+					shouldRenderPDF = false;
+					const exerciseNum = savedState.data.exerciseNumber;
+					document.getElementById('exercise-input').value = exerciseNum;
+					// Ocultar PDF completamente
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					pdfCanvas.style.display = 'none';
+					// Mostrar ejercicio inmediatamente
+					showImageByNumber(exerciseNum, { suppressError: true });
+					showControls();
+					return; // No continuar con renderización de PDF
+				} else if (savedState.type === 'pdf') {
+					currentPage = savedState.data.page || 1;
+				}
+			}
+			
+			// Solo renderizar PDF si es necesario
+			if (shouldRenderPDF) {
+				renderPage(currentPage);
+				showControls();
+			}
 		}).catch(function(error) {
 			console.error('Error cargando PDF:', error);
-			document.getElementById('loading').textContent = 'Error: No se pudo cargar el PDF';
+			const loading = document.getElementById('loading');
+			loading.style.display = 'block';
+			loading.textContent = 'Error: No se pudo cargar el PDF';
 		});
 		
 		// Redimensionar al cambiar tamaño de ventana

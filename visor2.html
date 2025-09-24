@@ -1123,12 +1123,15 @@ input[type="number"]::-webkit-outer-spin-button {
 		};
 
 		// Ir a página específica
-		function renderPageStable(targetPage){
-			// Si teclado abierto, diferimos (ya existe mecanismo global pendingKeyboardCloseRender)
-			if (keyboardOpen) {
+		function renderPageStable(targetPage, forceWhileKeyboard = false){
+			if (keyboardOpen && !forceWhileKeyboard) {
 				pendingKeyboardCloseRender = true;
 				currentPage = targetPage;
 				return;
+			}
+			// Si forzamos durante teclado, anulamos el pending previo (estaba esperando cierre)
+			if (forceWhileKeyboard) {
+				pendingKeyboardCloseRender = false;
 			}
 			currentPage = targetPage;
 			renderPage(currentPage);
@@ -1166,7 +1169,28 @@ input[type="number"]::-webkit-outer-spin-button {
 		document.getElementById('page-input').addEventListener('keypress', function(e) {
 			if (e.key === 'Enter') {
 				e.preventDefault();
-				document.getElementById('goto-page-btn').click();
+				const input = this;
+				let n = parseInt(input.value, 10);
+				if (!Number.isFinite(n)) return;
+				if (n < 1) n = 1;
+				if (totalPages && n > totalPages) n = totalPages;
+				if (n === currentPage) return;
+				// Cancelar animación si existiera
+				if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch(e) {} }
+				// Si hay imagen visible, primero ocultarla (similar al botón Ir)
+				const exEl = document.getElementById('exercise-img');
+				const wasExerciseVisible = exEl && exEl.style.display !== 'none';
+				playButtonSound();
+				if (wasExerciseVisible) {
+					exEl.style.transition = 'opacity 0.25s ease';
+					exEl.style.opacity = '0';
+					setTimeout(() => {
+						exEl.style.display = 'none';
+						renderPageStable(n, true); // forzar aunque teclado siga abierto
+					}, 250);
+				} else {
+					renderPageStable(n, true);
+				}
 			}
 		});
 

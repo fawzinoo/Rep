@@ -852,17 +852,10 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		function applyZoomToElement() {
 			const canvas = document.getElementById('pdf-canvas');
-			const exerciseImg = document.getElementById('exercise-img');
 			
-			if (isExerciseVisible() && exerciseImg) {
-				// Aplicar zoom a imagen de ejercicio
-				exerciseImg.classList.add('zooming');
-				const transform = `translate(-50%, -50%) scale(${currentZoom}) translate(${zoomOriginX}px, ${zoomOriginY}px)`;
-				exerciseImg.style.transform = transform;
-				// Remover clase después de un breve delay para reactivar transiciones
-				setTimeout(() => exerciseImg.classList.remove('zooming'), 50);
-			} else if (canvas && canvas.style.display !== 'none') {
-				// Aplicar zoom a canvas PDF
+			// SOLO aplicar zoom al PDF, NUNCA a las imágenes de ejercicios
+			if (!isExerciseVisible() && canvas && canvas.style.display !== 'none') {
+				// Aplicar zoom a canvas PDF únicamente
 				canvas.classList.add('zooming');
 				const transform = `translateX(-50%) scale(${currentZoom}) translate(${zoomOriginX}px, ${zoomOriginY}px)`;
 				canvas.style.transform = transform;
@@ -1118,8 +1111,10 @@ input[type="number"]::-webkit-outer-spin-button {
 				const pdfCanvas = document.getElementById('pdf-canvas');
 				const exerciseImgEl = document.getElementById('exercise-img');
 				
-				// Resetear zoom al cambiar a ejercicio
-				resetZoom();
+				// Resetear zoom SOLO cuando se viene del PDF (para que imagen esté a tamaño normal)
+				if (!isExerciseVisible()) {
+					resetZoom();
+				}
 				
 				// Cambio instantáneo
 				if (pdfCanvas) {
@@ -1154,8 +1149,10 @@ input[type="number"]::-webkit-outer-spin-button {
 			const pdfCanvas = document.getElementById('pdf-canvas');
 			const exerciseImgEl = document.getElementById('exercise-img');
 
-			// Resetear zoom al cambiar a ejercicio
-			resetZoom();
+			// Resetear zoom SOLO cuando se viene del PDF (para que imagen esté a tamaño normal)
+			if (!isExerciseVisible()) {
+				resetZoom();
+			}
 
 			// Transición INSTANTÁNEA: ocultar PDF y mostrar ejercicio directamente
 			if (pdfCanvas) {
@@ -1548,8 +1545,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (isExerciseVisible()) {
 				playButtonSound();
 				
-				// Resetear zoom al cambiar a PDF
-				resetZoom();
+				// NO resetear zoom al cambiar a PDF (mantener el zoom existente)
+				// resetZoom(); // COMENTADO
 				
 				// Ocultar imagen inmediatamente
 				exerciseImg.style.display = 'none';
@@ -1583,8 +1580,8 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Si no hay imagen, ya estamos en PDF: calcular si hay un destino mapeado reciente
 				const pdfCanvas = document.getElementById('pdf-canvas');
 				pdfCanvas.style.display = 'block';
-				// Resetear zoom al cambiar vista
-				resetZoom();
+				// NO resetear zoom al cambiar vista (mantener zoom)
+				// resetZoom(); // COMENTADO
 				let exNum = null;
 				try {
 					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
@@ -2061,8 +2058,15 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Detectar inicio del gesto táctil
 		document.addEventListener('touchstart', function(e) {
-			// Detectar zoom con dos dedos
+			// NO permitir zoom con dos dedos en ejercicios (solo en PDF)
 			if (e.touches.length === 2) {
+				// Si está viendo un ejercicio, bloquear el zoom
+				if (isExerciseVisible()) {
+					e.preventDefault();
+					return;
+				}
+				
+				// Solo permitir zoom en páginas PDF
 				e.preventDefault();
 				isPinchZooming = true;
 				isSwipeGesture = false;
@@ -2079,10 +2083,10 @@ input[type="number"]::-webkit-outer-spin-button {
 				return;
 			}
 
-			// Detectar doble tap para reset de zoom
+			// Detectar doble tap para reset de zoom (solo en PDF)
 			if (e.touches.length === 1) {
 				const currentTime = Date.now();
-				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0) {
+				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0 && !isExerciseVisible()) {
 					e.preventDefault();
 					resetZoom();
 					return;
@@ -2129,8 +2133,8 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Procesar el movimiento táctil
 		document.addEventListener('touchmove', function(e) {
-			// Manejar zoom con dos dedos
-			if (isPinchZooming && e.touches.length === 2) {
+			// Manejar zoom con dos dedos (SOLO en PDF, NO en ejercicios)
+			if (isPinchZooming && e.touches.length === 2 && !isExerciseVisible()) {
 				e.preventDefault();
 				const currentDistance = getTouchDistance(e.touches);
 				const center = getTouchCenter(e.touches);
@@ -2152,8 +2156,8 @@ input[type="number"]::-webkit-outer-spin-button {
 				return;
 			}
 
-			// Manejar paneo con zoom activo
-			if (currentZoom > 1.1 && e.touches.length === 1) {
+			// Manejar paneo con zoom activo (SOLO en PDF)
+			if (currentZoom > 1.1 && e.touches.length === 1 && !isExerciseVisible()) {
 				e.preventDefault();
 				const touch = e.touches[0];
 				const deltaX = (touch.clientX - touchStartX) / currentZoom;

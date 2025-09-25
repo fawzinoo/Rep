@@ -22,7 +22,7 @@
 			padding: 0;
 			overflow: hidden;
 			position: relative;
-			touch-action: none;
+			touch-action: pan-x pan-y pinch-zoom; /* Permitir zoom y paneo */
 			user-select: none;
 		}
 		
@@ -86,6 +86,26 @@
 		
 		.left-arrow { left: 10px; }
 		.right-arrow { right: 10px; }
+
+		/* Solo PC (>=769px): permitir paneo y que el canvas se centre por margen cuando quepa */
+		@media (min-width: 769px) {
+			.pdf-viewer-container {
+				display: block;
+				align-items: initial;
+				justify-content: initial;
+				overflow: auto;
+				perspective: none;
+			}
+			#pdf-canvas {
+				position: relative;
+				left: 0 !important;
+				transform: none !important;
+				margin: 0 auto;
+				width: auto !important; /* tamaño lo define JS */
+				max-width: none;
+				object-fit: contain;
+			}
+		}
 		
 		.page-counter {
 			position: absolute;
@@ -190,6 +210,7 @@
 			left: 50%;
 			transform: translateX(-50%);
 			transition: opacity 70ms ease-out;
+			touch-action: pan-x pan-y pinch-zoom; /* Permitir zoom y paneo */
 		}
 
 		/* Imagen del ejercicio: cubrir completamente la ventana sin barras negras */
@@ -205,6 +226,7 @@
 			z-index: 2400;
 			opacity: 0;
 			background: transparent;
+			touch-action: pan-x pan-y pinch-zoom; /* Permitir zoom y paneo */
 		}
 		
 		.loading {
@@ -287,6 +309,23 @@
 		.swipe-indicator.left { left: 3px; }
 		.swipe-indicator.right { right: 3px; }
 		.swipe-indicator.active { opacity: 0.8; }
+
+		/* Desktop: acercar la cinta al botón y compactar espacios */
+		@media (min-width: 769px) {
+			.top-menu-wrapper {
+				left: 56px;            /* despeja el ancho del botón + pequeño margen */
+				right: auto;            /* no ocupar todo el ancho */
+				width: auto;            /* que se ajuste al contenido */
+				padding: 8px 12px;      /* menos padding externo */
+			}
+			.top-menu {
+				width: max-content;     /* no expandir a 940px ni centrado */
+				margin: 0;              /* sin centrar */
+				justify-content: flex-start; /* alineado a la izquierda */
+				gap: 8px;               /* espacios internos más compactos */
+				padding: 8px 10px;      /* menos padding lateral */
+			}
+		}
 
 		/* Inputs: el contenedor se convierte en la “caja” blanca */
 .input-with-icon {
@@ -557,6 +596,60 @@ input[type="number"]::-webkit-outer-spin-button {
 				opacity: 1;
 			}
 		}
+
+		/* Transiciones suaves para zoom */
+		#pdf-canvas, #exercise-img {
+			will-change: transform;
+			transition: transform 0.1s ease-out;
+		}
+		
+		/* Desactivar transición durante gestos activos */
+		#pdf-canvas.zooming, #exercise-img.zooming {
+			transition: none;
+		}
+
+		/* Overrides FINALES solo escritorio: cinta pegada al botón y espacios compactos */
+		@media (min-width: 769px) {
+			.top-menu-wrapper {
+				left: -15px !important;           /* más a la izquierda para que se meta detrás del botón */
+				right: auto;
+				width: auto;
+				padding: 6px 8px;     /* menos padding externo */
+				padding-left: 0px;    /* sin hueco visual entre botón y cinta */
+			}
+			.top-menu {
+				width: max-content;    /* que no se expanda */
+				margin: 0;             /* no centrar */
+				justify-content: flex-start;
+				gap: 8px;              /* más espacio entre controles en PC */
+				padding: 8px 12px;     /* más padding interno para mejor apariencia */
+			}
+			
+			/* PC: Hacer los controles más anchos y espaciosos */
+			.control-input {
+				width: clamp(80px, 20vw, 120px); /* mucho más ancho en PC */
+				min-width: 90px; /* ancho mínimo garantizado */
+				height: clamp(32px, 5vh, 42px); /* también más alto */
+				font-size: clamp(14px, 4vw, 16px); /* texto más grande */
+			}
+			
+			.input-with-icon {
+				padding: 2px 4px; /* más espacio en el contenedor */
+			}
+			
+			.round-icon-btn {
+				width: clamp(42px, 10vw, 48px); /* botones más grandes */
+				height: clamp(42px, 10vw, 48px);
+				font-size: clamp(20px, 5vw, 24px);
+			}
+			/* PC: el grupo de ejercicio se “mete” ligeramente bajo el botón → espacio oculto, no visible */
+			.top-menu > .prefix-e { margin-left: 50px; }
+			/* PC: mantener un pequeño hueco visible entre E y el resto (muy compacto) */
+			.top-menu .prefix-e { margin-right: 8px; }
+
+			/* Etiquetas opcionalmente más cerca si están visibles en desktop */
+			.label-chip { margin: 0 2px; }
+		}
 	</style>
 </head>
 <body>
@@ -673,9 +766,17 @@ input[type="number"]::-webkit-outer-spin-button {
 		let pdfDoc = null;
 		let currentPage = 1;
 		let totalPages = 0;
-		let zoomLevel = 1.0; // Empezar con zoom 1.0 para pantalla completa
+		let zoomLevel = (window.innerWidth <= 768) ? 1.0 : 2.4; // En PC: más zoom para permitir paneo
 		let canvas = null;
 		let ctx = null;
+		// Variables para zoom con gestos
+		let currentZoom = 1.0;
+		let zoomOriginX = 0;
+		let zoomOriginY = 0;
+		let isPinchZooming = false;
+		let lastPinchDistance = 0;
+		const MIN_ZOOM = 0.5;
+		const MAX_ZOOM = 4.0;
 		// Estado para teclado móvil y tamaño de viewport estable
 		let keyboardOpen = false;
 		let stableViewport = { width: window.innerWidth, height: window.innerHeight };
@@ -720,6 +821,54 @@ input[type="number"]::-webkit-outer-spin-button {
 			const el = document.getElementById('exercise-img');
 			if (!el) return false;
 			return window.getComputedStyle(el).display !== 'none';
+		}
+
+		// Funciones auxiliares para zoom con gestos
+		function getTouchDistance(touches) {
+			if (touches.length < 2) return 0;
+			const touch1 = touches[0];
+			const touch2 = touches[1];
+			const dx = touch1.clientX - touch2.clientX;
+			const dy = touch1.clientY - touch2.clientY;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+
+		function getTouchCenter(touches) {
+			if (touches.length < 2) return { x: 0, y: 0 };
+			const touch1 = touches[0];
+			const touch2 = touches[1];
+			return {
+				x: (touch1.clientX + touch2.clientX) / 2,
+				y: (touch1.clientY + touch2.clientY) / 2
+			};
+		}
+
+		function resetZoom() {
+			currentZoom = 1.0;
+			zoomOriginX = 0;
+			zoomOriginY = 0;
+			applyZoomToElement();
+		}
+
+		function applyZoomToElement() {
+			const canvas = document.getElementById('pdf-canvas');
+			const exerciseImg = document.getElementById('exercise-img');
+			
+			if (isExerciseVisible() && exerciseImg) {
+				// Aplicar zoom a imagen de ejercicio
+				exerciseImg.classList.add('zooming');
+				const transform = `translate(-50%, -50%) scale(${currentZoom}) translate(${zoomOriginX}px, ${zoomOriginY}px)`;
+				exerciseImg.style.transform = transform;
+				// Remover clase después de un breve delay para reactivar transiciones
+				setTimeout(() => exerciseImg.classList.remove('zooming'), 50);
+			} else if (canvas && canvas.style.display !== 'none') {
+				// Aplicar zoom a canvas PDF
+				canvas.classList.add('zooming');
+				const transform = `translateX(-50%) scale(${currentZoom}) translate(${zoomOriginX}px, ${zoomOriginY}px)`;
+				canvas.style.transform = transform;
+				// Remover clase después de un breve delay para reactivar transiciones
+				setTimeout(() => canvas.classList.remove('zooming'), 50);
+			}
 		}
 
 		// Funciones para gestionar historial con localStorage
@@ -831,8 +980,12 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 
 		// Permitir modificar el ancho y el alto visual de la página PDF
-		const widthFactor = 1.0; // Cambia este valor para hacer la página más ancha (>1) o más estrecha (<1)
-		const heightFactor = 0.8; // Ligeramente más alto que el original
+		const widthFactor = 1.0; // Ajuste neutral en ancho (móvil)
+		const heightFactorMobile = 0.8; // Móvil como antes
+		const heightFactorDesktop = 1.0; // Escritorio sin reducción
+		const widthFactorDesktop = 0.9; // PC: reducir un poco más el ancho efectivo
+		const DISPLAY_SCALE_DESKTOP = 0.92; // PC: estrechar visualmente sin afectar calidad
+		const DESKTOP_TOP_OFFSET = 40; // PC: reducir espacio visual superior desplazando un poco el scroll
 
 		function renderPage(pageNum) {
 		   if (STABLE_MODE) {
@@ -864,12 +1017,18 @@ input[type="number"]::-webkit-outer-spin-button {
 			   const containerHeight = keyboardOpen ? stableViewport.height : window.innerHeight;
 			   const dpr = window.devicePixelRatio || 1;
 
-			   // Calcular el scale para que ocupe toda la pantalla
+			   // Calcular escala: móvil como antes (alto × 1.25), PC ajusta a una sola página visible
 			   const viewport = page.getViewport({ scale: 1 });
-			   const scaleX = (containerWidth / viewport.width) * widthFactor;
-			   const scaleY = containerHeight / viewport.height;
-			   // Priorizar el alto y aumentar un 25% para que la página se vea aún más alta
-			   const scale = scaleY * 1.25 * dpr * zoomLevel;
+			   let scale;
+			   if (window.innerWidth <= 768) {
+			   	const scaleY = containerHeight / viewport.height;
+			   	scale = scaleY * 1.25 * dpr * zoomLevel; // Móvil: sin cambios
+			   } else {
+			   	const scaleX = (containerWidth / viewport.width) * widthFactorDesktop;
+			   	const scaleY = (containerHeight / viewport.height) * heightFactorDesktop;
+			   	const baseScale = Math.min(scaleX, scaleY); // PC: aseguramos 1 página completa
+			   	scale = baseScale * dpr * zoomLevel;
+			   }
 
 			   // Viewport escalado para alta resolución
 			   const scaledViewport = page.getViewport({ scale: scale });
@@ -879,9 +1038,15 @@ input[type="number"]::-webkit-outer-spin-button {
 		   canvas.height = scaledViewport.height;
 
 		   // Ajustar el tamaño visual del canvas (pantalla)
-		   canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
-		   canvas.style.height = ((scaledViewport.height / dpr) * heightFactor) + 'px';
-		   canvas.style.objectFit = 'fill';
+		   if (window.innerWidth <= 768) {
+		   	canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
+		   	canvas.style.height = ((scaledViewport.height / dpr) * heightFactorMobile) + 'px';
+		   	canvas.style.objectFit = 'fill'; // Móvil: tal cual estaba
+		   } else {
+		   	canvas.style.width = ((scaledViewport.width / dpr) * DISPLAY_SCALE_DESKTOP) + 'px';
+		   	canvas.style.height = ((scaledViewport.height / dpr) * DISPLAY_SCALE_DESKTOP) + 'px';
+		   	canvas.style.objectFit = 'contain'; // PC: página completa, sin deformar
+		   }
 		   
 		   // Asegurar que el canvas está en el flujo (ya no usamos display:none), mantenemos opacity para fade
 		   if (canvas.style.display === 'none') canvas.style.display = 'block';
@@ -899,6 +1064,13 @@ input[type="number"]::-webkit-outer-spin-button {
 				   canvas.style.opacity = '1';
 			   }
 			   isInitialLoad = false;
+			   // En escritorio, anclar scroll del contenedor a la esquina superior izquierda para paneo inicial
+			   try {
+			   	if (window.innerWidth > 768) {
+			   		const cont = document.querySelector('.pdf-viewer-container');
+			   		if (cont) { cont.scrollLeft = 0; cont.scrollTop = DESKTOP_TOP_OFFSET; }
+			   	}
+			   } catch (e) {}
 				   updatePageCounter();
 				   saveUserState('pdf', { page: currentPage });
 			   }).catch(()=>{}).finally(()=>{
@@ -946,6 +1118,9 @@ input[type="number"]::-webkit-outer-spin-button {
 				const pdfCanvas = document.getElementById('pdf-canvas');
 				const exerciseImgEl = document.getElementById('exercise-img');
 				
+				// Resetear zoom al cambiar a ejercicio
+				resetZoom();
+				
 				// Cambio instantáneo
 				if (pdfCanvas) {
 					pdfCanvas.style.display='none';
@@ -978,6 +1153,9 @@ input[type="number"]::-webkit-outer-spin-button {
 
 			const pdfCanvas = document.getElementById('pdf-canvas');
 			const exerciseImgEl = document.getElementById('exercise-img');
+
+			// Resetear zoom al cambiar a ejercicio
+			resetZoom();
 
 			// Transición INSTANTÁNEA: ocultar PDF y mostrar ejercicio directamente
 			if (pdfCanvas) {
@@ -1370,6 +1548,9 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (isExerciseVisible()) {
 				playButtonSound();
 				
+				// Resetear zoom al cambiar a PDF
+				resetZoom();
+				
 				// Ocultar imagen inmediatamente
 				exerciseImg.style.display = 'none';
 				exerciseImg.style.transition = 'none';
@@ -1402,6 +1583,8 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Si no hay imagen, ya estamos en PDF: calcular si hay un destino mapeado reciente
 				const pdfCanvas = document.getElementById('pdf-canvas');
 				pdfCanvas.style.display = 'block';
+				// Resetear zoom al cambiar vista
+				resetZoom();
 				let exNum = null;
 				try {
 					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
@@ -1637,11 +1820,27 @@ input[type="number"]::-webkit-outer-spin-button {
 				img.style.left = '50%';
 				img.style.transform = 'translateX(-50%)';
 			} else {
-				// Desktop: ajustar al ancho de la ventana, y limitar altura al availableHeight
-				img.style.width = '100vw';
-				img.style.height = 'auto';
+				// Desktop: detectar si la imagen tiene poco ancho (aspect ratio estrecho) para agrandarla
+				let targetWidth = '100vw';
+				
 				if (img.naturalHeight && img.naturalWidth) {
-					const renderedHeight = (window.innerWidth * img.naturalHeight) / img.naturalWidth;
+					const aspectRatio = img.naturalWidth / img.naturalHeight;
+					// Si la imagen es estrecha (ratio < 1.3), usar más ancho
+					// Esto incluye fotos verticales (ratio < 1) y cuadradas/casi cuadradas
+					if (aspectRatio < 1.3) {
+						targetWidth = '140vw'; // 40% más ancho para imágenes estrechas
+					} else if (aspectRatio < 1.8) {
+						targetWidth = '120vw'; // 20% más ancho para imágenes moderadamente estrechas
+					}
+					// Para imágenes muy anchas (ratio >= 1.8), mantener 100vw
+				}
+				
+				img.style.width = targetWidth;
+				img.style.height = 'auto';
+				
+				if (img.naturalHeight && img.naturalWidth) {
+					const multiplier = parseFloat(targetWidth) / 100; // 1.0, 1.2, o 1.4
+					const renderedHeight = (window.innerWidth * multiplier * img.naturalHeight) / img.naturalWidth;
 					if (renderedHeight > availableHeight) {
 						// si la altura resultante excede el espacio, bajar el scale
 						img.style.height = availableHeight + 'px';
@@ -1691,6 +1890,28 @@ input[type="number"]::-webkit-outer-spin-button {
 				} catch (e) {}
 			}
 
+			// Posicionar la cinta pegada al botón en escritorio
+			function updateWrapperLeftDesktop(){
+				try {
+					if (window.innerWidth <= 768) {
+						// En móvil, restablecer para que gobierne el CSS
+						wrapper.style.left = '';
+						wrapper.style.right = '';
+						wrapper.style.width = '';
+						wrapper.style.paddingLeft = '';
+						return;
+					}
+					const rect = toggleBtn.getBoundingClientRect();
+					// Posicionar la cinta para que su parte izquierda quede detrás del botón
+					const HIDDEN_SPACE = 25; // px que quedan ocultos detrás del botón
+					const left = Math.max(0, Math.round(rect.left - HIDDEN_SPACE));
+					wrapper.style.left = left + 'px';
+					wrapper.style.right = 'auto';
+					wrapper.style.width = 'auto';
+					wrapper.style.paddingLeft = (HIDDEN_SPACE + 10) + 'px'; // espacio para que el contenido no se tape
+				} catch(e) {}
+			}
+
 			function setOpen(open){
 				if (open) {
 					body.classList.add('menu-open');
@@ -1720,6 +1941,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				}
 				setOpen(!isOpen);
 				updateToggleBtnSize();
+				updateWrapperLeftDesktop();
 			});
 
 			// Cerrar al hacer clic fuera cuando está abierto
@@ -1762,10 +1984,11 @@ input[type="number"]::-webkit-outer-spin-button {
 			wrapper.addEventListener('click', scheduleInactivity);
 
 			// Sincronizar en carga y resize
-			window.addEventListener('load', updateToggleBtnSize);
-			window.addEventListener('resize', updateToggleBtnSize);
+			window.addEventListener('load', () => { updateToggleBtnSize(); updateWrapperLeftDesktop(); });
+			window.addEventListener('resize', () => { updateToggleBtnSize(); updateWrapperLeftDesktop(); });
 			// Llamada inicial
 			updateToggleBtnSize();
+			updateWrapperLeftDesktop();
 
 			// Funciones globales para interactuar con el menú desde otros componentes
 			try {
@@ -1811,9 +2034,11 @@ input[type="number"]::-webkit-outer-spin-button {
 			}
 		}
 
-		// Bloquear scroll (excepto durante gestos de swipe)
+		// Bloquear scroll global solo en móviles (permite paneo con rueda/trackpad en PC)
 		document.addEventListener('wheel', function(e) {
-			e.preventDefault();
+			if (window.innerWidth <= 768) {
+				e.preventDefault();
+			}
 		}, { passive: false });
 		
 		document.addEventListener('touchmove', function(e) {
@@ -1822,12 +2047,13 @@ input[type="number"]::-webkit-outer-spin-button {
 			e.preventDefault();
 		}, { passive: false });
 
-		// Gestión de gestos táctiles para navegación en móvil
+		// Gestión de gestos táctiles para navegación y zoom en móvil
 		let touchStartX = 0;
 		let touchStartY = 0;
 		let touchStartTime = 0;
 		let isSwipeGesture = false;
 		let activeIndicator = null;
+		let lastTapTime = 0;
 		const SWIPE_THRESHOLD = 20; // ULTRA SENSIBLE: mínima distancia para considerar swipe
 		const SWIPE_VELOCITY_THRESHOLD = 0.1; // ULTRA SENSIBLE: mínima velocidad
 		const EDGE_ZONE_WIDTH = 100; // MÁXIMA ZONA: ancho de zona lateral para iniciar swipe (px)
@@ -1835,12 +2061,49 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Detectar inicio del gesto táctil
 		document.addEventListener('touchstart', function(e) {
-			if (e.touches.length !== 1) return; // solo gestos de un dedo
+			// Detectar zoom con dos dedos
+			if (e.touches.length === 2) {
+				e.preventDefault();
+				isPinchZooming = true;
+				isSwipeGesture = false;
+				lastPinchDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+				zoomOriginX = center.x - window.innerWidth / 2;
+				zoomOriginY = center.y - window.innerHeight / 2;
+				
+				// Ocultar indicadores si estaban activos
+				if (activeIndicator) {
+					activeIndicator.classList.remove('active');
+					activeIndicator = null;
+				}
+				return;
+			}
+
+			// Detectar doble tap para reset de zoom
+			if (e.touches.length === 1) {
+				const currentTime = Date.now();
+				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0) {
+					e.preventDefault();
+					resetZoom();
+					return;
+				}
+				lastTapTime = currentTime;
+			}
+
+			if (e.touches.length !== 1 || isPinchZooming) return; // solo gestos de un dedo para swipe
 			
 			const touch = e.touches[0];
 			const screenWidth = window.innerWidth;
 			
-			// Solo permitir inicio desde las zonas laterales
+			// Solo permitir inicio desde las zonas laterales si no hay zoom activo
+			if (currentZoom > 1.1) {
+				// Con zoom activo, permitir paneo desde cualquier parte
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+				touchStartTime = Date.now();
+				return;
+			}
+			
 			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
 			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
 			
@@ -1862,10 +2125,50 @@ input[type="number"]::-webkit-outer-spin-button {
 				rightIndicator.classList.add('active');
 				activeIndicator = rightIndicator;
 			}
-		}, { passive: true });
+		}, { passive: false });
 
 		// Procesar el movimiento táctil
 		document.addEventListener('touchmove', function(e) {
+			// Manejar zoom con dos dedos
+			if (isPinchZooming && e.touches.length === 2) {
+				e.preventDefault();
+				const currentDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+				
+				if (lastPinchDistance > 0) {
+					const zoomDelta = currentDistance / lastPinchDistance;
+					const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * zoomDelta));
+					
+					if (newZoom !== currentZoom) {
+						currentZoom = newZoom;
+						// Actualizar origen basado en el centro del gesto
+						zoomOriginX = center.x - window.innerWidth / 2;
+						zoomOriginY = center.y - window.innerHeight / 2;
+						applyZoomToElement();
+					}
+				}
+				
+				lastPinchDistance = currentDistance;
+				return;
+			}
+
+			// Manejar paneo con zoom activo
+			if (currentZoom > 1.1 && e.touches.length === 1) {
+				e.preventDefault();
+				const touch = e.touches[0];
+				const deltaX = (touch.clientX - touchStartX) / currentZoom;
+				const deltaY = (touch.clientY - touchStartY) / currentZoom;
+				
+				zoomOriginX += deltaX;
+				zoomOriginY += deltaY;
+				
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+				
+				applyZoomToElement();
+				return;
+			}
+
 			if (!isSwipeGesture || e.touches.length !== 1) return;
 			
 			const touch = e.touches[0];
@@ -1888,6 +2191,13 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Finalizar el gesto y ejecutar navegación
 		document.addEventListener('touchend', function(e) {
+			// Finalizar zoom con dos dedos
+			if (isPinchZooming) {
+				isPinchZooming = false;
+				lastPinchDistance = 0;
+				return;
+			}
+
 			// Limpiar indicador visual
 			if (activeIndicator) {
 				activeIndicator.classList.remove('active');

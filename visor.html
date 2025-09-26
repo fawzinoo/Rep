@@ -2076,19 +2076,21 @@ input[type="number"]::-webkit-outer-spin-button {
 			if (progressEl) progressEl.textContent = 'Finalizando descarga...';
 			await new Promise(resolve => setTimeout(resolve, 300));
 			
-			// Solución de descarga compatible para móviles y PC
+			// Usar el MISMO protocolo que funciona para páginas individuales
 			const pdfBlob = pdf.output('blob');
 			const fileName = 'Unidad1_A1_Cuaderno_Completo.pdf';
 			
-			// Detectar si es móvil
-			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+			// Detectar si es móvil con mejor precisión
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+			              ('ontouchstart' in window) || 
+			              (navigator.maxTouchPoints > 0);
 			
 			// Detectar Samsung Internet Browser específicamente
 			const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent);
 			
 			if (isMobile) {
 				if (isSamsungBrowser) {
-					// Para Samsung Internet: usar data URL directo para archivos grandes
+					// Para Samsung Internet: usar data URL directo (MISMO que páginas individuales)
 					try {
 						const pdfDataUri = pdf.output('datauristring');
 						const downloadLink = document.createElement('a');
@@ -2098,23 +2100,23 @@ input[type="number"]::-webkit-outer-spin-button {
 						
 						document.body.appendChild(downloadLink);
 						
-						// Samsung Browser necesita más tiempo para archivos grandes
+						// Samsung Browser necesita interacción directa (MISMO protocolo)
 						setTimeout(() => {
 							downloadLink.click();
 							setTimeout(() => {
 								if (document.body.contains(downloadLink)) {
 									document.body.removeChild(downloadLink);
 								}
-							}, 5000); // Más tiempo para archivos grandes
-						}, 1000);
+							}, 3000); // MISMO timeout que páginas individuales
+						}, 500); // MISMO timeout inicial que páginas individuales
 						
 					} catch (e) {
-						// Si falla data URI, usar método tradicional
+						// Si falla, usar método tradicional de Samsung
 						pdf.save(fileName);
 					}
 					
 				} else {
-					// Para otros móviles: usar blob URL
+					// Para otros móviles: usar blob URL (MISMO que páginas individuales)
 					const blobUrl = URL.createObjectURL(pdfBlob);
 					const downloadLink = document.createElement('a');
 					downloadLink.href = blobUrl;
@@ -2124,28 +2126,22 @@ input[type="number"]::-webkit-outer-spin-button {
 					// Agregar al DOM, hacer clic y remover
 					document.body.appendChild(downloadLink);
 					
-					// Forzar descarga en móviles con mejor compatibilidad
+					// En móviles, usar EXACTAMENTE el mismo protocolo que páginas individuales
 					setTimeout(() => {
-						// Múltiples intentos para mayor compatibilidad
-						try {
-							downloadLink.click();
-						} catch (e) {
-							// Respaldo: abrir en nueva ventana si el click falla
-							window.open(blobUrl, '_blank');
-						}
+						downloadLink.click();
 						
-						// Limpiar después de un tiempo para asegurar que la descarga inicie
+						// Limpiar después de más tiempo para móviles (MISMO que páginas individuales)
 						setTimeout(() => {
 							if (document.body.contains(downloadLink)) {
 								document.body.removeChild(downloadLink);
 							}
 							URL.revokeObjectURL(blobUrl);
-						}, 2000);
-					}, 300);
+						}, 2000); // MISMO timeout que páginas individuales
+					}, 300); // MISMO timeout inicial que páginas individuales
 				}
 				
 			} else {
-				// Para PC: usar método tradicional
+				// Para PC: usar método tradicional (MISMO que páginas individuales)
 				pdf.save(fileName);
 			}
 			

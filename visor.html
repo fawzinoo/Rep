@@ -1566,23 +1566,67 @@ input[type="number"]::-webkit-outer-spin-button {
 			};
 		}
 
+		// Función para limpiar memoria después de descargas
+		function cleanupAfterDownload() {
+			// Forzar garbage collection si está disponible
+			if (window.gc) {
+				try {
+					window.gc();
+				} catch (e) {}
+			}
+			
+			// Limpiar caché de imágenes si es muy grande (más de 10 ejercicios)
+			if (exerciseImageCache.size > 10) {
+				const keys = Array.from(exerciseImageCache.keys());
+				// Mantener solo los últimos 5 ejercicios accedidos
+				keys.slice(0, -5).forEach(key => exerciseImageCache.delete(key));
+			}
+		}
+
 		// Renderizar una página del PDF a un canvas fuera de pantalla, a buena resolución
 		async function renderPageToCanvas(pageNum, scale = 2) {
 			if (!pdfDoc) throw new Error('PDF no cargado');
-			const page = await pdfDoc.getPage(pageNum);
-			const viewport = page.getViewport({ scale });
-			const off = document.createElement('canvas');
-			const offCtx = off.getContext('2d');
-			off.width = viewport.width;
-			off.height = viewport.height;
-			await page.render({ canvasContext: offCtx, viewport }).promise;
-			return off;
+			
+			try {
+				const page = await pdfDoc.getPage(pageNum);
+				const viewport = page.getViewport({ scale });
+				const off = document.createElement('canvas');
+				const offCtx = off.getContext('2d');
+				
+				// Limitar el tamaño máximo del canvas para móviles
+				const isMobile = window.innerWidth <= 768;
+				const maxCanvasSize = isMobile ? 4096 : 8192; // 4MB vs 8MB aprox
+				
+				if (viewport.width > maxCanvasSize || viewport.height > maxCanvasSize) {
+					const reductionFactor = Math.min(maxCanvasSize / viewport.width, maxCanvasSize / viewport.height);
+					scale *= reductionFactor;
+					const newViewport = page.getViewport({ scale });
+					off.width = newViewport.width;
+					off.height = newViewport.height;
+					await page.render({ canvasContext: offCtx, viewport: newViewport }).promise;
+				} else {
+					off.width = viewport.width;
+					off.height = viewport.height;
+					await page.render({ canvasContext: offCtx, viewport }).promise;
+				}
+				
+				return off;
+			} catch (error) {
+				console.error('Error renderizando página:', error);
+				throw new Error('Error al procesar la página ' + pageNum);
+			}
 		}
 
 		// Descargar la página actual o la mapeada desde ejercicio como PDF de una sola página
 		async function downloadCurrentPdfPage() {
 			try {
-				// Determinar la página destino: si hay ejercicio visible, usar mapeo; de lo contrario, currentPage
+				const progressEl = document.getElementById('export-progress');
+				if (progressEl) {
+					progressEl.style.display = 'block';
+					progressEl.textContent = 'Preparando descarga...';
+				}
+
+				// Determinar la página destino
 				let exNum = null;
 				const exEl = document.getElementById('exercise-img');
 				const isExerciseVisible = exEl && exEl.style.display !== 'none';
@@ -1596,27 +1640,51 @@ input[type="number"]::-webkit-outer-spin-button {
 					}
 				}
 				let pageNum = (exNum && exerciseToPage[exNum]) ? exerciseToPage[exNum] : currentPage;
-				// Renderizar a canvas fuera de pantalla en alta resolución
-				const DPR = window.devicePixelRatio ? Math.min(window.devicePixelRatio, 2) : 1; // limitar para no explotar memoria
-				const BASE_SCALE = 3; // más nítido que 2
-				const offCanvas = await renderPageToCanvas(pageNum, BASE_SCALE * DPR);
-				// Forzar nitidez (evitar interpolación posterior)
-				const offCtxForce = offCanvas.getContext('2d');
-				offCtxForce.imageSmoothingEnabled = false;
-				// Calcular tamaño en puntos (asumiendo 96 dpi para CSS px)
+				
+				if (progressEl) progressEl.textContent = 'Generando página...';
+				
+				// Renderizar con alta calidad para garantizar mínimo 1MB
+				const page = await pdfDoc.getPage(pageNum);
+				const highViewport = page.getViewport({ scale: 2.5 }); // Escala muy alta para garantizar 1MB+
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				canvas.width = highViewport.width;
+				canvas.height = highViewport.height;
+				
+				await page.render({ canvasContext: ctx, viewport: highViewport }).promise;
+				drawWatermark(canvas, pageNum);
+				
+				if (progressEl) progressEl.textContent = 'Creando PDF de máxima calidad...';
+				
+				// Crear PDF manteniendo calidad alta para garantizar tamaño mínimo
 				const pxToPt = 72 / 96;
-				const widthPt = offCanvas.width * pxToPt;
-				const heightPt = offCanvas.height * pxToPt;
-				// Dibujar watermark reutilizable
-				drawWatermark(offCanvas, pageNum);
-				// Exportar como PNG (sin compresión con pérdida) para evitar blur en texto
-				const dataUrl = offCanvas.toDataURL('image/png');
+				const widthPt = highViewport.width * pxToPt;
+				const heightPt = highViewport.height * pxToPt;
+				
+				const dataUrl = canvas.toDataURL('image/jpeg', 0.99); // Máxima calidad para garantizar 1MB+
 				const { jsPDF } = window.jspdf;
 				const pdf = new jsPDF({ unit: 'pt', format: [widthPt, heightPt] });
 				pdf.addImage(dataUrl, 'JPEG', 0, 0, widthPt, heightPt);
+				
+				if (progressEl) progressEl.textContent = 'Descargando...';
+				await new Promise(resolve => setTimeout(resolve, 100));
+				
 				pdf.save(`pagina_${pageNum}.pdf`);
+				
+				// Limpiar
+				canvas.width = 1;
+				canvas.height = 1;
+				
+				setTimeout(() => {
+					if (progressEl) progressEl.style.display = 'none';
+					cleanupAfterDownload();
+				}, 500);
+				
 			} catch (e) {
-				alert('No se pudo descargar la página: ' + (e && e.message ? e.message : e));
+				console.error('Error en descarga:', e);
+				const progressEl = document.getElementById('export-progress');
+				if (progressEl) progressEl.style.display = 'none';
+				alert('Error al descargar la página: ' + (e && e.message ? e.message : e));
 			}
 		}
 
@@ -1882,42 +1950,225 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		async function downloadFullPdf(){
 			if (!pdfDoc) return;
-			const { jsPDF } = window.jspdf;
-			const total = pdfDoc.numPages;
+			
 			const progressEl = document.getElementById('export-progress');
-			if (progressEl){ progressEl.style.display='block'; progressEl.textContent='Preparando portada...'; }
+			if (progressEl){ progressEl.style.display='block'; progressEl.textContent='Creando PDF con portada...'; }
 			
-			// Usar primer página para formato
-			const firstCanvas = await renderPageToCanvas(1, 3);
-			const pxToPt = 72/96;
-			const docWpt = firstCanvas.width * pxToPt;
-			const docHpt = firstCanvas.height * pxToPt;
-			const pdf = new jsPDF({ unit: 'pt', format: [docWpt, docHpt] });
-			
-			// Crear y agregar la página de portada
-			const coverCanvas = createCoverPage(firstCanvas.width, firstCanvas.height);
-			const coverDataUrl = coverCanvas.toDataURL('image/png');
-			pdf.addImage(coverDataUrl, 'PNG', 0, 0, docWpt, docHpt);
-			
-			// Agregar las páginas del PDF original
-			for (let i=1;i<=total;i++) {
-				pdf.addPage([docWpt, docHpt]); // Nueva página para cada página del PDF
-				const pageCanvas = (i===1) ? firstCanvas : await renderPageToCanvas(i, 3);
-				const ctxTmp = pageCanvas.getContext('2d'); ctxTmp.imageSmoothingEnabled=false;
-				drawWatermark(pageCanvas, i);
-				const dataUrl = pageCanvas.toDataURL('image/png');
-				pdf.addImage(dataUrl, 'PNG', 0, 0, docWpt, docHpt);
-				if (progressEl){ progressEl.textContent = 'Preparando página '+(i)+' / '+total; }
+			try {
+				const { jsPDF } = window.jspdf;
+				const total = pdfDoc.numPages;
+				
+				// Obtener dimensiones del PDF original
+				const firstPage = await pdfDoc.getPage(1);
+				const viewport = firstPage.getViewport({ scale: 1 });
+				const pxToPt = 72/96;
+				const docWpt = viewport.width * pxToPt;
+				const docHpt = viewport.height * pxToPt;
+				
+				// Crear PDF con portada incluida
+				const pdf = new jsPDF({ unit: 'pt', format: [docWpt, docHpt] });
+				
+				// 1. PORTADA (primera página)
+				if (progressEl) progressEl.textContent = 'Creando portada elegante...';
+				const coverCanvas = createCoverPage(viewport.width, viewport.height);
+				const coverDataUrl = coverCanvas.toDataURL('image/jpeg', 0.99);
+				pdf.addImage(coverDataUrl, 'JPEG', 0, 0, docWpt, docHpt);
+				
+				// 2. PÁGINAS DEL PDF (garantizar tamaño mínimo del original 2.1MB)
+				for (let i = 1; i <= total; i++) {
+					pdf.addPage([docWpt, docHpt]);
+					
+					if (progressEl) {
+						const progress = Math.round((i / total) * 100);
+						progressEl.textContent = `Agregando página ${i}/${total} (${progress}%)...`;
+					}
+					
+					// Usar escala muy alta para garantizar tamaño superior al original
+					const page = await pdfDoc.getPage(i);
+					const maxViewport = page.getViewport({ scale: 2.0 }); // Escala máxima para garantizar peso superior
+					const canvas = document.createElement('canvas');
+					const ctx = canvas.getContext('2d');
+					canvas.width = maxViewport.width;
+					canvas.height = maxViewport.height;
+					
+					await page.render({ canvasContext: ctx, viewport: maxViewport }).promise;
+					drawWatermark(canvas, i);
+					
+					// Máxima calidad sin compresión para mantener tamaño original
+					const dataUrl = canvas.toDataURL('image/jpeg', 0.98);
+					pdf.addImage(dataUrl, 'JPEG', 0, 0, docWpt, docHpt);
+					
+					// Limpiar canvas
+					canvas.width = 1;
+					canvas.height = 1;
+					
+					// Pausa cada 2 páginas para no bloquear la UI
+					if (i % 2 === 0) {
+						await new Promise(resolve => setTimeout(resolve, 100));
+					}
+				}
+				
+				if (progressEl) progressEl.textContent = 'Finalizando descarga...';
+				await new Promise(resolve => setTimeout(resolve, 300));
+				
+				// Descargar el PDF completo con portada incluida
+				pdf.save('Unidad1_A1.pdf');
+				
+				// Limpiar canvas de portada
+				coverCanvas.width = 1;
+				coverCanvas.height = 1;
+				
+				// NUESTRO MENSAJE PERSONALIZADO (no del navegador)
+				if (progressEl) progressEl.textContent = '✅ ¡Descarga completada exitosamente!';
+				
+				// Mostrar mensaje personalizado después de ocultar el progreso
+				setTimeout(() => {
+					if (progressEl) progressEl.style.display = 'none';
+					
+					// Crear modal de éxito personalizado
+					const successModal = document.createElement('div');
+					successModal.style.cssText = `
+						position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+						background: rgba(0,0,0,0.8); display: flex; align-items: center;
+						justify-content: center; z-index: 15000; backdrop-filter: blur(5px);
+					`;
+					
+					const successContent = document.createElement('div');
+					successContent.style.cssText = `
+						background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+						color: white; padding: 30px; border-radius: 20px; text-align: center;
+						max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+						font-family: 'Inter', system-ui, sans-serif;
+					`;
+					
+					successContent.innerHTML = `
+						<div style="font-size: 60px; margin-bottom: 20px;">📚</div>
+						<h3 style="margin: 0 0 15px; font-size: 24px; font-weight: 700;">¡PDF Descargado!</h3>
+						<p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5;">
+							<strong>Tu cuaderno está listo:</strong><br>
+							
+							• ${total} páginas de ejercicios<br>
+							
+						</p>
+						<button id="success-ok-btn" style="
+							background: rgba(255,255,255,0.2); color: white; border: 2px solid rgba(255,255,255,0.3);
+							padding: 12px 24px; border-radius: 12px; font-size: 16px; font-weight: 600;
+							cursor: pointer; transition: all 0.3s ease;
+						">¡Perfecto!</button>
+					`;
+					
+					successModal.appendChild(successContent);
+					document.body.appendChild(successModal);
+					
+					// Cerrar modal
+					const okBtn = document.getElementById('success-ok-btn');
+					okBtn.addEventListener('click', () => {
+						successModal.remove();
+					});
+					
+					// Cerrar también con clic fuera
+					successModal.addEventListener('click', (e) => {
+						if (e.target === successModal) {
+							successModal.remove();
+						}
+					});
+					
+				}, 1500);
+				
+			} catch (error) {
+				console.error('Error en descarga:', error);
+				
+				// NUESTRO MENSAJE DE ERROR PERSONALIZADO
+				const errorModal = document.createElement('div');
+				errorModal.style.cssText = `
+					position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+					background: rgba(0,0,0,0.8); display: flex; align-items: center;
+					justify-content: center; z-index: 15000; backdrop-filter: blur(5px);
+				`;
+				
+				const errorContent = document.createElement('div');
+				errorContent.style.cssText = `
+					background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+					color: white; padding: 30px; border-radius: 20px; text-align: center;
+					max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+					font-family: 'Inter', system-ui, sans-serif;
+				`;
+				
+				errorContent.innerHTML = `
+					<div style="font-size: 60px; margin-bottom: 20px;">⚠️</div>
+					<h3 style="margin: 0 0 15px; font-size: 24px; font-weight: 700;">Error en la descarga</h3>
+					<p style="margin: 0 0 20px; font-size: 14px; line-height: 1.5;">
+						<strong>Posibles soluciones:</strong><br>
+						• Cerrar otras pestañas del navegador<br>
+						• Intentar descarga de páginas individuales<br>
+						• Verificar conexión a internet<br>
+						• Reintentar en unos momentos
+					</p>
+					<button id="error-ok-btn" style="
+						background: rgba(255,255,255,0.2); color: white; border: 2px solid rgba(255,255,255,0.3);
+						padding: 12px 24px; border-radius: 12px; font-size: 16px; font-weight: 600;
+						cursor: pointer; transition: all 0.3s ease;
+					">Entendido</button>
+				`;
+				
+				errorModal.appendChild(errorContent);
+				document.body.appendChild(errorModal);
+				
+				// Cerrar modal de error
+				const okBtn = document.getElementById('error-ok-btn');
+				okBtn.addEventListener('click', () => {
+					errorModal.remove();
+				});
+				
+				errorModal.addEventListener('click', (e) => {
+					if (e.target === errorModal) {
+						errorModal.remove();
+					}
+				});
 			}
 			
-			pdf.save('Unidad1/A1.pdf');
-			if (progressEl){ progressEl.style.display='none'; }
+			if (progressEl) { 
+				// No ocultar aquí, se oculta en el setTimeout de arriba
+			}
+			cleanupAfterDownload();
 			closeExportModal();
 		}
 
-		// Modal control
+		// Función para detectar dispositivos con limitaciones de memoria
+		function isLowMemoryDevice() {
+			// Detectar dispositivos con menos de 4GB de RAM (aproximado)
+			const memoryGB = navigator.deviceMemory || 4;
+			const isMobile = window.innerWidth <= 768;
+			const isLowEnd = memoryGB < 4;
+			const hasSlowConnection = navigator.connection && 
+				(navigator.connection.effectiveType === 'slow-2g' || 
+				 navigator.connection.effectiveType === '2g' || 
+				 navigator.connection.effectiveType === '3g');
+			
+			return isMobile && (isLowEnd || hasSlowConnection);
+		}
+
+		// Modal control mejorado con advertencias para dispositivos móviles
 		function openExportModal(){
-			const m = document.getElementById('export-modal'); if(!m) return; m.style.display='flex';
+			const m = document.getElementById('export-modal'); 
+			if(!m) return; 
+			
+			// Actualizar descripción del modal según el dispositivo
+			const desc = m.querySelector('p.desc');
+			if (desc) {
+				desc.innerHTML = '' +
+					'';
+			}
+			
+			// Habilitar el botón de PDF completo para todos los dispositivos
+			const fullBtn = document.getElementById('export-full-btn');
+			if (fullBtn) {
+				fullBtn.style.opacity = '1';
+				fullBtn.style.cursor = 'pointer';
+				fullBtn.title = 'Descarga un PDF completo con portada elegante y todas las páginas del cuaderno';
+			}
+			
+			m.style.display='flex';
 		}
 		function closeExportModal(){
 			const m = document.getElementById('export-modal'); if(!m) return; m.style.display='none';

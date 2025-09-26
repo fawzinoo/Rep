@@ -1666,12 +1666,38 @@ input[type="number"]::-webkit-outer-spin-button {
 				const pdf = new jsPDF({ unit: 'pt', format: [widthPt, heightPt] });
 				pdf.addImage(dataUrl, 'JPEG', 0, 0, widthPt, heightPt);
 				
-				if (progressEl) progressEl.textContent = 'Descargando...';
-				await new Promise(resolve => setTimeout(resolve, 100));
+			if (progressEl) progressEl.textContent = 'Descargando...';
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Solución compatible para móviles y PC
+			const pdfBlob = pdf.output('blob');
+			const fileName = `pagina_${pageNum}.pdf`;
+			
+			// Detectar si es móvil
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+			
+			if (isMobile) {
+				// Para móviles: usar elemento temporal con blob URL
+				const blobUrl = URL.createObjectURL(pdfBlob);
+				const downloadLink = document.createElement('a');
+				downloadLink.href = blobUrl;
+				downloadLink.download = fileName;
+				downloadLink.style.display = 'none';
 				
-				pdf.save(`pagina_${pageNum}.pdf`);
+				// Agregar al DOM, hacer clic y remover
+				document.body.appendChild(downloadLink);
 				
-				// Limpiar
+				// En móviles, necesitamos un evento de usuario real
+				setTimeout(() => {
+					downloadLink.click();
+					document.body.removeChild(downloadLink);
+					URL.revokeObjectURL(blobUrl);
+				}, 100);
+				
+			} else {
+				// Para PC: usar método tradicional
+				pdf.save(fileName);
+			}				// Limpiar
 				canvas.width = 1;
 				canvas.height = 1;
 				
@@ -2008,13 +2034,38 @@ input[type="number"]::-webkit-outer-spin-button {
 					}
 				}
 				
-				if (progressEl) progressEl.textContent = 'Finalizando descarga...';
-				await new Promise(resolve => setTimeout(resolve, 300));
+			if (progressEl) progressEl.textContent = 'Finalizando descarga...';
+			await new Promise(resolve => setTimeout(resolve, 300));
+			
+			// Solución de descarga compatible para móviles y PC
+			const pdfBlob = pdf.output('blob');
+			const fileName = 'Unidad1_A1_Cuaderno_Completo.pdf';
+			
+			// Detectar si es móvil
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+			
+			if (isMobile) {
+				// Para móviles: usar elemento temporal con blob URL
+				const blobUrl = URL.createObjectURL(pdfBlob);
+				const downloadLink = document.createElement('a');
+				downloadLink.href = blobUrl;
+				downloadLink.download = fileName;
+				downloadLink.style.display = 'none';
 				
-				// Descargar el PDF completo con portada incluida
-				pdf.save('Unidad1_A1.pdf');
+				// Agregar al DOM, hacer clic y remover
+				document.body.appendChild(downloadLink);
 				
-				// Limpiar canvas de portada
+				// Forzar descarga en móviles
+				setTimeout(() => {
+					downloadLink.click();
+					document.body.removeChild(downloadLink);
+					URL.revokeObjectURL(blobUrl);
+				}, 100);
+				
+			} else {
+				// Para PC: usar método tradicional
+				pdf.save(fileName);
+			}				// Limpiar canvas de portada
 				coverCanvas.width = 1;
 				coverCanvas.height = 1;
 				

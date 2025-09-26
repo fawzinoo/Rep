@@ -1673,8 +1673,10 @@ input[type="number"]::-webkit-outer-spin-button {
 			const pdfBlob = pdf.output('blob');
 			const fileName = `pagina_${pageNum}.pdf`;
 			
-			// Detectar si es móvil
-			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+			// Detectar si es móvil con mejor precisión
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+			              ('ontouchstart' in window) || 
+			              (navigator.maxTouchPoints > 0);
 			
 			if (isMobile) {
 				// Para móviles: usar elemento temporal con blob URL
@@ -1687,12 +1689,18 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Agregar al DOM, hacer clic y remover
 				document.body.appendChild(downloadLink);
 				
-				// En móviles, necesitamos un evento de usuario real
+				// En móviles, necesitamos un evento de usuario real con timeout más largo
 				setTimeout(() => {
 					downloadLink.click();
-					document.body.removeChild(downloadLink);
-					URL.revokeObjectURL(blobUrl);
-				}, 100);
+					
+					// Limpiar después de más tiempo para móviles
+					setTimeout(() => {
+						if (document.body.contains(downloadLink)) {
+							document.body.removeChild(downloadLink);
+						}
+						URL.revokeObjectURL(blobUrl);
+					}, 2000);
+				}, 300);
 				
 			} else {
 				// Para PC: usar método tradicional
@@ -2055,19 +2063,33 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Agregar al DOM, hacer clic y remover
 				document.body.appendChild(downloadLink);
 				
-				// Forzar descarga en móviles
+				// Forzar descarga en móviles con mejor compatibilidad
 				setTimeout(() => {
-					downloadLink.click();
-					document.body.removeChild(downloadLink);
-					URL.revokeObjectURL(blobUrl);
-				}, 100);
+					// Múltiples intentos para mayor compatibilidad
+					try {
+						downloadLink.click();
+					} catch (e) {
+						// Respaldo: abrir en nueva ventana si el click falla
+						window.open(blobUrl, '_blank');
+					}
+					
+					// Limpiar después de un tiempo para asegurar que la descarga inicie
+					setTimeout(() => {
+						if (document.body.contains(downloadLink)) {
+							document.body.removeChild(downloadLink);
+						}
+						URL.revokeObjectURL(blobUrl);
+					}, 2000);
+				}, 300);
 				
 			} else {
 				// Para PC: usar método tradicional
 				pdf.save(fileName);
-			}				// Limpiar canvas de portada
-				coverCanvas.width = 1;
-				coverCanvas.height = 1;
+			}
+			
+			// Limpiar canvas de portada
+			coverCanvas.width = 1;
+			coverCanvas.height = 1;
 				
 				// NUESTRO MENSAJE PERSONALIZADO (no del navegador)
 				if (progressEl) progressEl.textContent = '✅ ¡Descarga completada exitosamente!';

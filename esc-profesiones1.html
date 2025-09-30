@@ -1957,6 +1957,8 @@
     min-width: 56px;
 }
 
+
+
 .mobile-clear-button:hover {
     background: linear-gradient(135deg, #1e40af, #2563eb);
     transform: translateY(-2px);
@@ -1971,12 +1973,25 @@
 /* Mostrar solo en móviles cuando el teclado está visible */
 @media (max-width: 768px) {
     .mobile-clear-button.keyboard-visible {
-        display: flex;
+        display: flex !important;
+        animation: slideInFromRight 0.3s ease-out;
     }
     
     .check-button-row {
         justify-content: center;
         align-items: center;
+    }
+}
+
+/* Animación para la aparición del botón */
+@keyframes slideInFromRight {
+    0% {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(0);
     }
 }
 
@@ -5893,47 +5908,78 @@ function attachFlashcardHandlers() {
                 const dialogContainer = backElement.querySelector('.type-dialog-container');
                 const titleEl = backElement.querySelector('#type-word-title');
 
-                // Detectar cuando aparece/desaparece el teclado móvil
-                let initialViewportHeight = window.innerHeight;
-                const handleKeyboardToggle = () => {
-                    // Solo en dispositivos móviles (ancho menor a 768px)
+                // Detectar cuando aparece/desaparece el teclado móvil - Método mejorado
+                const showMobileClearButton = () => {
+                    if (window.innerWidth <= 768) {
+                        console.log('Mostrando botón móvil de borrar');
+                        mobileClearBtn.classList.add('keyboard-visible');
+                    }
+                };
+                
+                const hideMobileClearButton = () => {
+                    console.log('Ocultando botón móvil de borrar');
+                    mobileClearBtn.classList.remove('keyboard-visible');
+                };
+
+                // Detectar cuando el input obtiene el foco (teclado aparece)
+                const focusHandler = () => {
+                    console.log('Input obtuvo el foco');
+                    // Mostrar inmediatamente en móviles
+                    showMobileClearButton();
+                    // También con delay por si el teclado tarda en aparecer
+                    setTimeout(showMobileClearButton, 100);
+                    setTimeout(showMobileClearButton, 300);
+                };
+                
+                // Detectar cuando el input pierde el foco (teclado desaparece)
+                const blurHandler = () => {
+                    console.log('Input perdió el foco');
+                    // Delay para ocultar por si el usuario solo cambió el foco temporalmente
+                    setTimeout(() => {
+                        // Verificar si el input sigue sin foco
+                        if (document.activeElement !== inputEl) {
+                            hideMobileClearButton();
+                        }
+                    }, 200);
+                };
+                
+                // Método alternativo: detectar cambios de altura del viewport
+                let lastViewportHeight = window.innerHeight;
+                const handleResize = () => {
                     if (window.innerWidth > 768) return;
                     
                     const currentHeight = window.innerHeight;
-                    const heightDifference = initialViewportHeight - currentHeight;
+                    const heightDiff = lastViewportHeight - currentHeight;
                     
-                    // Si la altura se reduce significativamente, el teclado está visible
-                    if (heightDifference > 150) {
-                        mobileClearBtn.classList.add('keyboard-visible');
-                    } else {
-                        mobileClearBtn.classList.remove('keyboard-visible');
+                    console.log(`Altura anterior: ${lastViewportHeight}, actual: ${currentHeight}, diferencia: ${heightDiff}`);
+                    
+                    if (heightDiff > 100) {
+                        // Altura se redujo significativamente = teclado apareció
+                        showMobileClearButton();
+                    } else if (heightDiff < -50) {
+                        // Altura aumentó = teclado desapareció
+                        hideMobileClearButton();
                     }
-                };
-
-                // Escuchar cambios en el tamaño de la ventana
-                window.addEventListener('resize', handleKeyboardToggle);
-                
-                // También detectar cuando el input obtiene/pierde el foco
-                const focusHandler = () => {
-                    setTimeout(handleKeyboardToggle, 300); // Delay para que el teclado aparezca
-                };
-                const blurHandler = () => {
-                    setTimeout(() => {
-                        if (window.innerWidth <= 768) {
-                            mobileClearBtn.classList.remove('keyboard-visible');
-                        }
-                    }, 100);
+                    
+                    lastViewportHeight = currentHeight;
                 };
                 
+                // Añadir todos los event listeners
                 inputEl.addEventListener('focus', focusHandler);
                 inputEl.addEventListener('blur', blurHandler);
+                window.addEventListener('resize', handleResize);
+                
+                // Para debugging - mostrar el botón inmediatamente en móviles si ya hay foco
+                if (window.innerWidth <= 768 && document.activeElement === inputEl) {
+                    showMobileClearButton();
+                }
 
                 // Función de limpieza para remover event listeners
                 const cleanupKeyboardDetection = () => {
-                    window.removeEventListener('resize', handleKeyboardToggle);
                     inputEl.removeEventListener('focus', focusHandler);
                     inputEl.removeEventListener('blur', blurHandler);
-                    initialViewportHeight = window.innerHeight; // Reset para próxima vez
+                    window.removeEventListener('resize', handleResize);
+                    hideMobileClearButton();
                 };
 
                 // Guardar función de limpieza para uso posterior

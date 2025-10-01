@@ -223,6 +223,11 @@
             cursor: none !important;
             caret-color: transparent !important;
         }
+
+        /* Ocultar botón móvil "No sé" cuando el teclado no está visible */
+        .keyboard-hidden .mobile-skip-button {
+            display: none !important;
+        }
         
         /* Prevenir selección con pseudo-elementos */
         .back::selection, .back *::selection {
@@ -6050,11 +6055,10 @@ function attachFlashcardHandlers() {
                     }
                 };
                 
-                // NO hacer nada en blur - dejar que el botón permanezca visible
+                // En blur: ocultar el botón si se oculta el teclado
                 const blurHandler = () => {
-                    console.log('BLUR - No hacer nada, mantener botón visible');
-                    // Comentado para probar: no ocultar automáticamente
-                    // hideMobileSkipButton();
+                    console.log('BLUR - Ocultar botón móvil "No sé"');
+                    hideMobileSkipButton(true); // forzar ocultado incluso en Samsung
                 };
                 
                 // Método alternativo: detectar cambios de altura del viewport
@@ -6080,10 +6084,10 @@ function attachFlashcardHandlers() {
                     } else if (heightDiff < -30) {
                         // Altura aumentó = teclado desapareció (más sensible)
                         console.log('Detectado aumento de altura - ocultando botón');
-                        hideMobileSkipButton();
+                        hideMobileSkipButton(true);
                         // Múltiples intentos para asegurar que se oculte
-                        setTimeout(() => hideMobileSkipButton(), 100);
-                        setTimeout(() => hideMobileSkipButton(), 300);
+                        setTimeout(() => hideMobileSkipButton(true), 100);
+                        setTimeout(() => hideMobileSkipButton(true), 300);
                     }
                     
                     lastViewportHeight = currentHeight;
@@ -6108,6 +6112,11 @@ function attachFlashcardHandlers() {
                     window.removeEventListener('resize', handleResize);
                     // En cleanup sí forzamos el ocultado
                     hideMobileSkipButton(true);
+                    // También marcar estado global como teclado oculto
+                    document.body.classList.add('keyboard-hidden');
+                    document.documentElement.classList.add('keyboard-hidden');
+                    document.body.classList.remove('keyboard-visible');
+                    document.documentElement.classList.remove('keyboard-visible');
                 };
 
                 // Guardar función de limpieza para uso posterior
@@ -7424,6 +7433,11 @@ function setCursorState(visible, reason = '') {
         if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
             activeElement.blur();
         }
+
+        // Ocultar también el botón móvil "No sé" si está presente
+        document.querySelectorAll('.mobile-skip-button').forEach(btn => {
+            btn.classList.remove('keyboard-visible');
+        });
     }
     
     keyboardState.isVisible = visible;
@@ -7535,7 +7549,13 @@ function initCursorHiding() {
         if (keyboardState.detectionTimer) {
             clearTimeout(keyboardState.detectionTimer);
         }
-        keyboardState.detectionTimer = setTimeout(detectKeyboardByViewport, 100);
+        keyboardState.detectionTimer = setTimeout(() => {
+            detectKeyboardByViewport();
+            if (!keyboardState.isVisible) {
+                // Ocultar cualquier botón móvil "No sé"
+                document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible'));
+            }
+        }, 100);
     });
     
     // Detectar cambios de orientación

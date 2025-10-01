@@ -2043,6 +2043,9 @@
         justify-content: center;
         align-items: center;
     }
+
+    /* En móviles, ocultar botones de caracteres especiales (teclado virtual los cubre) */
+    .special-chars { display: none !important; }
 }
 
 /* Animación para la aparición del botón */
@@ -3026,6 +3029,105 @@
             100% { filter: drop-shadow(0 0 15px rgba(255,215,0,0.6)); }
         }
 
+        /* === TECLADO VIRTUAL MODERNO === */
+        .virtual-keyboard-overlay {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 50000;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            pointer-events: none; /* solo el teclado recibe eventos */
+        }
+        .virtual-keyboard {
+            pointer-events: auto;
+            width: 100%;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 10px 12px 16px;
+            border-radius: 18px 18px 0 0;
+            background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.96));
+            box-shadow: 0 -8px 30px rgba(0,0,0,0.4);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+            transform: translateY(100%);
+            transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .virtual-keyboard.show {
+            transform: translateY(0);
+        }
+        .vk-row {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .vk-row.shifted {
+            grid-template-columns: repeat(9, 1fr);
+        }
+        .vk-key {
+            height: 44px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+            color: #fff;
+            font-weight: 700;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.06s ease, box-shadow 0.12s ease, background 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        }
+        .vk-key:active {
+            transform: translateY(1px) scale(0.99);
+            box-shadow: 0 1px 6px rgba(0,0,0,0.3) inset;
+        }
+        .vk-key.primary {
+            background: linear-gradient(180deg, #2563eb, #1d4ed8);
+            border-color: rgba(37,99,235,0.6);
+        }
+        .vk-key.warn {
+            background: linear-gradient(180deg, #e67e22, #d35400);
+            border-color: rgba(230,126,34,0.6);
+        }
+        .vk-key.danger {
+            background: linear-gradient(180deg, #ef4444, #dc2626);
+            border-color: rgba(239,68,68,0.6);
+        }
+        .vk-footer {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+    .vk-key.space { grid-column: 1 / span 1; margin-top: 5px; margin-bottom: -8px; }
+        .vk-key.small { font-size: 14px; font-weight: 600; }
+        
+        /* Bloque de acentos */
+        .vk-accents { margin-top: 6px; }
+        .vk-accents .row-accents {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+        .vk-accents .row-n-tilde {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .vk-accents .row-n-tilde .vk-key { grid-column: 3; }
+        @media (max-width: 420px) {
+            .vk-key { height: 40px; font-size: 15px; }
+            .vk-row { gap: 6px; }
+            .vk-footer { gap: 6px; }
+            .vk-accents .row-accents, .vk-accents .row-n-tilde { gap: 6px; }
+        }
     </style></head>
 <body>
 
@@ -6025,6 +6127,8 @@ function attachFlashcardHandlers() {
                 const msgEl = backElement.querySelector('#type-message');
                 const dialogContainer = backElement.querySelector('.type-dialog-container');
                 const titleEl = backElement.querySelector('#type-word-title');
+                const vkOverlay = document.getElementById('vk-overlay');
+                const vk = document.getElementById('vk');
                 
                 // Detectar navegador Samsung para ajustes específicos
                 const isSamsungBrowser = navigator.userAgent.includes('SamsungBrowser');
@@ -6049,16 +6153,33 @@ function attachFlashcardHandlers() {
 
                 // LÓGICA MUY SIMPLE: Solo mostrar/ocultar con focus/blur
                 const focusHandler = () => {
-                    console.log('FOCUS - Mostrar botón');
+                    console.log('FOCUS - Mostrar botón y teclado virtual');
                     if (window.innerWidth <= 768) {
                         showMobileSkipButton();
+                        // Mostrar teclado virtual propio y bloquear teclado nativo sin perder foco
+                        if (vkOverlay && vk) {
+                        vkOverlay.style.display = 'flex';
+                        setTimeout(() => vk.classList.add('show'), 0);
+                        // Truco iOS/Android: readonly durante el focus, luego quitar
+                        const wasReadonly = inputEl.readOnly;
+                        inputEl.readOnly = true;
+                        inputEl.focus({ preventScroll: true });
+                            inputEl.setAttribute('inputmode','none');
+                            setTimeout(() => { inputEl.readOnly = wasReadonly; }, 0);
+                        }
                     }
                 };
                 
                 // En blur: ocultar el botón si se oculta el teclado
                 const blurHandler = () => {
-                    console.log('BLUR - Ocultar botón móvil "No sé"');
-                    hideMobileSkipButton(true); // forzar ocultado incluso en Samsung
+                    console.log('BLUR - Ocultar botón móvil "No sé" y teclado virtual');
+                    if (window.innerWidth <= 768) {
+                        hideMobileSkipButton(true); // forzar ocultado incluso en Samsung
+                        if (vk && vkOverlay) {
+                            vk.classList.remove('show');
+                            setTimeout(() => { vkOverlay.style.display = 'none'; }, 220);
+                        }
+                    }
                 };
                 
                 // Método alternativo: detectar cambios de altura del viewport
@@ -6104,6 +6225,115 @@ function attachFlashcardHandlers() {
                 if (window.innerWidth <= 768 && document.activeElement === inputEl) {
                     showMobileSkipButton();
                 }
+
+                // ====== LÓGICA DEL TECLADO VIRTUAL ======
+                const VK_ROWS = [
+                    // fila 1
+                    ['q','w','e','r','t','y','u','i','o','p'],
+                    // fila 2 (restauramos ñ)
+                    ['a','s','d','f','g','h','j','k','l','ñ'],
+                    // fila 3 (con Shift y Enter)
+                    ['shift','z','x','c','v','b','n','m','enter']
+                ];
+                let VK_SHIFT = false;
+
+                function renderVirtualKeyboard() {
+                    if (!vk) return;
+                    const rows = vk.querySelectorAll('.vk-row');
+                    if (rows.length < 3) return;
+                    rows.forEach((row, idx) => {
+                        row.innerHTML = '';
+                        const keys = VK_ROWS[idx];
+                        keys.forEach(k => {
+                            const div = document.createElement('div');
+                            div.className = 'vk-key';
+                            let label = k;
+                            if (k === 'shift') { label = '⇧'; div.classList.add('primary'); }
+                            else if (k === 'enter') { label = '⏎'; div.classList.add('primary'); }
+                            else { label = VK_SHIFT ? k.toUpperCase() : k; }
+                            div.textContent = label;
+                            div.dataset.key = k;
+                            row.appendChild(div);
+                        });
+                    });
+                }
+
+                function insertAtCursor(text) {
+                    const start = inputEl.selectionStart ?? inputEl.value.length;
+                    const end = inputEl.selectionEnd ?? inputEl.value.length;
+                    const current = inputEl.value;
+                    const newVal = current.slice(0, start) + text + current.slice(end);
+                    inputEl.value = newVal;
+                    const caret = start + text.length;
+                    inputEl.setSelectionRange(caret, caret);
+                    inputEl.focus({ preventScroll: true });
+                }
+
+                function handleVirtualKey(key) {
+                    if (key === 'shift') {
+                        VK_SHIFT = !VK_SHIFT;
+                        renderVirtualKeyboard();
+                        return;
+                    }
+                    if (key === 'backspace') {
+                        const start = inputEl.selectionStart ?? inputEl.value.length;
+                        const end = inputEl.selectionEnd ?? inputEl.value.length;
+                        if (start === end && start > 0) {
+                            // borrar carácter previo
+                            inputEl.value = inputEl.value.slice(0, start - 1) + inputEl.value.slice(end);
+                            const pos = start - 1;
+                            inputEl.setSelectionRange(pos, pos);
+                        } else {
+                            // borrar selección
+                            inputEl.value = inputEl.value.slice(0, start) + inputEl.value.slice(end);
+                            inputEl.setSelectionRange(start, start);
+                        }
+                        inputEl.focus({ preventScroll: true });
+                        return;
+                    }
+                    if (key === 'enter') {
+                        checkBtn.click();
+                        return;
+                    }
+                    // letra, espacio o acentos (respetar mayúsculas con Shift)
+                    let text = key;
+                    if (key.length === 1) {
+                        text = VK_SHIFT ? key.toUpperCase() : key;
+                    }
+                    insertAtCursor(text);
+                    // sonido de tecla
+                    try { playKeyboardSound(); } catch {}
+                }
+
+                // Construir el teclado la primera vez
+                renderVirtualKeyboard();
+                // Wire de clicks del teclado
+                if (vk) {
+                    // Evitar que el teclado virtual robe el foco del input (previene blur/parpadeo)
+                    vk.addEventListener('mousedown', (e) => { e.preventDefault(); }, { passive: false });
+                    vk.addEventListener('touchstart', (e) => { e.preventDefault(); }, { passive: false });
+                    vk.addEventListener('click', (e) => {
+                        const target = e.target.closest('.vk-key');
+                        if (!target) return;
+                        const key = target.dataset.key;
+                        if (!key) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleVirtualKey(key);
+                    });
+                }
+                // Evitar que los clics del overlay cierren la tarjeta o hagan flip
+                if (vkOverlay) {
+                    let vkHideTimer = null;
+                    vkOverlay.addEventListener('click', (e) => {
+                        // Solo cerrar si se toca fuera del teclado y sin rebotes
+                        if (e.target === vkOverlay) {
+                            if (vkHideTimer) clearTimeout(vkHideTimer);
+                            vkHideTimer = setTimeout(() => blurHandler(), 60);
+                        }
+                    });
+                }
+                // ====== FIN TECLADO VIRTUAL ======
 
                 // Función de limpieza para remover event listeners
                 const cleanupKeyboardDetection = () => {
@@ -6343,7 +6573,7 @@ function attachFlashcardHandlers() {
 
                 // Importante: no iniciar SpeechRecognition aquí a menos que haya permisos concedidos.
 
-                // Event listeners para caracteres especiales
+                // Listeners de caracteres especiales (para PC)
                 const charBtns = backElement.querySelectorAll('.char-btn');
                 charBtns.forEach(btn => {
                     btn.addEventListener('click', (e) => {
@@ -6351,20 +6581,13 @@ function attachFlashcardHandlers() {
                         e.stopPropagation();
                         vibrar(30);
                         playKeyboardSound();
-                        
                         const char = btn.getAttribute('data-char');
-                        const currentPos = inputEl.selectionStart;
+                        const currentPos = inputEl.selectionStart ?? inputEl.value.length;
                         const currentValue = inputEl.value;
-                        
-                        // Insertar carácter en la posición del cursor
                         const newValue = currentValue.slice(0, currentPos) + char + currentValue.slice(currentPos);
                         inputEl.value = newValue;
-                        
-                        // Restablecer color del botón comprobar y quitar animación de error al usar caracteres especiales
                         checkBtn.classList.remove('button-pressed');
                         inputEl.classList.remove('input-error-empty');
-                        
-                        // Mantener el foco y posicionar cursor después del carácter insertado
                         inputEl.focus();
                         inputEl.setSelectionRange(currentPos + 1, currentPos + 1);
                     });
@@ -7699,6 +7922,25 @@ function goToNextCardWithDebug() {
 }
     </script>
     
+        <!-- Teclado virtual global -->
+        <div id="vk-overlay" class="virtual-keyboard-overlay">
+            <div id="vk" class="virtual-keyboard">
+                <div class="vk-row" data-row="1"></div>
+                <div class="vk-row" data-row="2"></div>
+                <div class="vk-row shifted" data-row="3"></div>
+                <div class="vk-accents">
+                    <div class="row-accents">
+                        <div class="vk-key warn" data-key="á">á</div>
+                        <div class="vk-key warn" data-key="é">é</div>
+                        <div class="vk-key warn" data-key="í">í</div>
+                        <div class="vk-key warn" data-key="ó">ó</div>
+                        <div class="vk-key warn" data-key="ú">ú</div>
+                    </div>
+                </div>
+                    <div class="vk-key space" data-key=" ">ESPACIO</div>
+                </div>
+            </div>
+        </div>
     
 </body>
 </html>

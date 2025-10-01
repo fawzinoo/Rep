@@ -6161,11 +6161,14 @@ function attachFlashcardHandlers() {
                         vkOverlay.style.display = 'flex';
                         setTimeout(() => vk.classList.add('show'), 0);
                         // Truco iOS/Android: readonly durante el focus, luego quitar
-                        const wasReadonly = inputEl.readOnly;
-                        inputEl.readOnly = true;
-                        inputEl.focus({ preventScroll: true });
+                            const wasReadonly = inputEl.readOnly;
+                            inputEl.readOnly = true;
                             inputEl.setAttribute('inputmode','none');
-                            setTimeout(() => { inputEl.readOnly = wasReadonly; }, 0);
+                            inputEl.focus({ preventScroll: true });
+                            setTimeout(() => {
+                                inputEl.readOnly = wasReadonly;
+                                inputEl.focus({ preventScroll: true });
+                            }, 0);
                         }
                     }
                 };
@@ -6259,13 +6262,17 @@ function attachFlashcardHandlers() {
                 }
 
                 function insertAtCursor(text) {
-                    const start = inputEl.selectionStart ?? inputEl.value.length;
-                    const end = inputEl.selectionEnd ?? inputEl.value.length;
+                    // Asegurar foco antes de leer selección
+                    if (document.activeElement !== inputEl) {
+                        inputEl.focus({ preventScroll: true });
+                    }
+                    const start = typeof inputEl.selectionStart === 'number' ? inputEl.selectionStart : inputEl.value.length;
+                    const end = typeof inputEl.selectionEnd === 'number' ? inputEl.selectionEnd : inputEl.value.length;
                     const current = inputEl.value;
                     const newVal = current.slice(0, start) + text + current.slice(end);
                     inputEl.value = newVal;
                     const caret = start + text.length;
-                    inputEl.setSelectionRange(caret, caret);
+                    try { inputEl.setSelectionRange(caret, caret); } catch {}
                     inputEl.focus({ preventScroll: true });
                 }
 
@@ -6309,18 +6316,17 @@ function attachFlashcardHandlers() {
                 renderVirtualKeyboard();
                 // Wire de clicks del teclado
                 if (vk) {
-                    // Evitar que el teclado virtual robe el foco del input (previene blur/parpadeo)
-                    vk.addEventListener('mousedown', (e) => { e.preventDefault(); }, { passive: false });
-                    vk.addEventListener('touchstart', (e) => { e.preventDefault(); }, { passive: false });
-                    vk.addEventListener('click', (e) => {
+                    // Usar pointerdown para soportar móvil y desktop sin bloquear eventos subsiguientes
+                    vk.addEventListener('pointerdown', (e) => {
                         const target = e.target.closest('.vk-key');
                         if (!target) return;
                         const key = target.dataset.key;
                         if (!key) return;
                         e.preventDefault();
                         e.stopPropagation();
+                        try { vibrar(30); } catch {}
                         handleVirtualKey(key);
-                    });
+                    }, { passive: false });
                 }
                 // Evitar que los clics del overlay cierren la tarjeta o hagan flip
                 if (vkOverlay) {

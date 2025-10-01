@@ -5979,58 +5979,39 @@ function attachFlashcardHandlers() {
                     mobileSkipBtn.classList.remove('keyboard-visible');
                 };
 
-                // Variable para controlar si el botón debe estar visible en Samsung
-                let samsungButtonVisible = false;
+                // Variables simples para controlar el botón
+                let clickingMobileButton = false;
                 
-                // Detectar cuando el input obtiene el foco (teclado aparece)
+                // LÓGICA SIMPLE: Mostrar cuando hay cursor (focus)
                 const focusHandler = () => {
-                    console.log('Input obtuvo el foco - Samsung:', isSamsungBrowser);
-                    
-                    if (isSamsungBrowser) {
-                        // Para Samsung: mostrar una sola vez y mantener
-                        if (!samsungButtonVisible) {
-                            samsungButtonVisible = true;
-                            showMobileSkipButton();
-                            console.log('Samsung: Botón mostrado y bloqueado');
-                        }
-                    } else {
-                        // Lógica original para otros navegadores
+                    console.log('CURSOR EN INPUT - Mostrar botón');
+                    if (window.innerWidth <= 768) {
                         showMobileSkipButton();
-                        setTimeout(showMobileSkipButton, 100);
-                        setTimeout(showMobileSkipButton, 300);
                     }
                 };
                 
-                // Variable para controlar si se está haciendo click en el botón móvil
-                let clickingMobileButton = false;
-                let buttonActionInProgress = false;
-                
-                // Detectar cuando el input pierde el foco (teclado desaparece)
+                // LÓGICA SIMPLE: Ocultar cuando no hay cursor (blur)
                 const blurHandler = () => {
-                    console.log('=== BLUR EVENT ===');
-                    console.log('Samsung:', isSamsungBrowser);
-                    console.log('clickingMobileButton:', clickingMobileButton);
-                    console.log('buttonActionInProgress:', buttonActionInProgress);
+                    console.log('CURSOR FUERA DEL INPUT');
                     
-                    if (isSamsungBrowser) {
-                        // Para Samsung: NO ocultar automáticamente por blur
-                        // Solo permitir ocultado manual desde el click del botón
-                        console.log('Samsung: Ignorando blur - no auto-ocultar');
-                        return;
+                    // Si se está presionando el botón, esperar un poco
+                    if (clickingMobileButton) {
+                        console.log('Botón siendo presionado - esperar');
+                        setTimeout(() => {
+                            if (document.activeElement !== inputEl) {
+                                console.log('Ocultar botón después de acción');
+                                hideMobileSkipButton();
+                            }
+                        }, 1000);
+                    } else {
+                        // Ocultar inmediatamente si no hay acción
+                        setTimeout(() => {
+                            if (document.activeElement !== inputEl) {
+                                console.log('Ocultar botón - sin acción');
+                                hideMobileSkipButton();
+                            }
+                        }, 100);
                     }
-                    
-                    // Lógica original para otros navegadores
-                    if (clickingMobileButton || buttonActionInProgress) {
-                        console.log('Otros navegadores: No ocultar - acción en progreso');
-                        return;
-                    }
-                    
-                    setTimeout(() => {
-                        if (document.activeElement !== inputEl && !clickingMobileButton && !buttonActionInProgress) {
-                            hideMobileSkipButton();
-                            console.log('Otros navegadores: Botón ocultado por blur');
-                        }
-                    }, 200);
                 };
                 
                 // Método alternativo: detectar cambios de altura del viewport
@@ -6058,27 +6039,11 @@ function attachFlashcardHandlers() {
                     lastViewportHeight = currentHeight;
                 };
                 
-                // Event listener simplificado para Samsung (evitar el "baile")
-                const inputHandler = () => {
-                    // No hacer nada para Samsung para evitar conflictos
-                    if (!isSamsungBrowser && window.innerWidth <= 768) {
-                        showMobileSkipButton();
-                    }
-                };
-                
-                // Event listener simplificado para teclado
-                const keydownHandler = (e) => {
-                    // No hacer nada para Samsung para evitar conflictos
-                    if (!isSamsungBrowser && window.innerWidth <= 768) {
-                        showMobileSkipButton();
-                    }
-                };
+                // No necesitamos event listeners adicionales - solo focus/blur
 
-                // Añadir todos los event listeners
+                // Solo los event listeners esenciales
                 inputEl.addEventListener('focus', focusHandler);
                 inputEl.addEventListener('blur', blurHandler);
-                inputEl.addEventListener('input', inputHandler);
-                inputEl.addEventListener('keydown', keydownHandler);
                 window.addEventListener('resize', handleResize);
                 
                 // Para debugging - mostrar el botón inmediatamente en móviles si ya hay foco
@@ -6286,60 +6251,28 @@ function attachFlashcardHandlers() {
                 // Usar la variable isSamsungBrowser ya declarada arriba
                 const touchDelay = isSamsungBrowser ? 500 : 200;
                 
-                // Event listener simplificado para el botón móvil
+                // Event listener SIMPLE para el botón móvil
                 mobileSkipBtn.addEventListener('click', (e) => {
-                    console.log('=== BOTÓN MÓVIL PRESIONADO ===');
-                    console.log('Samsung Browser:', isSamsungBrowser);
+                    console.log('BOTÓN MÓVIL PRESIONADO');
                     e.preventDefault();
                     e.stopPropagation();
                     
-                    // Prevenir múltiples clicks
-                    if (clickingMobileButton || buttonActionInProgress) {
-                        console.log('Click bloqueado - acción ya en progreso');
-                        return;
-                    }
-                    
-                    // Marcar que hay una acción en progreso
+                    // Marcar que se está presionando el botón
                     clickingMobileButton = true;
-                    buttonActionInProgress = true;
                     
-                    console.log('Iniciando acción "No sé"...');
+                    // Vibración y sonido
+                    vibrar(60);
+                    playButtonSound();
                     
-                    // Agregar vibración y sonido como el botón principal
-                    try {
-                        vibrar(60);
-                        playButtonSound();
-                    } catch (err) {
-                        console.log('Error en vibración/sonido:', err);
-                    }
+                    // Ejecutar la función principal
+                    console.log('Ejecutando skipCurrentCardAsUnknown()');
+                    skipCurrentCardAsUnknown();
                     
-                    // Ejecutar la función y manejar posibles errores
-                    try {
-                        console.log('Llamando a skipCurrentCardAsUnknown()...');
-                        skipCurrentCardAsUnknown();
-                        console.log('skipCurrentCardAsUnknown() ejecutada exitosamente');
-                        
-                        // Dar tiempo para que se complete toda la lógica antes de limpiar
-                        setTimeout(() => {
-                            console.log('Limpiando variables de control');
-                            clickingMobileButton = false;
-                            buttonActionInProgress = false;
-                            if (isSamsungBrowser) {
-                                samsungButtonVisible = false;
-                            }
-                        }, 1000); // Tiempo suficiente para que goToNextCard() complete
-                        
-                    } catch (error) {
-                        console.error('Error ejecutando skipCurrentCardAsUnknown():', error);
-                        // Limpiar variables en caso de error
+                    // Limpiar después de un tiempo
+                    setTimeout(() => {
                         clickingMobileButton = false;
-                        buttonActionInProgress = false;
-                        if (isSamsungBrowser) {
-                            samsungButtonVisible = false;
-                        }
-                    }
-                    
-                    console.log('=== FIN CLICK BOTÓN MÓVIL ===');
+                        console.log('Acción completada');
+                    }, 800);
                 });
                 
                 // Enter para comprobar

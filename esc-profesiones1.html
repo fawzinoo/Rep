@@ -5992,10 +5992,11 @@ function attachFlashcardHandlers() {
                     }
                 };
                 
-                // En blur: ocultar el botón (forzado) para garantizar desaparición cuando no hay cursor
+                // NO hacer nada en blur - dejar que el botón permanezca visible
                 const blurHandler = () => {
-                    console.log('BLUR - Ocultar botón (forzado)');
-                    hideMobileSkipButton(true);
+                    console.log('BLUR - No hacer nada, mantener botón visible');
+                    // Comentado para probar: no ocultar automáticamente
+                    // hideMobileSkipButton();
                 };
                 
                 // Método alternativo: detectar cambios de altura del viewport
@@ -6008,18 +6009,23 @@ function attachFlashcardHandlers() {
                     
                     console.log(`Altura anterior: ${lastViewportHeight}, actual: ${currentHeight}, diferencia: ${heightDiff}`);
                     
+                    // En Samsung Internet nunca ocultamos por cambios de viewport para evitar parpadeos
+                    if (isSamsungBrowser) {
+                        showMobileSkipButton();
+                        lastViewportHeight = currentHeight;
+                        return;
+                    }
+                    
                     if (heightDiff > 100) {
                         // Altura se redujo significativamente = teclado apareció
                         showMobileSkipButton();
                     } else if (heightDiff < -30) {
-                        // Altura aumentó = teclado desapareció
-                        console.log('Teclado retirado por cambio de altura - forzar blur y ocultar botón');
-                        // Forzar pérdida de foco del input (esto quita el cursor)
-                        if (document.activeElement === inputEl) {
-                            inputEl.blur();
-                        }
-                        // Ocultar el botón de forma forzada (también en Samsung)
-                        hideMobileSkipButton(true);
+                        // Altura aumentó = teclado desapareció (más sensible)
+                        console.log('Detectado aumento de altura - ocultando botón');
+                        hideMobileSkipButton();
+                        // Múltiples intentos para asegurar que se oculte
+                        setTimeout(() => hideMobileSkipButton(), 100);
+                        setTimeout(() => hideMobileSkipButton(), 300);
                     }
                     
                     lastViewportHeight = currentHeight;

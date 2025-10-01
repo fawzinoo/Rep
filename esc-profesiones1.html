@@ -2032,9 +2032,16 @@
     background: linear-gradient(135deg, #e67e22, #d35400);
 }
 
+/* Estado deshabilitado explícito para el botón móvil "No sé" */
+.mobile-skip-button[disabled], .mobile-skip-button[aria-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: grayscale(20%);
+}
+
 /* Mostrar solo en móviles cuando el teclado está visible */
 @media (max-width: 768px) {
-    .mobile-skip-button.keyboard-visible {
+    .mobile-skip-button.keyboard-visible:not([disabled]):not([aria-disabled="true"]) {
         display: flex !important;
         animation: slideInFromRight 0.3s ease-out;
     }
@@ -2091,9 +2098,16 @@
     background: linear-gradient(135deg, #e67e22, #d35400);
 }
 
+/* Estado deshabilitado explícito para el botón móvil "No sé" (duplicado para bloque CSS repetido) */
+.mobile-skip-button[disabled], .mobile-skip-button[aria-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: grayscale(20%);
+}
+
 /* Mostrar solo en móviles cuando el teclado está visible */
 @media (max-width: 768px) {
-    .mobile-skip-button.keyboard-visible {
+    .mobile-skip-button.keyboard-visible:not([disabled]):not([aria-disabled="true"]) {
         display: flex !important;
         animation: slideInFromRight 0.3s ease-out;
     }
@@ -3044,7 +3058,7 @@
         .virtual-keyboard {
             pointer-events: auto;
             width: 100%;
-            max-width: 700px;
+            max-width: 740px; /* un poco más ancho para dar más espacio a las teclas */
             margin: 0 auto;
             padding: 10px 12px 16px;
             border-radius: 18px 18px 0 0;
@@ -3061,11 +3075,11 @@
         .vk-row {
             display: grid;
             grid-template-columns: repeat(10, 1fr);
-            gap: 8px;
+            gap: 6px; /* menos separación = teclas un poco más anchas */
             margin-top: 8px;
         }
         .vk-row.shifted {
-            grid-template-columns: repeat(9, 1fr);
+            grid-template-columns: repeat(8, 1fr); /* sin tecla Enter: 8 columnas */
         }
         .vk-key {
             height: 44px;
@@ -3869,6 +3883,16 @@ function setSkipEnabled(enabled) {
     skipBtn.disabled = !enabled;
     skipBtn.style.opacity = enabled ? '1' : '0.5';
     skipBtn.style.pointerEvents = enabled ? 'auto' : 'none';
+    // Sincronizar también el estado con el botón móvil "No sé" (si existe en la tarjeta visible)
+    try {
+        const visibleBack = document.querySelector('.flashcard.is-visible .back');
+        const mobileSkip = visibleBack ? (visibleBack.querySelector('#mobile-skip-button') || visibleBack.querySelector('.mobile-skip-button')) : null;
+        if (mobileSkip) {
+            mobileSkip.disabled = !enabled;
+            // También actualizar accesibilidad
+            mobileSkip.setAttribute('aria-disabled', (!enabled).toString());
+        }
+    } catch {}
 }
 
 // Habilita "No sé" solo en dos momentos:
@@ -3949,6 +3973,17 @@ function skipCurrentCardAsUnknown() {
     if (shuffleBtn) {
         shuffleBtn.disabled = false;
     }
+    
+    // Si está visible el teclado virtual en móvil, ocultarlo y esconder el botón móvil "No sé"
+    try {
+        const vk = document.getElementById('vk');
+        const vkOverlay = document.getElementById('vk-overlay');
+        if (vk && vk.classList.contains('show')) {
+            vk.classList.remove('show');
+            setTimeout(() => { if (vkOverlay) vkOverlay.style.display = 'none'; }, 220);
+        }
+        document.querySelectorAll('.mobile-skip-button').forEach(b => b.classList.remove('keyboard-visible'));
+    } catch {}
     
     // Avanzar a la siguiente tarjeta
     goToNextCard();
@@ -4238,7 +4273,7 @@ function goToNextCard() {
     if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
     if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
     showingErrorMessage = false;
-    lockedAfterSecondIncorrected = false;
+    lockedAfterSecondIncorrect = false;
     lockedAfterCorrect = false;
 
     // Buscar la siguiente tarjeta pendiente empezando DESPUÉS de la actual (búsqueda circular)
@@ -6236,6 +6271,19 @@ function attachFlashcardHandlers() {
                             if (vk && rt && vk.contains(rt)) {
                                 return;
                             }
+                            // Si el foco se mueve a controles del diálogo (incluido el botón móvil), no cerrar
+                            if (rt && (dialogContainer && dialogContainer.contains(rt))) {
+                                return;
+                            }
+                            if (rt && (mobileSkipBtn && (rt === mobileSkipBtn))) {
+                                return;
+                            }
+                            if (rt && (checkBtn && (rt === checkBtn))) {
+                                return;
+                            }
+                            if (rt && (clearBtn && (rt === clearBtn))) {
+                                return;
+                            }
                         } catch {}
                         // Si el blur viene de interactuar con el teclado virtual, NO ocultar
                         if (vkInteracting) {
@@ -6317,24 +6365,24 @@ function attachFlashcardHandlers() {
                         qwerty: [
                             ['q','w','e','r','t','y','u','i','o','p'],
                             ['a','s','d','f','g','h','j','k','l','ñ'],
-                            ['shift','z','x','c','v','b','n','m','enter']
+                            ['shift','z','x','c','v','b','n','m']
                         ],
                         azerty: [
                             ['a','z','e','r','t','y','u','i','o','p'],
                             ['q','s','d','f','g','h','j','k','l','ñ'],
-                            ['shift','w','x','c','v','b','n','m','enter']
+                            ['shift','w','x','c','v','b','n','m']
                         ]
                     },
                     fr: {
                         qwerty: [
                             ['q','w','e','r','t','y','u','i','o','p'],
                             ['a','s','d','f','g','h','j','k','l','ç'],
-                            ['shift','z','x','c','v','b','n','m','enter']
+                            ['shift','z','x','c','v','b','n','m']
                         ],
                         azerty: [
                             ['a','z','e','r','t','y','u','i','o','p'],
                             ['q','s','d','f','g','h','j','k','l','ç'],
-                            ['shift','w','x','c','v','b','n','m','enter']
+                            ['shift','w','x','c','v','b','n','m']
                         ]
                     }
                 };
@@ -6359,7 +6407,6 @@ function attachFlashcardHandlers() {
                             div.className = 'vk-key';
                             let label = k;
                             if (k === 'shift') { label = '⇧'; div.classList.add('primary'); }
-                            else if (k === 'enter') { label = '⏎'; div.classList.add('primary'); }
                             else { label = VK_SHIFT ? k.toUpperCase() : k; }
                             div.textContent = label;
                             div.dataset.key = k;
@@ -6416,10 +6463,7 @@ function attachFlashcardHandlers() {
                         inputEl.focus({ preventScroll: true });
                         return;
                     }
-                    if (key === 'enter') {
-                        checkBtn.click();
-                        return;
-                    }
+                    // sin tecla enter: el enter físico del teclado real sigue funcionando (keydown)
                     // letra, espacio o acentos (respetar mayúsculas con Shift)
                     let text = key;
                     if (key.length === 1) {
@@ -6785,23 +6829,33 @@ function attachFlashcardHandlers() {
                 // Usar la variable isSamsungBrowser ya declarada arriba
                 const touchDelay = isSamsungBrowser ? 500 : 200;
                 
-                // Event listener MUY SIMPLE para el botón móvil
-                mobileSkipBtn.addEventListener('click', (e) => {
-                    console.log('=== CLICK EN BOTÓN MÓVIL ===');
+                // Event listener para el botón móvil: usar pointerdown para priorizar la acción y suprimir blur
+                mobileSkipBtn.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    
-                    // Vibración y sonido
-                    vibrar(60);
-                    playButtonSound();
-                    
-                    // Ejecutar la función principal
-                    console.log('Ejecutando skipCurrentCardAsUnknown()');
-                    skipCurrentCardAsUnknown();
-                    console.log('skipCurrentCardAsUnknown() completada');
-                    
-                    console.log('=== FIN CLICK BOTÓN MÓVIL ===');
-                });
+                    // Marcar interacción para que el blur no cierre el teclado inmediatamente
+                    vkInteracting = true;
+                    if (vkInteractTimer) { clearTimeout(vkInteractTimer); vkInteractTimer = null; }
+                    const mainSkip = document.getElementById('skip-button');
+                    if (mainSkip && !mainSkip.disabled) {
+                        vibrar(60);
+                        playButtonSound();
+                        mainSkip.click();
+                    }
+                    // Liberar la marca de interacción tras un pequeño retardo
+                    vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 140);
+                }, { passive: false });
+                // Fallback por si algún navegador no dispara pointerdown
+                mobileSkipBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const mainSkip = document.getElementById('skip-button');
+                    if (mainSkip && !mainSkip.disabled) {
+                        vibrar(60);
+                        playButtonSound();
+                        mainSkip.click();
+                    }
+                }, { passive: false });
                 
                 // Enter para comprobar
                 inputEl.addEventListener('keydown', (e) => {

@@ -3101,13 +3101,37 @@
         }
         .vk-footer {
             display: grid;
-            grid-template-columns: 1fr 56px; /* barra espaciadora + botón ocultar */
+            grid-template-columns: auto minmax(96px, 1fr) 56px; /* controles + barra espaciadora reducida + ocultar */
             gap: 8px;
             margin-top: 10px;
             align-items: center;
         }
-        .vk-key.space { grid-column: 1 / span 1; margin-top: 2px; margin-bottom: 2px; }
-        .vk-key.hide { grid-column: 2 / span 1; height: 44px; display: flex; align-items: center; justify-content: center; }
+        .vk-controls { display: flex; gap: 6px; align-items: center; }
+        .vk-group { display: inline-flex; gap: 6px; align-items: center; }
+    .vk-radio { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+        .vk-radio input { position: absolute; opacity: 0; pointer-events: none; }
+        .vk-radio span {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            padding: 0 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+            color: #fff;
+            font-weight: 700;
+            font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            user-select: none;
+            cursor: pointer;
+        }
+        .vk-radio input:checked + span {
+            background: linear-gradient(180deg, #2563eb, #1d4ed8);
+            border-color: rgba(37,99,235,0.6);
+        }
+        .vk-key.space { grid-column: 2 / span 1; margin-top: 2px; margin-bottom: 2px; }
+        .vk-key.hide { grid-column: 3 / span 1; height: 44px; display: flex; align-items: center; justify-content: center; }
         .vk-key.hide i { pointer-events: none; }
         .vk-key.small { font-size: 14px; font-weight: 600; }
         
@@ -3115,8 +3139,29 @@
         .vk-accents { margin-top: 6px; }
         .vk-accents .row-accents {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, 1fr); /* 5 acentos + 1 borrar */
             gap: 8px;
+        }
+        /* Estilo elegante para las teclas de acentos */
+        .vk-accents .vk-key {
+            background: linear-gradient(180deg, #a78bfa, #7c3aed); /* violeta suave a profundo */
+            border-color: rgba(167, 139, 250, 0.65);
+            box-shadow: 0 2px 10px rgba(124, 58, 237, 0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+            text-shadow: 0 1px 0 rgba(0,0,0,0.25);
+            height: 36px; /* más bajas */
+            font-size: 15px;
+        }
+        /* Tecla borrar de acentos: color distinto (rojo elegante) */
+        .vk-accents .vk-key[data-key="backspace"] {
+            background: linear-gradient(180deg, #f43f5e, #e11d48);
+            border-color: rgba(244, 63, 94, 0.6);
+            box-shadow: 0 2px 10px rgba(225, 29, 72, 0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        .vk-accents .vk-key[data-key="backspace"]:active {
+            background: linear-gradient(180deg, #e11d48, #be123c);
+        }
+        .vk-accents .vk-key:active {
+            background: linear-gradient(180deg, #946cf8, #6d28d9);
         }
         .vk-accents .row-n-tilde {
             display: grid;
@@ -6130,6 +6175,9 @@ function attachFlashcardHandlers() {
                 const titleEl = backElement.querySelector('#type-word-title');
                 const vkOverlay = document.getElementById('vk-overlay');
                 const vk = document.getElementById('vk');
+                // Flag para evitar ocultar el teclado al interactuar con sus teclas
+                let vkInteracting = false;
+                let vkInteractTimer = null;
                 
                 // Detectar navegador Samsung para ajustes específicos
                 const isSamsungBrowser = navigator.userAgent.includes('SamsungBrowser');
@@ -6152,32 +6200,54 @@ function attachFlashcardHandlers() {
                     mobileSkipBtn.classList.remove('keyboard-visible');
                 };
 
-                // LÓGICA MUY SIMPLE: Solo mostrar/ocultar con focus/blur
+                // Función para mostrar el teclado virtual de forma segura
+                const showVirtualKeyboard = () => {
+                    if (!(vkOverlay && vk)) return;
+                    vkOverlay.style.display = 'flex';
+                    // Usar rAF para asegurar layout antes de la transición
+                    requestAnimationFrame(() => vk.classList.add('show'));
+                    // Truco iOS/Android: poner readonly para bloquear nativo sin perder foco
+                    const wasReadonly = inputEl.readOnly;
+                    inputEl.readOnly = true;
+                    inputEl.setAttribute('inputmode','none');
+                    inputEl.focus({ preventScroll: true });
+                    setTimeout(() => {
+                        inputEl.readOnly = wasReadonly;
+                        inputEl.focus({ preventScroll: true });
+                    }, 0);
+                };
+
+                // Mostrar/ocultar con focus/blur
                 const focusHandler = () => {
                     console.log('FOCUS - Mostrar botón y teclado virtual');
                     if (window.innerWidth <= 768) {
                         showMobileSkipButton();
-                        // Mostrar teclado virtual propio y bloquear teclado nativo sin perder foco
-                        if (vkOverlay && vk) {
-                        vkOverlay.style.display = 'flex';
-                        setTimeout(() => vk.classList.add('show'), 0);
-                        // Truco iOS/Android: readonly durante el focus, luego quitar
-                            const wasReadonly = inputEl.readOnly;
-                            inputEl.readOnly = true;
-                            inputEl.setAttribute('inputmode','none');
-                            inputEl.focus({ preventScroll: true });
-                            setTimeout(() => {
-                                inputEl.readOnly = wasReadonly;
-                                inputEl.focus({ preventScroll: true });
-                            }, 0);
-                        }
+                        showVirtualKeyboard();
                     }
                 };
                 
                 // En blur: ocultar el botón si se oculta el teclado
-                const blurHandler = () => {
+                const blurHandler = (e) => {
                     console.log('BLUR - Ocultar botón móvil "No sé" y teclado virtual');
                     if (window.innerWidth <= 768) {
+                        // Si el foco se mueve a algún elemento dentro del teclado, no cerrar
+                        try {
+                            const rt = e && (e.relatedTarget || document.activeElement);
+                            if (vk && rt && vk.contains(rt)) {
+                                return;
+                            }
+                        } catch {}
+                        // Si el blur viene de interactuar con el teclado virtual, NO ocultar
+                        if (vkInteracting) {
+                            showMobileSkipButton();
+                            if (vk && vkOverlay && !vk.classList.contains('show')) {
+                                vkOverlay.style.display = 'flex';
+                                requestAnimationFrame(() => vk.classList.add('show'));
+                            }
+                            // Restaurar foco al input inmediatamente
+                            setTimeout(() => inputEl.focus({ preventScroll: true }), 0);
+                            return;
+                        }
                         hideMobileSkipButton(true); // forzar ocultado incluso en Samsung
                         if (vk && vkOverlay) {
                             vk.classList.remove('show');
@@ -6224,6 +6294,16 @@ function attachFlashcardHandlers() {
                 inputEl.addEventListener('focus', focusHandler);
                 inputEl.addEventListener('blur', blurHandler);
                 window.addEventListener('resize', handleResize);
+
+                // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
+                const ensureVKVisibleOnTap = () => {
+                    if (window.innerWidth <= 768 && vk && !vk.classList.contains('show')) {
+                        showMobileSkipButton();
+                        showVirtualKeyboard();
+                    }
+                };
+                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
+                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
                 
                 // Para debugging - mostrar el botón inmediatamente en móviles si ya hay foco
                 if (window.innerWidth <= 768 && document.activeElement === inputEl) {
@@ -6231,14 +6311,40 @@ function attachFlashcardHandlers() {
                 }
 
                 // ====== LÓGICA DEL TECLADO VIRTUAL ======
-                const VK_ROWS = [
-                    // fila 1
-                    ['q','w','e','r','t','y','u','i','o','p'],
-                    // fila 2 (restauramos ñ)
-                    ['a','s','d','f','g','h','j','k','l','ñ'],
-                    // fila 3 (con Shift y Enter)
-                    ['shift','z','x','c','v','b','n','m','enter']
-                ];
+                // Soporte de idiomas (ES/FR) y layouts (QWERTY/AZERTY)
+                const LAYOUTS = {
+                    es: {
+                        qwerty: [
+                            ['q','w','e','r','t','y','u','i','o','p'],
+                            ['a','s','d','f','g','h','j','k','l','ñ'],
+                            ['shift','z','x','c','v','b','n','m','enter']
+                        ],
+                        azerty: [
+                            ['a','z','e','r','t','y','u','i','o','p'],
+                            ['q','s','d','f','g','h','j','k','l','ñ'],
+                            ['shift','w','x','c','v','b','n','m','enter']
+                        ]
+                    },
+                    fr: {
+                        qwerty: [
+                            ['q','w','e','r','t','y','u','i','o','p'],
+                            ['a','s','d','f','g','h','j','k','l','ç'],
+                            ['shift','z','x','c','v','b','n','m','enter']
+                        ],
+                        azerty: [
+                            ['a','z','e','r','t','y','u','i','o','p'],
+                            ['q','s','d','f','g','h','j','k','l','ç'],
+                            ['shift','w','x','c','v','b','n','m','enter']
+                        ]
+                    }
+                };
+                const ACCENTS = {
+                    es: ['á','é','í','ó','ú'],
+                    fr: ['é','è','ê','à','ç']
+                };
+                // Cargar preferencias guardadas (fallback: AZERTY + ES)
+                let VK_LANG = (localStorage.getItem('vk_lang') || 'es');
+                let VK_LAYOUT = (localStorage.getItem('vk_layout') || 'azerty');
                 let VK_SHIFT = false;
 
                 function renderVirtualKeyboard() {
@@ -6247,7 +6353,7 @@ function attachFlashcardHandlers() {
                     if (rows.length < 3) return;
                     rows.forEach((row, idx) => {
                         row.innerHTML = '';
-                        const keys = VK_ROWS[idx];
+                        const keys = LAYOUTS[VK_LANG][VK_LAYOUT][idx];
                         keys.forEach(k => {
                             const div = document.createElement('div');
                             div.className = 'vk-key';
@@ -6287,6 +6393,7 @@ function attachFlashcardHandlers() {
                         // Ocultar teclado virtual sin perder el foco del input
                         if (vk && vkOverlay) {
                             vk.classList.remove('show');
+                            // pequeño retardo para transición y evitar rebotes al tocar el input
                             setTimeout(() => { vkOverlay.style.display = 'none'; }, 220);
                         }
                         // Ocultar el botón móvil "No sé"
@@ -6323,14 +6430,127 @@ function attachFlashcardHandlers() {
                     try { playKeyboardSound(); } catch {}
                 }
 
-                // Construir el teclado la primera vez
+                function renderAccents() {
+                    const row = vk.querySelector('.vk-accents .row-accents');
+                    if (!row) return;
+                    row.innerHTML = '';
+                    const keys = ACCENTS[VK_LANG] || [];
+                    keys.forEach(k => {
+                        const div = document.createElement('div');
+                        div.className = 'vk-key';
+                        div.textContent = k;
+                        div.dataset.key = k;
+                        row.appendChild(div);
+                    });
+                    // Tecla borrar al final
+                    const del = document.createElement('div');
+                    del.className = 'vk-key danger';
+                    del.dataset.key = 'backspace';
+                    del.setAttribute('title', 'Borrar');
+                    del.innerHTML = '<i class="fas fa-backspace"></i>';
+                    row.appendChild(del);
+                }
+
+                // Construir el teclado la primera vez según preferencias
+                // Ajustar radios al estado actual
+                const syncRadiosToState = () => {
+                    if (!vk) return;
+                    vk.querySelectorAll('input[name="vk-layout"]').forEach(el => { el.checked = (el.value === VK_LAYOUT); });
+                    vk.querySelectorAll('input[name="vk-lang"]').forEach(el => { el.checked = (el.value === VK_LANG); });
+                };
                 renderVirtualKeyboard();
+                renderAccents();
+                syncRadiosToState();
+                // Escuchar cambios de layout (radios)
+                const layoutRadios = vk.querySelectorAll('input[name="vk-layout"]');
+                layoutRadios.forEach(r => {
+                    r.addEventListener('change', () => {
+                        if (r.checked) {
+                            VK_LAYOUT = r.value === 'azerty' ? 'azerty' : 'qwerty';
+                            localStorage.setItem('vk_layout', VK_LAYOUT);
+                            renderVirtualKeyboard();
+                        }
+                    });
+                });
+                const langRadios = vk.querySelectorAll('input[name="vk-lang"]');
+                langRadios.forEach(r => {
+                    r.addEventListener('change', () => {
+                        if (r.checked) {
+                            VK_LANG = r.value === 'fr' ? 'fr' : 'es';
+                            localStorage.setItem('vk_lang', VK_LANG);
+                            renderVirtualKeyboard();
+                            renderAccents();
+                        }
+                    });
+                });
+                // Evitar que los radios provoquen blur del input; manejar el cambio manualmente
+                const vkControls = vk.querySelector('.vk-controls');
+                if (vkControls) {
+                    const applyLayout = (newLayout) => {
+                        VK_LAYOUT = newLayout === 'azerty' ? 'azerty' : 'qwerty';
+                        localStorage.setItem('vk_layout', VK_LAYOUT);
+                        // actualizar estado visual de radios
+                        vk.querySelectorAll('input[name="vk-layout"]').forEach(el => {
+                            el.checked = (el.value === VK_LAYOUT);
+                        });
+                        renderVirtualKeyboard();
+                        // asegurar foco y mantener teclado visible
+                        inputEl.focus({ preventScroll: true });
+                    };
+                    const applyLang = (newLang) => {
+                        VK_LANG = newLang === 'fr' ? 'fr' : 'es';
+                        localStorage.setItem('vk_lang', VK_LANG);
+                        vk.querySelectorAll('input[name="vk-lang"]').forEach(el => {
+                            el.checked = (el.value === VK_LANG);
+                        });
+                        renderVirtualKeyboard();
+                        renderAccents();
+                        inputEl.focus({ preventScroll: true });
+                    };
+                    const startInteract = () => {
+                        vkInteracting = true;
+                        if (vkInteractTimer) { clearTimeout(vkInteractTimer); vkInteractTimer = null; }
+                    };
+                    const endInteractSoon = () => {
+                        if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                        vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 140);
+                    };
+                    vkControls.addEventListener('pointerdown', (e) => {
+                        const label = e.target.closest('.vk-radio');
+                        if (!label) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startInteract();
+                        const inputLayout = label.querySelector('input[name="vk-layout"]');
+                        const inputLang = label.querySelector('input[name="vk-lang"]');
+                        if (inputLayout) applyLayout(inputLayout.value);
+                        if (inputLang) applyLang(inputLang.value);
+                    }, { passive: false });
+                    vkControls.addEventListener('pointerup', endInteractSoon);
+                    vkControls.addEventListener('pointercancel', endInteractSoon);
+                    // También manejar click por si algún navegador no dispara pointer events
+                    vkControls.addEventListener('click', (e) => {
+                        const label = e.target.closest('.vk-radio');
+                        if (!label) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startInteract();
+                        const inputLayout = label.querySelector('input[name="vk-layout"]');
+                        const inputLang = label.querySelector('input[name="vk-lang"]');
+                        if (inputLayout) applyLayout(inputLayout.value);
+                        if (inputLang) applyLang(inputLang.value);
+                        endInteractSoon();
+                    }, { passive: false });
+                }
                 // Wire de clicks del teclado
                 if (vk) {
                     // Usar pointerdown para soportar móvil y desktop sin bloquear eventos subsiguientes
                     vk.addEventListener('pointerdown', (e) => {
                         const target = e.target.closest('.vk-key');
                         if (!target) return;
+                        // Marcar interacción con el teclado para suprimir blur momentáneo
+                        vkInteracting = true;
+                        if (vkInteractTimer) { clearTimeout(vkInteractTimer); vkInteractTimer = null; }
                         const key = target.dataset.key;
                         if (!key) return;
                         e.preventDefault();
@@ -6338,6 +6558,13 @@ function attachFlashcardHandlers() {
                         try { vibrar(30); } catch {}
                         handleVirtualKey(key);
                     }, { passive: false });
+                    // Limpiar la marca de interacción al soltar/cancelar
+                    const clearVKInteract = () => {
+                        if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                        vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
+                    };
+                    vk.addEventListener('pointerup', clearVKInteract);
+                    vk.addEventListener('pointercancel', clearVKInteract);
                 }
                 // Evitar que los clics del overlay cierren la tarjeta o hagan flip
                 if (vkOverlay) {
@@ -7955,6 +8182,16 @@ function goToNextCardWithDebug() {
                     </div>
                 </div>
                 <div class="vk-footer">
+                    <div class="vk-controls">
+                        <div class="vk-group" role="radiogroup" aria-label="Distribución del teclado">
+                            <label class="vk-radio"><input type="radio" name="vk-layout" value="qwerty"><span>QW</span></label>
+                            <label class="vk-radio"><input type="radio" name="vk-layout" value="azerty"><span>AZ</span></label>
+                        </div>
+                        <div class="vk-group" role="radiogroup" aria-label="Idioma del teclado">
+                            <label class="vk-radio"><input type="radio" name="vk-lang" value="es"><span>Es</span></label>
+                            <label class="vk-radio"><input type="radio" name="vk-lang" value="fr"><span>Fr</span></label>
+                        </div>
+                    </div>
                     <div class="vk-key space" data-key=" ">ESPACIO</div>
                     <div class="vk-key hide small" data-key="hide" title="Ocultar teclado"><i class="fas fa-chevron-down"></i></div>
                 </div>

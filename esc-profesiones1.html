@@ -5974,7 +5974,12 @@ function attachFlashcardHandlers() {
                     }
                 };
                 
-                const hideMobileSkipButton = () => {
+                const hideMobileSkipButton = (force = false) => {
+                    // En Samsung Internet, no ocultar a menos que sea forzado explícitamente
+                    if (!force && isSamsungBrowser) {
+                        console.log('Samsung: ignorar hideMobileSkipButton() (no desaparecer)');
+                        return;
+                    }
                     console.log('Ocultando botón móvil "No sé"');
                     mobileSkipBtn.classList.remove('keyboard-visible');
                 };
@@ -6004,6 +6009,13 @@ function attachFlashcardHandlers() {
                     
                     console.log(`Altura anterior: ${lastViewportHeight}, actual: ${currentHeight}, diferencia: ${heightDiff}`);
                     
+                    // En Samsung Internet nunca ocultamos por cambios de viewport para evitar parpadeos
+                    if (isSamsungBrowser) {
+                        showMobileSkipButton();
+                        lastViewportHeight = currentHeight;
+                        return;
+                    }
+                    
                     if (heightDiff > 100) {
                         // Altura se redujo significativamente = teclado apareció
                         showMobileSkipButton();
@@ -6012,8 +6024,8 @@ function attachFlashcardHandlers() {
                         console.log('Detectado aumento de altura - ocultando botón');
                         hideMobileSkipButton();
                         // Múltiples intentos para asegurar que se oculte
-                        setTimeout(hideMobileSkipButton, 100);
-                        setTimeout(hideMobileSkipButton, 300);
+                        setTimeout(() => hideMobileSkipButton(), 100);
+                        setTimeout(() => hideMobileSkipButton(), 300);
                     }
                     
                     lastViewportHeight = currentHeight;
@@ -6036,7 +6048,8 @@ function attachFlashcardHandlers() {
                     inputEl.removeEventListener('focus', focusHandler);
                     inputEl.removeEventListener('blur', blurHandler);
                     window.removeEventListener('resize', handleResize);
-                    hideMobileSkipButton();
+                    // En cleanup sí forzamos el ocultado
+                    hideMobileSkipButton(true);
                 };
 
                 // Guardar función de limpieza para uso posterior

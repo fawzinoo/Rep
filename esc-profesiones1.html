@@ -676,7 +676,7 @@
     /* Variables para controlar una órbita estable (tipo luna-tierra) */
     --center-size: 70px;           /* Tamaño del círculo blanco (pulse-center) */
     --center-scale-max: 1.1;       /* Escala máxima por animación centerBounce */
-    --letter-size: 1.1rem;         /* Igual que .floating-emoji font-size para cálculo preciso */
+    --letter-size: 1.35rem;        /* Igual que .floating-emoji font-size para cálculo preciso */
     --safety-gap: 16px;            /* Más separación para asegurar que no invada el círculo */
     /* Radio real de la órbita: mitad del centro (con su escala máxima) + semi ancho de letra + gap */
     --orbit-radius: calc((var(--center-size) * var(--center-scale-max) / 2) + (var(--letter-size) / 2) + var(--safety-gap));
@@ -828,7 +828,7 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    font-size: 1.1rem; /* ligeramente menor para mayor claridad */
+    font-size: 1.5rem; /* aumentado un poco más para mejor legibilidad */
     opacity: 0.9;
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
     transform-origin: 50% 50%; /* rota desde el centro del contenedor */
@@ -1936,7 +1936,7 @@
 
 .type-input {
     flex: 1;
-    font-size: 1.05rem;
+    font-size: 1.3rem;
     padding: 12px 14px;
     border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.35);
@@ -3060,7 +3060,7 @@
             width: 100%;
             max-width: 740px; /* un poco más ancho para dar más espacio a las teclas */
             margin: 0 auto;
-            padding: 10px 12px 16px;
+            padding: 10px 6px 14px; /* reducir padding lateral para ganar ancho útil */
             border-radius: 18px 18px 0 0;
             background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.96));
             box-shadow: 0 -8px 30px rgba(0,0,0,0.4);
@@ -3075,9 +3075,11 @@
         .vk-row {
             display: grid;
             grid-template-columns: repeat(10, 1fr);
-            gap: 6px; /* menos separación = teclas un poco más anchas */
+            gap: 2px; /* separación mínima para ensanchar teclas */
             margin-top: 8px;
         }
+        /* Fila superior: mismo gap mínimo para máxima anchura */
+        .vk-row[data-row="1"] { gap: 2px; }
         .vk-row.shifted {
             grid-template-columns: repeat(8, 1fr); /* sin tecla Enter: 8 columnas */
         }
@@ -3154,7 +3156,7 @@
         .vk-accents .row-accents {
             display: grid;
             grid-template-columns: repeat(6, 1fr); /* 5 acentos + 1 borrar */
-            gap: 8px;
+            gap: 2px; /* igualar separación a 2px */
         }
         /* Estilo elegante para las teclas de acentos */
         .vk-accents .vk-key {
@@ -3180,15 +3182,16 @@
         .vk-accents .row-n-tilde {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 8px;
+            gap: 2px;
             margin-top: 8px;
         }
         .vk-accents .row-n-tilde .vk-key { grid-column: 3; }
         @media (max-width: 420px) {
             .vk-key { height: 40px; font-size: 15px; }
-            .vk-row { gap: 6px; }
+            .vk-row { gap: 2px; }
+            .vk-row[data-row="1"] { gap: 2px; }
             .vk-footer { gap: 6px; }
-            .vk-accents .row-accents, .vk-accents .row-n-tilde { gap: 6px; }
+            .vk-accents .row-accents, .vk-accents .row-n-tilde { gap: 2px; }
         }
     </style></head>
 <body>
@@ -4251,6 +4254,22 @@ function showCountdown(card) {
 }
 
 function goToNextCard() {
+    // Cerrar cualquier teclado virtual activo y limpiar estados móviles
+    try {
+        const vkOverlay = document.getElementById('vk-overlay');
+        const vk = document.getElementById('vk');
+        if (vk && vkOverlay) {
+            vk.classList.remove('show');
+            vkOverlay.style.display = 'none';
+        }
+        // Clases globales de teclado/caret
+        document.body.classList.remove('keyboard-visible');
+        document.documentElement.classList.remove('keyboard-visible');
+        document.body.classList.add('keyboard-hidden');
+        document.documentElement.classList.add('keyboard-hidden');
+        // Ocultar botón móvil "No sé"
+        document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible'));
+    } catch (e) {}
     
     // Reactivar el botón de mezclar al pasar a la siguiente tarjeta
     document.getElementById('shuffle-button').disabled = false;
@@ -4311,6 +4330,20 @@ function goToNextCard() {
 }
 
 function showCard(index) {
+    // Al mostrar una tarjeta (siempre front), forzar cierre del teclado virtual
+    try {
+        const vkOverlay = document.getElementById('vk-overlay');
+        const vk = document.getElementById('vk');
+        if (vk && vkOverlay) {
+            vk.classList.remove('show');
+            vkOverlay.style.display = 'none';
+        }
+        document.body.classList.remove('keyboard-visible');
+        document.documentElement.classList.remove('keyboard-visible');
+        document.body.classList.add('keyboard-hidden');
+        document.documentElement.classList.add('keyboard-hidden');
+        document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible'));
+    } catch (e) {}
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 flashcards.forEach(card => {
     card.classList.remove('is-visible', 'flipped');
@@ -6137,7 +6170,21 @@ function attachFlashcardHandlers() {
             vibrar(80); 
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
-                
+                // Ocultar teclado virtual y limpiar estado al volver al frente
+                try {
+                    const vkOverlay = document.getElementById('vk-overlay');
+                    const vk = document.getElementById('vk');
+                    if (vk && vkOverlay) {
+                        vk.classList.remove('show');
+                        vkOverlay.style.display = 'none';
+                    }
+                    document.body.classList.remove('keyboard-visible');
+                    document.documentElement.classList.remove('keyboard-visible');
+                    document.body.classList.add('keyboard-hidden');
+                    document.documentElement.classList.add('keyboard-hidden');
+                    document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible'));
+                } catch (e) {}
+
                 card.classList.remove('flipped');
                 stopAllAudios();
                 backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
@@ -6630,11 +6677,20 @@ function attachFlashcardHandlers() {
                     window.removeEventListener('resize', handleResize);
                     // En cleanup sí forzamos el ocultado
                     hideMobileSkipButton(true);
+                    // Forzar ocultado del overlay del teclado virtual si está visible
+                    try {
+                        if (vk && vkOverlay) {
+                            vk.classList.remove('show');
+                            vkOverlay.style.display = 'none';
+                        }
+                    } catch {}
                     // También marcar estado global como teclado oculto
                     document.body.classList.add('keyboard-hidden');
                     document.documentElement.classList.add('keyboard-hidden');
                     document.body.classList.remove('keyboard-visible');
                     document.documentElement.classList.remove('keyboard-visible');
+                    // Limpiar estado visual de todos los botones móviles "No sé" por seguridad
+                    try { document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible')); } catch {}
                 };
 
                 // Guardar función de limpieza para uso posterior

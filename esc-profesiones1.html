@@ -166,38 +166,62 @@
             cursor: pointer !important;
         }
         
-        /* Desactivar cursor en dispositivos móviles cuando no hay teclado activo */
-        @media (max-width: 768px) {
-            * {
+        /* Sistema de ocultación de cursor para dispositivos móviles */
+        @media (max-width: 768px) and (pointer: coarse) {
+            /* Ocultar cursor por defecto en dispositivos táctiles */
+            *, *::before, *::after {
                 cursor: none !important;
+                caret-color: transparent !important;
             }
             
-            /* Permitir cursor solo en elementos de entrada cuando están enfocados */
-            input:focus, textarea:focus {
-                cursor: text !important;
+            /* Ocultar cursor de texto específicamente */
+            input, textarea, [contenteditable] {
+                cursor: none !important;
+                caret-color: transparent !important;
             }
             
-            /* Permitir cursor en elementos interactivos específicos cuando están siendo usados */
-            button:active, .button:active, .pill:active {
-                cursor: pointer !important;
+            /* Ocultar cursor en todos los elementos interactivos */
+            button, .button, .pill, .flashcard, a, [onclick] {
+                cursor: none !important;
             }
         }
         
-        /* Clase especial para mostrar cursor cuando el teclado virtual está activo */
-        .mobile-keyboard-active * {
+        /* Clase para mostrar cursor cuando el teclado virtual está activo */
+        .keyboard-visible *, 
+        .keyboard-visible *::before, 
+        .keyboard-visible *::after {
             cursor: default !important;
         }
         
-        .mobile-keyboard-active input, 
-        .mobile-keyboard-active textarea {
+        .keyboard-visible input, 
+        .keyboard-visible textarea, 
+        .keyboard-visible [contenteditable] {
             cursor: text !important;
+            caret-color: auto !important;
         }
         
-        .mobile-keyboard-active button, 
-        .mobile-keyboard-active .button, 
-        .mobile-keyboard-active .pill,
-        .mobile-keyboard-active .flashcard {
+        .keyboard-visible button, 
+        .keyboard-visible .button, 
+        .keyboard-visible .pill,
+        .keyboard-visible .flashcard, 
+        .keyboard-visible a, 
+        .keyboard-visible [onclick] {
             cursor: pointer !important;
+        }
+        
+        /* Forzar ocultación de cursor cuando no hay teclado */
+        .keyboard-hidden *, 
+        .keyboard-hidden *::before, 
+        .keyboard-hidden *::after {
+            cursor: none !important;
+            caret-color: transparent !important;
+        }
+        
+        .keyboard-hidden input, 
+        .keyboard-hidden textarea, 
+        .keyboard-hidden [contenteditable] {
+            cursor: none !important;
+            caret-color: transparent !important;
         }
         
         /* Prevenir selección con pseudo-elementos */
@@ -7362,157 +7386,210 @@ window.addEventListener('beforeunload', () => {
     stopPeriodicConnectivityCheck();
 });
 
-// === SISTEMA DE DETECCIÓN DE TECLADO VIRTUAL PARA CURSOR ===
-let isVirtualKeyboardActive = false;
-let lastViewportHeight = window.innerHeight;
-let keyboardDetectionTimeout = null;
+// === SISTEMA MEJORADO DE OCULTACIÓN DE CURSOR EN MÓVILES ===
+let keyboardState = {
+    isVisible: false,
+    lastHeight: window.innerHeight,
+    detectionTimer: null,
+    blurTimer: null
+};
 
 function isMobileDevice() {
-    return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                    (window.innerWidth <= 768 && 'ontouchstart' in window);
+    return isMobile;
 }
 
-function updateCursorVisibility(showCursor) {
-    const body = document.body;
+function setCursorState(visible, reason = '') {
+    if (!isMobileDevice()) return;
     
-    if (showCursor) {
-        body.classList.add('mobile-keyboard-active');
-        console.log('🎯 Cursor activado - teclado virtual detectado');
+    const body = document.body;
+    const html = document.documentElement;
+    
+    // Limpiar todas las clases previas
+    body.classList.remove('keyboard-visible', 'keyboard-hidden');
+    html.classList.remove('keyboard-visible', 'keyboard-hidden');
+    
+    if (visible) {
+        body.classList.add('keyboard-visible');
+        html.classList.add('keyboard-visible');
+        console.log('👁️ Cursor MOSTRADO:', reason);
     } else {
-        body.classList.remove('mobile-keyboard-active');
-        console.log('🚫 Cursor desactivado - teclado virtual oculto');
+        body.classList.add('keyboard-hidden');
+        html.classList.add('keyboard-hidden');
+        console.log('🚫 Cursor OCULTO:', reason);
+        
+        // Forzar blur en todos los inputs para eliminar el cursor parpadeante
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+            activeElement.blur();
+        }
     }
-    isVirtualKeyboardActive = showCursor;
+    
+    keyboardState.isVisible = visible;
 }
 
-function detectVirtualKeyboard() {
+function detectKeyboardByViewport() {
     if (!isMobileDevice()) return;
     
     const currentHeight = window.innerHeight;
-    const heightDifference = lastViewportHeight - currentHeight;
+    const heightDiff = keyboardState.lastHeight - currentHeight;
     
-    // Detectar teclado apareció (altura se redujo significativamente)
-    if (heightDifference > 150) {
-        if (!isVirtualKeyboardActive) {
-            console.log(`📱 Teclado virtual detectado: ${lastViewportHeight} → ${currentHeight} (diff: ${heightDifference})`);
-            updateCursorVisibility(true);
-        }
+    console.log(`📏 Viewport: ${keyboardState.lastHeight} → ${currentHeight} (diff: ${heightDiff})`);
+    
+    // Teclado apareció (viewport se redujo significativamente)
+    if (heightDiff > 120 && !keyboardState.isVisible) {
+        setCursorState(true, `Viewport reducido ${heightDiff}px`);
     }
-    // Detectar teclado desapareció (altura aumentó significativamente)
-    else if (heightDifference < -100) {
-        if (isVirtualKeyboardActive) {
-            console.log(`📱 Teclado virtual oculto: ${lastViewportHeight} → ${currentHeight} (diff: ${heightDifference})`);
-            updateCursorVisibility(false);
-        }
+    // Teclado desapareció (viewport aumentó)
+    else if (heightDiff < -50 && keyboardState.isVisible) {
+        setCursorState(false, `Viewport aumentado ${Math.abs(heightDiff)}px`);
     }
     
-    lastViewportHeight = currentHeight;
+    keyboardState.lastHeight = currentHeight;
 }
 
 function handleInputFocus(event) {
     if (!isMobileDevice()) return;
     
-    console.log('📝 Input enfocado - activando cursor');
+    console.log('🎯 INPUT FOCUS - Mostrando cursor inmediatamente');
     
-    // Activar cursor inmediatamente al enfocar input
-    updateCursorVisibility(true);
+    // Limpiar timer de blur previo
+    if (keyboardState.blurTimer) {
+        clearTimeout(keyboardState.blurTimer);
+        keyboardState.blurTimer = null;
+    }
     
-    // Configurar detección de teclado con delay
-    clearTimeout(keyboardDetectionTimeout);
-    keyboardDetectionTimeout = setTimeout(() => {
-        detectVirtualKeyboard();
+    // Mostrar cursor inmediatamente
+    setCursorState(true, 'Input enfocado');
+    
+    // Detectar teclado después de un delay
+    if (keyboardState.detectionTimer) {
+        clearTimeout(keyboardState.detectionTimer);
+    }
+    
+    keyboardState.detectionTimer = setTimeout(() => {
+        detectKeyboardByViewport();
     }, 300);
 }
 
 function handleInputBlur(event) {
     if (!isMobileDevice()) return;
     
-    console.log('📝 Input desenfocado - verificando cursor');
+    console.log('� INPUT BLUR - Preparando ocultar cursor');
     
-    // Esperar un poco antes de desactivar por si el usuario cambia a otro input
-    clearTimeout(keyboardDetectionTimeout);
-    keyboardDetectionTimeout = setTimeout(() => {
-        // Verificar si hay algún input enfocado
-        const focusedInput = document.activeElement;
-        const isInputFocused = focusedInput && (
-            focusedInput.tagName === 'INPUT' || 
-            focusedInput.tagName === 'TEXTAREA' ||
-            focusedInput.contentEditable === 'true'
+    // Limpiar timer previo
+    if (keyboardState.blurTimer) {
+        clearTimeout(keyboardState.blurTimer);
+    }
+    
+    // Esperar antes de ocultar por si hay otro input que toma el foco
+    keyboardState.blurTimer = setTimeout(() => {
+        const activeEl = document.activeElement;
+        const hasActiveFocus = activeEl && (
+            activeEl.tagName === 'INPUT' || 
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.contentEditable === 'true'
         );
         
-        if (!isInputFocused) {
-            console.log('📝 Ningún input enfocado - desactivando cursor');
-            updateCursorVisibility(false);
+        if (!hasActiveFocus) {
+            console.log('⏰ Timer blur - Ocultando cursor');
+            setCursorState(false, 'Sin inputs activos');
+        } else {
+            console.log('⏰ Timer blur - Manteniendo cursor (otro input activo)');
         }
-    }, 300);
+    }, 150);
 }
 
-function initializeCursorManagement() {
+function forceHideCursor() {
+    if (!isMobileDevice()) return;
+    
+    console.log('🔨 FORZAR OCULTAR CURSOR');
+    setCursorState(false, 'Forzado');
+    
+    // Forzar blur en todos los elementos
+    document.querySelectorAll('input, textarea, [contenteditable]').forEach(el => {
+        if (el === document.activeElement) {
+            el.blur();
+        }
+    });
+}
+
+function initCursorHiding() {
     if (!isMobileDevice()) {
-        console.log('💻 Dispositivo de escritorio detectado - cursor siempre activo');
+        console.log('💻 Desktop - Cursor siempre visible');
         return;
     }
     
-    console.log('📱 Dispositivo móvil detectado - inicializando gestión de cursor');
+    console.log('📱 Móvil detectado - Inicializando ocultación de cursor');
     
-    // Desactivar cursor inicialmente en móviles
-    updateCursorVisibility(false);
+    // Estado inicial: cursor oculto
+    setCursorState(false, 'Estado inicial');
     
-    // Escuchar cambios en el tamaño del viewport
+    // Eventos de focus/blur
+    document.addEventListener('focusin', handleInputFocus, true);
+    document.addEventListener('focusout', handleInputBlur, true);
+    
+    // Detectar cambios de viewport
     window.addEventListener('resize', () => {
-        clearTimeout(keyboardDetectionTimeout);
-        keyboardDetectionTimeout = setTimeout(detectVirtualKeyboard, 100);
+        if (keyboardState.detectionTimer) {
+            clearTimeout(keyboardState.detectionTimer);
+        }
+        keyboardState.detectionTimer = setTimeout(detectKeyboardByViewport, 100);
     });
     
-    // Escuchar eventos de orientación
+    // Detectar cambios de orientación
     window.addEventListener('orientationchange', () => {
         setTimeout(() => {
-            lastViewportHeight = window.innerHeight;
-            detectVirtualKeyboard();
-        }, 500);
+            keyboardState.lastHeight = window.innerHeight;
+            detectKeyboardByViewport();
+        }, 600);
     });
     
-    // Escuchar focus/blur en todos los inputs existentes y futuros
-    document.addEventListener('focusin', handleInputFocus);
-    document.addEventListener('focusout', handleInputBlur);
+    // Forzar ocultar cursor al hacer clic fuera de inputs
+    document.addEventListener('touchstart', (e) => {
+        const target = e.target;
+        if (target && target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && 
+            target.contentEditable !== 'true') {
+            setTimeout(() => {
+                if (document.activeElement.tagName === 'BODY') {
+                    forceHideCursor();
+                }
+            }, 100);
+        }
+    });
     
-    // Observer para inputs que se crean dinámicamente
+    // Observer para nuevos elementos de entrada
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
-                if (node.nodeType === 1) { // Element node
-                    // Buscar inputs en el nodo agregado
-                    const inputs = node.querySelectorAll && node.querySelectorAll('input, textarea, [contenteditable="true"]') || [];
-                    
-                    // Si el nodo mismo es un input
-                    if (node.matches && node.matches('input, textarea, [contenteditable="true"]')) {
-                        console.log('🆕 Nuevo input detectado:', node);
+                if (node.nodeType === 1) {
+                    const inputs = node.querySelectorAll ? node.querySelectorAll('input, textarea, [contenteditable]') : [];
+                    if (inputs.length > 0) {
+                        console.log(`🆕 ${inputs.length} nuevos inputs detectados`);
                     }
-                    
-                    inputs.forEach(input => {
-                        console.log('🆕 Nuevo input en subtree detectado:', input);
-                    });
                 }
             });
         });
     });
     
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
     
-    console.log('✅ Sistema de gestión de cursor inicializado');
+    console.log('✅ Sistema de ocultación de cursor inicializado');
 }
 
-// Inicializar el sistema cuando la página esté lista
-document.addEventListener('DOMContentLoaded', () => {
-    // Pequeño delay para asegurar que todo esté cargado
-    setTimeout(initializeCursorManagement, 500);
-});
+// Inicializar cuando esté listo
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(initCursorHiding, 200);
+    });
+} else {
+    setTimeout(initCursorHiding, 200);
+}
 
-// También inicializar en load por si acaso
+// También en load como respaldo
 window.addEventListener('load', () => {
-    setTimeout(initializeCursorManagement, 100);
+    setTimeout(initCursorHiding, 100);
 });
 
 function debugGameState() {

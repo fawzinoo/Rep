@@ -6035,30 +6035,6 @@ function attachFlashcardHandlers() {
                 const dialogContainer = backElement.querySelector('.type-dialog-container');
                 const inputContainer = backElement.querySelector('.type-input-container');
                 const titleEl = backElement.querySelector('#type-word-title');
-                
-                // Configuración inicial del input
-                if (inputEl) {
-                    console.log('🔧 Configurando input. isDesktopDevice():', isDesktopDevice());
-                    console.log('📱 window.innerWidth:', window.innerWidth);
-                    
-                    // En dispositivos móviles, configurar para usar teclado virtual
-                    if (!isDesktopDevice()) {
-                        console.log('📱 Configurando para dispositivo móvil - teclado virtual');
-                        inputEl.setAttribute('inputmode', 'none');
-                        inputEl.setAttribute('autocomplete', 'off');
-                        inputEl.setAttribute('autocorrect', 'off');
-                        inputEl.setAttribute('autocapitalize', 'off');
-                        inputEl.setAttribute('spellcheck', 'false');
-                        // Inicialmente readonly para prevenir teclado nativo
-                        inputEl.readOnly = true;
-                    } else {
-                        console.log('💻 Configurando para PC - teclado físico');
-                        inputEl.removeAttribute('inputmode');
-                        inputEl.readOnly = false;
-                        inputEl.setAttribute('autocomplete', 'off');
-                    }
-                }
-                
                 // Helper para obtener los elementos del teclado virtual en el momento de uso
                 const getVK = () => ({
                     vk: document.getElementById('vk'),
@@ -6134,44 +6110,25 @@ function attachFlashcardHandlers() {
                     // No mostrar el teclado virtual en dispositivos de escritorio/PC
                     if (isDesktopDevice()) {
                         console.log('showVirtualKeyboard: dispositivo de escritorio detectado, usando teclado físico');
-                        // En PC, habilitar input normal y enfocar
-                        inputEl.readOnly = false;
+                        // En PC, simplemente enfocar el input para usar el teclado físico
                         try { inputEl.focus(); } catch (e) {}
                         return;
                     }
-                    
-                    console.log('showVirtualKeyboard: dispositivo móvil, mostrando teclado virtual');
                     const { vk, vkOverlay } = getVK();
-                    if (!(vkOverlay && vk)) { 
-                        console.log('showVirtualKeyboard: vk/vkOverlay not found'); 
-                        return; 
-                    }
-                    
-                    // Asegurar que el input esté preparado para el teclado virtual
-                    inputEl.setAttribute('inputmode', 'none');
-                    
-                    // Mostrar teclado virtual
-                    console.log('Mostrando overlay y teclado virtual');
+                    if (!(vkOverlay && vk)) { console.log('showVirtualKeyboard: vk/vkOverlay not found'); return; }
                     vkOverlay.style.display = 'flex';
-                    
                     // Usar rAF para asegurar layout antes de la transición
+                    requestAnimationFrame(() => vk.classList.add('show'));
+                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco
+                    const wasReadonly = inputEl.readOnly;
+                    inputEl.setAttribute('inputmode','none');
+                    inputEl.readOnly = true;
                     requestAnimationFrame(() => {
-                        console.log('Agregando clase show al teclado virtual');
-                        vk.classList.add('show');
-                        
-                        // Una vez que el teclado virtual está visible, preparar el input
+                        try { inputEl.focus({ preventScroll: true }); } catch (e) {}
                         setTimeout(() => {
-                            // Habilitar temporalmente para permitir focus sin teclado nativo
-                            inputEl.readOnly = false;
-                            try { 
-                                inputEl.focus({ preventScroll: true }); 
-                                console.log('Input enfocado con teclado virtual visible');
-                            } catch (e) {
-                                console.log('Error al enfocar input:', e);
-                            }
-                            // Inmediatamente volver a readonly para prevenir teclado nativo en futuros toques
-                            inputEl.readOnly = true;
-                        }, 100); // Delay para que el teclado virtual se establezca completamente
+                            inputEl.readOnly = wasReadonly;
+                            try { inputEl.focus({ preventScroll: true }); } catch (e) {}
+                        }, 0);
                     });
                 };
                 const ensureVirtualKeyboardOpen = () => {
@@ -6310,68 +6267,31 @@ function attachFlashcardHandlers() {
 
                 // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
                 const ensureVKVisibleOnTap = () => {
-                    console.log('🎯 ensureVKVisibleOnTap ejecutándose...');
-                    console.log('📏 window.innerWidth:', window.innerWidth);
-                    console.log('🖥️ isDesktopDevice():', isDesktopDevice());
-                    
-                    // Comportamiento diferenciado según tipo de dispositivo
-                    if (isDesktopDevice()) {
-                        console.log('💻 Desktop: usando teclado físico');
-                        // En PC: habilitar input normal y enfocar
-                        inputEl.readOnly = false;
-                        try {
-                            inputEl.focus({ preventScroll: true });
-                            const end = inputEl.value.length;
-                            try { inputEl.setSelectionRange(end, end); } catch {}
-                        } catch {}
+                    // Forzar foco inmediato para mostrar caret
+                    try {
+                        inputEl.focus({ preventScroll: true });
+                        const end = inputEl.value.length;
+                        try { inputEl.setSelectionRange(end, end); } catch {}
                         hidePlaceholder();
-                        document.body.classList.add('keyboard-visible');
-                        document.documentElement.classList.add('keyboard-visible');
-                        document.body.classList.remove('keyboard-hidden');
-                        document.documentElement.classList.remove('keyboard-hidden');
-                        return;
-                    } 
-                    
-                    // DISPOSITIVOS MÓVILES: Mostrar teclado virtual
-                    console.log('📱 Móvil: activando teclado virtual');
-                    
-                    // Configurar clases visuales
-                    hidePlaceholder();
+                    } catch {}
+                    // Mostrar cursor parpadeante (clases keyboard-visible)
+                    try { if (typeof setCursorState === 'function') setCursorState(true, 'Tap en input'); } catch {}
+                    // Refuerzo de clases para caret visible
                     document.body.classList.add('keyboard-visible');
                     document.documentElement.classList.add('keyboard-visible');
                     document.body.classList.remove('keyboard-hidden');
                     document.documentElement.classList.remove('keyboard-hidden');
                     
-                    // Mostrar cursor parpadeante
-                    try { if (typeof setCursorState === 'function') setCursorState(true, 'Tap en input móvil'); } catch {}
+                    // Solo activar teclado virtual y botones móviles en dispositivos NO-PC
+                    if (isDesktopDevice()) {
+                        console.log('ensureVKVisibleOnTap: dispositivo de escritorio, usando teclado físico');
+                        return; // En PC, solo enfocar el input es suficiente
+                    }
                     
-                    // Mostrar botón móvil si corresponde
                     if (window.innerWidth <= 768) {
-                        console.log('📱 Mostrando botón skip móvil');
                         showMobileSkipButton();
                     }
-                    
-                    // ACTIVAR TECLADO VIRTUAL DIRECTAMENTE
-                    console.log('⌨️ Activando teclado virtual...');
-                    const { vk, vkOverlay } = getVK();
-                    console.log('🔍 Elementos encontrados - vk:', !!vk, 'vkOverlay:', !!vkOverlay);
-                    
-                    if (vkOverlay && vk) {
-                        if (!isVKShown()) {
-                            console.log('🚀 Mostrando teclado virtual directamente');
-                            showVirtualKeyboard();
-                        } else {
-                            console.log('✅ Teclado virtual ya visible');
-                        }
-                    } else {
-                        console.error('❌ No se encontraron elementos del teclado virtual');
-                    }
-                    
-                    // Preparar input para escritura
-                    try {
-                        const end = inputEl.value.length;
-                        inputEl.setSelectionRange(end, end);
-                    } catch {}
+                    if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
                 inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
                 inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });

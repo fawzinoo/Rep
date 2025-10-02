@@ -3929,7 +3929,7 @@ function clearBackContent(backElement) {
                     <div class=\"type-word-title\" id=\"type-word-title\" style=\"display:none;\"></div>
                     <div class=\"type-dialog-container\"> 
                         <div class=\"type-input-row\"> 
-                            <input id=\"type-input\" class=\"type-input\" type=\"text\" autocomplete=\"off\" placeholder=\"Escribe aquí...\" inputmode=\"none\" readonly />
+                            <input id=\"type-input\" class=\"type-input\" type=\"text\" autocomplete=\"off\" placeholder=\"Escribe aquí...\" />
                             <button id=\"check-button\" class=\"check-button\">comprobar</button>
                         </div>
                     </div>
@@ -5992,7 +5992,7 @@ function attachFlashcardHandlers() {
                         <div class="type-message" id="type-message" style="display:none;"></div>
                         <div class="type-input-row">
                             <div class="type-input-container">
-                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." inputmode="none" readonly />
+                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." />
                                 <button id="clear-button" class="clear-button-inside" title="Limpiar texto"><i class="fas fa-backspace"></i></button>
                             </div>
                         </div>
@@ -6035,25 +6035,6 @@ function attachFlashcardHandlers() {
                 const dialogContainer = backElement.querySelector('.type-dialog-container');
                 const inputContainer = backElement.querySelector('.type-input-container');
                 const titleEl = backElement.querySelector('#type-word-title');
-                
-                // Configuración inicial del input para prevenir teclado nativo
-                if (inputEl) {
-                    // En dispositivos móviles, mantener configuración para prevenir teclado nativo
-                    if (!isDesktopDevice()) {
-                        inputEl.setAttribute('inputmode', 'none');
-                        inputEl.setAttribute('autocomplete', 'off');
-                        inputEl.setAttribute('autocorrect', 'off');
-                        inputEl.setAttribute('autocapitalize', 'off');
-                        inputEl.setAttribute('spellcheck', 'false');
-                        // Inicialmente readonly para prevenir teclado nativo al hacer foco
-                        inputEl.readOnly = true;
-                    } else {
-                        // En PC, permitir teclado físico normal
-                        inputEl.removeAttribute('inputmode');
-                        inputEl.readOnly = false;
-                        inputEl.setAttribute('autocomplete', 'off');
-                    }
-                }
                 // Helper para obtener los elementos del teclado virtual en el momento de uso
                 const getVK = () => ({
                     vk: document.getElementById('vk'),
@@ -6129,26 +6110,25 @@ function attachFlashcardHandlers() {
                     // No mostrar el teclado virtual en dispositivos de escritorio/PC
                     if (isDesktopDevice()) {
                         console.log('showVirtualKeyboard: dispositivo de escritorio detectado, usando teclado físico');
-                        // En PC, habilitar input normal y enfocar
-                        inputEl.readOnly = false;
+                        // En PC, simplemente enfocar el input para usar el teclado físico
                         try { inputEl.focus(); } catch (e) {}
                         return;
                     }
                     const { vk, vkOverlay } = getVK();
                     if (!(vkOverlay && vk)) { console.log('showVirtualKeyboard: vk/vkOverlay not found'); return; }
-                    
-                    // Preparar el input ANTES de mostrar el teclado virtual
-                    inputEl.setAttribute('inputmode', 'none');
-                    inputEl.readOnly = false; // Permitir escritura programática pero no teclado nativo
-                    
-                    // Mostrar teclado virtual sin delays para evitar parpadeos
                     vkOverlay.style.display = 'flex';
+                    // Usar rAF para asegurar layout antes de la transición
+                    requestAnimationFrame(() => vk.classList.add('show'));
+                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco
+                    const wasReadonly = inputEl.readOnly;
+                    inputEl.setAttribute('inputmode','none');
+                    inputEl.readOnly = true;
                     requestAnimationFrame(() => {
-                        vk.classList.add('show');
-                        // Enfocar después de que el teclado virtual esté visible
+                        try { inputEl.focus({ preventScroll: true }); } catch (e) {}
                         setTimeout(() => {
+                            inputEl.readOnly = wasReadonly;
                             try { inputEl.focus({ preventScroll: true }); } catch (e) {}
-                        }, 50); // Delay mínimo para que el teclado virtual se establezca primero
+                        }, 0);
                     });
                 };
                 const ensureVirtualKeyboardOpen = () => {
@@ -6171,26 +6151,29 @@ function attachFlashcardHandlers() {
                 const focusHandler = () => {
                     console.log('FOCUS - Detectando tipo de dispositivo');
                     if (isDesktopDevice()) {
-                        console.log('FOCUS - Dispositivo de escritorio: habilitando teclado físico');
-                        // En PC, habilitar escritura normal
-                        inputEl.readOnly = false;
+                        console.log('FOCUS - Dispositivo de escritorio: usando teclado físico');
+                        // En PC, comportamiento normal sin teclado virtual
+                        hidePlaceholder();
+                        document.body.classList.add('keyboard-visible');
+                        document.documentElement.classList.add('keyboard-visible');
+                        document.body.classList.remove('keyboard-hidden');
+                        document.documentElement.classList.remove('keyboard-hidden');
+                    } else if (window.innerWidth <= 768) {
+                        console.log('FOCUS - Dispositivo móvil: mostrando botón');
+                        showMobileSkipButton();
+                        hidePlaceholder();
+                        document.body.classList.add('keyboard-visible');
+                        document.documentElement.classList.add('keyboard-visible');
+                        document.body.classList.remove('keyboard-hidden');
+                        document.documentElement.classList.remove('keyboard-hidden');
                     } else {
-                        console.log('FOCUS - Dispositivo móvil: manteniendo prevención de teclado nativo');
-                        // En móviles, mantener readonly para prevenir teclado nativo
-                        // El teclado virtual se encargará de la escritura
-                        inputEl.readOnly = true;
-                        
-                        if (window.innerWidth <= 768) {
-                            showMobileSkipButton();
-                        }
-                        // NO llamar ensureVirtualKeyboardOpen aquí para evitar activación automática
+                        console.log('FOCUS - Tablet: comportamiento estándar');
+                        hidePlaceholder();
+                        document.body.classList.add('keyboard-visible');
+                        document.documentElement.classList.add('keyboard-visible');
+                        document.body.classList.remove('keyboard-hidden');
+                        document.documentElement.classList.remove('keyboard-hidden');
                     }
-                    
-                    hidePlaceholder();
-                    document.body.classList.add('keyboard-visible');
-                    document.documentElement.classList.add('keyboard-visible');
-                    document.body.classList.remove('keyboard-hidden');
-                    document.documentElement.classList.remove('keyboard-hidden');
                 };
                 
                 // En blur: ocultar el botón si se oculta el teclado
@@ -6284,35 +6267,13 @@ function attachFlashcardHandlers() {
 
                 // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
                 const ensureVKVisibleOnTap = () => {
-                    // Comportamiento diferenciado según tipo de dispositivo
-                    if (isDesktopDevice()) {
-                        console.log('ensureVKVisibleOnTap: dispositivo de escritorio, usando teclado físico');
-                        // En PC: habilitar input normal y enfocar
-                        inputEl.readOnly = false;
-                        try {
-                            inputEl.focus({ preventScroll: true });
-                            const end = inputEl.value.length;
-                            try { inputEl.setSelectionRange(end, end); } catch {}
-                        } catch {}
-                    } else {
-                        console.log('ensureVKVisibleOnTap: dispositivo móvil, preparando teclado virtual');
-                        // En móviles: NO enfocar inmediatamente para evitar teclado nativo
-                        // Solo preparar el estado visual
-                        try {
-                            const end = inputEl.value.length;
-                            try { inputEl.setSelectionRange(end, end); } catch {}
-                        } catch {}
-                        
-                        // Mostrar teclado virtual ANTES de hacer foco
-                        if (window.innerWidth <= 768) {
-                            showMobileSkipButton();
-                        }
-                        if (!isVKShown()) { 
-                            ensureVirtualKeyboardOpen(); 
-                        }
-                    }
-                    
-                    hidePlaceholder();
+                    // Forzar foco inmediato para mostrar caret
+                    try {
+                        inputEl.focus({ preventScroll: true });
+                        const end = inputEl.value.length;
+                        try { inputEl.setSelectionRange(end, end); } catch {}
+                        hidePlaceholder();
+                    } catch {}
                     // Mostrar cursor parpadeante (clases keyboard-visible)
                     try { if (typeof setCursorState === 'function') setCursorState(true, 'Tap en input'); } catch {}
                     // Refuerzo de clases para caret visible
@@ -6320,6 +6281,17 @@ function attachFlashcardHandlers() {
                     document.documentElement.classList.add('keyboard-visible');
                     document.body.classList.remove('keyboard-hidden');
                     document.documentElement.classList.remove('keyboard-hidden');
+                    
+                    // Solo activar teclado virtual y botones móviles en dispositivos NO-PC
+                    if (isDesktopDevice()) {
+                        console.log('ensureVKVisibleOnTap: dispositivo de escritorio, usando teclado físico');
+                        return; // En PC, solo enfocar el input es suficiente
+                    }
+                    
+                    if (window.innerWidth <= 768) {
+                        showMobileSkipButton();
+                    }
+                    if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
                 inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
                 inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
@@ -6412,10 +6384,6 @@ function attachFlashcardHandlers() {
                 }
 
                 function insertAtCursor(text) {
-                    // Temporalmente deshabilitar readonly para permitir inserción programática
-                    const wasReadonly = inputEl.readOnly;
-                    inputEl.readOnly = false;
-                    
                     // Asegurar foco antes de leer selección
                     if (document.activeElement !== inputEl) {
                         inputEl.focus({ preventScroll: true });
@@ -6428,14 +6396,6 @@ function attachFlashcardHandlers() {
                     const caret = start + text.length;
                     try { inputEl.setSelectionRange(caret, caret); } catch {}
                     inputEl.focus({ preventScroll: true });
-                    
-                    // Restaurar readonly en dispositivos móviles para prevenir teclado nativo
-                    if (!isDesktopDevice()) {
-                        inputEl.readOnly = true;
-                    } else {
-                        inputEl.readOnly = wasReadonly;
-                    }
-                    
                     // Guardar valor tras inserción programática
                     syncUserInput();
                 }
@@ -6460,10 +6420,6 @@ function attachFlashcardHandlers() {
                         return;
                     }
                     if (key === 'backspace') {
-                        // Temporalmente deshabilitar readonly para permitir borrado programático
-                        const wasReadonly = inputEl.readOnly;
-                        inputEl.readOnly = false;
-                        
                         const start = inputEl.selectionStart ?? inputEl.value.length;
                         const end = inputEl.selectionEnd ?? inputEl.value.length;
                         if (start === end && start > 0) {
@@ -6477,14 +6433,6 @@ function attachFlashcardHandlers() {
                             inputEl.setSelectionRange(start, start);
                         }
                         inputEl.focus({ preventScroll: true });
-                        
-                        // Restaurar readonly en dispositivos móviles
-                        if (!isDesktopDevice()) {
-                            inputEl.readOnly = true;
-                        } else {
-                            inputEl.readOnly = wasReadonly;
-                        }
-                        
                         // Guardar valor tras borrar programáticamente
                         syncUserInput();
                         return;

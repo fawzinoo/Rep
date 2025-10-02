@@ -6044,6 +6044,17 @@ function attachFlashcardHandlers() {
                     const { vk } = getVK();
                     return !!(vk && vk.classList.contains('show'));
                 };
+                // Configuración inicial del input en móviles para bloquear teclado nativo
+                const isMobileLike = () => !isDesktopDevice();
+                try {
+                    if (isMobileLike()) {
+                        inputEl.setAttribute('inputmode', 'none');
+                        inputEl.readOnly = true; // mantener siempre readonly en móviles para suprimir teclado nativo
+                        inputEl.setAttribute('autocapitalize', 'off');
+                        inputEl.setAttribute('autocorrect', 'off');
+                        inputEl.setAttribute('spellcheck', 'false');
+                    }
+                } catch {}
                 // Restaurar el texto previamente escrito para esta tarjeta (si existe)
                 try {
                     const savedValue = card.dataset.userInput || '';
@@ -6119,17 +6130,14 @@ function attachFlashcardHandlers() {
                     vkOverlay.style.display = 'flex';
                     // Usar rAF para asegurar layout antes de la transición
                     requestAnimationFrame(() => vk.classList.add('show'));
-                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco
-                    const wasReadonly = inputEl.readOnly;
-                    inputEl.setAttribute('inputmode','none');
-                    inputEl.readOnly = true;
-                    requestAnimationFrame(() => {
-                        try { inputEl.focus({ preventScroll: true }); } catch (e) {}
-                        setTimeout(() => {
-                            inputEl.readOnly = wasReadonly;
+                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco (sin restaurar readonly en móviles)
+                    try {
+                        inputEl.setAttribute('inputmode', 'none');
+                        if (isMobileLike()) inputEl.readOnly = true;
+                        requestAnimationFrame(() => {
                             try { inputEl.focus({ preventScroll: true }); } catch (e) {}
-                        }, 0);
-                    });
+                        });
+                    } catch {}
                 };
                 const ensureVirtualKeyboardOpen = () => {
                     // No intentar abrir el teclado virtual en dispositivos de escritorio
@@ -6223,6 +6231,13 @@ function attachFlashcardHandlers() {
                             vk.classList.remove('show');
                             setTimeout(() => { vkOverlay.style.display = 'none'; }, 220);
                         }
+                        // Asegurar que el input permanece en modo seguro móvil
+                        try {
+                            if (!isDesktopDevice()) {
+                                inputEl.setAttribute('inputmode','none');
+                                inputEl.readOnly = true;
+                            }
+                        } catch {}
                     }
                 };
                 
@@ -6266,9 +6281,16 @@ function attachFlashcardHandlers() {
                 window.addEventListener('resize', handleResize);
 
                 // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
-                const ensureVKVisibleOnTap = () => {
+                const ensureVKVisibleOnTap = (e) => {
+                    // Evitar que el navegador gestione el foco por defecto (que invoca teclado nativo)
+                    try { e && e.preventDefault && e.preventDefault(); } catch {}
+                    try { e && e.stopPropagation && e.stopPropagation(); } catch {}
                     // Forzar foco inmediato para mostrar caret
                     try {
+                        if (isMobileLike()) {
+                            inputEl.setAttribute('inputmode','none');
+                            inputEl.readOnly = true;
+                        }
                         inputEl.focus({ preventScroll: true });
                         const end = inputEl.value.length;
                         try { inputEl.setSelectionRange(end, end); } catch {}
@@ -6293,14 +6315,23 @@ function attachFlashcardHandlers() {
                     }
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
-                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
-                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
+                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: false });
+                inputEl.addEventListener('touchstart', ensureVKVisibleOnTap, { passive: false });
+                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: false, capture: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
                     if (e && e.target === inputEl) return; // ya lo maneja el input
                     try {
                         e && e.preventDefault && e.preventDefault();
-                        inputEl.focus({ preventScroll: true });
+                        if (isDesktopDevice()) {
+                            inputEl.focus({ preventScroll: true });
+                        } else {
+                            // En móvil: preparar input y mostrar teclado virtual primero
+                            inputEl.setAttribute('inputmode','none');
+                            inputEl.readOnly = true;
+                            ensureVirtualKeyboardOpen();
+                            inputEl.focus({ preventScroll: true });
+                        }
                         const end = inputEl.value.length;
                         try { inputEl.setSelectionRange(end, end); } catch {}
                         // Mostrar cursor parpadeante
@@ -6314,8 +6345,9 @@ function attachFlashcardHandlers() {
                     } catch {}
                 };
                 if (inputContainer) {
-                    inputContainer.addEventListener('pointerdown', focusFromContainer);
-                    inputContainer.addEventListener('click', focusFromContainer);
+                    inputContainer.addEventListener('pointerdown', focusFromContainer, { passive: false });
+                    inputContainer.addEventListener('touchstart', focusFromContainer, { passive: false });
+                    inputContainer.addEventListener('click', focusFromContainer, { passive: false, capture: true });
                 }
                 
                 // Para debugging - mostrar el botón inmediatamente en móviles si ya hay foco
@@ -6384,6 +6416,9 @@ function attachFlashcardHandlers() {
                 }
 
                 function insertAtCursor(text) {
+                    const onMobile = !isDesktopDevice();
+                    const prevReadonly = inputEl.readOnly;
+                    if (onMobile) inputEl.readOnly = false;
                     // Asegurar foco antes de leer selección
                     if (document.activeElement !== inputEl) {
                         inputEl.focus({ preventScroll: true });
@@ -6398,6 +6433,7 @@ function attachFlashcardHandlers() {
                     inputEl.focus({ preventScroll: true });
                     // Guardar valor tras inserción programática
                     syncUserInput();
+                    if (onMobile) inputEl.readOnly = prevReadonly;
                 }
 
                 function handleVirtualKey(key) {
@@ -6420,6 +6456,9 @@ function attachFlashcardHandlers() {
                         return;
                     }
                     if (key === 'backspace') {
+                        const onMobile = !isDesktopDevice();
+                        const prevReadonly = inputEl.readOnly;
+                        if (onMobile) inputEl.readOnly = false;
                         const start = inputEl.selectionStart ?? inputEl.value.length;
                         const end = inputEl.selectionEnd ?? inputEl.value.length;
                         if (start === end && start > 0) {
@@ -6435,6 +6474,7 @@ function attachFlashcardHandlers() {
                         inputEl.focus({ preventScroll: true });
                         // Guardar valor tras borrar programáticamente
                         syncUserInput();
+                        if (onMobile) inputEl.readOnly = prevReadonly;
                         return;
                     }
                     // sin tecla enter: el enter físico del teclado real sigue funcionando (keydown)
@@ -6598,6 +6638,25 @@ function attachFlashcardHandlers() {
                         };
                         vkEl.addEventListener('pointerup', clearVKInteract);
                         vkEl.addEventListener('pointercancel', clearVKInteract);
+                        // Cubrir navegadores que no emiten pointerdown con touchstart/click
+                        vkEl.addEventListener('touchstart', (e) => {
+                            const target = e.target.closest('.vk-key');
+                            if (!target) return;
+                            vkInteracting = true;
+                            if (vkInteractTimer) { clearTimeout(vkInteractTimer); vkInteractTimer = null; }
+                            const key = target.dataset.key;
+                            if (!key) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            try { vibrar(30); } catch {}
+                            handleVirtualKey(key);
+                        }, { passive: false });
+                        vkEl.addEventListener('click', (e) => {
+                            const target = e.target.closest('.vk-key');
+                            if (!target) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }, { capture: true });
                     }
                     // Evitar que los clics del overlay cierren la tarjeta o hagan flip
                     if (vkOverlayEl) {
@@ -6621,10 +6680,12 @@ function attachFlashcardHandlers() {
                     try {
                         if (inputContainer) {
                             inputContainer.removeEventListener('pointerdown', focusFromContainer);
-                            inputContainer.removeEventListener('click', focusFromContainer);
+                            inputContainer.removeEventListener('touchstart', focusFromContainer);
+                            inputContainer.removeEventListener('click', focusFromContainer, { capture: true });
                         }
                         inputEl.removeEventListener('pointerdown', ensureVKVisibleOnTap);
-                        inputEl.removeEventListener('click', ensureVKVisibleOnTap);
+                        inputEl.removeEventListener('touchstart', ensureVKVisibleOnTap);
+                        inputEl.removeEventListener('click', ensureVKVisibleOnTap, { capture: true });
                         restorePlaceholder();
                     } catch {}
                     // En cleanup sí forzamos el ocultado

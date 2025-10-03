@@ -6021,7 +6021,7 @@ function attachFlashcardHandlers() {
             card.dataset.answer = back.textContent.trim();
         }
 
-        card.addEventListener('click', (event) => {
+    card.addEventListener('click', (event) => {
             // No voltear si el clic ocurre dentro del cuadro de escritura
             try {
                 if (event && event.target && event.target.closest('.type-dialog-container')) {
@@ -6046,6 +6046,13 @@ function attachFlashcardHandlers() {
             vibrar(80); 
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
+                // No voltear de vuelta si está activo el modo edición
+                if (!canFlipBack) {
+                    console.log('Flip back bloqueado: edición activa');
+                    event.stopPropagation();
+                    event.preventDefault();
+                    return;
+                }
                 // Ocultar teclado virtual y limpiar estado al volver al frente
                 try {
                     const vkOverlay = document.getElementById('vk-overlay');
@@ -6075,6 +6082,8 @@ function attachFlashcardHandlers() {
                 // Cooldown algo mayor para evitar taps residuales
                 canFlip = false;
                 setTimeout(() => { canFlip = true; }, 600);
+                // Mientras se edita, bloquear flip back
+                canFlipBack = false;
                 
 
 
@@ -6238,6 +6247,8 @@ function attachFlashcardHandlers() {
 
                 const focusHandler = () => {
                     console.log('FOCUS - Detectando tipo de dispositivo');
+                    // Bloquear flip back mientras se edita
+                    canFlipBack = false;
                     if (isDesktopDevice()) {
                         console.log('FOCUS - Dispositivo de escritorio: usando teclado físico');
                         // En PC, comportamiento normal sin teclado virtual
@@ -6271,6 +6282,8 @@ function attachFlashcardHandlers() {
                 // En blur: ocultar el botón si se oculta el teclado
                 const blurHandler = (e) => {
                     console.log('BLUR - Ocultar botón móvil "No sé" y teclado virtual');
+                    // Permitir flip back al abandonar edición
+                    canFlipBack = true;
                     restorePlaceholder();
                     // Volver a estado oculto del caret cuando se pierde el foco
                     document.body.classList.remove('keyboard-visible');

@@ -3539,7 +3539,6 @@
             if (flashcardContainer) {
                 // Listener en fase de CAPTURA para interceptar clics "fantasma" y manejar la lógica de volteo
                 flashcardContainer.addEventListener('click', (event) => {
-                    logEvt(event, 'capture:container:click:start');
                     // 1. Lógica para ignorar el "clic fantasma"
                     if (window.ignoreClickAfterButton) {
                         const rect = window.ignoreClickAfterButton;
@@ -3560,7 +3559,6 @@
                     // 2. Lógica para evitar el volteo al hacer clic en el área de escritura
                     const typeDialog = event.target.closest('.type-dialog-container');
                     if (typeDialog) {
-                        dbg('capture: dentro de type-dialog → no flip');
                         // Si el clic fue dentro del área de escritura, no hagas nada.
                         // No es necesario stopPropagation porque la lógica de volteo está más abajo.
                         return;
@@ -3568,14 +3566,10 @@
                     
                     // 3. Lógica para voltear la tarjeta (si ninguna de las condiciones anteriores se cumplió)
                     const currentCard = document.querySelector('.flashcard.is-visible');
-                    dbg('capture: evaluar flip front→back', { canFlip, hasCard: !!currentCard, flipped: currentCard && currentCard.classList.contains('flipped') });
-                    if (currentCard && !currentCard.classList.contains('flipped') && canFlip) {
+                    if (currentCard && !currentCard.classList.contains('flipped')) {
                         // Solo voltea si la tarjeta es visible y está en el anverso.
-                        dbg('capture: flip front→back');
                         flipCard(currentCard);
-                        lastFlipAt = Date.now();
                     }
-                    logEvt(event, 'capture:container:click:end');
                 }, true); // <-- ¡IMPORTANTE! Usar la fase de captura.
             }
         });
@@ -3663,26 +3657,6 @@ let currentCardIndex = 0;
 let voiceAttempts = 0; // Contador para los intentos de voz
 let canFlipBack = true;
 let canFlip = true; // Controla si se puede voltear la tarjeta
-// Debug helpers
-const DEBUG_FLIP = true;
-let lastFlipAt = 0;
-function dbg() {
-    if (!DEBUG_FLIP) return;
-    try { console.log.apply(console, arguments); } catch {}
-}
-function logEvt(e, label) {
-    if (!DEBUG_FLIP || !e) return;
-    try {
-        const t = e.target || {};
-        const id = t.id ? ('#' + t.id) : '';
-        const cls = t.className ? ('.' + String(t.className).trim().split(/\s+/).join('.')) : '';
-        const card = t.closest ? t.closest('.flashcard') : null;
-        const flipped = card ? card.classList.contains('flipped') : undefined;
-        const ignore = card ? card.dataset.ignoreNextBackClick : undefined;
-        const sinceFlip = lastFlipAt ? (Date.now() - lastFlipAt) + 'ms' : 'n/a';
-        console.log(`[${label}] type=${e.type} phase=${e.eventPhase} target=${t.tagName || '?'}${id}${cls} flipped=${flipped} canFlip=${canFlip} canFlipBack=${canFlipBack} ignoreNext=${ignore} defaultPrevented=${e.defaultPrevented} sinceFlip=${sinceFlip}`);
-    } catch {}
-}
 // Timer para programar la actualización del porcentaje tras re-aparecer el cuadro
 let percentageUpdateTimeoutId = null;
 let statsShowTimeoutId = null;
@@ -6048,23 +6022,15 @@ function attachFlashcardHandlers() {
         }
 
         card.addEventListener('click', (event) => {
-            logEvt(event, 'bubble:card:click:start');
             // No voltear si el clic ocurre dentro del cuadro de escritura
             try {
                 if (event && event.target && event.target.closest('.type-dialog-container')) {
                     return;
                 }
             } catch (e) {}
-            // Si acabamos de voltear a la cara trasera, ignorar el primer click para evitar flip accidental
-            if (card.classList.contains('flipped') && card.dataset.ignoreNextBackClick === '1') {
-                card.dataset.ignoreNextBackClick = '0';
-                event.stopPropagation();
-                event.preventDefault();
-                return;
-            }
-            dbg(`bubble:card: click tarjeta canFlip=${canFlip} canFlipBack=${canFlipBack} flipped=${card.classList.contains('flipped')} voiceAttempts=${voiceAttempts}`);
+            console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
             if (!canFlip) {
-                dbg('bubble:card: volteo bloqueado por canFlip');
+                console.log('Volteo bloqueado por canFlip');
                 card.style.transform = 'scale(0.98)';
                 setTimeout(() => { card.style.transform = ''; }, 150);
                 return;
@@ -6073,24 +6039,6 @@ function attachFlashcardHandlers() {
             vibrar(80); 
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
-                // Si el foco actual está dentro del diálogo de escritura, no permitir flip-back
-                try {
-                    const active = document.activeElement;
-                    if (active && active.closest && active.closest('.type-dialog-container')) {
-                        dbg('bubble:card: flip back bloqueado: focus dentro del dialog');
-                        event.stopPropagation();
-                        event.preventDefault();
-                        return;
-                    }
-                } catch {}
-                dbg('bubble:card: flipped=true, evaluar flip back', { canFlipBack });
-                // No voltear de vuelta si está activo el modo edición
-                if (!canFlipBack) {
-                    dbg('bubble:card: flip back bloqueado por edición activa');
-                    event.stopPropagation();
-                    event.preventDefault();
-                    return;
-                }
                 // Ocultar teclado virtual y limpiar estado al volver al frente
                 try {
                     const vkOverlay = document.getElementById('vk-overlay');
@@ -6115,14 +6063,6 @@ function attachFlashcardHandlers() {
                 updateSkipButtonState();
             } else {
                 card.classList.add('flipped');
-                // Marcar para ignorar el primer click en la cara trasera
-                card.dataset.ignoreNextBackClick = '1';
-                // Cooldown algo mayor para evitar taps residuales
-                canFlip = false;
-                setTimeout(() => { canFlip = true; }, 600);
-                // Mientras se edita, bloquear flip back
-                canFlipBack = false;
-                lastFlipAt = Date.now();
                 
 
 
@@ -6181,9 +6121,7 @@ function attachFlashcardHandlers() {
                 // Función para evitar teclado del sistema en móviles
                 const preventSystemKeyboard = () => {
                     if (window.innerWidth <= 768) { // Solo en móviles
-                        // No usar readonly para no bloquear el caret en iOS/Android
-                        inputEl.removeAttribute('readonly');
-                        // inputmode none intenta suprimir el teclado nativo pero mantiene el caret
+                        inputEl.setAttribute('readonly', 'true');
                         inputEl.setAttribute('inputmode', 'none');
                     } else {
                         // En PC, permitir input normal
@@ -6260,11 +6198,16 @@ function attachFlashcardHandlers() {
                     vkOverlay.style.display = 'flex';
                     // Usar rAF para asegurar layout antes de la transición
                     requestAnimationFrame(() => vk.classList.add('show'));
-                    // Evitar teclado nativo y mantener caret/edición
+                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco
+                    const wasReadonly = inputEl.readOnly;
                     inputEl.setAttribute('inputmode','none');
-                    inputEl.readOnly = false; // permitir caret y selección con tap
+                    inputEl.readOnly = true;
                     requestAnimationFrame(() => {
                         try { inputEl.focus({ preventScroll: true }); } catch (e) {}
+                        setTimeout(() => {
+                            inputEl.readOnly = wasReadonly;
+                            try { inputEl.focus({ preventScroll: true }); } catch (e) {}
+                        }, 0);
                     });
                 };
                 const ensureVirtualKeyboardOpen = () => {
@@ -6286,8 +6229,6 @@ function attachFlashcardHandlers() {
 
                 const focusHandler = () => {
                     console.log('FOCUS - Detectando tipo de dispositivo');
-                    // Bloquear flip back mientras se edita
-                    canFlipBack = false;
                     if (isDesktopDevice()) {
                         console.log('FOCUS - Dispositivo de escritorio: usando teclado físico');
                         // En PC, comportamiento normal sin teclado virtual
@@ -6321,8 +6262,6 @@ function attachFlashcardHandlers() {
                 // En blur: ocultar el botón si se oculta el teclado
                 const blurHandler = (e) => {
                     console.log('BLUR - Ocultar botón móvil "No sé" y teclado virtual');
-                    // Permitir flip back al abandonar edición
-                    canFlipBack = true;
                     restorePlaceholder();
                     // Volver a estado oculto del caret cuando se pierde el foco
                     document.body.classList.remove('keyboard-visible');
@@ -6439,31 +6378,12 @@ function attachFlashcardHandlers() {
 
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
-                const consumeFirstTapOnInput = (e) => {
-                    logEvt(e, 'input:consumeFirstTap');
-                    const cardEl = backElement.closest('.flashcard');
-                    if (cardEl && cardEl.dataset.ignoreNextBackClick === '1') {
-                        dbg('input: primer tap consumido');
-                        cardEl.dataset.ignoreNextBackClick = '0';
-                        e && e.stopPropagation && e.stopPropagation();
-                        e && e.preventDefault && e.preventDefault();
-                    }
-                };
-                inputEl.addEventListener('pointerdown', (e)=>{ consumeFirstTapOnInput(e); ensureVKVisibleOnTap(e); }, { passive: false });
-                inputEl.addEventListener('click', (e)=>{ consumeFirstTapOnInput(e); ensureVKVisibleOnTap(e); }, { passive: false });
+                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
+                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
-                    logEvt(e, 'container:focusFromContainer');
                     if (e && e.target === inputEl) return; // ya lo maneja el input
                     try {
-                        // Si es el primer tap tras el flip, consumir y limpiar la bandera
-                        const cardEl = backElement.closest('.flashcard');
-                        if (cardEl && cardEl.dataset.ignoreNextBackClick === '1') {
-                            dbg('container: primer tap consumido');
-                            cardEl.dataset.ignoreNextBackClick = '0';
-                            e && e.stopPropagation && e.stopPropagation();
-                            e && e.preventDefault && e.preventDefault();
-                        }
                         e && e.preventDefault && e.preventDefault();
                         inputEl.focus({ preventScroll: true });
                         // NO mover el caret al final; respetar click posterior del usuario
@@ -6477,18 +6397,12 @@ function attachFlashcardHandlers() {
                     } catch {}
                 };
                 if (inputContainer) {
-                    const consumeIfFirstTap = (e) => {
-                        const cardEl = backElement.closest('.flashcard');
-                        if (cardEl && cardEl.dataset.ignoreNextBackClick === '1') {
-                            cardEl.dataset.ignoreNextBackClick = '0';
-                            e && e.stopPropagation && e.stopPropagation();
-                            e && e.preventDefault && e.preventDefault();
-                        }
-                    };
-                    inputContainer.addEventListener('pointerdown', (e)=>{ consumeIfFirstTap(e); focusFromContainer(e); });
-                    inputContainer.addEventListener('click', (e)=>{ consumeIfFirstTap(e); focusFromContainer(e); });
+                    inputContainer.addEventListener('pointerdown', focusFromContainer);
+                    inputContainer.addEventListener('click', focusFromContainer);
                 }
                 
+
+
                 // No forzar apertura del teclado tras montar el UI en móvil: el usuario debe hacer clic en el input
 
                 // ====== LÓGICA DEL TECLADO VIRTUAL ======
@@ -7008,7 +6922,7 @@ function attachFlashcardHandlers() {
 
                 // Evitar que el click dentro del diálogo voltee la tarjeta por burbujeo
                 const stopFlip = (e) => { e.stopPropagation(); };
-                ['click','mousedown','mouseup','pointerdown','pointerup','touchstart','touchend'].forEach(evt => {
+                ['click','mousedown','touchstart'].forEach(evt => {
                     dialogContainer.addEventListener(evt, stopFlip);
                     inputEl.addEventListener(evt, stopFlip);
                     checkBtn.addEventListener(evt, stopFlip);
@@ -7144,7 +7058,6 @@ function attachFlashcardHandlers() {
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();
             }
-            logEvt(event, 'bubble:card:click:end');
         });
     });
 }
@@ -8481,111 +8394,9 @@ function goToNextCardWithDebug() {
     
     console.log('🔄 goToNextCard finished');
 }
-        </script>
-
-        <!-- Fix caret/selection en móviles: permitir selección en campos editables y evitar que listeners globales bloqueen el comportamiento nativo -->
-            <style>
-            /* Asegura selección de texto y caret visibles dentro de campos editables en iOS/Android */
-            input[type="text"],
-            input[type="search"],
-            input[type="email"],
-            input[type="tel"],
-            input[type="password"],
-            textarea,
-            [contenteditable="true"] {
-                -webkit-user-select: text !important;
-                user-select: text !important;
-                -webkit-touch-callout: default !important;
-                touch-action: auto !important;
-                    caret-color: auto !important; /* Anula reglas previas con !important */
-                pointer-events: auto;
-            }
-
-                /* En móviles, asegura caret visible y cursor de texto aunque existan reglas globales */
-                @media (max-width: 768px) and (pointer: coarse) {
-                    input[type="text"],
-                    input[type="search"],
-                    input[type="email"],
-                    input[type="tel"],
-                    input[type="password"],
-                    textarea,
-                    [contenteditable="true"] {
-                        caret-color: auto !important;
-                        cursor: text !important;
-                    }
-
-                            /* Modo edición: desactivar transformaciones 3D que rompen el caret en iOS/Android */
-                            .editing-mode #flashcard-container,
-                            .editing-mode .flashcard,
-                            .editing-mode .front,
-                            .editing-mode .back {
-                                transform: none !important;
-                                backface-visibility: visible !important;
-                                transform-style: flat !important;
-                                perspective: none !important;
-                            }
-
-                            /* Asegurar una capa propia para el input */
-                            .type-input-container, #type-input {
-                                -webkit-transform: translateZ(0);
-                                transform: translateZ(0);
-                            }
-
-                                    /* Durante la edición, desactivar clicks en la tarjeta excepto en el diálogo de escritura */
-                                    .editing-mode .flashcard { pointer-events: none !important; }
-                                    .editing-mode .type-dialog-container,
-                                    .editing-mode .type-dialog-container * { pointer-events: auto !important; }
-                }
-
-                /* Cuando el teclado/caret estén visibles, permite selección también en ancestros */
-                .keyboard-visible, .keyboard-visible * {
-                    -webkit-user-select: text !important;
-                    user-select: text !important;
-                }
-        </style>
-        <script>
-            // Protección frente a preventDefault global en eventos táctiles
-            (function () {
-                var EDITABLE = 'input, textarea, [contenteditable="true"]';
-                // Encapturar primero: si el target es editable, no dejamos que burbujee a handlers que puedan bloquear el caret
-                ['touchstart', 'touchmove'].forEach(function (type) {
-                    document.addEventListener(type, function (e) {
-                        if (e.target && e.target.closest(EDITABLE)) {
-                            // No interferir con el comportamiento nativo dentro de campos editables
-                            e.stopPropagation();
-                        }
-                    }, { capture: true });
-                });
-
-                    // Al enfocar un campo editable, activar clases que muestran el caret en toda la página
-                            document.addEventListener('focusin', function(e) {
-                        if (e.target && e.target.closest(EDITABLE)) {
-                            try {
-                                document.body.classList.add('keyboard-visible');
-                                document.documentElement.classList.add('keyboard-visible');
-                                document.body.classList.remove('keyboard-hidden');
-                                document.documentElement.classList.remove('keyboard-hidden');
-                                        // Activar modo edición para evitar bugs del caret con transform 3D
-                                        document.body.classList.add('editing-mode');
-                                        document.documentElement.classList.add('editing-mode');
-                            } catch {}
-                        }
-                    }, true);
-
-                            document.addEventListener('focusout', function(e) {
-                                // Si no hay otro editable enfocado, salir de modo edición
-                                setTimeout(function() {
-                                    var active = document.activeElement;
-                                    if (!(active && (active.matches && active.matches(EDITABLE)) || (active && active.closest && active.closest(EDITABLE)))) {
-                                        document.body.classList.remove('editing-mode');
-                                        document.documentElement.classList.remove('editing-mode');
-                                    }
-                                }, 50);
-                            }, true);
-            })();
-        </script>
-
-                <!-- Teclado virtual global -->
+    </script>
+    
+        <!-- Teclado virtual global -->
         <div id="vk-overlay" class="virtual-keyboard-overlay">
             <div id="vk" class="virtual-keyboard">
                 <div class="vk-row" data-row="1"></div>

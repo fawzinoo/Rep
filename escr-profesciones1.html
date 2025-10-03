@@ -198,6 +198,10 @@
         .keyboard-visible [contenteditable] {
             cursor: text !important;
             caret-color: auto !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
         }
         
         .keyboard-visible button, 
@@ -225,14 +229,16 @@
         }
 
         
-        /* Prevenir selección con pseudo-elementos */
+        /* Prevenir selección con pseudo-elementos (excepto dentro del input de texto) */
         .back::selection, .back *::selection {
             background: transparent !important;
         }
+        .back .type-input::selection { background: rgba(16,185,129,0.35) !important; }
         
         .back::-moz-selection, .back *::-moz-selection {
             background: transparent !important;
         }
+        .back .type-input::-moz-selection { background: rgba(16,185,129,0.35) !important; }
         #flashcard-container-wrapper {
             position: relative;
             width: calc(100% - 20px);
@@ -1980,6 +1986,12 @@
     background: rgba(0,0,0,0.25);
     color: #fff;
     outline: none;
+    /* Permitir selección y edición precisa aunque haya reglas globales que la bloqueen */
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+    caret-color: auto !important;
 }
 
 .type-input[readonly] {
@@ -2009,6 +2021,10 @@
     color: rgba(255, 255, 255, 0.9);
     animation: placeholderPulse 1s ease-in-out infinite;
 }
+
+/* Rehabilitar el color de selección dentro del input aunque .back lo anule */
+.back .type-input::selection { background: rgba(16,185,129,0.35) !important; color: #fff !important; }
+.back .type-input::-moz-selection { background: rgba(16,185,129,0.35) !important; color: #fff !important; }
 
 @keyframes inputErrorShake {
     0%, 100% { transform: translateX(0); }
@@ -6340,11 +6356,9 @@ function attachFlashcardHandlers() {
 
                 // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
                 const ensureVKVisibleOnTap = () => {
-                    // Forzar foco inmediato para mostrar caret
+                    // Solo asegurar foco; NO mover el caret (respeta click/selección del usuario)
                     try {
                         inputEl.focus({ preventScroll: true });
-                        const end = inputEl.value.length;
-                        try { inputEl.setSelectionRange(end, end); } catch {}
                         hidePlaceholder();
                     } catch {}
                     // Mostrar cursor parpadeante (clases keyboard-visible)
@@ -6372,9 +6386,7 @@ function attachFlashcardHandlers() {
                     try {
                         e && e.preventDefault && e.preventDefault();
                         inputEl.focus({ preventScroll: true });
-                        const end = inputEl.value.length;
-                        try { inputEl.setSelectionRange(end, end); } catch {}
-                        // Mostrar cursor parpadeante
+                        // NO mover el caret al final; respetar click posterior del usuario
                         if (typeof setCursorState === 'function') setCursorState(true, 'Tap en contenedor de input');
                         hidePlaceholder();
                         // Refuerzo de clases para caret visible

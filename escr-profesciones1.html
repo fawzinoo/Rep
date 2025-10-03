@@ -202,6 +202,7 @@
             -moz-user-select: text !important;
             -ms-user-select: text !important;
             user-select: text !important;
+            -webkit-tap-highlight-color: rgba(16,185,129,0.2) !important;
         }
         
         .keyboard-visible button, 
@@ -226,6 +227,50 @@
         .keyboard-hidden [contenteditable] {
             cursor: none !important;
             caret-color: transparent !important;
+        }
+        
+        /* Mejorar el input específicamente en móviles */
+        @media (max-width: 768px) and (pointer: coarse) {
+            .type-input {
+                font-size: 16px !important; /* Evita zoom automático en iOS */
+                -webkit-appearance: none;
+                -webkit-border-radius: 12px;
+                border-radius: 12px;
+                /* Permitir selección de texto en el input siempre */
+                -webkit-user-select: text !important;
+                -moz-user-select: text !important;
+                -ms-user-select: text !important;
+                user-select: text !important;
+                -webkit-tap-highlight-color: rgba(16,185,129,0.3) !important;
+                cursor: text !important;
+                caret-color: #10b981 !important;
+                /* Asegurar que el cursor sea visible siempre en el input */
+                -webkit-text-fill-color: #fff !important;
+            }
+            
+            .type-input:focus {
+                cursor: text !important;
+                caret-color: #10b981 !important;
+                -webkit-user-select: text !important;
+                -moz-user-select: text !important;
+                -ms-user-select: text !important;
+                user-select: text !important;
+                outline: 2px solid #10b981 !important;
+                outline-offset: -2px !important;
+                /* Forzar visibilidad del cursor */
+                -webkit-text-fill-color: #fff !important;
+            }
+            
+            /* Asegurar que el input mantenga selección de texto incluso con reglas globales */
+            .keyboard-hidden .type-input,
+            .keyboard-visible .type-input {
+                -webkit-user-select: text !important;
+                -moz-user-select: text !important;
+                -ms-user-select: text !important;
+                user-select: text !important;
+                cursor: text !important;
+                caret-color: #10b981 !important;
+            }
         }
 
         
@@ -1896,6 +1941,31 @@
     margin-bottom: 4px; /* un poquito arriba respecto a los botones */
 }
 
+/* Contenedor del input para mejorar el área de toque */
+.type-input-container {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+}
+
+/* En móviles, hacer el contenedor más fácil de tocar */
+@media (max-width: 768px) {
+    .type-input-container::before {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        right: -4px;
+        bottom: -4px;
+        border-radius: 16px;
+        background: transparent;
+        pointer-events: auto;
+        z-index: -1;
+    }
+}
+
 .special-chars {
     /* Ya no se usa: los botones se insertan sin contenedor */
     display: none !important;
@@ -1991,7 +2061,47 @@
     -moz-user-select: text !important;
     -ms-user-select: text !important;
     user-select: text !important;
-    caret-color: auto !important;
+    caret-color: #10b981 !important;
+    transition: all 0.3s ease;
+}
+
+.type-input:focus {
+    border-color: rgba(16, 185, 129, 0.6);
+    background: rgba(16, 185, 129, 0.1);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+    caret-color: #10b981 !important;
+}
+
+/* Mejorar input en móviles */
+@media (max-width: 768px) {
+    .type-input {
+        font-size: 16px !important; /* Evita zoom en iOS */
+        padding: 12px 14px; /* Mantener padding original */
+        -webkit-tap-highlight-color: rgba(16,185,129,0.2);
+        /* Asegurar que el texto sea seleccionable */
+        -webkit-user-select: text !important;
+        -moz-user-select: text !important;
+        -ms-user-select: text !important;
+        user-select: text !important;
+        -webkit-touch-callout: initial;
+    }
+    
+    .type-input:focus {
+        /* Efecto más visible en móviles */
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4);
+        background: rgba(16, 185, 129, 0.15);
+    }
+    
+    /* Mejorar la visibilidad del cursor */
+    .type-input::selection {
+        background: rgba(16, 185, 129, 0.4) !important;
+        color: #fff !important;
+    }
+    
+    .type-input::-moz-selection {
+        background: rgba(16, 185, 129, 0.4) !important;
+        color: #fff !important;
+    }
 }
 
 .type-input[readonly] {
@@ -6118,25 +6228,91 @@ function attachFlashcardHandlers() {
                 const checkBtn = backElement.querySelector('#check-button');
                 const clearBtn = backElement.querySelector('#clear-button');
 
-                // Función para evitar teclado del sistema en móviles
-                const preventSystemKeyboard = () => {
-                    if (window.innerWidth <= 768) { // Solo en móviles
-                        inputEl.setAttribute('readonly', 'true');
-                        inputEl.setAttribute('inputmode', 'none');
-                    } else {
-                        // En PC, permitir input normal
+                // Función para manejar el input según el dispositivo
+                const setupInputBehavior = () => {
+                    const isMobile = window.innerWidth <= 768 && 'ontouchstart' in window;
+                    
+                    if (isMobile) {
+                        // En móviles: permitir input normal pero mejorado
                         inputEl.removeAttribute('readonly');
                         inputEl.setAttribute('inputmode', 'text');
+                        inputEl.style.fontSize = '16px'; // Evita zoom en iOS
+                        
+                        // Mejorar la experiencia táctil
+                        inputEl.addEventListener('touchstart', (e) => {
+                            e.stopPropagation();
+                            setTimeout(() => {
+                                inputEl.focus();
+                                // En móviles, asegurar que el cursor esté al final
+                                const val = inputEl.value;
+                                inputEl.setSelectionRange(val.length, val.length);
+                            }, 100);
+                        });
+                        
+                        // También mejorar el click
+                        inputEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (document.activeElement !== inputEl) {
+                                inputEl.focus();
+                            }
+                        });
+                        
+                        // Evento de focus para móviles
+                        inputEl.addEventListener('focus', (e) => {
+                            console.log('📱 Input enfocado en móvil');
+                            setTimeout(() => {
+                                // Desplazar la vista al input si es necesario
+                                if (inputEl.scrollIntoView) {
+                                    inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                            }, 300);
+                        });
+                        
+                        // Permitir selección de texto en el input
+                        inputEl.style.webkitUserSelect = 'text';
+                        inputEl.style.userSelect = 'text';
+                        
+                    } else {
+                        // En PC: comportamiento normal
+                        inputEl.removeAttribute('readonly');
+                        inputEl.setAttribute('inputmode', 'text');
+                        inputEl.style.fontSize = '1.35rem';
                     }
                 };
                 
-                // Aplicar prevención de teclado al inicio
-                preventSystemKeyboard();
+                // Aplicar configuración inicial
+                setupInputBehavior();
+                
+                // Reconfigurar si cambia el tamaño de ventana (orientación, etc.)
+                window.addEventListener('resize', setupInputBehavior);
 
                 const msgEl = backElement.querySelector('#type-message');
                 const dialogContainer = backElement.querySelector('.type-dialog-container');
                 const inputContainer = backElement.querySelector('.type-input-container');
                 const titleEl = backElement.querySelector('#type-word-title');
+                
+                // Mejorar el área táctil del contenedor del input en móviles
+                if (inputContainer && window.innerWidth <= 768) {
+                    inputContainer.addEventListener('touchstart', (e) => {
+                        // Si no se tocó directamente el input, enfocarlo
+                        if (e.target !== inputEl) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setTimeout(() => {
+                                inputEl.focus();
+                                inputEl.click();
+                            }, 50);
+                        }
+                    });
+                    
+                    inputContainer.addEventListener('click', (e) => {
+                        if (e.target !== inputEl) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            inputEl.focus();
+                        }
+                    });
+                }
                 // Helper para obtener los elementos del teclado virtual en el momento de uso
                 const getVK = () => ({
                     vk: document.getElementById('vk'),
@@ -8173,6 +8349,15 @@ function handleInputFocus(event) {
     
     // Mostrar cursor inmediatamente
     setCursorState(true, 'Input enfocado');
+    
+    // Forzar propiedades de cursor en el input específico
+    const input = event.target;
+    if (input && (input.classList.contains('type-input') || input.id === 'type-input')) {
+        input.style.cursor = 'text';
+        input.style.caretColor = '#10b981';
+        input.style.webkitUserSelect = 'text';
+        input.style.userSelect = 'text';
+    }
     
     // Detectar teclado después de un delay
     if (keyboardState.detectionTimer) {

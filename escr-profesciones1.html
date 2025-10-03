@@ -4032,10 +4032,39 @@ function clearBackContent(backElement) {
 
 
 let isShuffling = false;
+// Límite de usos del botón Mezclar por partida
+let shuffleClickCount = 0;
+const SHUFFLE_MAX_CLICKS = 3;
 
 document.getElementById('shuffle-button').addEventListener('click', () => {
+    // Si alcanzó el límite, mostrar aviso creativo y no mezclar
+    if (shuffleClickCount >= SHUFFLE_MAX_CLICKS) {
+        vibrar(60);
+        const existing = document.getElementById('shuffle-limit-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.id = 'shuffle-limit-toast';
+        toast.innerHTML = `
+            <div style="
+                display: flex; align-items: center; justify-content: center;
+                gap: 12px; font-size: 16px; font-weight: 600;">
+                <span>Has mezclado 3 veces. ¡Ahora confía en tu memoria! 🧠</span>
+            </div>`;
+        toast.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(40,0,60,0.95) 0%, rgba(80,0,120,0.95) 100%);
+            color: #fff; padding: 18px 24px; border-radius: 16px; font-weight: 600; font-size: 15px;
+            z-index: 10000; backdrop-filter: blur(10px); border: 1px solid rgba(156,39,176,0.35);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(156,39,176,0.2);
+            animation: modernFadeInOut 2.2s ease; min-width: 280px; text-align: center;`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2200);
+        return;
+    }
+
     if (isShuffling) return;
     isShuffling = true;
+    shuffleClickCount++;
     
     vibrar(80); 
     document.getElementById('shuffleSound').play().catch(() => {});
@@ -4299,6 +4328,8 @@ function updateCounters() {
 function showCompletionEuforiaMaxima() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
+    // Desactivar Mezclar en fin de juego
+    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de victoria máxima
     const audioVictoriaMaxima = new Audio('https://fawzinoo.github.io/audios/victoriamaxima.mp3');
@@ -4382,7 +4413,8 @@ function showCompletionEuforiaMaxima() {
         }
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
-        showCompletionMessage();
+    showCompletionMessage();
+    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4395,6 +4427,8 @@ function showCompletionEuforiaMaxima() {
 function showCompletioneuforia() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
+    // Desactivar Mezclar en fin de juego
+    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de victoria normal
     const audioVictoriaNormal = new Audio('https://fawzinoo.github.io/audios/victorianormal.mp3');
@@ -4458,7 +4492,8 @@ function showCompletioneuforia() {
         }
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
-        showCompletionMessage();
+    showCompletionMessage();
+    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4470,6 +4505,8 @@ function showCompletioneuforia() {
 function showCompletionPerdida() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
+    // Desactivar Mezclar en fin de juego
+    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de derrota
     const audioDerrota = new Audio('https://fawzinoo.github.io/audios/derrota.mp3');
@@ -4525,7 +4562,8 @@ function showCompletionPerdida() {
         }
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
-        showCompletionMessage();
+    showCompletionMessage();
+    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4537,6 +4575,8 @@ function showCompletionPerdida() {
 function showCompletionEmpate() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
+    // Desactivar Mezclar en fin de juego
+    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de empate (palpitaciones)
     const audioEmpate = new Audio('https://fawzinoo.github.io/audios/empate.mp3');
@@ -4592,7 +4632,8 @@ function showCompletionEmpate() {
         }
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
-        showCompletionMessage();
+    showCompletionMessage();
+    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4603,6 +4644,8 @@ function showCompletionEmpate() {
 function showCompletionMessage() {
     
     const container = document.getElementById('flashcard-container');
+    // Mantener Mezclar desactivado en la pantalla final
+    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     if (correctCount > incorrectCount) {
         if (incorrectCount === 0) {
@@ -4962,6 +5005,29 @@ function showCompletionMessage() {
             });
         }
     }, 100);
+
+    // Programar auto-reinicio tras mostrar la pantalla final (evita interrumpir modales)
+    try { scheduleAutoResetAfterCompletion(); } catch (e) { console.warn('No se pudo programar auto-reinicio:', e); }
+}
+
+// Auto-reinicio seguro tras completar el juego: espera unos segundos y evita resetear si hay modales abiertos
+let _autoResetTimeoutId = null;
+function scheduleAutoResetAfterCompletion(delayMs = 6000) {
+    try { if (_autoResetTimeoutId) { clearTimeout(_autoResetTimeoutId); _autoResetTimeoutId = null; } } catch {}
+
+    const attemptReset = () => {
+        // No resetear mientras haya modales de detalle abiertos
+        const modalOpen = document.getElementById('correct-words-overlay') ||
+                          document.getElementById('incorrect-words-overlay') ||
+                          document.getElementById('flag-modal-overlay');
+        if (modalOpen) {
+            _autoResetTimeoutId = setTimeout(attemptReset, 1500);
+            return;
+        }
+        try { resetGame(); } catch (e) { console.warn('Fallo al auto-reiniciar:', e); }
+    };
+
+    _autoResetTimeoutId = setTimeout(attemptReset, Math.max(0, Number(delayMs) || 0));
 }
 
 // Función para mostrar palabras correctas
@@ -5381,6 +5447,8 @@ function hasProgressSaved() {
     // Si el juego está completado, NO mostrar modal de continuación
     if (isGameCompleted) {
         console.log('Juego completado detectado, limpiando progreso y reiniciando');
+        // Marcar que se permite usar "Reiniciar" solo en este momento/post-carga
+        try { sessionStorage.setItem('resetAllowedCompletedSavedGame', 'true'); } catch (e) {}
         clearCurrentProgress();
         return false;
     }
@@ -5507,6 +5575,7 @@ function initializeNewGame() {
     incorrectCount = 0;
     canFlipBack = true;
     canFlip = true;
+    shuffleClickCount = 0; // Restablecer usos de Mezclar al iniciar partida
     
     // Mezclar tarjetas
     shuffleCards();
@@ -7406,6 +7475,7 @@ function resetGame() {
     incorrectWords.length = 0;
     correctCount = 0;
     incorrectCount = 0;
+    shuffleClickCount = 0; // Restablecer usos de Mezclar
     
     // Limpiar timeouts activos
     if (typeof autoFlipTimer !== 'undefined') {
@@ -7536,23 +7606,84 @@ document.getElementById('reset-button').addEventListener('click', () => {
     const soundResetButton = document.getElementById('soundResetButton');
     soundResetButton.play().catch(e => console.log(e));
 
-    const overlaysPresent = (
-        document.getElementById('euforia-maxima-overlay') ||
-        document.getElementById('euforia-overlay') ||
-        document.getElementById('perdida-overlay') ||
-        document.getElementById('empate-overlay')
-    );
-    
-    // Verificar si se muestra la pantalla final de showCompletionMessage
-    const container = document.getElementById('flashcard-container');
-    const hasCompletionScreen = container && !container.querySelector('.flashcard');
-    
-    // Calcular finalización de forma robusta con el DOM actual
-    const totalCardsNow = document.querySelectorAll('.flashcard').length;
-    const finished = overlaysPresent || hasCompletionScreen || (totalCardsNow > 0 && completedCards.size >= totalCardsNow);
+    // Si el juego YA está finalizado (overlay de fin o pantalla final), reiniciar sin mostrar el toast
+    try {
+        const overlaysPresent = (
+            document.getElementById('euforia-maxima-overlay') ||
+            document.getElementById('euforia-overlay') ||
+            document.getElementById('perdida-overlay') ||
+            document.getElementById('empate-overlay')
+        );
+        const container = document.getElementById('flashcard-container');
+        const hasCompletionScreen = container && !container.querySelector('.flashcard');
+        const totalCardsNow = document.querySelectorAll('.flashcard').length;
+        const finishedNow = overlaysPresent || hasCompletionScreen || (totalCardsNow > 0 && completedCards.size >= totalCardsNow);
+        if (finishedNow) {
+            const existing = document.getElementById('reset-guard-toast');
+            if (existing) existing.remove();
+            resetGame();
+            return;
+        }
+    } catch (e) { /* si algo falla, continuar con la lógica normal */ }
+
+    // Permitir reiniciar SOLO si, al cargar, se detectó progreso guardado COMPLETADO
+    try {
+        const allowResetNow = sessionStorage.getItem('resetAllowedCompletedSavedGame') === 'true';
+        if (!allowResetNow) {
+            const existing = document.getElementById('reset-guard-toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.id = 'reset-guard-toast';
+            toast.innerHTML = `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 12px;
+                    font-size: 16px;
+                    font-weight: 600;
+                ">
+                    <div style="
+                        font-size: 24px;
+                        filter: drop-shadow(0 0 8px rgba(255,152,0,0.6));
+                    ">⏳</div>
+                    <span>Finaliza el juego primero</span>
+                </div>
+            `;
+            toast.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
+                color: #fff;
+                padding: 20px 28px;
+                border-radius: 16px;
+                font-weight: 600;
+                font-size: 16px;
+                letter-spacing: 0.3px;
+                z-index: 10000;
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(255,152,0,0.3);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1);
+                animation: modernFadeInOut 2.2s ease;
+                min-width: 280px;
+                text-align: center;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2200);
+            return;
+        }
+        // Consumir la bandera y reiniciar
+        sessionStorage.removeItem('resetAllowedCompletedSavedGame');
+        resetGame();
+        return;
+    } catch (e) { /* si falla sessionStorage, continuar con lógica anterior */ }
+
+    // Calcular estado de juego para mensaje en juego no finalizado
     const started = ((correctCount + incorrectCount) > 0) || (voiceAttempts > 0);
 
-    if (!finished) {
+    if (true) { // bloque anterior reordenado; aquí solo protegemos el caso de juego NO finalizado
         if (started) {
             const existing = document.getElementById('reset-guard-toast');
             if (existing) existing.remove();
@@ -7598,8 +7729,6 @@ document.getElementById('reset-button').addEventListener('click', () => {
             setTimeout(() => toast.remove(), 2200);
             return; // bloquear si empezó
         }
-        // Si no ha empezado, sí podemos reiniciar y mezclar
-        resetGame();
         return;
     }
 

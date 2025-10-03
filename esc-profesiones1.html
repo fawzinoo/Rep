@@ -3638,8 +3638,6 @@ let betweenAttempts = false;
 // Timeouts para gestionar ventana entre intentos
 let errorDelayTimeoutId = null;       // 2s de mensaje Incorrecto tras primer fallo
 let resumeRecognitionTimeoutId = null; // ~100ms antes de reanudar reconocimiento
-// Bandera para autoabrir el teclado virtual tras un salto con botón móvil "No sé"
-let openVKOnNextBack = false;
 
 
 
@@ -4026,8 +4024,6 @@ function goToNextCard() {
     // Evitar flips accidentales por eventos residuales (tap/click) al avanzar
     // Bloquea momentáneamente el volteo hasta que termine la transición
     canFlip = false;
-    // Limpiar cualquier área de clic fantasma previa del botón móvil "No sé"
-    try { if (window.ignoreClickAfterButton) window.ignoreClickAfterButton = null; } catch {}
     // Cerrar cualquier teclado virtual activo y limpiar estados móviles
     try {
         const vkOverlay = document.getElementById('vk-overlay');
@@ -6048,54 +6044,6 @@ function attachFlashcardHandlers() {
                     const { vk } = getVK();
                     return !!(vk && vk.classList.contains('show'));
                 };
-
-                // Bloquear SIEMPRE el teclado del sistema en móviles/táctiles; permitir físico en escritorio
-                try {
-                    const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-                    if (!isDesktopDevice() || isCoarse || window.innerWidth <= 1024) {
-                        inputEl.setAttribute('inputmode', 'none');
-                        inputEl.setAttribute('autocomplete', 'off');
-                        inputEl.setAttribute('autocorrect', 'off');
-                        inputEl.setAttribute('autocapitalize', 'off');
-                        inputEl.spellcheck = false;
-                        inputEl.readOnly = true;
-                    } else {
-                        // Escritorio: permitir teclado físico
-                        try { inputEl.removeAttribute('inputmode'); } catch {}
-                        inputEl.readOnly = false;
-                        inputEl.setAttribute('autocomplete', 'off');
-                        inputEl.setAttribute('autocorrect', 'off');
-                        inputEl.setAttribute('autocapitalize', 'off');
-                        inputEl.spellcheck = false;
-                    }
-                } catch {}
-                // Si venimos de un skip móvil, autoabrir el teclado virtual personalizado
-                if (openVKOnNextBack) {
-                    try {
-                        openVKOnNextBack = false; // consumir bandera
-                        // Enfocar input y bloquear teclado nativo brevemente
-                        inputEl.setAttribute('inputmode','none');
-                        const prevRO = inputEl.readOnly;
-                        inputEl.readOnly = true;
-                        inputEl.focus({ preventScroll: true });
-                        const end = inputEl.value.length;
-                        try { inputEl.setSelectionRange(end, end); } catch {}
-                        // Mostrar clases de teclado visible y botón móvil
-                        document.body.classList.add('keyboard-visible');
-                        document.documentElement.classList.add('keyboard-visible');
-                        document.body.classList.remove('keyboard-hidden');
-                        document.documentElement.classList.remove('keyboard-hidden');
-                        if (window.innerWidth <= 768) { mobileSkipBtn.classList.add('keyboard-visible'); }
-                        // Abrir el teclado virtual (varios intentos por si hay animaciones)
-                        [0, 60, 180].forEach(d => setTimeout(() => { if (!isVKShown()) showVirtualKeyboard(); }, d));
-                        // Restaurar atributos para permitir interacción normal
-                        setTimeout(() => {
-                            inputEl.readOnly = prevRO;
-                            inputEl.removeAttribute('inputmode');
-                            try { inputEl.focus({ preventScroll: true }); } catch {}
-                        }, 0);
-                    } catch {}
-                }
                 // Restaurar el texto previamente escrito para esta tarjeta (si existe)
                 try {
                     const savedValue = card.dataset.userInput || '';
@@ -6210,25 +6158,14 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                    } else if (window.innerWidth <= 1024) {
+                    } else if (window.innerWidth <= 768) {
                         console.log('FOCUS - Dispositivo móvil: mostrando botón');
-                        // Bloquear teclado del sistema ANTES de cualquier otra acción
-                        try {
-                            inputEl.setAttribute('inputmode','none');
-                            inputEl.readOnly = true;
-                            inputEl.setAttribute('autocomplete','off');
-                            inputEl.setAttribute('autocorrect','off');
-                            inputEl.setAttribute('autocapitalize','off');
-                            inputEl.spellcheck = false;
-                        } catch {}
                         showMobileSkipButton();
                         hidePlaceholder();
                         document.body.classList.add('keyboard-visible');
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                        // Forzar teclado virtual personalizado
-                        if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                     } else {
                         console.log('FOCUS - Tablet: comportamiento estándar');
                         hidePlaceholder();
@@ -6351,40 +6288,18 @@ function attachFlashcardHandlers() {
                         return; // En PC, solo enfocar el input es suficiente
                     }
                     
-                    if (window.innerWidth <= 1024) {
+                    if (window.innerWidth <= 768) {
                         showMobileSkipButton();
                     }
-                    // Refuerzo: bloquear teclado del sistema antes de abrir VK
-                    try {
-                        inputEl.setAttribute('inputmode','none');
-                        inputEl.readOnly = true;
-                    } catch {}
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
-                // Interceptar cualquier toque/click para abrir VK personalizado (y no el sistema)
-                inputEl.addEventListener('pointerdown', (e) => {
-                    ensureVKVisibleOnTap();
-                }, { passive: true });
-                inputEl.addEventListener('click', (e) => {
-                    ensureVKVisibleOnTap();
-                }, { passive: true });
+                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
+                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
                     if (e && e.target === inputEl) return; // ya lo maneja el input
                     try {
                         e && e.preventDefault && e.preventDefault();
-                        // Bloquear teclado del sistema ANTES de enfocar en móviles/tablets
-                        if (!isDesktopDevice() || window.innerWidth <= 1024) {
-                            try {
-                                inputEl.setAttribute('inputmode','none');
-                                inputEl.readOnly = true;
-                                inputEl.setAttribute('autocomplete','off');
-                                inputEl.setAttribute('autocorrect','off');
-                                inputEl.setAttribute('autocapitalize','off');
-                                inputEl.spellcheck = false;
-                            } catch {}
-                        }
-                        // Enfocar el input y posicionar caret
                         inputEl.focus({ preventScroll: true });
                         const end = inputEl.value.length;
                         try { inputEl.setSelectionRange(end, end); } catch {}
@@ -6396,13 +6311,6 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                        // En móviles, replicar la lógica de ensureVKVisibleOnTap para abrir el teclado virtual personalizado
-                        if (!isDesktopDevice()) {
-                            if (window.innerWidth <= 768) {
-                                showMobileSkipButton();
-                            }
-                            if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
-                        }
                     } catch {}
                 };
                 if (inputContainer) {
@@ -6948,14 +6856,13 @@ function attachFlashcardHandlers() {
                 mobileSkipBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Ejecutar como el botón principal, según el propio estado
-                    const isDisabled = mobileSkipBtn.disabled || mobileSkipBtn.getAttribute('aria-disabled') === 'true';
-                    if (isDisabled) return;
-                    // Marcar que el siguiente back debe autoabrir el teclado virtual
-                    openVKOnNextBack = true;
-                    vibrar(60);
-                    playButtonSound();
-                    skipCurrentCardAsUnknown();
+                    const mainSkip = document.getElementById('skip-button');
+                    // Respetar el estado de habilitación del botón principal
+                    if (mainSkip && !mainSkip.disabled) {
+                        vibrar(60);
+                        playButtonSound();
+                        skipCurrentCardAsUnknown();
+                    }
                 }, { passive: false });
                 
                 // Enter para comprobar

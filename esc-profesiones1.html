@@ -6174,6 +6174,16 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
+                        // Garantizar que el teclado virtual esté abierto al enfocar en móvil tras avanzar
+                        if (!isVKShown()) ensureVirtualKeyboardOpen();
+                        // Reafirmar configuración segura del input en caso de DOM recreado
+                        try {
+                            inputEl.setAttribute('inputmode', 'none');
+                            inputEl.readOnly = true;
+                            inputEl.setAttribute('autocapitalize', 'off');
+                            inputEl.setAttribute('autocorrect', 'off');
+                            inputEl.setAttribute('spellcheck', 'false');
+                        } catch {}
                     } else {
                         console.log('FOCUS - Tablet: comportamiento estándar');
                         hidePlaceholder();
@@ -6281,6 +6291,8 @@ function attachFlashcardHandlers() {
                 window.addEventListener('resize', handleResize);
 
                 // Si el input ya tiene foco y el usuario toca para escribir, reabrir el teclado
+                // Registrar eventos sin duplicar: usar pointer si está soportado, si no, touch
+                const SUPPORTS_POINTER = typeof window !== 'undefined' && 'PointerEvent' in window;
                 const ensureVKVisibleOnTap = (e) => {
                     // Evitar que el navegador gestione el foco por defecto (que invoca teclado nativo)
                     try { e && e.preventDefault && e.preventDefault(); } catch {}
@@ -6315,9 +6327,13 @@ function attachFlashcardHandlers() {
                     }
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
-                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: false });
-                inputEl.addEventListener('touchstart', ensureVKVisibleOnTap, { passive: false });
-                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: false, capture: true });
+                if (SUPPORTS_POINTER) {
+                    inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: false });
+                } else {
+                    inputEl.addEventListener('touchstart', ensureVKVisibleOnTap, { passive: false });
+                }
+                // En click solo prevenir por si algún navegador lo usa adicionalmente
+                inputEl.addEventListener('click', (e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }, { passive: false, capture: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
                     if (e && e.target === inputEl) return; // ya lo maneja el input
@@ -6345,9 +6361,13 @@ function attachFlashcardHandlers() {
                     } catch {}
                 };
                 if (inputContainer) {
-                    inputContainer.addEventListener('pointerdown', focusFromContainer, { passive: false });
-                    inputContainer.addEventListener('touchstart', focusFromContainer, { passive: false });
-                    inputContainer.addEventListener('click', focusFromContainer, { passive: false, capture: true });
+                    if (SUPPORTS_POINTER) {
+                        inputContainer.addEventListener('pointerdown', focusFromContainer, { passive: false });
+                    } else {
+                        inputContainer.addEventListener('touchstart', focusFromContainer, { passive: false });
+                    }
+                    // En click solo prevenir
+                    inputContainer.addEventListener('click', (e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }, { passive: false, capture: true });
                 }
                 
                 // Para debugging - mostrar el botón inmediatamente en móviles si ya hay foco
@@ -6617,8 +6637,8 @@ function attachFlashcardHandlers() {
                     const vkEl = document.getElementById('vk');
                     const vkOverlayEl = document.getElementById('vk-overlay');
                     if (vkEl) {
-                        // Usar pointerdown para soportar móvil y desktop sin bloquear eventos subsiguientes
-                        vkEl.addEventListener('pointerdown', (e) => {
+                        // Usar pointer o touch según soporte para evitar dobles eventos
+                        const handleVKPress = (e) => {
                         const target = e.target.closest('.vk-key');
                         if (!target) return;
                         // Marcar interacción con el teclado para suprimir blur momentáneo
@@ -6630,30 +6650,33 @@ function attachFlashcardHandlers() {
                         e.stopPropagation();
                         try { vibrar(30); } catch {}
                         handleVirtualKey(key);
-                        }, { passive: false });
-                        // Limpiar la marca de interacción al soltar/cancelar
-                        const clearVKInteract = () => {
-                            if (vkInteractTimer) clearTimeout(vkInteractTimer);
-                            vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
                         };
-                        vkEl.addEventListener('pointerup', clearVKInteract);
-                        vkEl.addEventListener('pointercancel', clearVKInteract);
-                        // Cubrir navegadores que no emiten pointerdown con touchstart/click
-                        vkEl.addEventListener('touchstart', (e) => {
-                            const target = e.target.closest('.vk-key');
-                            if (!target) return;
-                            vkInteracting = true;
-                            if (vkInteractTimer) { clearTimeout(vkInteractTimer); vkInteractTimer = null; }
-                            const key = target.dataset.key;
-                            if (!key) return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            try { vibrar(30); } catch {}
-                            handleVirtualKey(key);
-                        }, { passive: false });
+                        if (SUPPORTS_POINTER) {
+                            vkEl.addEventListener('pointerdown', handleVKPress, { passive: false });
+                            vkEl.addEventListener('pointerup', () => {
+                                if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                                vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
+                            });
+                            vkEl.addEventListener('pointercancel', () => {
+                                if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                                vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
+                            });
+                        } else {
+                            vkEl.addEventListener('touchstart', handleVKPress, { passive: false });
+                            vkEl.addEventListener('touchend', () => {
+                                if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                                vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
+                            });
+                            vkEl.addEventListener('touchcancel', () => {
+                                if (vkInteractTimer) clearTimeout(vkInteractTimer);
+                                vkInteractTimer = setTimeout(() => { vkInteracting = false; }, 120);
+                            });
+                        }
+                        // Limpiar la marca de interacción al soltar/cancelar
                         vkEl.addEventListener('click', (e) => {
-                            const target = e.target.closest('.vk-key');
-                            if (!target) return;
+                            // En click solo prevenir para evitar dobles entradas
+                            const tgt = e.target.closest('.vk-key');
+                            if (!tgt) return;
                             e.preventDefault();
                             e.stopPropagation();
                         }, { capture: true });
@@ -6679,13 +6702,13 @@ function attachFlashcardHandlers() {
                     window.removeEventListener('resize', handleResize);
                     try {
                         if (inputContainer) {
-                            inputContainer.removeEventListener('pointerdown', focusFromContainer);
-                            inputContainer.removeEventListener('touchstart', focusFromContainer);
-                            inputContainer.removeEventListener('click', focusFromContainer, { capture: true });
+                            try { inputContainer.removeEventListener('pointerdown', focusFromContainer); } catch {}
+                            try { inputContainer.removeEventListener('touchstart', focusFromContainer); } catch {}
+                            try { inputContainer.removeEventListener('click', focusFromContainer, { capture: true }); } catch {}
                         }
-                        inputEl.removeEventListener('pointerdown', ensureVKVisibleOnTap);
-                        inputEl.removeEventListener('touchstart', ensureVKVisibleOnTap);
-                        inputEl.removeEventListener('click', ensureVKVisibleOnTap, { capture: true });
+                        try { inputEl.removeEventListener('pointerdown', ensureVKVisibleOnTap); } catch {}
+                        try { inputEl.removeEventListener('touchstart', ensureVKVisibleOnTap); } catch {}
+                        try { inputEl.removeEventListener('click', ensureVKVisibleOnTap, { capture: true }); } catch {}
                         restorePlaceholder();
                     } catch {}
                     // En cleanup sí forzamos el ocultado

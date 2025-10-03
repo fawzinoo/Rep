@@ -3539,6 +3539,7 @@
             if (flashcardContainer) {
                 // Listener en fase de CAPTURA para interceptar clics "fantasma" y manejar la lógica de volteo
                 flashcardContainer.addEventListener('click', (event) => {
+                    logEvt(event, 'capture:container:click:start');
                     // 1. Lógica para ignorar el "clic fantasma"
                     if (window.ignoreClickAfterButton) {
                         const rect = window.ignoreClickAfterButton;
@@ -3559,6 +3560,7 @@
                     // 2. Lógica para evitar el volteo al hacer clic en el área de escritura
                     const typeDialog = event.target.closest('.type-dialog-container');
                     if (typeDialog) {
+                        dbg('capture: dentro de type-dialog → no flip');
                         // Si el clic fue dentro del área de escritura, no hagas nada.
                         // No es necesario stopPropagation porque la lógica de volteo está más abajo.
                         return;
@@ -3566,10 +3568,14 @@
                     
                     // 3. Lógica para voltear la tarjeta (si ninguna de las condiciones anteriores se cumplió)
                     const currentCard = document.querySelector('.flashcard.is-visible');
+                    dbg('capture: evaluar flip front→back', { canFlip, hasCard: !!currentCard, flipped: currentCard && currentCard.classList.contains('flipped') });
                     if (currentCard && !currentCard.classList.contains('flipped') && canFlip) {
                         // Solo voltea si la tarjeta es visible y está en el anverso.
+                        dbg('capture: flip front→back');
                         flipCard(currentCard);
+                        lastFlipAt = Date.now();
                     }
+                    logEvt(event, 'capture:container:click:end');
                 }, true); // <-- ¡IMPORTANTE! Usar la fase de captura.
             }
         });
@@ -3657,6 +3663,26 @@ let currentCardIndex = 0;
 let voiceAttempts = 0; // Contador para los intentos de voz
 let canFlipBack = true;
 let canFlip = true; // Controla si se puede voltear la tarjeta
+// Debug helpers
+const DEBUG_FLIP = true;
+let lastFlipAt = 0;
+function dbg() {
+    if (!DEBUG_FLIP) return;
+    try { console.log.apply(console, arguments); } catch {}
+}
+function logEvt(e, label) {
+    if (!DEBUG_FLIP || !e) return;
+    try {
+        const t = e.target || {};
+        const id = t.id ? ('#' + t.id) : '';
+        const cls = t.className ? ('.' + String(t.className).trim().split(/\s+/).join('.')) : '';
+        const card = t.closest ? t.closest('.flashcard') : null;
+        const flipped = card ? card.classList.contains('flipped') : undefined;
+        const ignore = card ? card.dataset.ignoreNextBackClick : undefined;
+        const sinceFlip = lastFlipAt ? (Date.now() - lastFlipAt) + 'ms' : 'n/a';
+        console.log(`[${label}] type=${e.type} phase=${e.eventPhase} target=${t.tagName || '?'}${id}${cls} flipped=${flipped} canFlip=${canFlip} canFlipBack=${canFlipBack} ignoreNext=${ignore} defaultPrevented=${e.defaultPrevented} sinceFlip=${sinceFlip}`);
+    } catch {}
+}
 // Timer para programar la actualización del porcentaje tras re-aparecer el cuadro
 let percentageUpdateTimeoutId = null;
 let statsShowTimeoutId = null;
@@ -6021,7 +6047,8 @@ function attachFlashcardHandlers() {
             card.dataset.answer = back.textContent.trim();
         }
 
-    card.addEventListener('click', (event) => {
+        card.addEventListener('click', (event) => {
+            logEvt(event, 'bubble:card:click:start');
             // No voltear si el clic ocurre dentro del cuadro de escritura
             try {
                 if (event && event.target && event.target.closest('.type-dialog-container')) {
@@ -6035,9 +6062,9 @@ function attachFlashcardHandlers() {
                 event.preventDefault();
                 return;
             }
-            console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
+            dbg(`bubble:card: click tarjeta canFlip=${canFlip} canFlipBack=${canFlipBack} flipped=${card.classList.contains('flipped')} voiceAttempts=${voiceAttempts}`);
             if (!canFlip) {
-                console.log('Volteo bloqueado por canFlip');
+                dbg('bubble:card: volteo bloqueado por canFlip');
                 card.style.transform = 'scale(0.98)';
                 setTimeout(() => { card.style.transform = ''; }, 150);
                 return;
@@ -6046,9 +6073,10 @@ function attachFlashcardHandlers() {
             vibrar(80); 
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
+                dbg('bubble:card: flipped=true, evaluar flip back', { canFlipBack });
                 // No voltear de vuelta si está activo el modo edición
                 if (!canFlipBack) {
-                    console.log('Flip back bloqueado: edición activa');
+                    dbg('bubble:card: flip back bloqueado por edición activa');
                     event.stopPropagation();
                     event.preventDefault();
                     return;
@@ -6084,6 +6112,7 @@ function attachFlashcardHandlers() {
                 setTimeout(() => { canFlip = true; }, 600);
                 // Mientras se edita, bloquear flip back
                 canFlipBack = false;
+                lastFlipAt = Date.now();
                 
 
 
@@ -6401,8 +6430,10 @@ function attachFlashcardHandlers() {
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
                 const consumeFirstTapOnInput = (e) => {
+                    logEvt(e, 'input:consumeFirstTap');
                     const cardEl = backElement.closest('.flashcard');
                     if (cardEl && cardEl.dataset.ignoreNextBackClick === '1') {
+                        dbg('input: primer tap consumido');
                         cardEl.dataset.ignoreNextBackClick = '0';
                         e && e.stopPropagation && e.stopPropagation();
                         e && e.preventDefault && e.preventDefault();
@@ -6412,11 +6443,13 @@ function attachFlashcardHandlers() {
                 inputEl.addEventListener('click', (e)=>{ consumeFirstTapOnInput(e); ensureVKVisibleOnTap(e); }, { passive: false });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
+                    logEvt(e, 'container:focusFromContainer');
                     if (e && e.target === inputEl) return; // ya lo maneja el input
                     try {
                         // Si es el primer tap tras el flip, consumir y limpiar la bandera
                         const cardEl = backElement.closest('.flashcard');
                         if (cardEl && cardEl.dataset.ignoreNextBackClick === '1') {
+                            dbg('container: primer tap consumido');
                             cardEl.dataset.ignoreNextBackClick = '0';
                             e && e.stopPropagation && e.stopPropagation();
                             e && e.preventDefault && e.preventDefault();
@@ -6446,9 +6479,24 @@ function attachFlashcardHandlers() {
                     inputContainer.addEventListener('click', (e)=>{ consumeIfFirstTap(e); focusFromContainer(e); });
                 }
                 
+                // Auto-enfocar una vez tras el flip en móviles para evitar doble tap
+                if (!isDesktopDevice() && window.innerWidth <= 768) {
+                    setTimeout(() => {
+                        try {
+                            dbg('autofocus: tras flip → focus input y abrir VK');
+                            inputEl.focus({ preventScroll: true });
+                            hidePlaceholder();
+                            if (typeof setCursorState === 'function') setCursorState(true, 'Auto focus tras flip');
+                            document.body.classList.add('keyboard-visible');
+                            document.documentElement.classList.add('keyboard-visible');
+                            document.body.classList.remove('keyboard-hidden');
+                            document.documentElement.classList.remove('keyboard-hidden');
+                            if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
+                        } catch (e) { dbg('autofocus error:', e); }
+                    }, 60);
+                }
 
-
-                // No forzar apertura del teclado tras montar el UI en móvil: el usuario debe hacer clic en el input
+                // No forzar apertura del teclado tras montar el UI en móvil: el usuario debe hacer clic en el input (salvo autofocus anterior)
 
                 // ====== LÓGICA DEL TECLADO VIRTUAL ======
                 // Soporte de idiomas (ES/FR) y layouts (QWERTY/AZERTY)
@@ -7103,6 +7151,7 @@ function attachFlashcardHandlers() {
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();
             }
+            logEvt(event, 'bubble:card:click:end');
         });
     });
 }

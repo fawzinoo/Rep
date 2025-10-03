@@ -5992,7 +5992,7 @@ function attachFlashcardHandlers() {
                         <div class="type-message" id="type-message" style="display:none;"></div>
                         <div class="type-input-row">
                             <div class="type-input-container">
-                                <input id="type-input" class="type-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none" placeholder="Escribe aquí..." />
+                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." />
                                 <button id="clear-button" class="clear-button-inside" title="Limpiar texto"><i class="fas fa-backspace"></i></button>
                             </div>
                         </div>
@@ -6065,23 +6065,18 @@ function attachFlashcardHandlers() {
                 // Detectar navegador Samsung para ajustes específicos
                 const isSamsungBrowser = navigator.userAgent.includes('SamsungBrowser');
                 
-                // Función mejorada para detectar dispositivos de escritorio/PC (soporta iPadOS/táctiles)
+                // Función mejorada para detectar dispositivos de escritorio/PC
                 const isDesktopDevice = () => {
-                    const ua = navigator.userAgent.toLowerCase();
-                    const hasTouch = (navigator.maxTouchPoints || 0) > 1 || 'ontouchstart' in window;
-                    const clearlyMobileOrTabletUA = /android|iphone|ipad|ipod|mobile|tablet/.test(ua);
-                    const clearlyDesktopUA = /windows|macintosh|linux/.test(ua);
-                    const wide = window.innerWidth >= 1200;
-
-                    // Si el UA indica móvil/tablet o el dispositivo es táctil y no es muy ancho, NO es desktop
-                    if (clearlyMobileOrTabletUA) return false;
-                    if (hasTouch && window.innerWidth < 1200) return false;
-
-                    // Desktop solo si UA es claramente de escritorio, ancho suficiente y sin touch
-                    if (clearlyDesktopUA && window.innerWidth >= 1024 && !hasTouch) return true;
-
-                    // Por defecto, tratar como no desktop (para asegurar teclado virtual en casos ambiguos)
-                    return wide; // muy ancho se considera desktop
+                    // Detectar por ancho de pantalla (más conservador - solo pantallas muy grandes)
+                    if (window.innerWidth >= 1200) return true;
+                    
+                    // Detectar por user agent (complementario) - solo si es claramente un PC
+                    const userAgent = navigator.userAgent.toLowerCase();
+                    const isDesktop = /windows|macintosh|linux/.test(userAgent) && 
+                                     !/android|iphone|ipad|ipod|mobile|tablet/.test(userAgent) &&
+                                     window.innerWidth >= 1024;
+                    
+                    return isDesktop;
                 };
 
                 // Detectar cuando aparece/desaparece el teclado móvil - Método mejorado
@@ -6171,16 +6166,13 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                        // Abrir teclado virtual de inmediato al enfocar en móviles
-                        ensureVirtualKeyboardOpen();
                     } else {
-                        console.log('FOCUS - Tablet/táctil: abrir teclado virtual');
+                        console.log('FOCUS - Tablet: comportamiento estándar');
                         hidePlaceholder();
                         document.body.classList.add('keyboard-visible');
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                        ensureVirtualKeyboardOpen();
                     }
                 };
                 
@@ -6277,11 +6269,6 @@ function attachFlashcardHandlers() {
                 const ensureVKVisibleOnTap = () => {
                     // Forzar foco inmediato para mostrar caret
                     try {
-                        // En móviles, establecer readonly antes de enfocar para evitar teclado nativo
-                        if (!isDesktopDevice()) {
-                            inputEl.readOnly = true;
-                            inputEl.setAttribute('inputmode', 'none');
-                        }
                         inputEl.focus({ preventScroll: true });
                         const end = inputEl.value.length;
                         try { inputEl.setSelectionRange(end, end); } catch {}
@@ -6313,11 +6300,6 @@ function attachFlashcardHandlers() {
                     if (e && e.target === inputEl) return; // ya lo maneja el input
                     try {
                         e && e.preventDefault && e.preventDefault();
-                        // En móviles, establecer readonly antes de enfocar para evitar teclado nativo
-                        if (!isDesktopDevice()) {
-                            inputEl.readOnly = true;
-                            inputEl.setAttribute('inputmode', 'none');
-                        }
                         inputEl.focus({ preventScroll: true });
                         const end = inputEl.value.length;
                         try { inputEl.setSelectionRange(end, end); } catch {}
@@ -6329,9 +6311,6 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                        if (!isDesktopDevice()) {
-                            ensureVirtualKeyboardOpen();
-                        }
                     } catch {}
                 };
                 if (inputContainer) {

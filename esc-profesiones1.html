@@ -6048,6 +6048,27 @@ function attachFlashcardHandlers() {
                     const { vk } = getVK();
                     return !!(vk && vk.classList.contains('show'));
                 };
+
+                // Bloquear SIEMPRE el teclado del sistema en móviles/táctiles; permitir físico en escritorio
+                try {
+                    const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+                    if (!isDesktopDevice() || isCoarse || window.innerWidth <= 1024) {
+                        inputEl.setAttribute('inputmode', 'none');
+                        inputEl.setAttribute('autocomplete', 'off');
+                        inputEl.setAttribute('autocorrect', 'off');
+                        inputEl.setAttribute('autocapitalize', 'off');
+                        inputEl.spellcheck = false;
+                        inputEl.readOnly = true;
+                    } else {
+                        // Escritorio: permitir teclado físico
+                        try { inputEl.removeAttribute('inputmode'); } catch {}
+                        inputEl.readOnly = false;
+                        inputEl.setAttribute('autocomplete', 'off');
+                        inputEl.setAttribute('autocorrect', 'off');
+                        inputEl.setAttribute('autocapitalize', 'off');
+                        inputEl.spellcheck = false;
+                    }
+                } catch {}
                 // Si venimos de un skip móvil, autoabrir el teclado virtual personalizado
                 if (openVKOnNextBack) {
                     try {
@@ -6189,7 +6210,7 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
-                    } else if (window.innerWidth <= 768) {
+                    } else if (window.innerWidth <= 1024) {
                         console.log('FOCUS - Dispositivo móvil: mostrando botón');
                         showMobileSkipButton();
                         hidePlaceholder();
@@ -6197,6 +6218,8 @@ function attachFlashcardHandlers() {
                         document.documentElement.classList.add('keyboard-visible');
                         document.body.classList.remove('keyboard-hidden');
                         document.documentElement.classList.remove('keyboard-hidden');
+                        // Forzar teclado virtual personalizado
+                        if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                     } else {
                         console.log('FOCUS - Tablet: comportamiento estándar');
                         hidePlaceholder();
@@ -6319,13 +6342,23 @@ function attachFlashcardHandlers() {
                         return; // En PC, solo enfocar el input es suficiente
                     }
                     
-                    if (window.innerWidth <= 768) {
+                    if (window.innerWidth <= 1024) {
                         showMobileSkipButton();
                     }
+                    // Refuerzo: bloquear teclado del sistema antes de abrir VK
+                    try {
+                        inputEl.setAttribute('inputmode','none');
+                        inputEl.readOnly = true;
+                    } catch {}
                     if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
                 };
-                inputEl.addEventListener('pointerdown', ensureVKVisibleOnTap, { passive: true });
-                inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
+                // Interceptar cualquier toque/click para abrir VK personalizado (y no el sistema)
+                inputEl.addEventListener('pointerdown', (e) => {
+                    ensureVKVisibleOnTap();
+                }, { passive: true });
+                inputEl.addEventListener('click', (e) => {
+                    ensureVKVisibleOnTap();
+                }, { passive: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
                     if (e && e.target === inputEl) return; // ya lo maneja el input

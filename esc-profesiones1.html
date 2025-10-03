@@ -3638,6 +3638,8 @@ let betweenAttempts = false;
 // Timeouts para gestionar ventana entre intentos
 let errorDelayTimeoutId = null;       // 2s de mensaje Incorrecto tras primer fallo
 let resumeRecognitionTimeoutId = null; // ~100ms antes de reanudar reconocimiento
+// Bandera para autoabrir el teclado virtual tras un salto con botón móvil "No sé"
+let openVKOnNextBack = false;
 
 
 
@@ -6046,6 +6048,33 @@ function attachFlashcardHandlers() {
                     const { vk } = getVK();
                     return !!(vk && vk.classList.contains('show'));
                 };
+                // Si venimos de un skip móvil, autoabrir el teclado virtual personalizado
+                if (openVKOnNextBack) {
+                    try {
+                        openVKOnNextBack = false; // consumir bandera
+                        // Enfocar input y bloquear teclado nativo brevemente
+                        inputEl.setAttribute('inputmode','none');
+                        const prevRO = inputEl.readOnly;
+                        inputEl.readOnly = true;
+                        inputEl.focus({ preventScroll: true });
+                        const end = inputEl.value.length;
+                        try { inputEl.setSelectionRange(end, end); } catch {}
+                        // Mostrar clases de teclado visible y botón móvil
+                        document.body.classList.add('keyboard-visible');
+                        document.documentElement.classList.add('keyboard-visible');
+                        document.body.classList.remove('keyboard-hidden');
+                        document.documentElement.classList.remove('keyboard-hidden');
+                        if (window.innerWidth <= 768) { mobileSkipBtn.classList.add('keyboard-visible'); }
+                        // Abrir el teclado virtual (varios intentos por si hay animaciones)
+                        [0, 60, 180].forEach(d => setTimeout(() => { if (!isVKShown()) showVirtualKeyboard(); }, d));
+                        // Restaurar atributos para permitir interacción normal
+                        setTimeout(() => {
+                            inputEl.readOnly = prevRO;
+                            inputEl.removeAttribute('inputmode');
+                            try { inputEl.focus({ preventScroll: true }); } catch {}
+                        }, 0);
+                    } catch {}
+                }
                 // Restaurar el texto previamente escrito para esta tarjeta (si existe)
                 try {
                     const savedValue = card.dataset.userInput || '';
@@ -6869,6 +6898,8 @@ function attachFlashcardHandlers() {
                     const mainSkip = document.getElementById('skip-button');
                     // Respetar el estado de habilitación del botón principal
                     if (mainSkip && !mainSkip.disabled) {
+                        // Marcar que el siguiente back debe autoabrir el teclado virtual
+                        openVKOnNextBack = true;
                         vibrar(60);
                         playButtonSound();
                         skipCurrentCardAsUnknown();

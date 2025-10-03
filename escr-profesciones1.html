@@ -174,13 +174,19 @@
                 caret-color: transparent !important;
             }
             
-            /* Ocultar cursor de texto específicamente */
-            input, textarea, [contenteditable] {
-                cursor: none !important;
-                caret-color: transparent !important;
+            /* EXCEPCIÓN: permitir caret y cursor de texto en el campo de entrada */
+            .type-input,
+            .type-input:focus,
+            .keyboard-visible .type-input {
+                cursor: text !important;
+                caret-color: auto !important;
+                -webkit-user-select: text !important;
+                -moz-user-select: text !important;
+                -ms-user-select: text !important;
+                user-select: text !important;
             }
             
-            /* Ocultar cursor en todos los elementos interactivos */
+            /* Ocultar cursor en otros elementos interactivos */
             button, .button, .pill, .flashcard, a, [onclick] {
                 cursor: none !important;
             }
@@ -6082,7 +6088,7 @@ function attachFlashcardHandlers() {
                         <div class="type-message" id="type-message" style="display:none;"></div>
                         <div class="type-input-row">
                             <div class="type-input-container">
-                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." readonly inputmode="none" />
+                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." inputmode="none" />
                                 <button id="clear-button" class="clear-button-inside" title="Limpiar texto"><i class="fas fa-backspace"></i></button>
                             </div>
                         </div>
@@ -6121,7 +6127,8 @@ function attachFlashcardHandlers() {
                 // Función para evitar teclado del sistema en móviles
                 const preventSystemKeyboard = () => {
                     if (window.innerWidth <= 768) { // Solo en móviles
-                        inputEl.setAttribute('readonly', 'true');
+                        // No usar readonly para no bloquear el caret; bloquear solo el teclado nativo
+                        inputEl.removeAttribute('readonly');
                         inputEl.setAttribute('inputmode', 'none');
                     } else {
                         // En PC, permitir input normal
@@ -6198,16 +6205,10 @@ function attachFlashcardHandlers() {
                     vkOverlay.style.display = 'flex';
                     // Usar rAF para asegurar layout antes de la transición
                     requestAnimationFrame(() => vk.classList.add('show'));
-                    // Truco iOS/Android: bloquear teclado nativo manteniendo foco
-                    const wasReadonly = inputEl.readOnly;
+                    // Bloquear teclado nativo manteniendo foco solo con inputmode y focus (sin readOnly)
                     inputEl.setAttribute('inputmode','none');
-                    inputEl.readOnly = true;
                     requestAnimationFrame(() => {
                         try { inputEl.focus({ preventScroll: true }); } catch (e) {}
-                        setTimeout(() => {
-                            inputEl.readOnly = wasReadonly;
-                            try { inputEl.focus({ preventScroll: true }); } catch (e) {}
-                        }, 0);
                     });
                 };
                 const ensureVirtualKeyboardOpen = () => {

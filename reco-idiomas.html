@@ -2997,93 +2997,7 @@
     <div class="back">El francés</div>
 </div>
 
-<!-- 13. Alemania -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/de.png" alt="Alemania" loading="lazy">
-    </div>
-    <div class="back">El alemán</div>
-</div>
 
-<!-- 14. Holanda -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/nl.png" alt="Holanda" loading="lazy">
-    </div>
-    <div class="back">El holandés</div>
-</div>
-
-<!-- 15. Italia -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/it.png" alt="Italia" loading="lazy">
-    </div>
-    <div class="back">El italiano</div>
-</div>
-
-
-
-<!-- 17. Rusia -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/ru.png" alt="Rusia" loading="lazy">
-    </div>
-    <div class="back">El ruso</div>
-</div>
-
-<!-- 18. China -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/cn.png" alt="China" loading="lazy">
-    </div>
-    <div class="back">El chino</div>
-</div>
-
-<!-- 19. Japón -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/jp.png" alt="Japón" loading="lazy">
-    </div>
-    <div class="back">El japonés</div>
-</div>
-
-<!-- 20. Portugal -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/pt.png" alt="Portugal" loading="lazy">
-    </div>
-    <div class="back">El portugués</div>
-</div>
-
-<!-- 21. Corea del Sur -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/kr.png" alt="Corea del Sur" loading="lazy">
-    </div>
-    <div class="back">El coreano</div>
-</div>
-
-<!-- 23. Turquía -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/tr.png" alt="Turquía" loading="lazy">
-    </div>
-    <div class="back">El turco</div>
-</div>
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/gr.png" alt="Grecia" loading="lazy">
-    </div>
-    <div class="back">El griego</div>
-</div>
-
-<!-- Hindi (India) -->
-<div class="flashcard">
-    <div class="front">
-        <img src="https://flagcdn.com/w640/in.png" alt="India" loading="lazy">
-    </div>
-    <div class="back">El hindi</div>
-</div>
 
 
     
@@ -3864,14 +3778,8 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         })();
 
         setTimeout(() => {
-            const idx = flashcards.indexOf(card);
-            if (hasValidAudio(idx)) {
-                stopAllAudios();
-                audios[idx].play().catch(() => {});
-                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
-            } else {
-                showCountdown(card);
-            }
+            stopAllAudios();
+            playCardAudio(card, () => showCountdown(card));
         }, 1000);
 
         // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -3989,15 +3897,9 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 backElement.appendChild(respuestaCorrecta);
 
-                // Reproduce el audio si existe y después muestra countdown
-                const audioIndex = flashcards.indexOf(card);
-                if (hasValidAudio(audioIndex)) {
-                    stopAllAudios();
-                    audios[audioIndex].play().catch(() => {});
-                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                } else {
-                    showCountdown(card);
-                }
+                // Reproduce el audio (resuelto por contenido) y después muestra countdown
+                stopAllAudios();
+                playCardAudio(card, () => showCountdown(card));
             }, 2000);
 
             // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -5930,6 +5832,30 @@ function getAudioSrcForCountryName(countryName) {
     return file ? (baseUrl + file) : null;
 }
 
+// Reproductor por tarjeta: obtiene el src según el contenido actual y reproduce en un Audio propio de la tarjeta
+function playCardAudio(card, onEnded) {
+    try {
+        if (!card) { if (typeof onEnded === 'function') onEnded(); return; }
+        const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
+        const src = getAudioSrcForCountryName(answer);
+        if (!src) { if (typeof onEnded === 'function') onEnded(); return; }
+
+        if (!card._audioEl) {
+            card._audioEl = new Audio();
+            card._audioEl.preload = 'auto';
+        }
+        const a = card._audioEl;
+        try { a.pause(); } catch {}
+        a.src = src;
+        a.currentTime = 0;
+        a.onended = null;
+        if (typeof onEnded === 'function') a.onended = onEnded;
+        a.play().catch(() => { if (typeof onEnded === 'function') onEnded(); });
+    } catch (e) {
+        if (typeof onEnded === 'function') onEnded();
+    }
+}
+
 // Alias para discrepancias de nombres entre el texto mostrado y el archivo de audio
 // Evita que tarjetas como "Brasil" (archivo brazil.mp3) queden sin src y bloqueen el flujo
 if (audioFilenameByKey['brazil'] && !audioFilenameByKey['brasil']) {
@@ -5992,18 +5918,12 @@ back.querySelectorAll('.intentos-back').forEach(el => el.remove());
 back.innerHTML = data.backText;
     // --- ACTUALIZA EL data-answer TAMBIÉN ---
     card.dataset.answer = data.backText;
-        // Reasignar el audio CORRECTO según el nombre del país
+        // Guardar el src esperado en dataset (evita depender de arrays por índice)
         const src = getAudioSrcForCountryName(data.backText);
         if (src) {
-            try { audios[index].pause(); } catch {}
-            audios[index].currentTime = 0;
-            audios[index].preload = 'none';
-            audios[index].src = src;
+            card.dataset.audioSrc = src;
         } else {
-            // Si no hay audio mapeado, limpiar para evitar desincronización
-            try { audios[index].pause(); } catch {}
-            audios[index].currentTime = 0;
-            audios[index].src = '';
+            delete card.dataset.audioSrc;
         }
 });
 
@@ -6203,17 +6123,20 @@ function initializePage() {
 
     showCard(currentCardIndex);
     updateCounters();
-    // Precargar audio correcto para la tarjeta visible tras primera mezcla
-    const firstBack = document.querySelector('.flashcard.is-visible .back');
-    const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
-    const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
-    if (visibleSrc && audios[currentCardIndex]) {
-        try { audios[currentCardIndex].pause(); } catch {}
-        audios[currentCardIndex].currentTime = 0;
-        audios[currentCardIndex].preload = 'auto';
-        audios[currentCardIndex].src = visibleSrc;
-        audios[currentCardIndex].load();
-    }
+    // Precargar audio correcto para la tarjeta visible tras primera mezcla (sin arrays por índice)
+    try {
+        const card = flashcards[currentCardIndex];
+        if (card) {
+            const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
+            const visibleSrc = answer ? getAudioSrcForCountryName(answer) : null;
+            if (visibleSrc) {
+                if (!card._audioEl) card._audioEl = new Audio();
+                card._audioEl.preload = 'auto';
+                card._audioEl.src = visibleSrc;
+                try { card._audioEl.load(); } catch {}
+            }
+        }
+    } catch {}
     // Mostrar hints secuenciales al cargar
     showPillHints();
 }
@@ -6248,24 +6171,7 @@ function updateLastGamePillFromStorage() {
 
 // Reasignar audios a tarjetas según el texto del reverso (data-answer)
 function reassignAudiosToCards() {
-    try {
-        flashcards.forEach((card, index) => {
-            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
-            const src = getAudioSrcForCountryName(answer);
-            if (src) {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].preload = 'none';
-                audios[index].src = src;
-            } else {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].src = '';
-            }
-        });
-    } catch (e) {
-        console.warn('No se pudo reasignar audios:', e);
-    }
+    // Audio resuelto on-demand por tarjeta; no es necesario re-mapear por índice.
 }
 
 function updateCardCounter() {
@@ -6357,10 +6263,16 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
-    audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
-    });
+    // Detener cualquier Audio del arreglo legacy
+    try {
+        audios.forEach(audio => { try { audio.pause(); audio.currentTime = 0; } catch {} });
+    } catch {}
+    // Detener audios propios de cada tarjeta
+    try {
+        document.querySelectorAll('.flashcard').forEach(c => {
+            if (c._audioEl) { try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {} }
+        });
+    } catch {}
 }
 
 // Muestra frases (hints) cerca de los pills al cargar la página

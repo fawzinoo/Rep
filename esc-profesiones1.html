@@ -2101,6 +2101,13 @@
     background-color: #d35400;
 }
 
+/* Estado deshabilitado del botón móvil No sé */
+.no-duplicate-button[aria-disabled="true"],
+.no-duplicate-button:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .check-button.button-pressed {
     background: linear-gradient(135deg, #2563eb, #1d4ed8);
     transform: translateY(1px) scale(0.98);
@@ -2729,14 +2736,13 @@
     
     .no-duplicate-button {
         margin-left: 0;
-        /* Oculto por defecto, se mostrará con JavaScript */
-        display: none;
-    }
-    
-    /* Clase para mostrar el botón cuando el input está activo */
-    .no-duplicate-button.show-on-focus {
+        /* Mostrar siempre en móviles, a la derecha de "comprobar" */
         display: inline-flex !important;
+        align-items: center;
+        gap: 8px;
     }
+    /* La clase show-on-focus ya no es necesaria para visibilidad, se mantiene por compatibilidad */
+    .no-duplicate-button.show-on-focus { display: inline-flex !important; }
 }
 
 /* Estilos para tablets y pantallas medianas */
@@ -3723,11 +3729,10 @@ function setSkipEnabled(enabled) {
     // Sincronizar también el estado con el botón móvil "No sé" (si existe en la tarjeta visible)
     try {
         const visibleBack = document.querySelector('.flashcard.is-visible .back');
-
-        if (mobileSkip) {
-            mobileSkip.disabled = !enabled;
-            // También actualizar accesibilidad
-            mobileSkip.setAttribute('aria-disabled', (!enabled).toString());
+        const mobileBtn = visibleBack ? visibleBack.querySelector('#no-duplicate-button') : null;
+        if (mobileBtn) {
+            mobileBtn.disabled = !enabled;
+            mobileBtn.setAttribute('aria-disabled', (!enabled).toString());
         }
     } catch {}
 }
@@ -3750,10 +3755,11 @@ function updateSkipButtonState() {
         setSkipEnabled(false); 
         return; 
     }
-    // En la ventana entre intentos tras el primer fallo: desactivado
-    if (betweenAttempts) {
-        setSkipEnabled(false);
-        return;
+    // En modo escritura: permitir "No sé" siempre que no haya bloqueos activos
+    // En la ventana entre intentos tras el primer fallo: activo
+    if (betweenAttempts && voiceAttempts === 1) { 
+        setSkipEnabled(true); 
+        return; 
     }
     // Para modo escritura, permitir "No sé" por defecto en back
     setSkipEnabled(true);
@@ -6384,10 +6390,7 @@ function attachFlashcardHandlers() {
                     document.body.classList.add('keyboard-hidden');
                     document.documentElement.classList.add('keyboard-hidden');
                     
-                    // Ocultar botón "No sé" duplicado cuando se pierde el focus (con delay para permitir clicks)
-                    setTimeout(() => {
-                        noDuplicateBtn.classList.remove('show-on-focus');
-                    }, 150);
+                    // Ya no ocultamos el botón "No sé" duplicado en blur: permanece visible en móviles
                     if (window.innerWidth <= 768) {
                         const { vk, vkOverlay } = getVK();
                         // Si el foco se mueve a algún elemento dentro del teclado, no cerrar

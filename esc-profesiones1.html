@@ -2056,13 +2056,22 @@
     font-size: 1.1rem;
     font-weight: 700;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(53,88,227,0.35);
-    transition: transform .15s ease, box-shadow .2s ease;
+    /* Sombra más marcada para sensación de botón elevado */
+    box-shadow: 0 8px 24px rgba(53,88,227,0.45), 0 2px 8px rgba(0,0,0,0.12);
+    border: 1px solid rgba(53,88,227,0.35);
+    transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
     min-width: 200px;
 }
 
-.check-button:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(53,88,227,0.5); }
-.check-button:active { transform: translateY(0); }
+.check-button:hover { 
+    transform: translateY(-2px); 
+    box-shadow: 0 12px 28px rgba(53,88,227,0.55), 0 4px 10px rgba(0,0,0,0.14);
+}
+.check-button:active { 
+    transform: translateY(0);
+    /* Ligeramente más "hundido" al hacer click */
+    box-shadow: 0 4px 12px rgba(53,88,227,0.40), inset 0 2px 8px rgba(0,0,0,0.18);
+}
 
 .no-duplicate-button {
     background-color: #e67e22;
@@ -4037,11 +4046,10 @@ function updateSkipButtonState() {
         setSkipEnabled(false); 
         return; 
     }
-    // En modo escritura: permitir "No sé" siempre que no haya bloqueos activos
-    // En la ventana entre intentos tras el primer fallo: activo
-    if (betweenAttempts && voiceAttempts === 1) { 
-        setSkipEnabled(true); 
-        return; 
+    // En la ventana entre intentos tras el primer fallo: desactivado
+    if (betweenAttempts) {
+        setSkipEnabled(false);
+        return;
     }
     // Para modo escritura, permitir "No sé" por defecto en back
     setSkipEnabled(true);
@@ -4334,7 +4342,7 @@ const SHUFFLE_MAX_CLICKS = 3;
 
 // Restaurar contador de Mezclar desde localStorage (persiste hasta fin de juego)
 try {
-    const savedShuffle = parseInt(localStorage.getItem('profesiones12_shuffleCount') || '0', 10);
+    const savedShuffle = parseInt(localStorage.getItem('profesiones11_shuffleCount') || '0', 10);
     if (!isNaN(savedShuffle) && savedShuffle >= 0) {
         shuffleClickCount = savedShuffle;
     }
@@ -4369,7 +4377,7 @@ document.getElementById('shuffle-button').addEventListener('click', () => {
     if (isShuffling) return;
     isShuffling = true;
     shuffleClickCount++;
-    try { localStorage.setItem('profesiones12_shuffleCount', String(shuffleClickCount)); } catch (e) {}
+    try { localStorage.setItem('profesiones11_shuffleCount', String(shuffleClickCount)); } catch (e) {}
     
     vibrar(80); 
     document.getElementById('shuffleSound').play().catch(() => {});
@@ -4390,10 +4398,25 @@ if (skipBtn) {
     });
 }
 
-function playSuccessSound() {
-    const successAudio = new Audio('https://fawzinoo.github.io/audios/win.mp3');
-    successAudio.volume = 0.7;
-    successAudio.play().catch(() => {});
+let _successAudioEl = null;
+function playSuccessSound(onEnded) {
+    try {
+        if (!_successAudioEl) {
+            _successAudioEl = new Audio('https://fawzinoo.github.io/audios/win.mp3');
+            _successAudioEl.preload = 'auto';
+            _successAudioEl.volume = 0.7;
+            try { _successAudioEl.load(); } catch {}
+        } else {
+            try { _successAudioEl.pause(); _successAudioEl.currentTime = 0; } catch {}
+        }
+        _successAudioEl.onended = null;
+        if (typeof onEnded === 'function') _successAudioEl.onended = onEnded;
+        _successAudioEl.play().catch(() => { if (typeof onEnded === 'function') onEnded(); });
+        return _successAudioEl;
+    } catch (e) {
+        if (typeof onEnded === 'function') onEnded();
+        return null;
+    }
 }
 
 function showCountdown(card) {
@@ -4719,7 +4742,6 @@ function showCompletionEuforiaMaxima() {
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
     showCompletionMessage();
-    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4798,7 +4820,6 @@ function showCompletioneuforia() {
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
     showCompletionMessage();
-    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4868,7 +4889,6 @@ function showCompletionPerdida() {
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
     showCompletionMessage();
-    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -4938,7 +4958,6 @@ function showCompletionEmpate() {
         document.removeEventListener('click', onSkip, true);
         document.removeEventListener('touchstart', onSkip, true);
     showCompletionMessage();
-    try { scheduleAutoResetAfterCompletion(); } catch {}
     };
     const onSkip = () => clearAll();
     document.addEventListener('click', onSkip, true);
@@ -5311,28 +5330,6 @@ function showCompletionMessage() {
         }
     }, 100);
 
-    // Programar auto-reinicio tras mostrar la pantalla final (evita interrumpir modales)
-    try { scheduleAutoResetAfterCompletion(); } catch (e) { console.warn('No se pudo programar auto-reinicio:', e); }
-}
-
-// Auto-reinicio seguro tras completar el juego: espera unos segundos y evita resetear si hay modales abiertos
-let _autoResetTimeoutId = null;
-function scheduleAutoResetAfterCompletion(delayMs = 6000) {
-    try { if (_autoResetTimeoutId) { clearTimeout(_autoResetTimeoutId); _autoResetTimeoutId = null; } } catch {}
-
-    const attemptReset = () => {
-        // No resetear mientras haya modales de detalle abiertos
-        const modalOpen = document.getElementById('correct-words-overlay') ||
-                          document.getElementById('incorrect-words-overlay') ||
-                          document.getElementById('flag-modal-overlay');
-        if (modalOpen) {
-            _autoResetTimeoutId = setTimeout(attemptReset, 1500);
-            return;
-        }
-        try { resetGame(); } catch (e) { console.warn('Fallo al auto-reiniciar:', e); }
-    };
-
-    _autoResetTimeoutId = setTimeout(attemptReset, Math.max(0, Number(delayMs) || 0));
 }
 
 // Función para mostrar palabras correctas
@@ -5488,7 +5485,7 @@ function saveGameProgress() {
     
     try {
         const stateString = JSON.stringify(gameState);
-        localStorage.setItem('profesiones12_gameProgress', stateString); // ✅ Cambiado de profesiones12_gameProgress
+        localStorage.setItem('profesiones11_gameProgress', stateString); // ✅ Cambiado de profesiones11_gameProgress
         console.log(`✅ Progreso guardado automáticamente. voiceAttempts: ${voiceAttempts}`);
     } catch (error) {
         if (error.name === 'QuotaExceededError') {
@@ -5496,7 +5493,7 @@ function saveGameProgress() {
             clearOldThemeData();
             
             try {
-                localStorage.setItem('profesiones12_gameProgress', JSON.stringify(gameState)); // ✅ Cambiado
+                localStorage.setItem('profesiones11_gameProgress', JSON.stringify(gameState)); // ✅ Cambiado
                 console.log('✅ Progreso guardado después de limpiar datos del tema');
             } catch (secondError) {
                 console.error('❌ Error persistente al guardar progreso:', secondError);
@@ -5509,7 +5506,7 @@ function saveGameProgress() {
                     timestamp: Date.now()
                 };
                 try {
-                    localStorage.setItem('profesiones12_gameProgress', JSON.stringify(minimalState)); // ✅ Cambiado
+                    localStorage.setItem('profesiones11_gameProgress', JSON.stringify(minimalState)); // ✅ Cambiado
                     console.log('✅ Progreso mínimo guardado exitosamente');
                 } catch (finalError) {
                     console.error('💥 No se pudo guardar ningún progreso:', finalError);
@@ -5525,11 +5522,11 @@ function saveGameProgress() {
 function clearOldThemeData() {
     console.log('🧹 Limpiando datos antiguos SOLO del tema actual...');
     
-    // ✅ Claves estandarizadas con profesiones12
+    // ✅ Claves estandarizadas con profesiones11
     const currentThemeKeys = [
-        'profesiones12_gameProgress',       // progreso actual del tema
-        'profesiones12',                    // último resultado del tema (ya correcto)
-        'profesiones12Date',                // fecha del último resultado (ya correcto)
+        'profesiones11_gameProgress',       // progreso actual del tema
+        'profesiones11',                    // último resultado del tema (ya correcto)
+        'profesiones11Date',                // fecha del último resultado (ya correcto)
     ];
     
     const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
@@ -5555,7 +5552,7 @@ function clearOldThemeData() {
                     }
                 }
             } catch (e) {
-                if (key === 'profesiones12_gameProgress') { // ✅ Cambiado
+                if (key === 'profesiones11_gameProgress') { // ✅ Cambiado
                     localStorage.removeItem(key);
                     console.log(`🔧 Eliminados datos corruptos: ${key}`);
                 }
@@ -5594,13 +5591,13 @@ function clearOldThemeData() {
 function clearOldStorageData() {
     console.log('🧹 Limpiando localStorage...');
     
-    // Lista de claves a mantener (datos importantes) - actualizada con profesiones12
+    // Lista de claves a mantener (datos importantes) - actualizada con profesiones11
     const keepKeys = [
-        'profesiones12_gameProgress',      // ✅ Cambiado
+        'profesiones11_gameProgress',      // ✅ Cambiado
         'lastSuccessPercentage',
         'lastUpdateDate',
-        'profesiones12',                   // ✅ Ya correcto
-        'profesiones12Date',               // ✅ Ya correcto
+        'profesiones11',                   // ✅ Ya correcto
+        'profesiones11Date',               // ✅ Ya correcto
         'microphonePermissionGranted'
     ];
     
@@ -5626,18 +5623,18 @@ function clearOldStorageData() {
         
         // Eliminar datos de progreso muy antiguos (más de 7 días)
         const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        const savedProgress = localStorage.getItem('profesiones12_gameProgress'); // ✅ Cambiado
+        const savedProgress = localStorage.getItem('profesiones11_gameProgress'); // ✅ Cambiado
         
         if (savedProgress) {
             try {
                 const data = JSON.parse(savedProgress);
                 if (data.timestamp && data.timestamp < weekAgo) {
-                    localStorage.removeItem('profesiones12_gameProgress'); // ✅ Cambiado
+                    localStorage.removeItem('profesiones11_gameProgress'); // ✅ Cambiado
                     console.log('🗓️ Eliminado progreso muy antiguo');
                 }
             } catch (e) {
                 // Si hay datos corruptos, eliminarlos
-                localStorage.removeItem('profesiones12_gameProgress'); // ✅ Cambiado
+                localStorage.removeItem('profesiones11_gameProgress'); // ✅ Cambiado
                 console.log('🔧 Eliminados datos corruptos');
             }
         }
@@ -5646,7 +5643,7 @@ function clearOldStorageData() {
 
 // Función para cargar el progreso desde localStorage
 function loadGameProgress() {
-    const savedState = localStorage.getItem('profesiones12_gameProgress'); // ✅ Cambiado
+    const savedState = localStorage.getItem('profesiones11_gameProgress'); // ✅ Cambiado
     if (!savedState) return null;
     
     try {
@@ -5654,13 +5651,13 @@ function loadGameProgress() {
         const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
         if (parsedState.timestamp && parsedState.timestamp < weekAgo) {
             console.log('🗓️ Progreso guardado muy antiguo, ignorando...');
-            localStorage.removeItem('profesiones12_gameProgress'); // ✅ Cambiado
+            localStorage.removeItem('profesiones11_gameProgress'); // ✅ Cambiado
             return null;
         }
         return parsedState;
     } catch (error) {
         console.error('❌ Error al cargar progreso guardado:', error);
-        localStorage.removeItem('profesiones12_gameProgress'); // ✅ Cambiado
+        localStorage.removeItem('profesiones11_gameProgress'); // ✅ Cambiado
         return null;
     }
 }
@@ -5735,7 +5732,7 @@ function restoreGameState(gameState) {
 
 // Función para limpiar solo el progreso actual (mantener avance anterior)
 function clearCurrentProgress() {
-    localStorage.removeItem('profesiones12_gameProgress');
+    localStorage.removeItem('profesiones11_gameProgress');
     console.log('Progreso actual limpiado');
 }
 
@@ -5881,7 +5878,7 @@ function initializeNewGame() {
     canFlipBack = true;
     canFlip = true;
     shuffleClickCount = 0; // Restablecer usos de Mezclar al iniciar partida
-    try { localStorage.removeItem('profesiones12_shuffleCount'); } catch (e) {}
+    try { localStorage.removeItem('profesiones11_shuffleCount'); } catch (e) {}
     
     // Mezclar tarjetas
     shuffleCards();
@@ -6307,18 +6304,40 @@ function getAudioSrcForCountryName(textoBack) {
     return file ? (baseUrl + file) : null;
 }
 
-
-
 // Alias para discrepancias de nombres entre el texto mostrado y el archivo de audio
 // Evita que tarjetas como "Brasil" (archivo brazil.mp3) queden sin src y bloqueen el flujo
 if (audioFilenameByKey['brazil'] && !audioFilenameByKey['brasil']) {
     audioFilenameByKey['brasil'] = audioFilenameByKey['brazil'];
 }
 
-// Helper robusto para saber si un índice de audio tiene realmente una fuente válida
-function hasValidAudio(index) {
-    const a = audios[index];
-    return !!(a && a.src && a.src.trim() !== '');
+// Reproducción segura por tarjeta: el audio se resuelve por contenido actual
+function playCardAudio(card, onEnded) {
+    try {
+        if (!card) { if (onEnded) onEnded(); return; }
+        const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
+        const src = getAudioSrcForCountryName(answer);
+        if (!src) { if (onEnded) onEnded(); return; }
+        if (!card._audioEl) {
+            card._audioEl = new Audio();
+            card._audioEl.preload = 'auto';
+        }
+        const a = card._audioEl;
+        try { a.pause(); } catch {}
+        a.src = src;
+        a.currentTime = 0;
+        a.onended = null;
+        if (typeof onEnded === 'function') a.onended = onEnded;
+        a.play().catch(() => { if (onEnded) onEnded(); });
+    } catch (e) { if (onEnded) onEnded(); }
+}
+
+// Detener audios por tarjeta
+function stopAllAudios() {
+    document.querySelectorAll('.flashcard').forEach(c => {
+        if (c._audioEl) {
+            try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {}
+        }
+    });
 }
 
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
@@ -6358,7 +6377,7 @@ const allCardData = flashcards.map((card, index) => ({
     // 4. Crear el nuevo mazo: pendientes barajadas primero, luego las completadas.
     const newCardOrder = [...remainingCardData, ...completedCardData];
 
-    // 5. Actualizar el DOM y los audios según el nuevo orden.
+    // 5. Actualizar el DOM según el nuevo orden (sin usar array global de audios por índice)
 flashcards.forEach((card, index) => {
     const data = newCardOrder[index];
     card.classList.remove('is-visible', 'flipped');
@@ -6370,17 +6389,9 @@ flashcards.forEach((card, index) => {
     back.innerHTML = data.backText;
     card.dataset.answer = data.backText;
     // --- AQUÍ VA EL AUDIO ---
+    // Precalcular y guardar src como atributo si quieres usarlo luego
     const src = getAudioSrcForCountryName(data.backText);
-    if (src) {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].preload = 'none';
-        audios[index].src = src;
-    } else {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].src = '';
-    }
+    if (src) card.dataset.audioSrc = src; else delete card.dataset.audioSrc;
 });
 
     // 6. Actualizar el estado para reflejar el nuevo orden.
@@ -6500,7 +6511,7 @@ function attachFlashcardHandlers() {
                         <button class="char-btn" data-char="ñ">ñ</button>
                         <div class="check-button-row">
                             <button id="check-button" class="check-button">comprobar</button>
-                            <button id="no-duplicate-button" class="no-duplicate-button">No sé</button>
+                            <button id="no-duplicate-button" class="no-duplicate-button"><i class="fas fa-forward"></i> No sé</button>
                         </div>
                     </div>
                 `;
@@ -7140,14 +7151,60 @@ function attachFlashcardHandlers() {
                     msgEl.style.display = 'block';
                 };
 
-                // Proceder tras acierto (como antes): audio en paralelo e iniciar countdown de inmediato
+                // Proceder tras acierto: éxito (inmediato) -> (al 80% del win) audio tarjeta -> (al terminar audio) countdown
                 const proceedAfterCorrect = () => {
-                    const idx = flashcards.indexOf(card);
-                    if (hasValidAudio(idx)) {
-                        stopAllAudios();
-                        audios[idx].play().catch(() => {});
+                    stopAllAudios();
+                    // 1) Win inmediato
+                    const winEl = playSuccessSound();
+                    // 2) Disparar audio tarjeta cuando el win haya consumido el 80%
+                    let triggered = false;
+                    const triggerCardAudio = () => {
+                        if (triggered) return; triggered = true;
+                        // Limpiar listeners del win para evitar fugas/doble ejecución
+                        try {
+                            if (winEl) {
+                                winEl.removeEventListener('timeupdate', onTimeUpdate);
+                                winEl.removeEventListener('loadedmetadata', onMeta);
+                                winEl.removeEventListener('ended', onEndedFallback);
+                            }
+                        } catch {}
+                        // 3) Reproducir audio de la tarjeta y, al terminar, iniciar countdown
+                        playCardAudio(card, () => showCountdown(card));
+                    };
+
+                    const onEndedFallback = () => triggerCardAudio();
+                    let thresholdTime = null;
+
+                    const computeThreshold = () => {
+                        if (!winEl) return;
+                        const d = Number.isFinite(winEl.duration) ? winEl.duration : NaN;
+                        if (!isNaN(d) && d > 0) {
+                            thresholdTime = d * 0.6;
+                        }
+                    };
+                    const onMeta = () => {
+                        computeThreshold();
+                        // Si por cualquier razón ya estamos más allá del 80%, dispara ya
+                        if (thresholdTime !== null && winEl.currentTime >= thresholdTime) triggerCardAudio();
+                    };
+                    const onTimeUpdate = () => {
+                        if (thresholdTime === null) computeThreshold();
+                        if (thresholdTime !== null && winEl.currentTime >= thresholdTime) triggerCardAudio();
+                    };
+
+                    if (winEl) {
+                        // Si ya conocemos la duración, intentamos calcular inmediatamente
+                        computeThreshold();
+                        // Registramos listeners
+                        winEl.addEventListener('loadedmetadata', onMeta);
+                        winEl.addEventListener('timeupdate', onTimeUpdate);
+                        winEl.addEventListener('ended', onEndedFallback);
+                        // Fallback por si no llegan eventos (máximo 5s)
+                        setTimeout(() => triggerCardAudio(), 5000);
+                    } else {
+                        // Si falló la reproducción del win, avanzamos directamente
+                        triggerCardAudio();
                     }
-                    showCountdown(card);
                 };
 
                 const handleCheck = () => {
@@ -7198,10 +7255,19 @@ function attachFlashcardHandlers() {
                             void titleEl.offsetWidth; // reinicia animación
                             titleEl.classList.add('success');
                         }
-                        // Reproducir sonido de éxito al finalizar la animación
-                        setTimeout(() => {
-                            playSuccessSound();
-                        }, 1200); // 1200ms = cuando termina la animación euforicaPop
+                        // Precalentar audio de la tarjeta para minimizar latencia tras el win
+                        try {
+                            if (card) {
+                                if (!card._audioEl) card._audioEl = new Audio();
+                                card._audioEl.preload = 'auto';
+                                const nextSrc = getAudioSrcForCountryName(answerRaw);
+                                if (nextSrc) {
+                                    if (card._audioEl.src !== nextSrc) card._audioEl.src = nextSrc;
+                                    try { card._audioEl.load(); } catch {}
+                                }
+                            }
+                        } catch {}
+                        // El sonido de éxito ya lo dispara proceedAfterCorrect con encadenamiento
                         // Ocultar mensaje de texto para no duplicar
                         if (msgEl) msgEl.style.display = 'none';
                         // Efecto eufórico ya definido en CSS
@@ -7280,18 +7346,9 @@ function attachFlashcardHandlers() {
                                     saveGameProgress();
                                 }
                                 
-                                // Iniciar audio inmediatamente
-                                const idx = flashcards.indexOf(card);
-                                if (hasValidAudio(idx)) {
-                                    stopAllAudios();
-                                    audios[idx].play().catch(() => {});
-                                    audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
-                                } else {
-                                    // Si no hay audio, esperar 1700ms y mostrar countdown
-                                    setTimeout(() => {
-                                        showCountdown(card);
-                                    }, 1700);
-                                }
+                                // Iniciar audio inmediatamente y luego countdown
+                                stopAllAudios();
+                                playCardAudio(card, () => showCountdown(card));
                             }, 1600);
                         } else {
                             // Primer intento fallido - solo mostrar error temporalmente
@@ -7340,7 +7397,7 @@ function attachFlashcardHandlers() {
                 checkBtn.addEventListener('click', (e) => { 
                     e.preventDefault(); 
                     e.stopPropagation(); 
-                    vibrar(80); 
+                    vibrar(100); 
                     // Efecto visual de presionado (mantener hasta que el usuario escriba)
                     checkBtn.classList.add('button-pressed');
                     handleCheck(); 
@@ -7451,14 +7508,8 @@ function attachFlashcardHandlers() {
                     backElement.appendChild(respuestaCorrecta);
                     
                     // Reproducir audio si existe y después mostrar countdown
-                    const audioIndex = flashcards.indexOf(card);
-                        if (hasValidAudio(audioIndex)) {
-                            stopAllAudios();
-                            audios[audioIndex].play().catch(() => {});
-                            audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                        } else {
-                            showCountdown(card);
-                        }
+                    stopAllAudios();
+                    playCardAudio(card, () => showCountdown(card));
                 }
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();
@@ -7528,8 +7579,7 @@ function initializePage() {
     // Mezclar tarjetas automáticamente al cargar la página
     shuffleCards();
     
-    // Asegurar mapeo audio→tarjeta tras mezcla inicial
-    reassignAudiosToCards();
+    // No es necesario re-mapear audios por índice; la reproducción es por tarjeta
 
     showCard(currentCardIndex);
     updateCounters();
@@ -7537,12 +7587,14 @@ function initializePage() {
     const firstBack = document.querySelector('.flashcard.is-visible .back');
     const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
     const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
-    if (visibleSrc && audios[currentCardIndex]) {
-        try { audios[currentCardIndex].pause(); } catch {}
-        audios[currentCardIndex].currentTime = 0;
-        audios[currentCardIndex].preload = 'auto';
-        audios[currentCardIndex].src = visibleSrc;
-        audios[currentCardIndex].load();
+    if (visibleSrc) {
+        const card = flashcards[currentCardIndex];
+        if (card) {
+            if (!card._audioEl) card._audioEl = new Audio();
+            card._audioEl.preload = 'auto';
+            card._audioEl.src = visibleSrc;
+            try { card._audioEl.load(); } catch {}
+        }
     }
     // Mostrar hints secuenciales al cargar
     showPillHints();
@@ -7550,7 +7602,7 @@ function initializePage() {
 
 // Helper: pintar el "avance anterior" desde localStorage en su pill
 function updateLastGamePillFromStorage() {
-    const lastGamePercentage = localStorage.getItem('profesiones12');
+    const lastGamePercentage = localStorage.getItem('profesiones11');
     const lastGameDiv = document.getElementById('last-game-percentage');
     const lastGamePill = document.getElementById('last-game-pill');
     if (lastGamePercentage !== null && lastGameDiv && lastGamePill) {
@@ -7577,35 +7629,7 @@ function updateLastGamePillFromStorage() {
 }
 
 // Reasignar audios a tarjetas según el texto del reverso (data-answer)
-function reassignAudiosToCards() {
-    try {
-        flashcards.forEach((card, index) => {
-            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
-            // Toma ambos gentilicios y busca el primero que tenga audio
-            const gentilicios = (answer || '').split(',').map(g => g.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-            let src = null;
-            for (const g of gentilicios) {
-                const key = gentilicioToAudioKey[g];
-                if (key && audioFiles.includes(key + '.mp3')) {
-                    src = baseUrl + key + '.mp3';
-                    break;
-                }
-            }
-            if (src) {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].preload = 'none';
-                audios[index].src = src;
-            } else {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].src = '';
-            }
-        });
-    } catch (e) {
-        console.warn('No se pudo reasignar audios:', e);
-    }
-}
+function reassignAudiosToCards() { /* no-op: audio se resuelve por tarjeta */ }
 
 function updateCardCounter() {
     const pillFaltan = document.querySelector('.pill-faltan');
@@ -7663,8 +7687,8 @@ function saveLastGamePercentage() {
     const gamePercentage = totalCards > 0 ? Math.round((correctCount / totalCards) * 100) : 0;
     
     // Guardar porcentaje del último partido jugado
-    localStorage.setItem('profesiones12', gamePercentage.toString());
-    localStorage.setItem('profesiones12Date', new Date().toISOString());
+    localStorage.setItem('profesiones11', gamePercentage.toString());
+    localStorage.setItem('profesiones11Date', new Date().toISOString());
     
     // Actualizar display inmediatamente
     const lastGameDiv = document.getElementById('last-game-percentage');
@@ -7695,12 +7719,7 @@ window.addEventListener('load', () => {
     document.getElementById('soundResetButton').play().catch(e => console.log(e));
 });
 
-function stopAllAudios() {
-    audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
-    });
-}
+// (Eliminado) stopAllAudios anterior basado en array global de audios
 
 // Muestra frases (hints) cerca de los pills al cargar la página
 function showPillHints() {
@@ -7782,7 +7801,7 @@ function resetGame() {
     correctCount = 0;
     incorrectCount = 0;
     shuffleClickCount = 0; // Restablecer usos de Mezclar
-    try { localStorage.removeItem('profesiones12_shuffleCount'); } catch (e) {}
+    try { localStorage.removeItem('profesiones11_shuffleCount'); } catch (e) {}
     
     // Limpiar timeouts activos
     if (typeof autoFlipTimer !== 'undefined') {

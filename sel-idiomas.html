@@ -3797,6 +3797,7 @@ function goToNextCard() {
     document.getElementById('shuffleSound').play().catch(() => {});
 
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const prevIndex = currentCardIndex;
     completedCards.add(currentCardIndex);
     updateCardCounter();
     
@@ -3826,9 +3827,13 @@ function goToNextCard() {
     }
     
     if (nextIndex !== -1) {
+        // Limpiar caché de opciones de la tarjeta que acabamos de completar
+        try { cardOptionsCache.delete(prevIndex); } catch(e) {}
         currentCardIndex = nextIndex;
         showCard(currentCardIndex);
     } else {
+        // Limpiar caché de la última tarjeta
+        try { cardOptionsCache.delete(prevIndex); } catch(e) {}
         // Guardar porcentaje del último partido jugado
         saveLastGamePercentage();
         
@@ -4557,24 +4562,41 @@ function showCompletionMessage() {
     }, 3000);
 
     // AÑADIR EVENT LISTENERS para los botones clicables
+    // y desactivar/quitar (Ver) cuando la lista esté vacía
     setTimeout(() => {
         const correctBtn = document.getElementById('correct-words-btn');
         const incorrectBtn = document.getElementById('incorrect-words-btn');
 
         if (correctBtn) {
-            correctBtn.addEventListener('click', function() {
-                vibrar(50);
-                playButtonSound();
-                showCorrectWords();
-            });
+            if (Array.isArray(correctWords) && correctWords.length > 0) {
+                correctBtn.addEventListener('click', function() {
+                    vibrar(50);
+                    playButtonSound();
+                    showCorrectWords();
+                });
+            } else {
+                // Desactivar y quitar (Ver)
+                correctBtn.style.pointerEvents = 'none';
+                correctBtn.style.cursor = 'default';
+                correctBtn.style.animation = 'none';
+                correctBtn.innerHTML = `✅ Correctas: ${correctCount}`;
+            }
         }
         
         if (incorrectBtn) {
-            incorrectBtn.addEventListener('click', function() {
-                vibrar(50);
-                playButtonSound();
-                showIncorrectWords();
-            });
+            if (Array.isArray(incorrectWords) && incorrectWords.length > 0) {
+                incorrectBtn.addEventListener('click', function() {
+                    vibrar(50);
+                    playButtonSound();
+                    showIncorrectWords();
+                });
+            } else {
+                // Desactivar y quitar (Ver)
+                incorrectBtn.style.pointerEvents = 'none';
+                incorrectBtn.style.cursor = 'default';
+                incorrectBtn.style.animation = 'none';
+                incorrectBtn.innerHTML = `❌ Incorrectas: ${incorrectCount}`;
+            }
         }
     }, 100);
 }
@@ -4711,6 +4733,9 @@ function showIncorrectWords() {
 let correctWords = [];
 let incorrectWords = [];
 
+// Caché de opciones por tarjeta para mantener mismas opciones y orden hasta cambiar de tarjeta
+const cardOptionsCache = new Map(); // key: índice de tarjeta, value: array de opciones en orden
+
 // === SISTEMA DE OPCIONES MÚLTIPLES ===
 // Función para generar opciones de selección múltiple
 function generateMultipleChoiceOptions(correctAnswer) {
@@ -4767,8 +4792,20 @@ function showMultipleChoice(backElement, correctAnswer) {
     attemptsDiv.innerHTML = `<i class="fas fa-target"></i> Intentos: ${2 - voiceAttempts}`;
     container.appendChild(attemptsDiv);
     
-    // Generar opciones
-    const options = generateMultipleChoiceOptions(correctAnswer);
+    // Obtener o generar opciones para esta tarjeta y mantenerlas
+    let options;
+    let keyIndex = typeof currentCardIndex === 'number' ? currentCardIndex : -1;
+    if (keyIndex === -1) {
+        const cardEl = backElement.closest('.flashcard');
+        const cards = Array.from(document.querySelectorAll('.flashcard'));
+        keyIndex = cards.indexOf(cardEl);
+    }
+    if (cardOptionsCache.has(keyIndex)) {
+        options = cardOptionsCache.get(keyIndex);
+    } else {
+        options = generateMultipleChoiceOptions(correctAnswer);
+        cardOptionsCache.set(keyIndex, options);
+    }
     const optionsContainer = document.createElement('div');
     optionsContainer.className = 'multiple-choice-options';
     
@@ -4853,12 +4890,18 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         setTimeout(() => {
             const card = backElement.closest('.flashcard');
             const idx = flashcards.indexOf(card);
+            const proceed = () => showCountdown(card);
             if (hasValidAudio(idx)) {
                 stopAllAudios();
-                audios[idx].play().catch(() => {});
-                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
+                // Fallback de seguridad por si el audio no puede reproducirse o tarda demasiado
+                const safetyTimeout = setTimeout(proceed, 5000);
+                audios[idx].play()
+                    .then(() => {
+                        audios[idx].addEventListener('ended', () => { clearTimeout(safetyTimeout); proceed(); }, { once: true });
+                    })
+                    .catch(() => { clearTimeout(safetyTimeout); proceed(); });
             } else {
-                showCountdown(card);
+                proceed();
             }
         }, 1000);
         
@@ -4981,8 +5024,13 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
                 const audioIndex = flashcards.indexOf(card);
                 if (hasValidAudio(audioIndex)) {
                     stopAllAudios();
-                    audios[audioIndex].play().catch(() => {});
-                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+                    const proceed = () => showCountdown(card);
+                    const safetyTimeout = setTimeout(proceed, 5000);
+                    audios[audioIndex].play()
+                        .then(() => {
+                            audios[audioIndex].addEventListener('ended', () => { clearTimeout(safetyTimeout); proceed(); }, { once: true });
+                        })
+                        .catch(() => { clearTimeout(safetyTimeout); proceed(); });
                 } else {
                     showCountdown(card);
                 }
@@ -5408,6 +5456,7 @@ function initializeNewGame() {
     incorrectCount = 0;
     canFlipBack = true;
     canFlip = true;
+    try { cardOptionsCache.clear(); } catch(e) {}
     
     // Mezclar tarjetas
     shuffleCards();
@@ -5805,6 +5854,8 @@ const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 
 function shuffleCards() {
     stopAllAudios();
+    // Limpiar caché de opciones ya que el orden/índices cambian
+    try { cardOptionsCache.clear(); } catch(e) {}
 document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indicator').forEach(el => el.remove());
 
 
@@ -5938,6 +5989,8 @@ function attachFlashcardHandlers() {
                 let cleanupDone = false;
                 const doCleanup = () => {
                     if (cleanupDone) return;
+                    // Si la tarjeta ya está flipped de nuevo (back visible), no limpiar
+                    if (card.classList.contains('flipped')) return;
                     cleanupDone = true;
                     try {
                         backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
@@ -6315,6 +6368,7 @@ function resetGame() {
     incorrectWords.length = 0;
     correctCount = 0;
     incorrectCount = 0;
+    try { cardOptionsCache.clear(); } catch(e) {}
     
     // Limpiar timeouts activos
     if (typeof autoFlipTimer !== 'undefined') {

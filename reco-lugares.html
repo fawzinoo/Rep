@@ -3446,6 +3446,11 @@ function skipCurrentCardAsUnknown() {
     // Cancelar timeouts pendientes de la ventana entre intentos
     if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
     if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
+    // Limpiar estados de UI/back
+    showingErrorMessage = false;
+    betweenAttempts = false;
+    lockedAfterSecondIncorrect = false;
+    lockedAfterCorrect = false;
     // Evitar doble procesamiento si no hay tarjetas o ya está completada
     const flashcardsList = Array.from(document.querySelectorAll('.flashcard'));
     if (flashcardsList.length === 0) return;
@@ -3473,6 +3478,19 @@ function skipCurrentCardAsUnknown() {
     updateCardCounter();
 
     // Avanzar a la siguiente tarjeta
+    try {
+        // Quitar indicadores y overlays residuales de la tarjeta actual
+        const currentCard = document.querySelector('.flashcard.is-visible');
+        if (currentCard) {
+            const back = currentCard.querySelector('.back');
+            if (back) {
+                back.querySelectorAll('.listening-indicator, .mensaje-error, .intentos-back').forEach(el => el.remove());
+                back.classList.remove('hidden-text');
+            }
+            currentCard.classList.remove('flipped');
+        }
+    } catch {}
+    canFlip = true;
     goToNextCard();
 }
 
@@ -3850,6 +3868,15 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
     }
     const normalizedSpoken = spokenWord.trim();
     const normalizedTarget = targetWord.trim();
+
+    // Detectar si el usuario dijo "No sé" y tratarlo como saltar tarjeta
+    const lowerSpoken = normalizedSpoken.toLowerCase();
+    if (lowerSpoken === 'no sé' || lowerSpoken === 'no se' || lowerSpoken === 'nose' || 
+        lowerSpoken === 'no lo sé' || lowerSpoken === 'no lo se') {
+        console.log('Usuario dijo "No sé" - saltando tarjeta');
+        skipCurrentCardAsUnknown();
+        return;
+    }
 
     if (palabrasSimilares(normalizedSpoken, normalizedTarget)) {
         correctCount++;

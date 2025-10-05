@@ -3907,14 +3907,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         })();
 
         setTimeout(() => {
-            const idx = flashcards.indexOf(card);
-            if (hasValidAudio(idx)) {
-                stopAllAudios();
-                audios[idx].play().catch(() => {});
-                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
-            } else {
-                showCountdown(card);
-            }
+            playCardAudio(card, () => showCountdown(card));
         }, 1000);
 
         // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -4033,14 +4026,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 backElement.appendChild(respuestaCorrecta);
 
                 // Reproduce el audio si existe y después muestra countdown
-                const audioIndex = flashcards.indexOf(card);
-                if (hasValidAudio(audioIndex)) {
-                    stopAllAudios();
-                    audios[audioIndex].play().catch(() => {});
-                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                } else {
-                    showCountdown(card);
-                }
+                playCardAudio(card, () => showCountdown(card));
             }, 2000);
 
             // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -5408,9 +5394,7 @@ function restoreGameState(gameState) {
                 }
             });
         }
-        
-        // Reasignar audios a cada tarjeta según su respuesta (por si el orden se cambió)
-        reassignAudiosToCards();
+    // Con audio por tarjeta ya no es necesario reasignar audios por índice
 
         // IMPORTANTE: Resetear el estado de las tarjetas al restaurar
         flashcards.forEach(card => {
@@ -6008,6 +5992,69 @@ if (audioFilenameByKey['brazil'] && !audioFilenameByKey['brasil']) {
     audioFilenameByKey['brasil'] = audioFilenameByKey['brazil'];
 }
 
+// =========================
+// Audio por tarjeta (refactor)
+// =========================
+function getCardAnswerText(card) {
+    try {
+        const answer = card?.dataset?.answer;
+        if (answer && answer.trim()) return answer.trim();
+        const back = card?.querySelector?.('.back');
+        return (back?.textContent || '').trim();
+    } catch {
+        return '';
+    }
+}
+
+function getOrCreateCardAudio(card) {
+    if (!card) return null;
+    if (!card._audioEl) {
+        const a = new Audio();
+        a.preload = '';
+        card._audioEl = a;
+    }
+    return card._audioEl;
+}
+
+function playCardAudio(card, onEnded) {
+    try { stopAllAudios(); } catch {}
+    const answer = getCardAnswerText(card);
+    const src = getAudioSrcForCountryName(answer);
+    if (!src) {
+        if (typeof onEnded === 'function') onEnded();
+        return;
+    }
+    const a = getOrCreateCardAudio(card);
+    if (!a) {
+        if (typeof onEnded === 'function') onEnded();
+        return;
+    }
+    try { a.pause(); } catch {}
+    a.currentTime = 0;
+    if (a.src !== src) {
+        a.src = src;
+    }
+    a.preload = 'auto';
+    if (typeof onEnded === 'function') {
+        a.addEventListener('ended', onEnded, { once: true });
+    }
+    a.play().catch(() => {});
+}
+
+function preloadCardAudio(card) {
+    const answer = getCardAnswerText(card);
+    const src = getAudioSrcForCountryName(answer);
+    if (!src) return;
+    const a = getOrCreateCardAudio(card);
+    try { a.pause(); } catch {}
+    a.currentTime = 0;
+    if (a.src !== src) {
+        a.src = src;
+    }
+    a.preload = 'auto';
+    try { a.load(); } catch {}
+}
+
 // Helper robusto para saber si un índice de audio tiene realmente una fuente válida
 function hasValidAudio(index) {
     const a = audios[index];
@@ -6062,17 +6109,11 @@ flashcards.forEach((card, index) => {
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
     back.innerHTML = data.backText;
     card.dataset.answer = data.backText;
-    // --- AQUÍ VA EL AUDIO ---
-    const src = getAudioSrcForCountryName(data.backText);
-    if (src) {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].preload = 'none';
-        audios[index].src = src;
-    } else {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].src = '';
+    // Audio por tarjeta: limpiar caché para que se resuelva bajo demanda
+    if (card._audioEl) {
+        try { card._audioEl.pause(); } catch {}
+        card._audioEl.currentTime = 0;
+        card._audioEl.src = '';
     }
 });
 
@@ -6192,14 +6233,7 @@ function attachFlashcardHandlers() {
                     backElement.appendChild(respuestaCorrecta);
                     
                     // Reproducir audio si existe y después mostrar countdown
-                    const audioIndex = flashcards.indexOf(card);
-                        if (hasValidAudio(audioIndex)) {
-                            stopAllAudios();
-                            audios[audioIndex].play().catch(() => {});
-                            audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                        } else {
-                            showCountdown(card);
-                        }
+                    playCardAudio(card, () => showCountdown(card));
                 }
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();
@@ -6267,21 +6301,14 @@ function initializePage() {
     // Mezclar tarjetas automáticamente al cargar la página
     shuffleCards();
     
-    // Asegurar mapeo audio→tarjeta tras mezcla inicial
-    reassignAudiosToCards();
+    // Con el audio por tarjeta ya no es necesario reasignar un arreglo global
 
     showCard(currentCardIndex);
     updateCounters();
-    // Precargar audio correcto para la tarjeta visible tras primera mezcla
-    const firstBack = document.querySelector('.flashcard.is-visible .back');
-    const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
-    const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
-    if (visibleSrc && audios[currentCardIndex]) {
-        try { audios[currentCardIndex].pause(); } catch {}
-        audios[currentCardIndex].currentTime = 0;
-        audios[currentCardIndex].preload = 'auto';
-        audios[currentCardIndex].src = visibleSrc;
-        audios[currentCardIndex].load();
+    // Precargar el audio de la tarjeta visible tras la primera mezcla
+    const visibleCard = document.querySelector('.flashcard.is-visible');
+    if (visibleCard) {
+        preloadCardAudio(visibleCard);
     }
     // Mostrar hints secuenciales al cargar
     showPillHints();
@@ -6317,33 +6344,7 @@ function updateLastGamePillFromStorage() {
 
 // Reasignar audios a tarjetas según el texto del reverso (data-answer)
 function reassignAudiosToCards() {
-    try {
-        flashcards.forEach((card, index) => {
-            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
-            // Toma ambos gentilicios y busca el primero que tenga audio
-            const gentilicios = (answer || '').split(',').map(g => g.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-            let src = null;
-            for (const g of gentilicios) {
-                const key = gentilicioToAudioKey[g];
-                if (key && audioFiles.includes(key + '.mp3')) {
-                    src = baseUrl + key + '.mp3';
-                    break;
-                }
-            }
-            if (src) {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].preload = 'none';
-                audios[index].src = src;
-            } else {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].src = '';
-            }
-        });
-    } catch (e) {
-        console.warn('No se pudo reasignar audios:', e);
-    }
+    // Ya no es necesario con audio por tarjeta; se mantiene por compatibilidad
 }
 
 function updateCardCounter() {
@@ -6435,10 +6436,22 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
-    audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
-    });
+    // Fallback por compatibilidad con código existente
+    try {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0;
+        });
+    } catch {}
+    // Nuevo: detener cualquier audio asociado a cada tarjeta
+    try {
+        document.querySelectorAll('.flashcard').forEach(card => {
+            if (card._audioEl) {
+                try { card._audioEl.pause(); } catch {}
+                card._audioEl.currentTime = 0;
+            }
+        });
+    } catch {}
 }
 
 // Muestra frases (hints) cerca de los pills al cargar la página

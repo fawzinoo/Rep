@@ -3425,7 +3425,7 @@
     <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
     <div class="pill" id="porcentaje-guardado" style="
         background: rgba(255, 255, 255, 0.08);
-        color: white;
+       color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
         min-width: 65px;
@@ -3442,7 +3442,7 @@
     <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
     <div class="pill" id="last-game-pill" style="
         background: rgba(255, 255, 255, 0.08);
-        color: white;
+        color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
         min-width: 65px;
@@ -4068,11 +4068,12 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         })();
 
         setTimeout(() => {
-            stopAllAudios();
-            // Reproducir audio asociado a esta tarjeta y luego continuar
-            try {
-                playCardAudio(card, () => showCountdown(card));
-            } catch (e) {
+            const idx = flashcards.indexOf(card);
+            if (hasValidAudio(idx)) {
+                stopAllAudios();
+                audios[idx].play().catch(() => {});
+                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
+            } else {
                 showCountdown(card);
             }
         }, 1000);
@@ -4192,11 +4193,13 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 backElement.appendChild(respuestaCorrecta);
 
-                // Reproduce el audio por tarjeta y después muestra countdown
-                try {
+                // Reproduce el audio si existe y después muestra countdown
+                const audioIndex = flashcards.indexOf(card);
+                if (hasValidAudio(audioIndex)) {
                     stopAllAudios();
-                    playCardAudio(card, () => showCountdown(card));
-                } catch (e) {
+                    audios[audioIndex].play().catch(() => {});
+                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+                } else {
                     showCountdown(card);
                 }
             }, 2000);
@@ -4357,14 +4360,97 @@ function removeListeningIndicator(backElement = null) {
 }
 let isShuffling = false;
 
-document.getElementById('shuffle-button').addEventListener('click', () => {
-    if (isShuffling) return;
-    isShuffling = true;
-    vibrar(80); 
-    document.getElementById('shuffleSound').play().catch(() => {});
-    shuffleCards();
-    setTimeout(() => { isShuffling = false; }, 800); // Evita abusos rápidos
-});
+// === LÓGICA DE MEZCLAR con límite (calco de reco-paises4) ===
+const SHUFFLE_LIMIT = 3;
+const SHUFFLE_LS_KEY = 'profesiones11_shuffleCount';
+let shuffleClickCount = 0;
+
+function loadShuffleCount() {
+    const v = localStorage.getItem(SHUFFLE_LS_KEY);
+    const n = parseInt(v, 10);
+    shuffleClickCount = Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function saveShuffleCount() {
+    try { localStorage.setItem(SHUFFLE_LS_KEY, String(shuffleClickCount)); } catch (_) {}
+}
+
+function isFinalsActive() {
+    const overlaysPresent = (
+        document.getElementById('euforia-maxima-overlay') ||
+        document.getElementById('euforia-overlay') ||
+        document.getElementById('perdida-overlay') ||
+        document.getElementById('empate-overlay')
+    );
+    const container = document.getElementById('flashcard-container');
+    const hasCompletionScreen = container && !container.querySelector('.flashcard');
+    return Boolean(overlaysPresent || hasCompletionScreen);
+}
+
+function updateShuffleButtonState() {
+    const btn = document.getElementById('shuffle-button');
+    if (!btn) return;
+    btn.disabled = isFinalsActive();
+}
+
+function showShuffleLimitToast() {
+    const existing = document.getElementById('shuffle-limit-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'shuffle-limit-toast';
+    toast.textContent = 'Has mezclado 3 veces. ¡Ahora confía en tu memoria! 🧠';
+    toast.style.cssText = `
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
+        color: #fff; padding: 18px 24px; border-radius: 16px; font-weight: 600; font-size: 16px;
+        letter-spacing: 0.2px; z-index: 10000; backdrop-filter: blur(12px);
+        border: 1px solid rgba(155, 89, 182, 0.35); box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(155, 89, 182, 0.15);
+        animation: modernFadeInOut 2.0s ease; text-align: center; min-width: 280px;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+function installShuffleButtonHandler() {
+    const btn = document.getElementById('shuffle-button');
+    if (!btn || btn.dataset.handlerInstalled === 'true') {
+        updateShuffleButtonState();
+        return;
+    }
+    loadShuffleCount();
+    updateShuffleButtonState();
+    btn.addEventListener('click', () => {
+        if (isShuffling) return;
+        isShuffling = true;
+        setTimeout(() => { isShuffling = false; }, 800);
+
+        if (isFinalsActive()) { updateShuffleButtonState(); return; }
+
+        if (shuffleClickCount >= SHUFFLE_LIMIT) {
+            try { vibrar(60); } catch (_) {}
+            showShuffleLimitToast();
+            return;
+        }
+
+        try { vibrar(80); } catch (_) {}
+        const sfx = document.getElementById('shuffleSound');
+        sfx && sfx.play && sfx.play().catch(() => {});
+        shuffleCards();
+
+        shuffleClickCount += 1;
+        saveShuffleCount();
+    });
+    btn.dataset.handlerInstalled = 'true';
+}
+
+function disableShuffleForFinals() {
+    const btn = document.getElementById('shuffle-button');
+    if (btn) btn.disabled = true;
+}
+
+installShuffleButtonHandler();
+document.addEventListener('DOMContentLoaded', installShuffleButtonHandler);
+window.addEventListener('load', installShuffleButtonHandler);
 
 // Botón "No sé"
 const skipBtn = document.getElementById('skip-button');
@@ -4424,8 +4510,8 @@ function showCountdown(card) {
 }
 
 function goToNextCard() {
-    // Reactivar el botón de mezclar al pasar a la siguiente tarjeta
-    document.getElementById('shuffle-button').disabled = false;
+    // Actualizar estado del botón Mezclar según finales
+    updateShuffleButtonState();
 
     // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
     document.getElementById('shuffleSound').play().catch(() => {});
@@ -4470,13 +4556,17 @@ function goToNextCard() {
         if (correctCount > incorrectCount) {
             // Verificar si es perfecto (sin errores)
             if (incorrectCount === 0) {
+                disableShuffleForFinals();
                 showCompletionEuforiaMaxima(); // PERFECTO: sin errores
             } else {
+                disableShuffleForFinals();
                 showCompletioneuforia(); // GANA: con algunos errores
             }
         } else if (incorrectCount > correctCount) {
+            disableShuffleForFinals();
             showCompletionPerdida(); // Perdió: mensaje motivacional
         } else {
+            disableShuffleForFinals();
             showCompletionEmpate(); // Empate: mensaje equilibrado
         }
     }
@@ -4543,6 +4633,7 @@ function updateCounters() {
 }
 
 function showCompletionEuforiaMaxima() {
+    disableShuffleForFinals();
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
     
@@ -4639,6 +4730,7 @@ function showCompletionEuforiaMaxima() {
 }
 
 function showCompletioneuforia() {
+    disableShuffleForFinals();
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
     
@@ -4714,6 +4806,7 @@ function showCompletioneuforia() {
 }
 
 function showCompletionPerdida() {
+    disableShuffleForFinals();
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
     
@@ -4781,6 +4874,7 @@ function showCompletionPerdida() {
 }
 
 function showCompletionEmpate() {
+    disableShuffleForFinals();
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
     
@@ -6137,29 +6231,6 @@ const audios = audioFiles.map(file => {
     return audio;
 });
 
-// --- Audio por tarjeta: resolver y reproducir según el contenido actual ---
-function playCardAudio(card, onEnded) {
-    try {
-        if (!card) { if (onEnded) onEnded(); return; }
-        const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
-        const src = getAudioSrcForCountryName(answer);
-        if (!src) { if (onEnded) onEnded(); return; }
-        if (!card._audioEl) {
-            card._audioEl = new Audio();
-            card._audioEl.preload = 'auto';
-        }
-        const a = card._audioEl;
-        try { a.pause(); } catch {}
-        a.src = src;
-        a.currentTime = 0;
-        a.onended = null;
-        if (typeof onEnded === 'function') a.onended = onEnded;
-        a.play().catch(() => { if (onEnded) onEnded(); });
-    } catch (e) {
-        if (onEnded) onEnded();
-    }
-}
-
 // Normalizador y mapa para resolver el audio correcto según el nombre del país
 function normalizeAudioKey(str) {
     if (!str) return '';
@@ -6262,9 +6333,18 @@ flashcards.forEach((card, index) => {
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
     back.innerHTML = data.backText;
     card.dataset.answer = data.backText;
-    // --- AUDIO: no reasignar por índice; opcionalmente cachear en dataset ---
+    // --- AQUÍ VA EL AUDIO ---
     const src = getAudioSrcForCountryName(data.backText);
-    card.dataset.audioSrc = src || '';
+    if (src) {
+        try { audios[index].pause(); } catch {}
+        audios[index].currentTime = 0;
+        audios[index].preload = 'none';
+        audios[index].src = src;
+    } else {
+        try { audios[index].pause(); } catch {}
+        audios[index].currentTime = 0;
+        audios[index].src = '';
+    }
 });
 
     // 6. Actualizar el estado para reflejar el nuevo orden.
@@ -6626,15 +6706,9 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
-    // Detener audios creados por tarjeta
-    document.querySelectorAll('.flashcard').forEach(c => {
-        if (c._audioEl) {
-            try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {}
-        }
-    });
-    // Además detener el array global por si hay reproducciones previas
     audios.forEach(audio => {
-        try { audio.pause(); audio.currentTime = 0; } catch {}
+        audio.pause();
+        audio.currentTime = 0;
     });
 }
 
@@ -6739,8 +6813,10 @@ function resetGame() {
         }
     });
     
-    // Habilitar botón de mezclar
-    document.getElementById('shuffle-button').disabled = false;
+    // Reiniciar contador de Mezclar y actualizar estado del botón
+    try { localStorage.removeItem(SHUFFLE_LS_KEY); } catch (_) {}
+    shuffleClickCount = 0;
+    updateShuffleButtonState();
     
     // Limpiar cualquier modal o overlay existente
     const overlays = document.querySelectorAll('[id$="-overlay"]');
@@ -6797,10 +6873,10 @@ function reinitFlashcardsDOMIfMissing() {
     }
 }
 
-document.getElementById('reset-button').addEventListener('click', () => {
+function handleResetClick() {
     vibrar(80);
     const soundResetButton = document.getElementById('soundResetButton');
-    soundResetButton.play().catch(e => console.log(e));
+    soundResetButton && soundResetButton.play && soundResetButton.play().catch(() => {});
 
     const overlaysPresent = (
         document.getElementById('euforia-maxima-overlay') ||
@@ -6808,70 +6884,65 @@ document.getElementById('reset-button').addEventListener('click', () => {
         document.getElementById('perdida-overlay') ||
         document.getElementById('empate-overlay')
     );
-    
-    // Verificar si se muestra la pantalla final de showCompletionMessage
+
     const container = document.getElementById('flashcard-container');
     const hasCompletionScreen = container && !container.querySelector('.flashcard');
-    
-    // Calcular finalización de forma robusta con el DOM actual
+
     const totalCardsNow = document.querySelectorAll('.flashcard').length;
     const finished = overlaysPresent || hasCompletionScreen || (totalCardsNow > 0 && completedCards.size >= totalCardsNow);
-    const started = ((correctCount + incorrectCount) > 0) || (voiceAttempts > 0);
 
     if (!finished) {
-        if (started) {
-            const existing = document.getElementById('reset-guard-toast');
-            if (existing) existing.remove();
-            const toast = document.createElement('div');
-            toast.id = 'reset-guard-toast';
-            toast.innerHTML = `
-                <div style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 12px;
-                    font-size: 16px;
-                    font-weight: 600;
-                ">
-                    <div style="
-                        font-size: 24px;
-                        filter: drop-shadow(0 0 8px rgba(255,152,0,0.6));
-                    ">⏳</div>
-                    <span>Finaliza el juego primero</span>
-                </div>
-            `;
-            toast.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
-                color: #fff;
-                padding: 20px 28px;
-                border-radius: 16px;
-                font-weight: 600;
-                font-size: 16px;
-                letter-spacing: 0.3px;
-                z-index: 10000;
-                backdrop-filter: blur(12px);
-                border: 1px solid rgba(255,152,0,0.3);
-                box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1);
-                animation: modernFadeInOut 2.2s ease;
-                min-width: 280px;
-                text-align: center;
-            `;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 2200);
-            return; // bloquear si empezó
-        }
-        // Si no ha empezado, sí podemos reiniciar y mezclar
-        resetGame();
+        const existing = document.getElementById('reset-guard-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.id = 'reset-guard-toast';
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;gap:12px;font-size:16px;font-weight:600;">
+                <div style="font-size:24px;filter: drop-shadow(0 0 8px rgba(255,152,0,0.6));">⏳</div>
+                <span>Finaliza el juego primero</span>
+            </div>
+        `;
+        toast.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
+            color: #fff; padding: 20px 28px; border-radius: 16px; font-weight: 600; font-size: 16px;
+            letter-spacing: 0.3px; z-index: 10000; backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,152,0,0.3); box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1);
+            animation: modernFadeInOut 2.2s ease; min-width: 280px; text-align: center;
+        `;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2200);
         return;
     }
-
-    // Resetear el juego sin recargar la página (solo al finalizar)
     resetGame();
-});
+}
+
+function installResetButtonHandler() {
+    const btn = document.getElementById('reset-button');
+    if (!btn || btn.dataset.resetHandlerInstalled === 'true') return;
+    btn.addEventListener('click', handleResetClick);
+    btn.dataset.resetHandlerInstalled = 'true';
+}
+
+function installResetCaptureHandler() {
+    if (document.body.dataset.resetCaptureInstalled === 'true') return;
+    document.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (!t) return;
+        if (t.id === 'reset-button' || (t.closest && t.closest('#reset-button'))) {
+            ev.stopPropagation();
+            handleResetClick();
+        }
+    }, true);
+    document.body.dataset.resetCaptureInstalled = 'true';
+}
+
+installResetButtonHandler();
+installResetCaptureHandler();
+document.addEventListener('DOMContentLoaded', installResetButtonHandler);
+document.addEventListener('DOMContentLoaded', installResetCaptureHandler);
+window.addEventListener('load', installResetButtonHandler);
+window.addEventListener('load', installResetCaptureHandler);
 
 
 function setBackAttempts(backElement, attemptsLeft, mensajeExtra = "") {
@@ -7404,8 +7475,8 @@ function goToNextCardWithDebug() {
     console.log('🔄 goToNextCard called');
     debugGameState();
     
-    // Reactivar el botón de mezclar al pasar a la siguiente tarjeta
-    document.getElementById('shuffle-button').disabled = false;
+    // Actualizar estado del botón Mezclar según finales
+    updateShuffleButtonState();
 
     // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
     document.getElementById('shuffleSound').play().catch(() => {});
@@ -7460,13 +7531,17 @@ function goToNextCardWithDebug() {
         
         if (correctCount > incorrectCount) {
             if (incorrectCount === 0) {
+                disableShuffleForFinals();
                 showCompletionEuforiaMaxima();
             } else {
+                disableShuffleForFinals();
                 showCompletioneuforia();
             }
         } else if (incorrectCount > correctCount) {
+            disableShuffleForFinals();
             showCompletionPerdida();
         } else {
+            disableShuffleForFinals();
             showCompletionEmpate();
         }
     }

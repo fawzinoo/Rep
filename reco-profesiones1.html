@@ -4068,12 +4068,11 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         })();
 
         setTimeout(() => {
-            const idx = flashcards.indexOf(card);
-            if (hasValidAudio(idx)) {
-                stopAllAudios();
-                audios[idx].play().catch(() => {});
-                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
-            } else {
+            stopAllAudios();
+            // Reproducir audio asociado a esta tarjeta y luego continuar
+            try {
+                playCardAudio(card, () => showCountdown(card));
+            } catch (e) {
                 showCountdown(card);
             }
         }, 1000);
@@ -4193,13 +4192,11 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 backElement.appendChild(respuestaCorrecta);
 
-                // Reproduce el audio si existe y después muestra countdown
-                const audioIndex = flashcards.indexOf(card);
-                if (hasValidAudio(audioIndex)) {
+                // Reproduce el audio por tarjeta y después muestra countdown
+                try {
                     stopAllAudios();
-                    audios[audioIndex].play().catch(() => {});
-                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                } else {
+                    playCardAudio(card, () => showCountdown(card));
+                } catch (e) {
                     showCountdown(card);
                 }
             }, 2000);
@@ -6140,6 +6137,29 @@ const audios = audioFiles.map(file => {
     return audio;
 });
 
+// --- Audio por tarjeta: resolver y reproducir según el contenido actual ---
+function playCardAudio(card, onEnded) {
+    try {
+        if (!card) { if (onEnded) onEnded(); return; }
+        const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
+        const src = getAudioSrcForCountryName(answer);
+        if (!src) { if (onEnded) onEnded(); return; }
+        if (!card._audioEl) {
+            card._audioEl = new Audio();
+            card._audioEl.preload = 'auto';
+        }
+        const a = card._audioEl;
+        try { a.pause(); } catch {}
+        a.src = src;
+        a.currentTime = 0;
+        a.onended = null;
+        if (typeof onEnded === 'function') a.onended = onEnded;
+        a.play().catch(() => { if (onEnded) onEnded(); });
+    } catch (e) {
+        if (onEnded) onEnded();
+    }
+}
+
 // Normalizador y mapa para resolver el audio correcto según el nombre del país
 function normalizeAudioKey(str) {
     if (!str) return '';
@@ -6242,18 +6262,9 @@ flashcards.forEach((card, index) => {
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
     back.innerHTML = data.backText;
     card.dataset.answer = data.backText;
-    // --- AQUÍ VA EL AUDIO ---
+    // --- AUDIO: no reasignar por índice; opcionalmente cachear en dataset ---
     const src = getAudioSrcForCountryName(data.backText);
-    if (src) {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].preload = 'none';
-        audios[index].src = src;
-    } else {
-        try { audios[index].pause(); } catch {}
-        audios[index].currentTime = 0;
-        audios[index].src = '';
-    }
+    card.dataset.audioSrc = src || '';
 });
 
     // 6. Actualizar el estado para reflejar el nuevo orden.
@@ -6615,9 +6626,15 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
+    // Detener audios creados por tarjeta
+    document.querySelectorAll('.flashcard').forEach(c => {
+        if (c._audioEl) {
+            try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {}
+        }
+    });
+    // Además detener el array global por si hay reproducciones previas
     audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
+        try { audio.pause(); audio.currentTime = 0; } catch {}
     });
 }
 

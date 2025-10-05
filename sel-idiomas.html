@@ -4779,6 +4779,13 @@ function showMultipleChoice(backElement, correctAnswer) {
         optionButton.dataset.answer = option;
         optionButton.dataset.isCorrect = option === correctAnswer ? 'true' : 'false';
         
+        // Vibración al presionar la opción (feedback inmediato)
+        optionButton.addEventListener('pointerdown', () => {
+            if (!optionButton.classList.contains('disabled')) {
+                try { vibrar(100); } catch(e) {}
+            }
+        }, { passive: true });
+
         // Event listener para manejo de clics
         optionButton.addEventListener('click', () => {
             handleMultipleChoiceSelection(optionButton, correctAnswer, backElement, attemptsDiv);
@@ -5912,23 +5919,45 @@ function attachFlashcardHandlers() {
             
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
-                // No permitir volver a front si ya se consumió el primer intento
-                // o mientras se muestra el mensaje de error o la ventana entre intentos
-                if (voiceAttempts >= 1 || showingErrorMessage || betweenAttempts) {
-                    console.log('Volteo back->front bloqueado tras primer intento/estado de error');
-                    // Mantener totalmente inmóvil
-                    if (e && typeof e.preventDefault === 'function') e.preventDefault();
-                    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+                // Si el clic fue SOBRE una opción, no gestionar flip aquí
+                const clickedOption = e.target.closest('.multiple-choice-option');
+                if (clickedOption) {
+                    // Dejar que el manejador de opciones procese el clic
                     return;
                 }
+                // Permitir volver a front al clicar fuera del área de opciones,
+                // incluso después del primer intento.
+                console.log('Volteando a front desde back (clic fuera de opciones)');
+                if (e && typeof e.preventDefault === 'function') e.preventDefault();
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 vibrar(80);
                 card.classList.remove('flipped');
                 stopAllAudios();
-                // Limpia cualquier contador de intentos al volver a front
-                backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-                // Limpiar cualquier contenido del sistema de opciones múltiples
-                backElement.innerHTML = '';
+                // Mantener las opciones visibles durante la transición de flip
+                // y limpiar justo al finalizar el giro
+                let cleanupDone = false;
+                const doCleanup = () => {
+                    if (cleanupDone) return;
+                    cleanupDone = true;
+                    try {
+                        backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                        backElement.innerHTML = '';
+                    } catch (e) {}
+                };
+                const onFlipEnd = (ev) => {
+                    if (ev && ev.target === card && ev.propertyName === 'transform') {
+                        card.removeEventListener('transitionend', onFlipEnd);
+                        doCleanup();
+                    }
+                };
+                card.addEventListener('transitionend', onFlipEnd, { once: true });
+                // Fallback por si el navegador no emite transitionend
+                setTimeout(doCleanup, 800);
+                // Salimos de estados intermedios visuales porque volvemos al front
+                showingErrorMessage = false;
                 betweenAttempts = false;
+                // Al volver a front, vuelve a estar permitido voltear
+                canFlip = true;
                 updateSkipButtonState();
             } else {
                 // Volteo de front a back: mostrar opciones múltiples

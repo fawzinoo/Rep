@@ -15,7 +15,6 @@
             margin: 6px auto 5px auto;
             gap: 2px;
             position: relative;
-            /* Mantener por debajo de los overlays de fin para ocultar marcadores */
             z-index: 10;
         }
 
@@ -422,9 +421,6 @@
     border-radius: 15px;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     margin-top: 10px;
-    /* Asegurar clics por encima de overlays (9999) */
-    position: relative;
-    z-index: 11000;
 }
 
 
@@ -3225,7 +3221,7 @@
     <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
     <div class="pill" id="porcentaje-guardado" style="
         background: rgba(255, 255, 255, 0.08);
-        color: white;
+        color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
         min-width: 65px;
@@ -3242,7 +3238,7 @@
     <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
     <div class="pill" id="last-game-pill" style="
         background: rgba(255, 255, 255, 0.08);
-        color: white;
+        color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
         min-width: 65px;
@@ -3868,8 +3864,14 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         })();
 
         setTimeout(() => {
-            stopAllAudios();
-            playCardAudio(card, () => showCountdown(card));
+            const idx = flashcards.indexOf(card);
+            if (hasValidAudio(idx)) {
+                stopAllAudios();
+                audios[idx].play().catch(() => {});
+                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
+            } else {
+                showCountdown(card);
+            }
         }, 1000);
 
         // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -3987,9 +3989,15 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 backElement.appendChild(respuestaCorrecta);
 
-                // Reproduce el audio (resuelto por contenido) y después muestra countdown
-                stopAllAudios();
-                playCardAudio(card, () => showCountdown(card));
+                // Reproduce el audio si existe y después muestra countdown
+                const audioIndex = flashcards.indexOf(card);
+                if (hasValidAudio(audioIndex)) {
+                    stopAllAudios();
+                    audios[audioIndex].play().catch(() => {});
+                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
+                } else {
+                    showCountdown(card);
+                }
             }, 2000);
 
             // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -4147,42 +4155,10 @@ function removeListeningIndicator(backElement = null) {
     }
 }
 let isShuffling = false;
-// Límite de usos del botón Mezclar por partida (persistente hasta fin de juego)
-let shuffleClickCount = 0;
-const SHUFFLE_MAX_CLICKS = 3;
-try {
-    const savedShuffle = parseInt(localStorage.getItem('idiomas1_shuffleCount') || '0', 10);
-    if (!isNaN(savedShuffle) && savedShuffle >= 0) shuffleClickCount = savedShuffle;
-} catch {}
 
 document.getElementById('shuffle-button').addEventListener('click', () => {
-    // Límite de 3 usos por partida
-    if (shuffleClickCount >= SHUFFLE_MAX_CLICKS) {
-        vibrar(60);
-        const existing = document.getElementById('shuffle-limit-toast');
-        if (existing) existing.remove();
-        const toast = document.createElement('div');
-        toast.id = 'shuffle-limit-toast';
-        toast.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:center;gap:12px;font-size:16px;font-weight:600;">
-                <span>Has mezclado 3 veces. ¡Ahora confía en tu memoria! 🧠</span>
-            </div>`;
-        toast.style.cssText = `
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: linear-gradient(135deg, rgba(40,0,60,0.95) 0%, rgba(80,0,120,0.95) 100%);
-            color: #fff; padding: 18px 24px; border-radius: 16px; font-weight: 600; font-size: 15px;
-            z-index: 10000; backdrop-filter: blur(10px); border: 1px solid rgba(156,39,176,0.35);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(156,39,176,0.2);
-            animation: modernFadeInOut 2.2s ease; min-width: 280px; text-align: center;`;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2200);
-        return;
-    }
-
     if (isShuffling) return;
     isShuffling = true;
-    shuffleClickCount++;
-    try { localStorage.setItem('idiomas1_shuffleCount', String(shuffleClickCount)); } catch {}
     vibrar(80); 
     document.getElementById('shuffleSound').play().catch(() => {});
     shuffleCards();
@@ -4368,8 +4344,6 @@ function updateCounters() {
 function showCompletionEuforiaMaxima() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
-    // Desactivar Mezclar en fin de juego
-    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de victoria máxima
     const audioVictoriaMaxima = new Audio('https://fawzinoo.github.io/audios/victoriamaxima.mp3');
@@ -4466,8 +4440,6 @@ function showCompletionEuforiaMaxima() {
 function showCompletioneuforia() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
-    // Desactivar Mezclar en fin de juego
-    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de victoria normal
     const audioVictoriaNormal = new Audio('https://fawzinoo.github.io/audios/victorianormal.mp3');
@@ -4543,8 +4515,6 @@ function showCompletioneuforia() {
 function showCompletionPerdida() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
-    // Desactivar Mezclar en fin de juego
-    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de derrota
     const audioDerrota = new Audio('https://fawzinoo.github.io/audios/derrota.mp3');
@@ -4612,8 +4582,6 @@ function showCompletionPerdida() {
 function showCompletionEmpate() {
     // LIMPIAR PROGRESO GUARDADO al completar el juego
     clearCurrentProgress();
-    // Desactivar Mezclar en fin de juego
-    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     // Reproducir audio de empate (palpitaciones)
     const audioEmpate = new Audio('https://fawzinoo.github.io/audios/empate.mp3');
@@ -4679,8 +4647,6 @@ function showCompletionEmpate() {
 }
 function showCompletionMessage() {
     const container = document.getElementById('flashcard-container');
-    // Mantener Mezclar desactivado en la pantalla final
-    try { const sb = document.getElementById('shuffle-button'); if (sb) sb.disabled = true; } catch {}
     
     if (correctCount > incorrectCount) {
         if (incorrectCount === 0) {
@@ -5459,8 +5425,6 @@ function hasProgressSaved() {
     // Si el juego está completado, NO mostrar modal de continuación
     if (isGameCompleted) {
         console.log('Juego completado detectado, limpiando progreso y reiniciando');
-        // Habilitar un reinicio excepcional mediante un flag de sesión (consumible en el botón Reiniciar)
-        try { sessionStorage.setItem('idiomas1_resetAllowedCompletedSavedGame', 'true'); } catch {}
         clearCurrentProgress();
         return false;
     }
@@ -5966,30 +5930,6 @@ function getAudioSrcForCountryName(countryName) {
     return file ? (baseUrl + file) : null;
 }
 
-// Reproductor por tarjeta: obtiene el src según el contenido actual y reproduce en un Audio propio de la tarjeta
-function playCardAudio(card, onEnded) {
-    try {
-        if (!card) { if (typeof onEnded === 'function') onEnded(); return; }
-        const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
-        const src = getAudioSrcForCountryName(answer);
-        if (!src) { if (typeof onEnded === 'function') onEnded(); return; }
-
-        if (!card._audioEl) {
-            card._audioEl = new Audio();
-            card._audioEl.preload = 'auto';
-        }
-        const a = card._audioEl;
-        try { a.pause(); } catch {}
-        a.src = src;
-        a.currentTime = 0;
-        a.onended = null;
-        if (typeof onEnded === 'function') a.onended = onEnded;
-        a.play().catch(() => { if (typeof onEnded === 'function') onEnded(); });
-    } catch (e) {
-        if (typeof onEnded === 'function') onEnded();
-    }
-}
-
 // Alias para discrepancias de nombres entre el texto mostrado y el archivo de audio
 // Evita que tarjetas como "Brasil" (archivo brazil.mp3) queden sin src y bloqueen el flujo
 if (audioFilenameByKey['brazil'] && !audioFilenameByKey['brasil']) {
@@ -6052,12 +5992,18 @@ back.querySelectorAll('.intentos-back').forEach(el => el.remove());
 back.innerHTML = data.backText;
     // --- ACTUALIZA EL data-answer TAMBIÉN ---
     card.dataset.answer = data.backText;
-        // Guardar el src esperado en dataset (evita depender de arrays por índice)
+        // Reasignar el audio CORRECTO según el nombre del país
         const src = getAudioSrcForCountryName(data.backText);
         if (src) {
-            card.dataset.audioSrc = src;
+            try { audios[index].pause(); } catch {}
+            audios[index].currentTime = 0;
+            audios[index].preload = 'none';
+            audios[index].src = src;
         } else {
-            delete card.dataset.audioSrc;
+            // Si no hay audio mapeado, limpiar para evitar desincronización
+            try { audios[index].pause(); } catch {}
+            audios[index].currentTime = 0;
+            audios[index].src = '';
         }
 });
 
@@ -6257,20 +6203,17 @@ function initializePage() {
 
     showCard(currentCardIndex);
     updateCounters();
-    // Precargar audio correcto para la tarjeta visible tras primera mezcla (sin arrays por índice)
-    try {
-        const card = flashcards[currentCardIndex];
-        if (card) {
-            const answer = (card.dataset?.answer || card.querySelector('.back')?.textContent || '').trim();
-            const visibleSrc = answer ? getAudioSrcForCountryName(answer) : null;
-            if (visibleSrc) {
-                if (!card._audioEl) card._audioEl = new Audio();
-                card._audioEl.preload = 'auto';
-                card._audioEl.src = visibleSrc;
-                try { card._audioEl.load(); } catch {}
-            }
-        }
-    } catch {}
+    // Precargar audio correcto para la tarjeta visible tras primera mezcla
+    const firstBack = document.querySelector('.flashcard.is-visible .back');
+    const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
+    const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
+    if (visibleSrc && audios[currentCardIndex]) {
+        try { audios[currentCardIndex].pause(); } catch {}
+        audios[currentCardIndex].currentTime = 0;
+        audios[currentCardIndex].preload = 'auto';
+        audios[currentCardIndex].src = visibleSrc;
+        audios[currentCardIndex].load();
+    }
     // Mostrar hints secuenciales al cargar
     showPillHints();
 }
@@ -6305,7 +6248,24 @@ function updateLastGamePillFromStorage() {
 
 // Reasignar audios a tarjetas según el texto del reverso (data-answer)
 function reassignAudiosToCards() {
-    // Audio resuelto on-demand por tarjeta; no es necesario re-mapear por índice.
+    try {
+        flashcards.forEach((card, index) => {
+            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
+            const src = getAudioSrcForCountryName(answer);
+            if (src) {
+                try { audios[index].pause(); } catch {}
+                audios[index].currentTime = 0;
+                audios[index].preload = 'none';
+                audios[index].src = src;
+            } else {
+                try { audios[index].pause(); } catch {}
+                audios[index].currentTime = 0;
+                audios[index].src = '';
+            }
+        });
+    } catch (e) {
+        console.warn('No se pudo reasignar audios:', e);
+    }
 }
 
 function updateCardCounter() {
@@ -6397,16 +6357,10 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
-    // Detener cualquier Audio del arreglo legacy
-    try {
-        audios.forEach(audio => { try { audio.pause(); audio.currentTime = 0; } catch {} });
-    } catch {}
-    // Detener audios propios de cada tarjeta
-    try {
-        document.querySelectorAll('.flashcard').forEach(c => {
-            if (c._audioEl) { try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {} }
-        });
-    } catch {}
+    audios.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+    });
 }
 
 // Muestra frases (hints) cerca de los pills al cargar la página
@@ -6472,8 +6426,6 @@ function resetGame() {
     
     // LIMPIAR PROGRESO GUARDADO al reiniciar
     clearCurrentProgress();
-    // Además limpiar el flag de sesión de reinicio excepcional si existiera
-    try { sessionStorage.removeItem('idiomas1_resetAllowedCompletedSavedGame'); } catch {}
     
     // Limpiar timeouts de stats box si estuvieran activos
     if (statsShowTimeoutId) { clearTimeout(statsShowTimeoutId); statsShowTimeoutId = null; }
@@ -6488,9 +6440,6 @@ function resetGame() {
     incorrectWords.length = 0;
     correctCount = 0;
     incorrectCount = 0;
-    // Reiniciar contador de Mezclar y limpiar persistencia
-    try { localStorage.removeItem('idiomas1_shuffleCount'); } catch {}
-    shuffleClickCount = 0;
     
     // Limpiar timeouts activos
     if (typeof autoFlipTimer !== 'undefined') {
@@ -6578,44 +6527,75 @@ document.getElementById('reset-button').addEventListener('click', () => {
     const soundResetButton = document.getElementById('soundResetButton');
     soundResetButton.play().catch(e => console.log(e));
 
-    // Política estricta: solo permitir reset cuando haya un overlay de showCompletion activo
-    try {
-        const overlaysPresent = (
-            document.getElementById('euforia-maxima-overlay') ||
-            document.getElementById('euforia-overlay') ||
-            document.getElementById('perdida-overlay') ||
-            document.getElementById('empate-overlay')
-        );
-        const container = document.getElementById('flashcard-container');
-        const isFinalScreen = container && !container.querySelector('.flashcard');
-        if (overlaysPresent || isFinalScreen) {
+    const overlaysPresent = (
+        document.getElementById('euforia-maxima-overlay') ||
+        document.getElementById('euforia-overlay') ||
+        document.getElementById('perdida-overlay') ||
+        document.getElementById('empate-overlay')
+    );
+    
+    // Verificar si se muestra la pantalla final de showCompletionMessage
+    const container = document.getElementById('flashcard-container');
+    const hasCompletionScreen = container && !container.querySelector('.flashcard');
+    
+    // Calcular finalización de forma robusta con el DOM actual
+    const totalCardsNow = document.querySelectorAll('.flashcard').length;
+    const finished = overlaysPresent || hasCompletionScreen || (totalCardsNow > 0 && completedCards.size >= totalCardsNow);
+    const started = ((correctCount + incorrectCount) > 0) || (voiceAttempts > 0);
+
+    if (!finished) {
+        if (started) {
             const existing = document.getElementById('reset-guard-toast');
             if (existing) existing.remove();
-            resetGame();
-            return;
+            const toast = document.createElement('div');
+            toast.id = 'reset-guard-toast';
+            toast.innerHTML = `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 12px;
+                    font-size: 16px;
+                    font-weight: 600;
+                ">
+                    <div style="
+                        font-size: 24px;
+                        filter: drop-shadow(0 0 8px rgba(255,152,0,0.6));
+                    ">⏳</div>
+                    <span>Finaliza el juego primero</span>
+                </div>
+            `;
+            toast.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
+                color: #fff;
+                padding: 20px 28px;
+                border-radius: 16px;
+                font-weight: 600;
+                font-size: 16px;
+                letter-spacing: 0.3px;
+                z-index: 10000;
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(255,152,0,0.3);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1);
+                animation: modernFadeInOut 2.2s ease;
+                min-width: 280px;
+                text-align: center;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2200);
+            return; // bloquear si empezó
         }
-    } catch (e) {}
+        // Si no ha empezado, sí podemos reiniciar y mezclar
+        resetGame();
+        return;
+    }
 
-    // En cualquier otro contexto, mostrar el mensaje de bloqueo
-    const existing = document.getElementById('reset-guard-toast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = 'reset-guard-toast';
-    toast.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:center;gap:12px;font-size:16px;font-weight:600;">
-            <div style=\"font-size:24px;filter:drop-shadow(0 0 8px rgba(255,152,0,0.6));\">⏳</div>
-            <span>Finaliza el juego primero</span>
-        </div>`;
-    toast.style.cssText = `
-        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        background: linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(50,50,50,0.95) 100%);
-        color: #fff; padding: 20px 28px; border-radius: 16px; font-weight: 600; font-size: 16px;
-        letter-spacing: 0.3px; z-index: 10000; backdrop-filter: blur(12px); border: 1px solid rgba(255,152,0,0.3);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,152,0,0.1); animation: modernFadeInOut 2.2s ease;
-        min-width: 280px; text-align: center;`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2200);
-    return;
+    // Resetear el juego sin recargar la página (solo al finalizar)
+    resetGame();
 });
 
 

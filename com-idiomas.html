@@ -506,6 +506,15 @@
   }
 }
 
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
 @keyframes moveLeftToRight {
   0% {
     transform: translateX(0); /* Posición inicial */
@@ -1504,7 +1513,9 @@
     letter-spacing: 2px;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
-    padding: 0 45px 0 15px; /* Padding asimétrico: más espacio a la derecha para el botón */
+    padding: 0 50px; /* Padding simétrico para mantener el texto centrado */
+    position: relative;
+    text-align: center;
 }
 
 .clear-word-btn {
@@ -1557,12 +1568,14 @@
 
 .letters-container {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
     justify-content: center;
     align-items: center;
-    max-width: 350px;
+    max-width: 100%;
     margin-bottom: 20px;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .letter-option {
@@ -1575,6 +1588,7 @@
     font-size: 1.4rem;
     font-weight: 700;
     cursor: pointer;
+    flex-shrink: 0;
     transition: all 0.3s ease;
     text-align: center;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
@@ -1686,7 +1700,7 @@
         font-size: 1.6rem;
         min-width: 150px;
         min-height: 50px;
-        padding-right: 45px; /* Menos espacio en móvil */
+        padding: 0 40px; /* Padding simétrico también en móvil */
     }
     
     .clear-word-btn {
@@ -1697,14 +1711,16 @@
     }
     
     .letters-container {
-        gap: 6px;
-        max-width: 280px;
+        gap: 3px;
+        max-width: 100%;
+        overflow-x: auto;
     }
     
     .letter-option {
         width: 40px;
         height: 40px;
         font-size: 1.2rem;
+        flex-shrink: 0;
     }
     
 
@@ -4940,6 +4956,8 @@ function showLetterCombination(backElement, correctAnswer) {
     // Crear contenedor de letras
     const lettersContainer = document.createElement('div');
     lettersContainer.className = 'letters-container';
+    lettersContainer.style.position = 'relative';
+    lettersContainer.style.zIndex = '10'; // Z-index más alto que el área protegida
     
     letterData.letters.forEach((letter, index) => {
         const letterButton = document.createElement('button');
@@ -4947,16 +4965,18 @@ function showLetterCombination(backElement, correctAnswer) {
         letterButton.textContent = letter;
         letterButton.dataset.letter = letter;
         letterButton.dataset.originalIndex = index;
+        letterButton.style.position = 'relative';
+        letterButton.style.zIndex = '11'; // Asegurar que esté por encima de todo
         
-        // Vibración al presionar la letra
+        // Vibración al presionar la letra (siempre activa)
         letterButton.addEventListener('pointerdown', () => {
-            if (!letterButton.classList.contains('disabled')) {
-                try { vibrar(50); } catch(e) {}
-            }
+            try { vibrar(50); } catch(e) {}
         }, { passive: true });
 
         // Event listener para manejo de clics
-        letterButton.addEventListener('click', () => {
+        letterButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             handleLetterSelection(letterButton, letterData, backElement, attemptsDiv);
         });
         
@@ -4976,7 +4996,7 @@ function showLetterCombination(backElement, correctAnswer) {
         transform: translateX(-50%);
         width: 90%;
         height: 370px;
-        z-index: 1;
+        z-index: 0;
         pointer-events: auto;
         background: transparent;
     `;
@@ -4993,81 +5013,56 @@ function showLetterCombination(backElement, correctAnswer) {
 // Variables para el sistema de combinación de letras
 let formedWord = [];
 let selectedButtons = [];
-let nextInsertPosition = -1; // Posición donde se insertará la próxima letra (-1 = al final)
-let hasEnteredEditMode = false; // Trackea si el usuario ha activado alguna vez el modo edición
+let cursorPosition = -1; // Posición del cursor (-1 = al final)
 
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
     const letter = selectedLetter.dataset.letter;
     
-    // Verificar si la letra ya fue seleccionada
+    // Verificar si la letra ya fue seleccionada - si es así, la deseleccionamos
     if (selectedLetter.classList.contains('selected')) {
-        return;
-    }
-    
-    // Solo bloquear si el usuario YA activó el modo edición alguna vez
-    // Si nunca activó modo edición, permitir selección normal
-    if (hasEnteredEditMode && formedWord.length > 0 && nextInsertPosition === -1) {
-        // Vibrar para indicar que debe seleccionar una letra de arriba primero
-        try { vibrar(80); } catch(e) {}
-        
-        // Cambiar el mensaje temporalmente
-        const hintElement = document.querySelector('.word-hint');
-        if (hintElement) {
-            const originalText = hintElement.textContent;
-            hintElement.textContent = '✋ Selecciona una letra de arriba primero';
-            hintElement.style.color = '#ff6b35';
-            hintElement.style.animation = 'pulse 0.5s ease-in-out';
+        // Encontrar la posición de esta letra en la palabra formada
+        const letterIndex = selectedButtons.indexOf(selectedLetter);
+        if (letterIndex >= 0) {
+            // Eliminar la letra de esa posición específica
+            formedWord.splice(letterIndex, 1);
+            selectedButtons.splice(letterIndex, 1);
             
-            // Restaurar mensaje original después de 2.5 segundos
-            setTimeout(() => {
-                hintElement.textContent = originalText;
-                hintElement.style.color = '';
-                hintElement.style.animation = '';
-            }, 2500);
-        }
-        
-        return;
-    }
-    
-    // Agregar la letra a la palabra formada en la posición correcta
-    if (nextInsertPosition >= 0 && nextInsertPosition <= formedWord.length) {
-        console.log(`Insertando ${letter} en posición ${nextInsertPosition}`);
-        // Insertar en la posición específica marcada
-        formedWord.splice(nextInsertPosition, 0, letter);
-        selectedButtons.splice(nextInsertPosition, 0, selectedLetter);
-        const wasInEditMode = document.getElementById('formed-word')?.classList.contains('edit-mode');
-        nextInsertPosition = -1; // Resetear después de usar
-        
-        // Si estaba en modo edición, forzar reconstrucción después de actualizar
-        if (wasInEditMode) {
-            // Marcar la letra como seleccionada primero
-            selectedLetter.classList.add('selected');
-            selectedLetter.disabled = true;
+            // Reactivar el botón (volver al color original)
+            selectedLetter.classList.remove('selected');
+            // El botón nunca se deshabilitó, así que no necesita reactivación
+            // selectedLetter.disabled = false;
+            // selectedLetter.style.opacity = '1';
+            // selectedLetter.style.pointerEvents = 'auto';
+            // selectedLetter.style.transform = 'scale(1)';
             
-            // Actualizar visualización y reactivar modo edición
+            // Actualizar la visualización de la palabra formada
             updateFormedWordDisplay();
             
-            // Vibrar para confirmar selección
+            // Vibrar para confirmar eliminación
             try { vibrar(30); } catch(e) {}
-            
-            // Reactivar modo edición inmediatamente
-            setTimeout(() => {
-                convertToEditableButtons();
-                changeClearButtonToCancel();
-            }, 50);
-            
-            return; // Salir aquí para evitar duplicar la lógica de abajo
         }
-    } else {
-        // Agregar al final como comportamiento normal
+        return;
+    }
+    
+    // Agregar la letra en la posición del cursor
+    if (cursorPosition === -1 || cursorPosition >= formedWord.length) {
+        // Insertar al final
         formedWord.push(letter);
         selectedButtons.push(selectedLetter);
+    } else {
+        // Insertar en la posición del cursor
+        formedWord.splice(cursorPosition, 0, letter);
+        selectedButtons.splice(cursorPosition, 0, selectedLetter);
     }
+    
+    // Después de insertar cualquier letra, mover cursor al final
+    cursorPosition = -1;
     
     // Marcar la letra como seleccionada
     selectedLetter.classList.add('selected');
-    selectedLetter.disabled = true;
+    // NO deshabilitar el botón para que siga siendo clickeable
+    // selectedLetter.disabled = true;
     
     // Actualizar la visualización de la palabra formada
     updateFormedWordDisplay();
@@ -5096,40 +5091,94 @@ function updateFormedWordDisplay() {
     const clearBtn = document.getElementById('clear-word-btn');
     
     if (wordDisplay) {
-        // Verificar si está en modo edición (botones individuales)
-        if (wordDisplay.classList.contains('edit-mode')) {
-            // Mantener los botones individuales ya creados
-            return;
+        // Limpiar contenido previo
+        wordDisplay.innerHTML = '';
+        
+        // Si no hay letras, mostrar mensaje de placeholder
+        if (formedWord.length === 0) {
+            wordDisplay.textContent = '';
+            wordDisplay.style.cursor = 'pointer';
+            cursorPosition = -1;
+        } else {
+            // Crear cada letra como un span clickeable
+            formedWord.forEach((letter, index) => {
+                // Mostrar cursor antes de esta letra si corresponde
+                if (cursorPosition === index) {
+                    const cursor = document.createElement('span');
+                    cursor.className = 'text-cursor';
+                    cursor.textContent = '|';
+                    cursor.style.cssText = `
+                        color: #10b981;
+                        font-weight: bold;
+                        animation: blink 1s infinite;
+                        margin: 0 2px;
+                    `;
+                    wordDisplay.appendChild(cursor);
+                }
+                
+                const letterSpan = document.createElement('span');
+                letterSpan.textContent = letter;
+                letterSpan.style.cssText = `
+                    cursor: pointer;
+                    padding: 2px 4px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s ease;
+                `;
+                
+                // Hover effect
+                letterSpan.addEventListener('mouseenter', () => {
+                    letterSpan.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+                });
+                letterSpan.addEventListener('mouseleave', () => {
+                    letterSpan.style.backgroundColor = 'transparent';
+                });
+                
+                // Click para posicionar cursor
+                letterSpan.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cursorPosition = index;
+                    updateFormedWordDisplay();
+                    try { vibrar(20); } catch(e) {}
+                });
+                
+                wordDisplay.appendChild(letterSpan);
+            });
+            
+            // Mostrar cursor al final si corresponde
+            if (cursorPosition === -1 || cursorPosition >= formedWord.length) {
+                const cursor = document.createElement('span');
+                cursor.className = 'text-cursor';
+                cursor.textContent = '|';
+                cursor.style.cssText = `
+                    color: #10b981;
+                    font-weight: bold;
+                    animation: blink 1s infinite;
+                    margin: 0 2px;
+                `;
+                wordDisplay.appendChild(cursor);
+                cursorPosition = -1; // Normalizar posición al final
+            }
         }
         
-        wordDisplay.textContent = formedWord.join('');
+        // Hacer el cuadro completo clickeable para posicionar al final
+        wordDisplay.addEventListener('click', (e) => {
+            // Solo si se hace clic en el fondo del cuadro (no en una letra)
+            if (e.target === wordDisplay) {
+                e.preventDefault();
+                e.stopPropagation();
+                cursorPosition = -1; // Posicionar al final
+                updateFormedWordDisplay();
+                try { vibrar(20); } catch(e) {}
+            }
+        });
+        
+        wordDisplay.style.cursor = 'pointer';
         
         // Añadir animación cuando se añaden letras
         wordDisplay.style.animation = 'none';
         void wordDisplay.offsetWidth;
         wordDisplay.style.animation = 'pulse 0.3s ease';
-        
-        // Solo agregar evento de clic si no estamos esperando una inserción
-        if (nextInsertPosition === -1) {
-            // Agregar evento de clic para convertir en botones editables
-            wordDisplay.onclick = function(event) {
-                // Prevenir que el evento se propague y active el volteo de la tarjeta
-                if (event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                }
-                
-                if (formedWord.length > 0) {
-                    convertToEditableButtons();
-                    // Cambiar el botón X a naranja para cancelar modo edición
-                    changeClearButtonToCancel();
-                }
-            };
-        } else {
-            // Si hay posición de inserción marcada, no interferir con la selección
-            wordDisplay.onclick = null;
-        }
-        wordDisplay.style.cursor = formedWord.length > 0 ? 'pointer' : 'default';
     }
     
     // Mostrar/ocultar botón de borrar según si hay letras seleccionadas
@@ -5137,244 +5186,43 @@ function updateFormedWordDisplay() {
         if (formedWord.length > 0) {
             clearBtn.style.display = 'flex';
             clearBtn.style.animation = 'fadeIn 0.3s ease';
-            // Asegurar que esté en modo borrar (rojo) cuando no está en modo edición
-            if (!wordDisplay || !wordDisplay.classList.contains('edit-mode')) {
-                changeClearButtonToDelete();
-            }
         } else {
             clearBtn.style.display = 'none';
         }
     }
 }
 
-// Función para convertir la palabra en botones editables
-function convertToEditableButtons() {
-    const wordDisplay = document.getElementById('formed-word');
-    if (!wordDisplay || formedWord.length === 0) return;
-    
-    // Marcar que el usuario ha activado el modo edición
-    hasEnteredEditMode = true;
-    
-    // Cambiar el mensaje cuando entra en modo edición
-    const hintElement = document.querySelector('.word-hint');
-    if (hintElement) {
-        hintElement.textContent = '🔄 Toca una letra para intercambiarla';
-        hintElement.style.color = '#10b981';
-    }
-    
-    wordDisplay.classList.add('edit-mode');
-    wordDisplay.innerHTML = '';
-    wordDisplay.style.cursor = 'default';
-    
-    formedWord.forEach((letter, index) => {
-        // Si hay una posición de inserción marcada, mostrar un espacio antes de esta posición
-        if (nextInsertPosition === index) {
-            const emptySlot = document.createElement('div');
-            emptySlot.style.cssText = `
-                display: inline-block;
-                width: 40px;
-                height: 40px;
-                border: 2px dashed #10b981;
-                border-radius: 8px;
-                margin: 2px;
-                background: rgba(16, 185, 129, 0.1);
-                animation: pulse 1s infinite;
-            `;
-            wordDisplay.appendChild(emptySlot);
-        }
-        
-        const letterBtn = document.createElement('button');
-        letterBtn.className = 'formed-letter-btn';
-        letterBtn.textContent = letter;
-        letterBtn.dataset.index = index;
-        
-        // Estilo del botón
-        letterBtn.style.cssText = `
-            background: #10b981;
-            color: white;
-            border: 2px solid transparent;
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin: 2px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            min-width: 40px;
-            box-shadow: 0 3px 0 #059669;
-        `;
-        
-        // Efectos hover y active
-        letterBtn.addEventListener('mouseenter', () => {
-            if (!letterBtn.classList.contains('selected')) {
-                letterBtn.style.background = '#34d399';
-            }
-        });
-        
-        letterBtn.addEventListener('mouseleave', () => {
-            if (!letterBtn.classList.contains('selected')) {
-                letterBtn.style.background = '#10b981';
-            }
-        });
-        
-        letterBtn.addEventListener('pointerdown', () => {
-            try { vibrar(50); } catch(e) {}
-            letterBtn.style.transform = 'translateY(3px)';
-            letterBtn.style.boxShadow = '0 0 0 #059669';
-        });
-        
-        letterBtn.addEventListener('pointerup', () => {
-            letterBtn.style.transform = 'translateY(0)';
-            letterBtn.style.boxShadow = '0 3px 0 #059669';
-        });
-        
-        // Clic para eliminar la letra específica de esta posición
-        letterBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteLetterAtPosition(index);
-        });
-        
-        wordDisplay.appendChild(letterBtn);
-    });
-    
-    // Si la posición de inserción está al final, mostrar el espacio después de todas las letras
-    if (nextInsertPosition === formedWord.length) {
-        const emptySlot = document.createElement('div');
-        emptySlot.style.cssText = `
-            display: inline-block;
-            width: 40px;
-            height: 40px;
-            border: 2px dashed #10b981;
-            border-radius: 8px;
-            margin: 2px;
-            background: rgba(16, 185, 129, 0.1);
-            animation: pulse 1s infinite;
-        `;
-        wordDisplay.appendChild(emptySlot);
-    }
-}
+// Función convertToEditableButtons eliminada - ya no se usa modo edición en el cuadro
 
-// Función para eliminar una letra en una posición específica
-function deleteLetterAtPosition(position) {
-    if (position < 0 || position >= formedWord.length || position >= selectedButtons.length) return;
-    
-    // Obtener el botón específico de esa posición
-    const buttonToReactivate = selectedButtons[position];
-    
-    // Reactivar el botón específico que fue presionado para esa posición
-    if (buttonToReactivate) {
-        buttonToReactivate.classList.remove('selected');
-        buttonToReactivate.disabled = false;
-        buttonToReactivate.style.opacity = '1';
-        buttonToReactivate.style.pointerEvents = 'auto';
-        buttonToReactivate.style.transform = 'scale(1)';
-    }
-    
-    // Eliminar la letra y el botón de los arrays en la posición específica
-    formedWord.splice(position, 1);
-    selectedButtons.splice(position, 1);
-    
-    // Marcar esta posición para la próxima inserción
-    nextInsertPosition = position;
-    
-    // Si quedan letras, mantener modo edición; si no, salir completamente
-    if (formedWord.length === 0) {
-        exitEditMode(); // Salir completamente si no quedan letras
-    } else {
-        // Mantener modo edición pero actualizar la visualización
-        const wordDisplay = document.getElementById('formed-word');
-        if (wordDisplay) {
-            wordDisplay.classList.remove('edit-mode');
-            updateFormedWordDisplay();
-            // Reactivar modo edición inmediatamente
-            convertToEditableButtons();
-            changeClearButtonToCancel();
-        }
-    }
-}
+// Función deleteLetterAtPosition eliminada - ya no se usa modo edición en el cuadro
 
-// Función para salir del modo edición
-function exitEditMode() {
-    const wordDisplay = document.getElementById('formed-word');
-    if (wordDisplay) {
-        wordDisplay.classList.remove('edit-mode');
-        
-        // RESETEAR COMPLETAMENTE el sistema de intercambio
-        hasEnteredEditMode = false; // Permitir proceso normal otra vez
-        nextInsertPosition = -1; // Limpiar cualquier posición marcada
-        
-        updateFormedWordDisplay();
-        // Restaurar el botón X a su función original (rojo)
-        changeClearButtonToDelete();
-        
-        // Restaurar el mensaje original
-        const hintElement = document.querySelector('.word-hint');
-        if (hintElement) {
-            hintElement.textContent = 'Forma la palabra correcta';
-            hintElement.style.color = '';
-            hintElement.style.animation = ''; // Limpiar cualquier animación
-        }
-    }
-}
+// Función exitEditMode eliminada - ya no se usa modo edición en el cuadro
 
-// Función para cambiar el botón X a modo cancelar (naranja)
-function changeClearButtonToCancel() {
-    const clearBtn = document.getElementById('clear-word-btn');
-    if (clearBtn) {
-        // Cambiar a naranja y actualizar función
-        clearBtn.style.background = '#ff8c00';
-        clearBtn.style.boxShadow = '0 3px 0 #e67e00';
-        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
-        clearBtn.title = 'Cancelar edición';
-        
-        // Cambiar el evento onclick
-        clearBtn.onclick = function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            try { vibrar(50); } catch(e) {}
-            exitEditMode(); // Solo salir del modo edición, no borrar
-        };
-    }
-}
-
-// Función para restaurar el botón X a modo borrar (rojo)
-function changeClearButtonToDelete() {
-    const clearBtn = document.getElementById('clear-word-btn');
-    if (clearBtn) {
-        // Restaurar a rojo y función original
-        clearBtn.style.background = '#e74c3c';
-        clearBtn.style.boxShadow = '0 3px 0 #c0392b';
-        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
-        clearBtn.title = 'Borrar palabra';
-        
-        // Restaurar el evento onclick original
-        clearBtn.onclick = function(event) {
-            clearFormedWordManual(event);
-        };
-    }
-}
+// Función para cambiar el botón X a modo cancelar (eliminada - ya no se usa)
+// Función para restaurar el botón X a modo borrar (eliminada - ya no se usa)
 
 // Función para limpiar la palabra formada
-function clearFormedWord() {
+function clearFormedWord(backElement = null) {
     formedWord = [];
-    selectedButtons = []; // Limpiar también el tracking de botones
-    nextInsertPosition = -1; // Resetear posición de inserción
-    hasEnteredEditMode = false; // Resetear el flag del modo edición
+    selectedButtons = [];
+    cursorPosition = -1; // Resetear posición del cursor
     
     // Restaurar el mensaje original
     const hintElement = document.querySelector('.word-hint');
     if (hintElement) {
         hintElement.textContent = 'Forma la palabra correcta';
         hintElement.style.color = '';
-        hintElement.style.animation = ''; // Limpiar cualquier animación
+        hintElement.style.animation = '';
     }
     
     updateFormedWordDisplay();
     
-    // Reactivar todas las letras
-    const letterButtons = document.querySelectorAll('.letter-option');
+    // Reactivar todas las letras - buscar en el elemento específico si se proporciona
+    const searchContext = backElement || document;
+    const letterButtons = searchContext.querySelectorAll('.letter-option');
     letterButtons.forEach(button => {
         button.classList.remove('selected');
+        // Asegurar que estén completamente funcionales
         button.disabled = false;
         button.style.opacity = '1';
         button.style.pointerEvents = 'auto';
@@ -5393,8 +5241,11 @@ function clearFormedWordManual(event) {
     // Vibrar para confirmar acción
     try { vibrar(50); } catch(e) {}
     
-    // Limpiar palabra formada
-    clearFormedWord();
+    // Encontrar el contexto del back element actual
+    const backElement = event?.target?.closest('.back') || document.querySelector('.flashcard.is-visible .back');
+    
+    // Limpiar palabra formada con contexto específico
+    clearFormedWord(backElement);
 }
 
 // Función para verificar la palabra formada automáticamente
@@ -5426,16 +5277,84 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
         canFlipBack = true;
         playSuccessSound();
         
+        // Hacer desaparecer el cursor ya que la respuesta es correcta
+        cursorPosition = -1;
+        
+        // Actualizar el cuadro de texto para remover el cursor
+        const wordDisplay = backElement.querySelector('#formed-word');
+        if (wordDisplay) {
+            // Mostrar solo el texto sin cursor
+            wordDisplay.innerHTML = formedWord.join('');
+            wordDisplay.style.cursor = 'default';
+        }
+        
         // Marcar visualmente como correcto
         const container = backElement.querySelector('.letter-combination-container');
         if (container) container.classList.add('correct-state');
         
-        // Marcar todas las letras como correctas
-        const letterButtons = backElement.querySelectorAll('.letter-option');
-        letterButtons.forEach(button => {
-            button.classList.add('correct-letter');
-            button.disabled = true;
-        });
+        // Reorganizar y marcar las letras como correctas según el orden del cuadro de texto
+        const letterButtons = Array.from(backElement.querySelectorAll('.letter-option'));
+        const lettersContainer = backElement.querySelector('.letters-container');
+        
+        if (lettersContainer && letterButtons.length > 0) {
+            // Usar el orden de la palabra formada por el usuario (del cuadro de texto)
+            const userWordOrder = formedWord; // Este es el array con el orden que escribió el usuario
+            
+            // Crear una copia de todos los botones disponibles
+            const availableButtons = [...letterButtons];
+            const orderedButtons = [];
+            
+            // Para cada letra en el orden que el usuario escribió, buscar el botón correspondiente
+            userWordOrder.forEach((targetLetter) => {
+                // Buscar un botón que coincida con esta letra
+                const buttonIndex = availableButtons.findIndex(button => {
+                    const buttonLetter = button.dataset.letter;
+                    
+                    // Comparación exacta primero
+                    if (buttonLetter === targetLetter) {
+                        return true;
+                    }
+                    
+                    // Comparación insensible a mayúsculas
+                    if (buttonLetter.toLowerCase() === targetLetter.toLowerCase()) {
+                        return true;
+                    }
+                    
+                    return false;
+                });
+                
+                if (buttonIndex !== -1) {
+                    // Encontramos el botón, lo movemos al array ordenado
+                    const foundButton = availableButtons.splice(buttonIndex, 1)[0];
+                    orderedButtons.push(foundButton);
+                }
+            });
+            
+            // Agregar cualquier botón restante al final
+            orderedButtons.push(...availableButtons);
+            
+            // Limpiar el contenedor
+            lettersContainer.innerHTML = '';
+            
+            // Agregar botones en el nuevo orden con animación (orden del cuadro de texto)
+            orderedButtons.forEach((button, index) => {
+                if (button) {
+                    // Agregar al contenedor inmediatamente pero invisible
+                    button.style.opacity = '0';
+                    button.style.transform = 'scale(0.8)';
+                    lettersContainer.appendChild(button);
+                    
+                    // Animar la aparición con delay
+                    setTimeout(() => {
+                        button.style.transition = 'all 0.3s ease';
+                        button.style.opacity = '1';
+                        button.style.transform = 'scale(1)';
+                        button.classList.add('correct-letter');
+                        button.disabled = true;
+                    }, index * 150); // Delay de 150ms entre cada letra
+                }
+            });
+        }
         
         // Actualizar contador de intentos
         attemptsDiv.innerHTML = `<i class="fas fa-check"></i> ¡Correcto!`;
@@ -5527,12 +5446,31 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
             showingErrorMessage = true;
             updateSkipButtonState();
             
-            // Después de 2 segundos, eliminar mensaje, limpiar palabra y permitir segundo intento
+            // Después de 2 segundos, eliminar mensaje y permitir segundo intento
             errorDelayTimeoutId = setTimeout(() => {
                 errorMessage.remove();
                 
-                // Limpiar la palabra formada y reactivar letras para segundo intento
-                clearFormedWord();
+                // NO limpiar la palabra formada - conservar lo que escribió el usuario
+                // clearFormedWord();
+                
+                // Solo reactivar los botones que no están seleccionados
+                const letterButtons = backElement.querySelectorAll('.letter-option');
+                letterButtons.forEach(button => {
+                    // Asegurar que todos los botones estén completamente funcionales
+                    button.disabled = false;
+                    button.style.opacity = '1';
+                    button.style.pointerEvents = 'auto';
+                    button.style.transform = 'scale(1)';
+                    
+                    // Si no está seleccionado, asegurar que mantenga su apariencia original
+                    if (!button.classList.contains('selected')) {
+                        button.style.background = '';
+                    }
+                });
+                
+                // Mantener el cursor al final para que pueda seguir editando
+                cursorPosition = -1;
+                updateFormedWordDisplay();
                 
                 // Abrir ventana entre intentos
                 betweenAttempts = true;

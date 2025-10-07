@@ -3995,10 +3995,27 @@ if (skipBtn) {
 function playSuccessSound() {
     const successAudio = new Audio('https://fawzinoo.github.io/audios/win.mp3');
     successAudio.volume = 0.7;
-    successAudio.play().catch(() => {});
+    successAudio.preload = 'auto'; // Precargar para reproducción inmediata
+    
+    // Intentar reproducir inmediatamente y con timeout reducido
+    const playPromise = successAudio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(() => {
+            console.log('No se pudo reproducir audio de éxito');
+        });
+    }
+    
+    // Timeout de seguridad para evitar bloqueos
+    setTimeout(() => {
+        successAudio.pause();
+        successAudio.currentTime = 0;
+    }, 3000);
 }
 
 function showCountdown(card) {
+    // Detener todos los audios antes de iniciar countdown para evitar solapamientos
+    stopAllAudios();
+    
     const back = card.querySelector('.back');
     
     // Elimina cualquier timer previo
@@ -4134,6 +4151,16 @@ flashcards.forEach(card => {
 
     if (flashcards[index]) {
         flashcards[index].classList.add('is-visible');
+        
+        // Precargar audio de la tarjeta actual para evitar delays
+        if (hasValidAudio(index) && audios[index]) {
+            try {
+                audios[index].preload = 'auto';
+                audios[index].load();
+            } catch(e) {
+                console.log('Error precargando audio:', e);
+            }
+        }
     }
     updateCounters();
     // Al mostrar una tarjeta, estamos en front: habilitar skip
@@ -5575,17 +5602,32 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
             const proceed = () => showCountdown(card);
             if (hasValidAudio(idx)) {
                 stopAllAudios();
-                // Fallback de seguridad por si el audio no puede reproducirse o tarda demasiado
-                const safetyTimeout = setTimeout(proceed, 5000);
+                // Reducir timeout de seguridad de 5s a 3s para evitar delays largos
+                const safetyTimeout = setTimeout(() => {
+                    console.log('Audio timeout - procediendo sin esperar');
+                    proceed();
+                }, 3000);
+                
+                // Precargar el audio para reproducción más rápida
+                audios[idx].preload = 'auto';
+                audios[idx].load();
+                
                 audios[idx].play()
                     .then(() => {
-                        audios[idx].addEventListener('ended', () => { clearTimeout(safetyTimeout); proceed(); }, { once: true });
+                        audios[idx].addEventListener('ended', () => { 
+                            clearTimeout(safetyTimeout); 
+                            proceed(); 
+                        }, { once: true });
                     })
-                    .catch(() => { clearTimeout(safetyTimeout); proceed(); });
+                    .catch(() => { 
+                        console.log('Error al reproducir audio del país');
+                        clearTimeout(safetyTimeout); 
+                        proceed(); 
+                    });
             } else {
                 proceed();
             }
-        }, 1000);
+        }, 500); // Reducir delay inicial de 1s a 500ms
         
         // Programar la aparición/actualización/ocultación del cuadro de stats
         scheduleStatsBoxUpdate();
@@ -7037,9 +7079,25 @@ window.addEventListener('load', () => {
 });
 
 function stopAllAudios() {
+    // Detener audios principales del array
     audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
+        try {
+            audio.pause();
+            audio.currentTime = 0;
+        } catch(e) {
+            console.log('Error deteniendo audio:', e);
+        }
+    });
+    
+    // Detener cualquier audio de éxito que pueda estar reproduciéndose
+    const allAudioElements = document.querySelectorAll('audio');
+    allAudioElements.forEach(audio => {
+        try {
+            audio.pause();
+            audio.currentTime = 0;
+        } catch(e) {
+            console.log('Error deteniendo audio element:', e);
+        }
     });
 }
 

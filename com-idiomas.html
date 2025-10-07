@@ -5129,18 +5129,26 @@ function showLetterCombination(backElement, correctAnswer) {
             event.preventDefault();
             event.stopPropagation();
             
-            // Protección adicional a nivel de botón
+            // Protección adicional a nivel de botón - pero permitir deselección
             if (letterButton.dataset.clicking === 'true') {
+                console.log(`Botón ${letter} bloqueado - ya está siendo procesado`);
                 return;
             }
+            
+            // Solo bloquear si estamos intentando seleccionar (no deseleccionar) un botón ya seleccionado
+            if (!letterButton.classList.contains('selected') && formedWord.includes(letter)) {
+                console.log(`Botón ${letter} ya existe en la palabra - bloqueando selección`);
+                return;
+            }
+            
             letterButton.dataset.clicking = 'true';
             
             handleLetterSelection(letterButton, letterData, backElement, attemptsDiv);
             
-            // Liberar protección del botón después de un breve delay
+            // Liberar protección del botón después de un delay más corto para permitir deselección
             setTimeout(() => {
                 letterButton.dataset.clicking = 'false';
-            }, 200);
+            }, 200); // Volver a 200ms para mayor fluidez
         });
         
         lettersContainer.appendChild(letterButton);
@@ -5190,7 +5198,7 @@ let cursorPosition = -1; // Posición del cursor (-1 = al final)
 // Variables para controlar clics múltiples rápidos
 let isProcessingClick = false;
 let lastClickTime = 0;
-const CLICK_DEBOUNCE_TIME = 300; // milisegundos
+const CLICK_DEBOUNCE_TIME = 250; // Reducido de 500ms a 250ms para mejor fluidez
 
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
@@ -5208,7 +5216,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
     
     // Verificar si la letra ya fue seleccionada - si es así, la deseleccionamos
     if (selectedLetter.classList.contains('selected')) {
-        // Encontrar la posición de esta letra en la palabra formada
+        // DESELECCIÓN - siempre permitir
         const letterIndex = selectedButtons.indexOf(selectedLetter);
         if (letterIndex >= 0) {
             // Eliminar la letra de esa posición específica
@@ -5217,11 +5225,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             
             // Reactivar el botón (volver al color original)
             selectedLetter.classList.remove('selected');
-            // El botón nunca se deshabilitó, así que no necesita reactivación
-            // selectedLetter.disabled = false;
-            // selectedLetter.style.opacity = '1';
             selectedLetter.style.pointerEvents = 'auto';
-            // selectedLetter.style.transform = 'scale(1)';
             
             // Actualizar la visualización de la palabra formada
             updateFormedWordDisplay();
@@ -5235,6 +5239,20 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             isProcessingClick = false;
         }, 100);
         
+        return;
+    }
+    
+    // SELECCIÓN - aplicar protección contra duplicados SOLO aquí
+    // Verificar si ya existe esta letra en la palabra formada
+    const letterAlreadyExists = formedWord.includes(letter);
+    const buttonAlreadySelected = selectedButtons.includes(selectedLetter);
+    
+    if (letterAlreadyExists || buttonAlreadySelected) {
+        console.log(`Letra "${letter}" ya existe en la palabra formada - bloqueando duplicado`);
+        // Liberar protección
+        setTimeout(() => {
+            isProcessingClick = false;
+        }, 100);
         return;
     }
     
@@ -5288,6 +5306,35 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
 
 // Función para actualizar la visualización de la palabra formada
 function updateFormedWordDisplay() {
+    // PROTECCIÓN SUAVE: Solo limpiar duplicados evidentes (mismo botón repetido)
+    const originalLength = formedWord.length;
+    const cleanedWord = [];
+    const cleanedButtons = [];
+    const seenButtons = new Set();
+    
+    formedWord.forEach((letter, index) => {
+        const button = selectedButtons[index];
+        // Solo eliminar si es exactamente el mismo botón (no solo la misma letra)
+        if (!seenButtons.has(button)) {
+            cleanedWord.push(letter);
+            cleanedButtons.push(button);
+            seenButtons.add(button);
+        } else {
+            console.log(`Duplicado de botón detectado y eliminado: "${letter}"`);
+            // Quitar la clase selected del botón duplicado
+            if (button && button.classList) {
+                button.classList.remove('selected');
+            }
+        }
+    });
+    
+    // Actualizar los arrays solo si se detectaron duplicados reales
+    if (cleanedWord.length !== originalLength) {
+        formedWord = cleanedWord;
+        selectedButtons = cleanedButtons;
+        console.log(`Limpieza de duplicados: ${originalLength} → ${cleanedWord.length} letras`);
+    }
+    
     const wordDisplay = document.getElementById('formed-word');
     const clearBtn = document.getElementById('clear-word-btn');
     

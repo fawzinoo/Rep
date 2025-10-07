@@ -3605,10 +3605,11 @@
     ">
     <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
     <div class="pill" id="porcentaje-guardado" style="
-        background: rgba(255, 255, 255, 0.95);
-        color: #2c3e50;
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
         font-weight: 700;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
         min-width: 65px;
         text-align: center;
     "><span id="current-percentage">0%</span></div>
@@ -3617,15 +3618,16 @@
     <div style="
         width: 100%;
         height: 1px;
-        background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.35), rgba(255,255,255,0));
+        background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.6), rgba(255,255,255,0));
     "></div>
 
     <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
     <div class="pill" id="last-game-pill" style="
-        background: rgba(255, 255, 255, 0.95);
-        color: #2c3e50;
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
         font-weight: 700;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
         min-width: 65px;
         position: relative; /* Para hints posicionados */
         overflow: visible;
@@ -3932,7 +3934,11 @@ function installShuffleButtonHandler() {
     const btn = document.getElementById('shuffle-button');
     if (!btn || btn.dataset.shuffleHandlerInstalled === '1') return;
     btn.dataset.shuffleHandlerInstalled = '1';
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (event) => {
+        // Prevenir propagación de eventos
+        event.preventDefault();
+        event.stopPropagation();
+        
         if (isShuffling) return;
         // Bloqueo en finales
         if (isFinalsActive()) { updateShuffleButtonState(); return; }
@@ -3940,6 +3946,11 @@ function installShuffleButtonHandler() {
     if (shuffleCount >= SHUFFLE_LIMIT) { vibrar(60); showShuffleLimitToast(); updateShuffleButtonState(); return; }
         // Ejecutar mezcla
         isShuffling = true;
+        
+        // Bloquear visualmente el botón durante la mezcla
+        btn.style.opacity = '0.6';
+        btn.style.pointerEvents = 'none';
+        
         vibrar(80);
         const s = document.getElementById('shuffleSound');
         if (s) { s.play().catch(() => {}); }
@@ -3947,7 +3958,13 @@ function installShuffleButtonHandler() {
         shuffleCount += 1;
         saveShuffleCount();
         updateShuffleButtonState();
-        setTimeout(() => { isShuffling = false; }, 800);
+        
+        setTimeout(() => { 
+            isShuffling = false; 
+            // Restaurar botón visualmente
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
+        }, 800);
     });
 }
 
@@ -5149,7 +5166,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             // El botón nunca se deshabilitó, así que no necesita reactivación
             // selectedLetter.disabled = false;
             // selectedLetter.style.opacity = '1';
-            // selectedLetter.style.pointerEvents = 'auto';
+            selectedLetter.style.pointerEvents = 'auto';
             // selectedLetter.style.transform = 'scale(1)';
             
             // Actualizar la visualización de la palabra formada
@@ -5179,6 +5196,9 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
     selectedLetter.classList.add('selected');
     // NO deshabilitar el botón para que siga siendo clickeable
     // selectedLetter.disabled = true;
+    
+    // Asegurar que el botón mantenga los eventos de clic
+    selectedLetter.style.pointerEvents = 'auto';
     
     // Actualizar la visualización de la palabra formada
     updateFormedWordDisplay();
@@ -6531,8 +6551,30 @@ const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 
 function shuffleCards() {
     stopAllAudios();
+    
+    // LIMPIAR sistema de combinación de letras ANTES de mezclar
+    const allCards = document.querySelectorAll('.flashcard');
+    allCards.forEach(card => {
+        const back = card.querySelector('.back');
+        if (back) {
+            // Eliminar cualquier contenido de combinación de letras
+            const letterContainer = back.querySelector('.letter-combination-container');
+            if (letterContainer) {
+                letterContainer.remove();
+            }
+        }
+        // Asegurar que la tarjeta no esté volteada
+        card.classList.remove('flipped');
+    });
+    
     // Limpiar caché de opciones ya que el orden/índices cambian
     try { cardOptionsCache.clear(); } catch(e) {}
+    
+    // Limpiar variables del sistema de combinación de letras
+    formedWord = [];
+    selectedButtons = [];
+    cursorPosition = -1;
+    
 document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indicator').forEach(el => el.remove());
 
 
@@ -6765,8 +6807,9 @@ function initializePage() {
     if (porcentajeDiv && porcentajeSpan) {
         const percentage = savedPercentage !== null ? parseInt(savedPercentage) : NaN;
         porcentajeSpan.textContent = `${!isNaN(percentage) ? percentage : 0}%`;
-        // Fondo blanco para las píldoras
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.95)';
+        // Fondo pastel para las píldoras
+        porcentajeDiv.style.background = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)';
+        porcentajeDiv.style.color = '#2d3748';
         if (!isNaN(percentage) && percentage > 0) {
             if (percentage >= 80) {
                 porcentajeDiv.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6818,8 +6861,9 @@ function updateLastGamePillFromStorage() {
     if (lastGamePercentage !== null && lastGameDiv && lastGamePill) {
         const gamePercentage = parseInt(lastGamePercentage);
         lastGameDiv.textContent = `${isNaN(gamePercentage) ? 0 : gamePercentage}%`;
-        // Fondo blanco para las píldoras
-        lastGamePill.style.background = 'rgba(255,255,255,0.95)';
+        // Fondo pastel para las píldoras
+        lastGamePill.style.background = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)';
+        lastGamePill.style.color = '#2d3748';
         if (!isNaN(gamePercentage)) {
             if (gamePercentage >= 80) {
                 lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6888,7 +6932,8 @@ function updateSuccessPercentage() {
     const porcentajeSpan = document.getElementById('current-percentage');
     if (porcentajeDiv && porcentajeSpan) {
         porcentajeSpan.textContent = `${percentage}%`;
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.95)';
+        porcentajeDiv.style.background = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)';
+        porcentajeDiv.style.color = '#2d3748';
         if (totalCards > 0) {
             if (percentage >= 80) {
                 porcentajeDiv.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6927,8 +6972,9 @@ function saveLastGamePercentage() {
         lastGameDiv.textContent = `${gamePercentage}%`;
         
         // Cambiar color según el porcentaje del último partido
-        // Fondo blanco para las píldoras
-        lastGamePill.style.background = 'rgba(255,255,255,0.95)';
+        // Fondo pastel para las píldoras
+        lastGamePill.style.background = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)';
+        lastGamePill.style.color = '#2d3748';
         if (gamePercentage >= 80) {
             lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
             lastGamePill.style.boxShadow = '0 4px 12px rgba(0, 200, 81, 0.25)';
@@ -7087,9 +7133,10 @@ function resetGame() {
     const porcentajeSpan = document.getElementById('current-percentage');
     if (porcentajeDiv && porcentajeSpan) {
         porcentajeSpan.textContent = `${percentage}%`;
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.95)';
-        porcentajeDiv.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-        porcentajeDiv.style.boxShadow = 'none';
+        porcentajeDiv.style.background = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)';
+        porcentajeDiv.style.color = '#2d3748';
+        porcentajeDiv.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+        porcentajeDiv.style.boxShadow = '0 4px 12px rgba(168, 237, 234, 0.3)';
     }
     
     // Mezclar tarjetas sin sonido (el sonido es solo para el botón mezclar)

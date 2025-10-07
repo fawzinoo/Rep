@@ -5101,7 +5101,19 @@ function showLetterCombination(backElement, correctAnswer) {
         letterButton.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            
+            // Protección adicional a nivel de botón
+            if (letterButton.dataset.clicking === 'true') {
+                return;
+            }
+            letterButton.dataset.clicking = 'true';
+            
             handleLetterSelection(letterButton, letterData, backElement, attemptsDiv);
+            
+            // Liberar protección del botón después de un breve delay
+            setTimeout(() => {
+                letterButton.dataset.clicking = 'false';
+            }, 200);
         });
         
         lettersContainer.appendChild(letterButton);
@@ -5148,8 +5160,23 @@ let formedWord = [];
 let selectedButtons = [];
 let cursorPosition = -1; // Posición del cursor (-1 = al final)
 
+// Variables para controlar clics múltiples rápidos
+let isProcessingClick = false;
+let lastClickTime = 0;
+const CLICK_DEBOUNCE_TIME = 300; // milisegundos
+
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
+    // Protección contra clics múltiples rápidos
+    const currentTime = Date.now();
+    if (isProcessingClick || (currentTime - lastClickTime) < CLICK_DEBOUNCE_TIME) {
+        console.log('Clic bloqueado por protección anti-múltiples clics');
+        return;
+    }
+    
+    isProcessingClick = true;
+    lastClickTime = currentTime;
+    
     const letter = selectedLetter.dataset.letter;
     
     // Verificar si la letra ya fue seleccionada - si es así, la deseleccionamos
@@ -5175,6 +5202,12 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             // Vibrar para confirmar eliminación
             try { vibrar(30); } catch(e) {}
         }
+        
+        // Liberar protección después de un breve delay
+        setTimeout(() => {
+            isProcessingClick = false;
+        }, 100);
+        
         return;
     }
     
@@ -5219,6 +5252,11 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             checkFormedWordAutomatically(letterData.correctWord, letterData.originalAnswer, backElement, attemptsDiv);
         }, 500);
     }
+    
+    // Liberar protección después de un breve delay
+    setTimeout(() => {
+        isProcessingClick = false;
+    }, 100);
 }
 
 // Función para actualizar la visualización de la palabra formada
@@ -5346,6 +5384,10 @@ function clearFormedWord(backElement = null) {
     formedWord = [];
     selectedButtons = [];
     cursorPosition = -1; // Resetear posición del cursor
+    
+    // Resetear variables de protección contra clics múltiples
+    isProcessingClick = false;
+    lastClickTime = 0;
     
     // Restaurar el mensaje original
     const hintElement = document.querySelector('.word-hint');

@@ -1559,12 +1559,45 @@
     justify-content: center;
     border-radius: 15px;
     border: 2px dashed rgba(255, 255, 255, 0.5);
-    letter-spacing: 2px;
+    letter-spacing: 2px; /* Más espacio entre letras para facilitar posicionamiento del cursor */
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
     padding: 0 50px; /* Padding simétrico para mantener el texto centrado */
     position: relative;
     text-align: center;
+    
+    /* Hacer editable y permitir cursor */
+    cursor: text;
+    outline: none;
+    white-space: nowrap;
+    overflow: hidden;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    
+    /* Personalizar el cursor nativo para que sea verde y más grueso */
+    caret-color: #10b981;
+    
+    /* Simular cursor más grueso usando sombras múltiples */
+    text-shadow: 
+        0 0 0 transparent, 
+        1px 0 0 transparent,
+        -1px 0 0 transparent;
+    
+    /* Propiedades específicas para hacer el cursor más visible */
+    -webkit-text-fill-color: inherit;
+    -webkit-text-stroke: 0.5px transparent;
+    
+    /* Asegurar que esté por encima y capture los clics */
+    z-index: 1000;
+    position: relative;
+}
+
+/* Animación para el cursor parpadeante */
+@keyframes cursorBlink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
 }
 
 /* Cuando hay contenido en el cuadro, reducir solo padding izquierdo pero mantener centrado */
@@ -1604,6 +1637,8 @@
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
+    pointer-events: auto !important; /* Asegurar que el botón sea clickeable */
+    z-index: 1000; /* Asegurar que esté por encima de otros elementos */
 }
 
 .clear-word-btn:hover {
@@ -1717,8 +1752,8 @@
     opacity: 0.6;
 }
 
-/* Nueva clase para forzar el reset visual de botones */
-.letter-option.force-reset {
+/* Nueva clase para forzar el reset visual de botones - SIMPLIFICADA */
+.letter-option.deselected {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.85) 100%) !important;
     color: #2d3748 !important;
     opacity: 1 !important;
@@ -1784,6 +1819,7 @@
         min-width: 150px;
         min-height: 50px;
         padding: 0 40px; /* Padding simétrico también en móvil */
+        letter-spacing: 6px; /* Menos espacio en móvil para ahorrar espacio */
     }
     
     .article-prefix {
@@ -4098,6 +4134,7 @@ function goToNextCard() {
     updateCounters();
     voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
     formedWord = []; // Limpiar palabra formada para la nueva tarjeta
+    currentCorrectWordLength = 0; // Resetear longitud de palabra correcta
     // Cancelar cualquier timeout entre intentos por seguridad
     if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
     if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
@@ -5060,12 +5097,29 @@ function generateLettersForWord(correctAnswer) {
 
 // Función para mostrar las letras para combinar
 function showLetterCombination(backElement, correctAnswer) {
+    console.log('🎯 Iniciando showLetterCombination para:', correctAnswer);
+    
     // Verificar si ya existe contenido de combinación de letras
     const existingContainer = backElement.querySelector('.letter-combination-container');
     if (existingContainer) {
-        // Ya existe el contenido, no limpiar - mantener estado actual
+        // Ya existe el contenido, NO reinicializar estado
+        console.log('📦 Container existente encontrado, manteniendo estado actual...');
+        console.log('formedWord actual:', formedWord);
+        console.log('selectedButtons actual:', selectedButtons.map(btn => btn?.dataset?.letter || 'undefined'));
+        
+        // Solo validar y reparar el estado existente, no limpiarlo
+        validateAndRepairState();
         return;
     }
+    
+    // SOLO SI NO EXISTE CONTAINER: Inicializar estado limpio para nueva tarjeta
+    console.log('🆕 Nuevo container, inicializando estado limpio...');
+    formedWord = [];
+    currentCorrectWordLength = 0;
+    selectedButtons = [];
+    cursorPosition = -1;
+    isProcessingClick = false;
+    console.log('🔄 Estado inicializado limpio para nueva tarjeta');
     
     // Solo limpiar si no existe contenido previo de letras
     backElement.innerHTML = '';
@@ -5087,9 +5141,12 @@ function showLetterCombination(backElement, correctAnswer) {
         <div class="word-display-container">
             <span class="article-prefix">El</span>
             <div class="word-input-wrapper">
-                <div class="word-display" id="formed-word"></div>
+                <div class="word-display" id="formed-word" contenteditable="true" style="outline: none;"></div>
                 <button class="clear-word-btn" id="clear-word-btn" onclick="clearFormedWordManual(event)" style="display: none;">
                     <i class="fas fa-times"></i>
+                </button>
+                <button class="repair-state-btn" id="repair-state-btn" onclick="emergencyStateRepair(event)" style="display: none; position: absolute; right: -60px; top: 50%; transform: translateY(-50%); background: #ff4757; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 0.8rem; cursor: pointer; z-index: 1000;">
+                    🔧
                 </button>
             </div>
         </div>
@@ -5113,6 +5170,9 @@ function showLetterCombination(backElement, correctAnswer) {
         letterData = generateLettersForWord(correctAnswer);
         cardOptionsCache.set(keyIndex, letterData);
     }
+    
+    // Establecer la longitud de la palabra correcta actual
+    currentCorrectWordLength = letterData.correctWord.length;
     
     // Crear contenedor de letras
     const lettersContainer = document.createElement('div');
@@ -5188,261 +5248,494 @@ function showLetterCombination(backElement, correctAnswer) {
         e.stopPropagation();
     });
     
+    // === EVENT LISTENER ESPECÍFICO PARA EL BOTÓN X (CLEAR) ===
+    const clearBtn = document.getElementById('clear-word-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('Botón X clickeado');
+            clearFormedWordManual(e);
+        });
+    }
+    
+    // === CONFIGURAR EVENT LISTENERS PARA EL CUADRO DE TEXTO CON CURSOR ===
+    const wordDisplay = document.getElementById('formed-word');
+    if (wordDisplay) {
+        // Permitir que el cuadro reciba foco para cursor
+        wordDisplay.setAttribute('tabindex', '0');
+        
+        // Event listener para detectar clics y posicionar cursor
+        wordDisplay.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevenir comportamiento por defecto
+            e.stopPropagation(); // Prevenir volteo de tarjeta
+            e.stopImmediatePropagation(); // Detener completamente la propagación
+            
+            // Enfocar el cuadro de texto
+            wordDisplay.focus();
+            
+            // Obtener posición del cursor después del clic
+            setTimeout(() => {
+                cursorPosition = getCursorPosition();
+                console.log('Cursor posicionado en:', cursorPosition);
+            }, 10);
+        });
+        
+        // Prevenir que las teclas interfieran con la lógica de botones
+        wordDisplay.addEventListener('keydown', (e) => {
+            e.stopPropagation(); // Prevenir propagación a la tarjeta
+            
+            // Permitir solo navegación con flechas y backspace/delete para edición manual
+            if (!['ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Home', 'End'].includes(e.key)) {
+                e.preventDefault(); // Prevenir escritura directa
+            }
+            
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                // Manejar borrado manual
+                const currentPos = getCursorPosition();
+                if (currentPos > 0 && formedWord.length > 0) {
+                    const deletePos = e.key === 'Backspace' ? currentPos - 1 : currentPos;
+                    if (deletePos < formedWord.length) {
+                        removeLetterAtPosition(deletePos);
+                        // También remover el botón correspondiente
+                        if (deletePos < selectedButtons.length) {
+                            const buttonToRemove = selectedButtons[deletePos];
+                            selectedButtons.splice(deletePos, 1);
+                            if (!selectedButtons.includes(buttonToRemove)) {
+                                buttonToRemove.classList.remove('selected');
+                            }
+                        }
+                        updateFormedWordDisplayWithCursor();
+                    }
+                }
+                e.preventDefault();
+            }
+        });
+        
+        // Actualizar posición del cursor cuando cambie la selección
+        wordDisplay.addEventListener('selectionchange', (e) => {
+            e.stopPropagation(); // Prevenir propagación
+            cursorPosition = getCursorPosition();
+        });
+        
+        // Enfocar el cuadro al hacer clic en él
+        wordDisplay.addEventListener('focus', (e) => {
+            e.stopPropagation(); // Prevenir propagación
+            console.log('Cuadro de texto enfocado');
+        });
+        
+        // Prevenir propagación en otros eventos que podrían causar volteo
+        wordDisplay.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        
+        wordDisplay.addEventListener('mouseup', (e) => {
+            e.stopPropagation();
+        });
+    }
+    
     backElement.appendChild(container);
     backElement.appendChild(protectedArea);
 }
 
-// Variables para el sistema de combinación de letras
+// Variables para el sistema de combinación de letras - SIMPLIFICADAS
 let formedWord = [];
 let selectedButtons = [];
-let cursorPosition = -1; // Posición del cursor (-1 = al final)
+let cursorPosition = -1; // -1 = al final, números positivos = posición específica
+let currentCorrectWordLength = 0; // Longitud de la palabra correcta actual
 
 // Variables para controlar clics múltiples rápidos
 let isProcessingClick = false;
-let lastClickTime = 0;
-const CLICK_DEBOUNCE_TIME = 250; // milisegundos (incrementado para reducir dobles/triples por taps rápidos)
 
-// Función para manejar la selección de una letra
+// === FUNCIONES DE MANEJO DE CURSOR ===
+function getCursorPosition() {
+    const wordDisplay = document.getElementById('formed-word');
+    if (!wordDisplay) return -1;
+    
+    try {
+        const selection = window.getSelection();
+        if (selection.rangeCount === 0) return -1;
+        
+        const range = selection.getRangeAt(0);
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(wordDisplay);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        
+        return preCaretRange.toString().length;
+    } catch (e) {
+        console.log('Error obteniendo posición cursor:', e);
+        return -1;
+    }
+}
+
+function setCursorPosition(pos) {
+    const wordDisplay = document.getElementById('formed-word');
+    if (!wordDisplay) return;
+    
+    try {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        if (wordDisplay.childNodes.length === 0) {
+            // Si no hay contenido, crear un nodo de texto vacío
+            wordDisplay.appendChild(document.createTextNode(''));
+        }
+        
+        const textNode = wordDisplay.childNodes[0];
+        const maxPos = textNode.textContent.length;
+        const finalPos = pos > maxPos ? maxPos : (pos < 0 ? 0 : pos);
+        
+        range.setStart(textNode, finalPos);
+        range.collapse(true);
+        
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        cursorPosition = finalPos;
+    } catch (e) {
+        console.log('Error estableciendo posición cursor:', e);
+        cursorPosition = -1;
+    }
+}
+
+function insertLetterAtCursor(letter) {
+    const currentPos = getCursorPosition();
+    const insertPos = currentPos >= 0 ? currentPos : formedWord.length;
+    
+    // Insertar en el array en la posición específica
+    formedWord.splice(insertPos, 0, letter);
+    
+    // No actualizar cursorPosition aquí - se hará en handleLetterSelection
+    
+    return insertPos;
+}
+
+function removeLetterAtPosition(pos) {
+    if (pos >= 0 && pos < formedWord.length) {
+        formedWord.splice(pos, 1);
+        
+        // Ajustar cursor si está después de la posición eliminada
+        if (cursorPosition > pos) {
+            cursorPosition--;
+        } else if (cursorPosition === pos && cursorPosition === formedWord.length) {
+            cursorPosition = formedWord.length;
+        }
+        
+        return true;
+    }
+    return false;
+}
+
+// Función MEJORADA para manejar la selección de una letra CON CURSOR
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
-    // 1) Deselección: procesar primero y no sujetar al debounce de tiempo
-    if (selectedLetter.classList.contains('selected') || selectedLetter.classList.contains('force-reset')) {
-        // Pequeño lock para evitar carreras, pero sin actualizar lastClickTime
-        isProcessingClick = true;
-        // Encontrar la ÚLTIMA posición de esta letra en la palabra formada (deseleccionar de derecha a izquierda)
-        let letterIndex = -1;
+    // Prevenir múltiples clics rápidos
+    if (isProcessingClick) {
+        return;
+    }
+    isProcessingClick = true;
+    
+    const letter = selectedLetter.dataset.letter;
+    
+    // Si el botón está seleccionado, DESELECCIONAR (quitar UNA instancia)
+    if (selectedLetter.classList.contains('selected')) {
+        console.log('Deseleccionando letra:', letter);
+        
+        // Encontrar la ÚLTIMA posición de este botón específico en selectedButtons
+        let removeIndex = -1;
         for (let i = selectedButtons.length - 1; i >= 0; i--) {
             if (selectedButtons[i] === selectedLetter) {
-                letterIndex = i;
+                removeIndex = i;
                 break;
             }
         }
         
-        if (letterIndex >= 0) {
-            // Eliminar la letra de esa posición específica
-            formedWord.splice(letterIndex, 1);
-            selectedButtons.splice(letterIndex, 1);
-            
-            // Verificar si todavía quedan ocurrencias de esta letra en selectedButtons (no en formedWord)
-            const stillSelected = selectedButtons.includes(selectedLetter);
-            
-            if (!stillSelected) {
-                // No quedan más instancias de este botón específico, reset completo
-                selectedLetter.classList.remove('selected');
-                selectedLetter.classList.remove('force-reset');
-            } else {
-                // Quedan más instancias de este botón, mantener estado visual seleccionado
-                selectedLetter.classList.add('selected');
-                selectedLetter.classList.remove('force-reset');
-            }
-            
-            // Siempre resetear los estilos inline para asegurar funcionalidad
-            selectedLetter.disabled = false;
-            selectedLetter.style.pointerEvents = 'auto';
-            
-            // Actualizar la visualización de la palabra formada
-            updateFormedWordDisplay();
-            
-            // Vibrar para confirmar eliminación
-            try { vibrar(100); } catch(e) {}
-        }
-        
-        // Liberar protección después de un breve delay
-        setTimeout(() => { isProcessingClick = false; }, 80);
-        
-        return;
-    }
-    
-    // 2) Inserción: ahora sí aplicar protección contra clics múltiples rápidos
-    const currentTime = Date.now();
-    if (isProcessingClick || (currentTime - lastClickTime) < CLICK_DEBOUNCE_TIME) {
-        console.log('Clic bloqueado por protección anti-múltiples clics');
-        return;
-    }
-    isProcessingClick = true;
-    lastClickTime = currentTime;
-    
-    const letter = selectedLetter.dataset.letter;
-    // El bloqueo de repeticiones solo aplica cuando vamos a AGREGAR letras nuevas.
-    
-    // Evitar añadir más repeticiones de una letra que las que permite la palabra correcta
-    try {
-        if (!selectedLetter.classList.contains('selected')) {
-            const target = (letterData.correctWord || '').toString();
-            const allowedCount = target.split('').filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
-            const currentCount = formedWord.filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
-            if (allowedCount > 0 && currentCount >= allowedCount) {
-                // Feedback suave: vibración y destello en intentos
-                try { vibrar(30); } catch(e) {}
-                if (attemptsDiv) {
-                    attemptsDiv.classList.add('flash-warning');
-                    setTimeout(() => attemptsDiv.classList.remove('flash-warning'), 350);
+        if (removeIndex >= 0) {
+            // Eliminar UNA instancia usando la función de cursor
+            if (removeLetterAtPosition(removeIndex)) {
+                selectedButtons.splice(removeIndex, 1);
+                
+                // Si ya no quedan más instancias de este botón, quitar la clase selected
+                if (!selectedButtons.includes(selectedLetter)) {
+                    selectedLetter.classList.remove('selected');
                 }
-                // No permitir más repeticiones de esta letra
-                setTimeout(() => { isProcessingClick = false; }, 100);
-                return;
             }
         }
-    } catch (e) {
-        // En caso de error, continuar flujo normal
-    }
-
-    // Agregar la letra en la posición del cursor
-    if (cursorPosition === -1 || cursorPosition >= formedWord.length) {
-        // Insertar al final
-        formedWord.push(letter);
-        selectedButtons.push(selectedLetter);
-    } else {
-        // Insertar en la posición del cursor
-        formedWord.splice(cursorPosition, 0, letter);
-        selectedButtons.splice(cursorPosition, 0, selectedLetter);
-    }
-    
-    // Después de insertar cualquier letra, mover cursor al final
-    cursorPosition = -1;
-    
-    // Marcar la letra como seleccionada
-    selectedLetter.classList.add('selected');
-    selectedLetter.classList.remove('force-reset'); // Quitar force-reset si existía
-    // NO deshabilitar el botón para que siga siendo clickeable
-    // selectedLetter.disabled = true;
-    
-    // Asegurar que el botón mantenga los eventos de clic
-    selectedLetter.style.pointerEvents = 'auto';
-    
-    // Actualizar la visualización de la palabra formada
-    updateFormedWordDisplay();
-    
-    // Vibrar para confirmar selección
-    try { vibrar(30); } catch(e) {}
-    
-    // Verificar automáticamente si se han seleccionado todas las letras necesarias
-    if (formedWord.length === letterData.correctWord.length) {
-        // Ocultar el botón de borrar cuando se completan todas las letras
-        const clearBtn = document.getElementById('clear-word-btn');
-        if (clearBtn) {
-            clearBtn.style.display = 'none';
+        
+        // Vibrar para confirmar eliminación
+        try { vibrar(100); } catch(e) {}
+    } 
+    // Si el botón NO está seleccionado, SELECCIONAR (agregar UNA instancia en posición del cursor)
+    else {
+        console.log('Seleccionando letra:', letter);
+        
+        // Verificar límite de repeticiones permitidas
+        const target = (letterData.correctWord || '').toString();
+        const allowedCount = target.split('').filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
+        const currentCount = formedWord.filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
+        
+        if (allowedCount > 0 && currentCount >= allowedCount) {
+            // Ya se alcanzó el límite para esta letra
+            try { vibrar(30); } catch(e) {}
+            if (attemptsDiv) {
+                attemptsDiv.classList.add('flash-warning');
+                setTimeout(() => attemptsDiv.classList.remove('flash-warning'), 350);
+            }
+            setTimeout(() => { isProcessingClick = false; }, 100);
+            return;
         }
         
-        // Pequeño delay para que el usuario vea la palabra completa antes de verificar
-        setTimeout(() => {
-            checkFormedWordAutomatically(letterData.correctWord, letterData.originalAnswer, backElement, attemptsDiv);
-        }, 500);
+        // Insertar la letra en la posición del cursor
+        const insertPos = insertLetterAtCursor(letter);
+        selectedButtons.splice(insertPos, 0, selectedLetter);
+        
+        // Marcar como seleccionado
+        selectedLetter.classList.add('selected');
+        
+        // El cursor debe ir al final de toda la palabra para continuar agregando
+        cursorPosition = formedWord.length;
+        
+        // Vibrar para confirmar selección
+        try { vibrar(30); } catch(e) {}
+        
+        // SOLO VERIFICAR CUANDO SE SELECCIONA (no cuando se deselecciona)
+        // Verificar si se completó la palabra
+        if (formedWord.length === letterData.correctWord.length) {
+            const clearBtn = document.getElementById('clear-word-btn');
+            if (clearBtn) clearBtn.style.display = 'none';
+            
+            setTimeout(() => {
+                checkFormedWordAutomatically(letterData.correctWord, letterData.originalAnswer, backElement, attemptsDiv);
+            }, 500);
+        }
     }
     
-    // Liberar protección después de un breve delay
-    setTimeout(() => {
-        isProcessingClick = false;
-    }, 100);
+    // VALIDACIÓN FINAL: Asegurar que el estado esté sincronizado
+    validateAndRepairState();
+    
+    // Actualizar visualización CON CURSOR
+    updateFormedWordDisplayWithCursor();
+    
+    // Liberar lock
+    setTimeout(() => { isProcessingClick = false; }, 150);
+}
+
+// Función de REPARACIÓN DE EMERGENCIA (para casos extremos)
+function emergencyStateRepair(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    
+    console.log('🚨 REPARACIÓN DE EMERGENCIA ACTIVADA');
+    
+    // Forzar limpieza completa
+    formedWord = [];
+    selectedButtons = [];
+    cursorPosition = -1;
+    isProcessingClick = false;
+    
+    // Limpiar TODOS los botones de letras en toda la página
+    const allLetterButtons = document.querySelectorAll('.letter-option');
+    allLetterButtons.forEach(btn => {
+        btn.classList.remove('selected');
+        btn.classList.remove('deselected');
+        btn.disabled = false;
+        btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '';
+        btn.style.transform = '';
+        btn.style.background = '';
+        btn.style.color = '';
+    });
+    
+    // Limpiar el cuadro de texto
+    const wordDisplay = document.getElementById('formed-word');
+    if (wordDisplay) {
+        wordDisplay.innerHTML = '';
+        wordDisplay.textContent = '';
+        wordDisplay.classList.remove('has-content');
+    }
+    
+    // Ocultar botones de reparación y clear
+    const repairBtn = document.getElementById('repair-state-btn');
+    const clearBtn = document.getElementById('clear-word-btn');
+    if (repairBtn) repairBtn.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'none';
+    
+    console.log('✅ REPARACIÓN COMPLETADA - Estado reiniciado');
+    
+    // Vibrar para confirmar
+    try { vibrar(200); } catch(e) {}
+}
+
+// Función de VALIDACIÓN Y REPARACIÓN de estado
+function validateAndRepairState() {
+    console.log('🔧 Validando estado...');
+    console.log('formedWord:', formedWord);
+    console.log('selectedButtons:', selectedButtons.map(btn => btn?.dataset?.letter || 'undefined'));
+    
+    const repairBtn = document.getElementById('repair-state-btn');
+    let problemDetected = false;
+    
+    // OBTENER ESTADO REAL DE LOS BOTONES VISIBLES
+    const allLetterButtons = document.querySelectorAll('.letter-option');
+    const visuallySelectedButtons = Array.from(allLetterButtons).filter(btn => 
+        btn.classList.contains('selected') && !btn.classList.contains('deselected')
+    );
+    
+    console.log('Botones visualmente seleccionados:', visuallySelectedButtons.map(btn => btn.dataset.letter));
+    
+    // REPARACIÓN 1: Si formedWord tiene contenido pero selectedButtons está vacío
+    if (formedWord.length > 0 && selectedButtons.length === 0) {
+        console.log('⚠️ PROBLEMA DETECTADO: formedWord tiene contenido pero selectedButtons está vacío');
+        problemDetected = true;
+        if (repairBtn) repairBtn.style.display = 'block';
+        
+        // Intenter reconstruir selectedButtons basado en formedWord y botones visualmente seleccionados
+        if (visuallySelectedButtons.length > 0) {
+            console.log('🔄 Intentando reconstruir selectedButtons basado en estado visual...');
+            selectedButtons = [...visuallySelectedButtons]; // copia
+        } else {
+            console.log('🔄 Limpiando formedWord para sincronizar...');
+            formedWord = [];
+        }
+        updateFormedWordDisplay();
+        return;
+    }
+    
+    // REPARACIÓN 2: Si selectedButtons tiene contenido pero formedWord está vacío
+    if (selectedButtons.length > 0 && formedWord.length === 0) {
+        console.log('⚠️ PROBLEMA DETECTADO: selectedButtons tiene contenido pero formedWord está vacío');
+        problemDetected = true;
+        if (repairBtn) repairBtn.style.display = 'block';
+        
+        // Reconstruir formedWord basado en selectedButtons
+        console.log('🔄 Reconstruyendo formedWord basado en selectedButtons...');
+        formedWord = selectedButtons.map(btn => btn.dataset.letter || '');
+        updateFormedWordDisplay();
+        return;
+    }
+    
+    // REPARACIÓN 3: Si hay desincronización entre estado visual y arrays
+    if (visuallySelectedButtons.length !== selectedButtons.length || 
+        visuallySelectedButtons.length !== formedWord.length) {
+        console.log('⚠️ PROBLEMA DETECTADO: Desincronización con estado visual');
+        console.log(`Visual: ${visuallySelectedButtons.length}, selectedButtons: ${selectedButtons.length}, formedWord: ${formedWord.length}`);
+        problemDetected = true;
+        if (repairBtn) repairBtn.style.display = 'block';
+        
+        // Usar el estado visual como fuente de verdad
+        console.log('🔄 Reconstruyendo estado basado en botones visualmente seleccionados...');
+        selectedButtons = [...visuallySelectedButtons];
+        formedWord = visuallySelectedButtons.map(btn => btn.dataset.letter || '');
+        updateFormedWordDisplay();
+        return;
+    }
+    
+    // REPARACIÓN 4: Si las longitudes no coinciden entre formedWord y selectedButtons
+    if (formedWord.length !== selectedButtons.length) {
+        console.log('⚠️ PROBLEMA DETECTADO: Longitudes no coinciden entre arrays');
+        console.log(`formedWord: ${formedWord.length}, selectedButtons: ${selectedButtons.length}`);
+        problemDetected = true;
+        if (repairBtn) repairBtn.style.display = 'block';
+        
+        // Usar selectedButtons como fuente de verdad si tiene contenido
+        if (selectedButtons.length > 0) {
+            console.log('🔄 Reconstruyendo formedWord basado en selectedButtons...');
+            formedWord = selectedButtons.map(btn => btn.dataset.letter || '');
+        } else if (formedWord.length > 0) {
+            console.log('🔄 Limpiando todo porque no hay selectedButtons...');
+            formedWord = [];
+            // Limpiar todos los botones visualmente
+            allLetterButtons.forEach(btn => {
+                btn.classList.remove('selected');
+                btn.classList.remove('deselected');
+            });
+        }
+        
+        updateFormedWordDisplay();
+        return;
+    }
+    
+    // Si no hay problemas, ocultar botón de reparación
+    if (!problemDetected && repairBtn) {
+        repairBtn.style.display = 'none';
+    }
+    
+    console.log('✅ Estado válido');
 }
 
 // Función para actualizar la visualización de la palabra formada
 function updateFormedWordDisplay() {
+    // SIEMPRE validar y reparar estado antes de actualizar
+    validateAndRepairState();
+    
     const wordDisplay = document.getElementById('formed-word');
     const clearBtn = document.getElementById('clear-word-btn');
     
     if (wordDisplay) {
-        // Limpiar contenido previo
-        wordDisplay.innerHTML = '';
-        
-        // Si no hay letras, mostrar mensaje de placeholder
+        // Si no hay letras, limpiar contenido
         if (formedWord.length === 0) {
             wordDisplay.textContent = '';
-            wordDisplay.style.cursor = 'pointer';
-            wordDisplay.classList.remove('has-content'); // Quitar clase cuando está vacío
+            wordDisplay.classList.remove('has-content');
             cursorPosition = -1;
         } else {
-            // Añadir clase cuando hay contenido
+            // Añadir clase cuando hay contenido y mostrar el texto
             wordDisplay.classList.add('has-content');
-            
-            // Crear cada letra como un span clickeable
-            formedWord.forEach((letter, index) => {
-                // Mostrar cursor antes de esta letra si corresponde
-                if (cursorPosition === index) {
-                    const cursor = document.createElement('span');
-                    cursor.className = 'text-cursor';
-                    cursor.textContent = '|';
-                    cursor.style.cssText = `
-                        color: #10b981;
-                        font-weight: bold;
-                        animation: blink 1s infinite;
-                        margin: 0 2px;
-                    `;
-                    wordDisplay.appendChild(cursor);
-                }
-                
-                const letterSpan = document.createElement('span');
-                letterSpan.textContent = letter;
-                letterSpan.style.cssText = `
-                    cursor: pointer;
-                    padding: 2px 4px;
-                    border-radius: 4px;
-                    transition: background-color 0.2s ease;
-                `;
-                
-                // Hover effect
-                letterSpan.addEventListener('mouseenter', () => {
-                    letterSpan.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
-                });
-                letterSpan.addEventListener('mouseleave', () => {
-                    letterSpan.style.backgroundColor = 'transparent';
-                });
-                
-                // Click para posicionar cursor
-                letterSpan.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    cursorPosition = index;
-                    updateFormedWordDisplay();
-                    try { vibrar(20); } catch(e) {}
-                });
-                
-                wordDisplay.appendChild(letterSpan);
-            });
-            
-            // Mostrar cursor al final si corresponde
-            if (cursorPosition === -1 || cursorPosition >= formedWord.length) {
-                const cursor = document.createElement('span');
-                cursor.className = 'text-cursor';
-                cursor.textContent = '|';
-                cursor.style.cssText = `
-                    color: #10b981;
-                    font-weight: bold;
-                    animation: blink 1s infinite;
-                    margin: 0 2px;
-                `;
-                wordDisplay.appendChild(cursor);
-                cursorPosition = -1; // Normalizar posición al final
-            }
+            wordDisplay.textContent = formedWord.join('');
         }
         
-        // Hacer el cuadro completo clickeable para posicionar al final
-        wordDisplay.addEventListener('click', (e) => {
-            // Solo si se hace clic en el fondo del cuadro (no en una letra)
-            if (e.target === wordDisplay) {
-                e.preventDefault();
-                e.stopPropagation();
-                cursorPosition = -1; // Posicionar al final
-                updateFormedWordDisplay();
-                try { vibrar(20); } catch(e) {}
-            }
-        });
-        
-        wordDisplay.style.cursor = 'pointer';
-        
-        // Añadir animación cuando se añaden letras
-        wordDisplay.style.animation = 'none';
-        void wordDisplay.offsetWidth;
-        wordDisplay.style.animation = 'pulse 0.3s ease';
+        // Mostrar/ocultar botón de limpiar
+        if (clearBtn) {
+            clearBtn.style.display = formedWord.length > 0 ? 'block' : 'none';
+        }
+    }
+}
+
+// Nueva función que preserva el cursor después de actualizar
+function updateFormedWordDisplayWithCursor() {
+    const savedCursorPos = cursorPosition;
+    
+    const wordDisplay = document.getElementById('formed-word');
+    if (!wordDisplay) {
+        updateFormedWordDisplay();
+        return;
     }
     
-    // Mostrar/ocultar botón de borrar según si hay letras seleccionadas
-    if (clearBtn) {
-        if (formedWord.length > 0) {
-            clearBtn.style.display = 'flex';
-            clearBtn.style.animation = 'fadeIn 0.3s ease';
+    // Actualizar contenido del cuadro manteniendo el estado editable
+    const currentText = formedWord.join('');
+    wordDisplay.textContent = currentText;
+    
+    // Verificar si la palabra está completa o vacía para ocultar el cursor
+    const isWordComplete = currentCorrectWordLength > 0 && formedWord.length >= currentCorrectWordLength;
+    const isWordEmpty = formedWord.length === 0;
+    
+    if (isWordComplete || isWordEmpty) {
+        // Palabra completa o vacía: ocultar cursor
+        wordDisplay.style.caretColor = 'transparent';
+        wordDisplay.blur(); // Quitar el foco para ocultar completamente el cursor
+    } else {
+        // Palabra incompleta: mostrar cursor
+        wordDisplay.style.caretColor = '#10b981';
+        
+        // Restaurar posición del cursor
+        if (savedCursorPos >= 0) {
+            // Usar el cursor position establecido
+            setCursorPosition(savedCursorPos);
         } else {
-            clearBtn.style.display = 'none';
+            // Por defecto al final
+            setCursorPosition(currentText.length);
         }
+    }
+    
+    // Actualizar clases y botones
+    const clearBtn = document.getElementById('clear-word-btn');
+    if (formedWord.length === 0) {
+        wordDisplay.classList.remove('has-content');
+        if (clearBtn) clearBtn.style.display = 'none';
+    } else {
+        wordDisplay.classList.add('has-content');
+        if (clearBtn) clearBtn.style.display = 'block';
     }
 }
 
@@ -5455,17 +5748,28 @@ function updateFormedWordDisplay() {
 // Función para cambiar el botón X a modo cancelar (eliminada - ya no se usa)
 // Función para restaurar el botón X a modo borrar (eliminada - ya no se usa)
 
-// Función para limpiar la palabra formada
+// Función SIMPLIFICADA para limpiar la palabra formada
 function clearFormedWord(backElement = null) {
+    console.log('Limpiando palabra formada');
+    
+    // Limpiar arrays de estado
     formedWord = [];
     selectedButtons = [];
-    cursorPosition = -1; // Resetear posición del cursor
+    cursorPosition = -1;
     
-    // Resetear variables de protección contra clics múltiples
+    // Resetear variables de protección
     isProcessingClick = false;
     lastClickTime = 0;
     
-    // Restaurar el mensaje original
+    // Limpiar visualización del cuadro de texto
+    const wordDisplay = document.getElementById('formed-word');
+    if (wordDisplay) {
+        wordDisplay.innerHTML = '';
+        wordDisplay.textContent = '';
+        wordDisplay.classList.remove('has-content');
+    }
+    
+    // Restaurar mensaje original del hint
     const hintElement = document.querySelector('.word-hint');
     if (hintElement) {
         hintElement.textContent = 'Forma la palabra correcta';
@@ -5473,23 +5777,31 @@ function clearFormedWord(backElement = null) {
         hintElement.style.animation = '';
     }
     
-    updateFormedWordDisplay();
+    // Ocultar botón de borrar
+    const clearBtn = document.getElementById('clear-word-btn');
+    if (clearBtn) {
+        clearBtn.style.display = 'none';
+    }
     
-    // Reactivar todas las letras - buscar en el elemento específico si se proporciona
+    // Resetear TODOS los botones de letras
     const searchContext = backElement || document;
     const letterButtons = searchContext.querySelectorAll('.letter-option');
     letterButtons.forEach(button => {
         button.classList.remove('selected');
-        button.classList.remove('force-reset');
-        // Asegurar que estén completamente funcionales
+        button.classList.remove('deselected');
         button.disabled = false;
-        button.style.opacity = '1';
         button.style.pointerEvents = 'auto';
-        button.style.transform = 'scale(1)';
-        // Forzar el restablecimiento del background y color por si hubiera conflictos
+        // Limpiar todos los estilos inline que puedan causar problemas
+        button.style.opacity = '';
+        button.style.transform = '';
         button.style.background = '';
         button.style.color = '';
     });
+    
+    // Actualizar display al final
+    updateFormedWordDisplay();
+    
+    console.log('Palabra formada limpiada completamente');
 }
 
 // Función para borrar manualmente (con vibración)
@@ -6816,6 +7128,14 @@ function attachFlashcardHandlers() {
 
         card.addEventListener('click', (e) => {
             console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
+            
+            // Si el clic fue en el input de texto, no voltear la tarjeta
+            const clickedTextInput = e.target.closest('#formed-word');
+            if (clickedTextInput) {
+                console.log('Clic en input de texto, no voltear tarjeta');
+                return;
+            }
+            
             if (!canFlip) {
                 console.log('Volteo bloqueado por canFlip');
                 // Mantener totalmente inmóvil sin feedback

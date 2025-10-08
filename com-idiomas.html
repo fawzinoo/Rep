@@ -989,6 +989,7 @@
     }
 }
 
+/* Fondo blanco para mensaje incorrecto */
 .mensaje-error {
     position: absolute;
     top: 50% !important;
@@ -1002,7 +1003,7 @@
                  0 0 20px rgba(255, 107, 107, 0.3),
                  0 0 30px rgba(255, 107, 107, 0.2);
     z-index: 1000;
-    background: linear-gradient(135deg, rgba(255, 107, 107, 0.1) 0%, rgba(255, 107, 107, 0.05) 100%);
+    background: #ffffff;
     padding: 20px 40px;
     border-radius: 15px;
     backdrop-filter: blur(5px);
@@ -5129,26 +5130,18 @@ function showLetterCombination(backElement, correctAnswer) {
             event.preventDefault();
             event.stopPropagation();
             
-            // Protección adicional a nivel de botón - pero permitir deselección
+            // Protección adicional a nivel de botón
             if (letterButton.dataset.clicking === 'true') {
-                console.log(`Botón ${letter} bloqueado - ya está siendo procesado`);
                 return;
             }
-            
-            // Solo bloquear si estamos intentando seleccionar (no deseleccionar) un botón ya seleccionado
-            if (!letterButton.classList.contains('selected') && formedWord.includes(letter)) {
-                console.log(`Botón ${letter} ya existe en la palabra - bloqueando selección`);
-                return;
-            }
-            
             letterButton.dataset.clicking = 'true';
             
             handleLetterSelection(letterButton, letterData, backElement, attemptsDiv);
             
-            // Liberar protección del botón después de un delay más corto para permitir deselección
+            // Liberar protección del botón después de un breve delay
             setTimeout(() => {
                 letterButton.dataset.clicking = 'false';
-            }, 200); // Volver a 200ms para mayor fluidez
+            }, 350);
         });
         
         lettersContainer.appendChild(letterButton);
@@ -5198,7 +5191,7 @@ let cursorPosition = -1; // Posición del cursor (-1 = al final)
 // Variables para controlar clics múltiples rápidos
 let isProcessingClick = false;
 let lastClickTime = 0;
-const CLICK_DEBOUNCE_TIME = 250; // Reducido de 500ms a 250ms para mejor fluidez
+const CLICK_DEBOUNCE_TIME = 450; // milisegundos (incrementado para reducir dobles/triples por taps rápidos)
 
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
@@ -5213,10 +5206,12 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
     lastClickTime = currentTime;
     
     const letter = selectedLetter.dataset.letter;
+    // NOTA: el manejo de deselección ocurre primero (si el botón ya está seleccionado)
+    // El bloqueo de repeticiones solo aplica cuando vamos a AGREGAR letras nuevas.
     
     // Verificar si la letra ya fue seleccionada - si es así, la deseleccionamos
     if (selectedLetter.classList.contains('selected')) {
-        // DESELECCIÓN - siempre permitir
+        // Encontrar la posición de esta letra en la palabra formada
         const letterIndex = selectedButtons.indexOf(selectedLetter);
         if (letterIndex >= 0) {
             // Eliminar la letra de esa posición específica
@@ -5225,7 +5220,11 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             
             // Reactivar el botón (volver al color original)
             selectedLetter.classList.remove('selected');
+            // El botón nunca se deshabilitó, así que no necesita reactivación
+            // selectedLetter.disabled = false;
+            // selectedLetter.style.opacity = '1';
             selectedLetter.style.pointerEvents = 'auto';
+            // selectedLetter.style.transform = 'scale(1)';
             
             // Actualizar la visualización de la palabra formada
             updateFormedWordDisplay();
@@ -5242,20 +5241,28 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
         return;
     }
     
-    // SELECCIÓN - aplicar protección contra duplicados SOLO aquí
-    // Verificar si ya existe esta letra en la palabra formada
-    const letterAlreadyExists = formedWord.includes(letter);
-    const buttonAlreadySelected = selectedButtons.includes(selectedLetter);
-    
-    if (letterAlreadyExists || buttonAlreadySelected) {
-        console.log(`Letra "${letter}" ya existe en la palabra formada - bloqueando duplicado`);
-        // Liberar protección
-        setTimeout(() => {
-            isProcessingClick = false;
-        }, 100);
-        return;
+    // Evitar añadir más repeticiones de una letra que las que permite la palabra correcta
+    try {
+        if (!selectedLetter.classList.contains('selected')) {
+            const target = (letterData.correctWord || '').toString();
+            const allowedCount = target.split('').filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
+            const currentCount = formedWord.filter(ch => ch.toLowerCase() === letter.toLowerCase()).length;
+            if (allowedCount > 0 && currentCount >= allowedCount) {
+                // Feedback suave: vibración y destello en intentos
+                try { vibrar(30); } catch(e) {}
+                if (attemptsDiv) {
+                    attemptsDiv.classList.add('flash-warning');
+                    setTimeout(() => attemptsDiv.classList.remove('flash-warning'), 350);
+                }
+                // No permitir más repeticiones de esta letra
+                setTimeout(() => { isProcessingClick = false; }, 100);
+                return;
+            }
+        }
+    } catch (e) {
+        // En caso de error, continuar flujo normal
     }
-    
+
     // Agregar la letra en la posición del cursor
     if (cursorPosition === -1 || cursorPosition >= formedWord.length) {
         // Insertar al final
@@ -5306,35 +5313,6 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
 
 // Función para actualizar la visualización de la palabra formada
 function updateFormedWordDisplay() {
-    // PROTECCIÓN SUAVE: Solo limpiar duplicados evidentes (mismo botón repetido)
-    const originalLength = formedWord.length;
-    const cleanedWord = [];
-    const cleanedButtons = [];
-    const seenButtons = new Set();
-    
-    formedWord.forEach((letter, index) => {
-        const button = selectedButtons[index];
-        // Solo eliminar si es exactamente el mismo botón (no solo la misma letra)
-        if (!seenButtons.has(button)) {
-            cleanedWord.push(letter);
-            cleanedButtons.push(button);
-            seenButtons.add(button);
-        } else {
-            console.log(`Duplicado de botón detectado y eliminado: "${letter}"`);
-            // Quitar la clase selected del botón duplicado
-            if (button && button.classList) {
-                button.classList.remove('selected');
-            }
-        }
-    });
-    
-    // Actualizar los arrays solo si se detectaron duplicados reales
-    if (cleanedWord.length !== originalLength) {
-        formedWord = cleanedWord;
-        selectedButtons = cleanedButtons;
-        console.log(`Limpieza de duplicados: ${originalLength} → ${cleanedWord.length} letras`);
-    }
-    
     const wordDisplay = document.getElementById('formed-word');
     const clearBtn = document.getElementById('clear-word-btn');
     
@@ -5685,6 +5663,9 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
         saveGameProgress();
         
         if (voiceAttempts < 2) {
+            // Asegurar que no queden locks de clic activos para el segundo intento
+            isProcessingClick = false;
+            lastClickTime = 0;
             // Primer intento fallido
             playErrorSound();
             
@@ -5708,13 +5689,13 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
                 text-shadow: 0 0 15px rgba(255, 71, 87, 0.7),
                              0 0 25px rgba(255, 71, 87, 0.4),
                              0 0 35px rgba(255, 71, 87, 0.2);
-                background: linear-gradient(135deg, rgba(255, 71, 87, 0.2) 0%, rgba(255, 107, 107, 0.1) 100%);
+                background: #ffffff;
                 padding: 15px 35px;
                 border-radius: 25px;
                 border: 2px solid rgba(255, 71, 87, 0.4);
                 animation: errorBounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
                 z-index: 100;
-                backdrop-filter: blur(5px);
+                backdrop-filter: none;
                 box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3),
                             0 0 0 1px rgba(255, 255, 255, 0.1) inset;
             `;
@@ -5741,6 +5722,8 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
                     button.style.opacity = '1';
                     button.style.pointerEvents = 'auto';
                     button.style.transform = 'scale(1)';
+                    // Limpiar posibles estados de bloqueo por multiclick
+                    try { button.dataset.clicking = 'false'; } catch(_) {}
                     
                     // Si no está seleccionado, asegurar que mantenga su apariencia original
                     if (!button.classList.contains('selected')) {
@@ -5807,13 +5790,13 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
                 text-shadow: 0 0 15px rgba(255, 71, 87, 0.7),
                              0 0 25px rgba(255, 71, 87, 0.4),
                              0 0 35px rgba(255, 71, 87, 0.2);
-                background: linear-gradient(135deg, rgba(255, 71, 87, 0.2) 0%, rgba(255, 107, 107, 0.1) 100%);
+                background: #ffffff;
                 padding: 15px 35px;
                 border-radius: 25px;
                 border: 2px solid rgba(255, 71, 87, 0.4);
                 animation: errorBounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
                 z-index: 100;
-                backdrop-filter: blur(5px);
+                backdrop-filter: none;
                 box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3),
                             0 0 0 1px rgba(255, 255, 255, 0.1) inset;
             `;

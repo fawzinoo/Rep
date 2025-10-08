@@ -1709,6 +1709,12 @@
     transform: translateY(-1px) scale(1.05);
 }
 
+/* Feedback inmediato al presionar (sin bloquear selección) */
+.letter-option.pressing:not(.selected) {
+    transform: translateY(-2px) scale(1.06);
+    filter: brightness(0.98);
+}
+
 .letter-option.selected {
     background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
     color: white;
@@ -5120,15 +5126,25 @@ function showLetterCombination(backElement, correctAnswer) {
         letterButton.style.position = 'relative';
         letterButton.style.zIndex = '11'; // Asegurar que esté por encima de todo
         
-        // Vibración al presionar la letra (siempre activa)
+        // Feedback inmediato al presionar
         letterButton.addEventListener('pointerdown', () => {
-            try { vibrar(50); } catch(e) {}
+            try { vibrar(30); } catch(e) {}
+            letterButton.classList.add('pressing');
         }, { passive: true });
 
-        // Event listener para manejo de clics
-        letterButton.addEventListener('click', (event) => {
+        // Quitar feedback si el puntero sale/cancela
+        letterButton.addEventListener('pointerleave', () => {
+            letterButton.classList.remove('pressing');
+        });
+        letterButton.addEventListener('pointercancel', () => {
+            letterButton.classList.remove('pressing');
+        });
+
+        // Event listener para manejo de selección (en pointerup para respuesta más rápida)
+        letterButton.addEventListener('pointerup', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            letterButton.classList.remove('pressing');
             
             // Protección adicional a nivel de botón
             if (letterButton.dataset.clicking === 'true') {
@@ -5141,7 +5157,7 @@ function showLetterCombination(backElement, correctAnswer) {
             // Liberar protección del botón después de un breve delay
             setTimeout(() => {
                 letterButton.dataset.clicking = 'false';
-            }, 350);
+            }, 220);
         });
         
         lettersContainer.appendChild(letterButton);
@@ -5191,7 +5207,7 @@ let cursorPosition = -1; // Posición del cursor (-1 = al final)
 // Variables para controlar clics múltiples rápidos
 let isProcessingClick = false;
 let lastClickTime = 0;
-const CLICK_DEBOUNCE_TIME = 450; // milisegundos (incrementado para reducir dobles/triples por taps rápidos)
+const CLICK_DEBOUNCE_TIME = 250; // milisegundos (más ágil para mejorar la respuesta)
 
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
@@ -5211,6 +5227,12 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
             const remainingCount = formedWord.filter(ch => ch.toLowerCase() === (selectedLetter.dataset.letter || '').toLowerCase()).length;
             if (remainingCount === 0) {
                 selectedLetter.classList.remove('selected');
+                selectedLetter.classList.remove('correct-letter');
+                // Limpiar estilos inline para evitar persistencia de color
+                selectedLetter.style.background = '';
+                selectedLetter.style.borderColor = '';
+                selectedLetter.style.opacity = '';
+                selectedLetter.style.transform = '';
             }
             // El botón nunca se deshabilitó, así que no necesita reactivación
             // selectedLetter.disabled = false;

@@ -1717,6 +1717,15 @@
     opacity: 0.6;
 }
 
+/* Nueva clase para forzar el reset visual de botones */
+.letter-option.force-reset {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.85) 100%) !important;
+    color: #2d3748 !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
 .letter-option.correct-letter {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: white;
@@ -5196,30 +5205,38 @@ const CLICK_DEBOUNCE_TIME = 250; // milisegundos (incrementado para reducir dobl
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
     // 1) Deselección: procesar primero y no sujetar al debounce de tiempo
-    if (selectedLetter.classList.contains('selected')) {
+    if (selectedLetter.classList.contains('selected') || selectedLetter.classList.contains('force-reset')) {
         // Pequeño lock para evitar carreras, pero sin actualizar lastClickTime
         isProcessingClick = true;
-        // Encontrar la posición de esta letra en la palabra formada
-        const letterIndex = selectedButtons.indexOf(selectedLetter);
+        // Encontrar la ÚLTIMA posición de esta letra en la palabra formada (deseleccionar de derecha a izquierda)
+        let letterIndex = -1;
+        for (let i = selectedButtons.length - 1; i >= 0; i--) {
+            if (selectedButtons[i] === selectedLetter) {
+                letterIndex = i;
+                break;
+            }
+        }
+        
         if (letterIndex >= 0) {
             // Eliminar la letra de esa posición específica
             formedWord.splice(letterIndex, 1);
             selectedButtons.splice(letterIndex, 1);
             
-            // Mantener 'selected' si todavía quedan ocurrencias de esta letra en formedWord
-            // (así el usuario puede seguir deseleccionando paso a paso)
-            const remainingCount = formedWord.filter(ch => ch.toLowerCase() === (selectedLetter.dataset.letter || '').toLowerCase()).length;
-            if (remainingCount === 0) {
+            // Verificar si todavía quedan ocurrencias de esta letra en selectedButtons (no en formedWord)
+            const stillSelected = selectedButtons.includes(selectedLetter);
+            
+            if (!stillSelected) {
+                // No quedan más instancias de este botón específico, reset completo
                 selectedLetter.classList.remove('selected');
-                // Restablecer completamente el estilo visual del botón
-                selectedLetter.disabled = false;
-                selectedLetter.style.opacity = '1';
-                selectedLetter.style.transform = 'scale(1)';
-                // Forzar el restablecimiento del background y color por si hubiera conflictos
-                selectedLetter.style.background = '';
-                selectedLetter.style.color = '';
+                selectedLetter.classList.remove('force-reset');
+            } else {
+                // Quedan más instancias de este botón, mantener estado visual seleccionado
+                selectedLetter.classList.add('selected');
+                selectedLetter.classList.remove('force-reset');
             }
-            // Siempre asegurar que el botón mantenga los eventos de clic
+            
+            // Siempre resetear los estilos inline para asegurar funcionalidad
+            selectedLetter.disabled = false;
             selectedLetter.style.pointerEvents = 'auto';
             
             // Actualizar la visualización de la palabra formada
@@ -5285,6 +5302,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
     
     // Marcar la letra como seleccionada
     selectedLetter.classList.add('selected');
+    selectedLetter.classList.remove('force-reset'); // Quitar force-reset si existía
     // NO deshabilitar el botón para que siga siendo clickeable
     // selectedLetter.disabled = true;
     
@@ -5462,6 +5480,7 @@ function clearFormedWord(backElement = null) {
     const letterButtons = searchContext.querySelectorAll('.letter-option');
     letterButtons.forEach(button => {
         button.classList.remove('selected');
+        button.classList.remove('force-reset');
         // Asegurar que estén completamente funcionales
         button.disabled = false;
         button.style.opacity = '1';

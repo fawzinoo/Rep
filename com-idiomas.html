@@ -5195,22 +5195,10 @@ const CLICK_DEBOUNCE_TIME = 450; // milisegundos (incrementado para reducir dobl
 
 // Función para manejar la selección de una letra
 function handleLetterSelection(selectedLetter, letterData, backElement, attemptsDiv) {
-    // Protección contra clics múltiples rápidos
-    const currentTime = Date.now();
-    if (isProcessingClick || (currentTime - lastClickTime) < CLICK_DEBOUNCE_TIME) {
-        console.log('Clic bloqueado por protección anti-múltiples clics');
-        return;
-    }
-    
-    isProcessingClick = true;
-    lastClickTime = currentTime;
-    
-    const letter = selectedLetter.dataset.letter;
-    // NOTA: el manejo de deselección ocurre primero (si el botón ya está seleccionado)
-    // El bloqueo de repeticiones solo aplica cuando vamos a AGREGAR letras nuevas.
-    
-    // Verificar si la letra ya fue seleccionada - si es así, la deseleccionamos
+    // 1) Deselección: procesar primero y no sujetar al debounce de tiempo
     if (selectedLetter.classList.contains('selected')) {
+        // Pequeño lock para evitar carreras, pero sin actualizar lastClickTime
+        isProcessingClick = true;
         // Encontrar la posición de esta letra en la palabra formada
         const letterIndex = selectedButtons.indexOf(selectedLetter);
         if (letterIndex >= 0) {
@@ -5238,12 +5226,22 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
         }
         
         // Liberar protección después de un breve delay
-        setTimeout(() => {
-            isProcessingClick = false;
-        }, 100);
+        setTimeout(() => { isProcessingClick = false; }, 80);
         
         return;
     }
+    
+    // 2) Inserción: ahora sí aplicar protección contra clics múltiples rápidos
+    const currentTime = Date.now();
+    if (isProcessingClick || (currentTime - lastClickTime) < CLICK_DEBOUNCE_TIME) {
+        console.log('Clic bloqueado por protección anti-múltiples clics');
+        return;
+    }
+    isProcessingClick = true;
+    lastClickTime = currentTime;
+    
+    const letter = selectedLetter.dataset.letter;
+    // El bloqueo de repeticiones solo aplica cuando vamos a AGREGAR letras nuevas.
     
     // Evitar añadir más repeticiones de una letra que las que permite la palabra correcta
     try {

@@ -578,21 +578,44 @@
 }
 
 .pill-intentos {
-    background: linear-gradient(135deg, #ebac6d 0%, #a88f07 100%);
-    color: #fff;
-    box-shadow: 0 2px 6px rgba(255, 78, 80, 0.15);
-    border-radius: 20px;
-    padding: 2px 2px;
-    font-size: 0.9em;
-    font-weight: 600;
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    border: none;
-    margin-bottom: 4px;
+    gap: 10px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: linear-gradient(135deg, #F7CE68 0%, #FBAB7E 100%);
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    box-shadow:
+      0 8px 18px rgba(0, 0, 0, 0.18),
+      0 2px 8px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 0 0 1px rgba(255, 255, 255, 0.06);
+    backdrop-filter: saturate(1.15) blur(2px);
+    -webkit-backdrop-filter: saturate(1.15) blur(2px);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 6px;
+}
+.pill-intentos::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 10px);
+    height: 60%;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.35), rgba(255,255,255,0));
 }
 .pill-intentos i {
-    font-size: 0.9em;
+    font-size: 1rem;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));
 }
 
 
@@ -992,7 +1015,7 @@
 /* Fondo blanco para mensaje incorrecto */
 .mensaje-error {
     position: absolute;
-    top: 50% !important;
+    top: calc(50% + 20px) !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
     font-size: 2rem;
@@ -1100,6 +1123,24 @@
 .overlay-text {
     position: absolute;
     }
+
+/* Botón pequeño para silenciar sonidos de botones */
+.sound-toggle {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #4b5563;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.sound-toggle:hover {
+    transform: translateY(-2px);
+    background: #f8fafc;
+}
+.sound-toggle i { font-size: 18px; }
 
     @keyframes errorGlow {
   0% {
@@ -1589,7 +1630,7 @@
 .word-display .wd-caret {
     display: inline-block;
     width: 2px; /* fino para no abrir hueco */
-    height: 1.3em; /* más alto para coincidir con el texto */
+    height: 1.1em; /* ligeramente más bajo para mejor integración visual */
     background-color: #10b981; /* verde visible */
     margin: 0 0.5px;
     align-self: center; /* alinear en el centro de la línea */
@@ -3722,6 +3763,7 @@
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="shuffleSound" src="https://fawzinoo.github.io/audios/naipe.mp3" preload="auto"></audio>
     <audio id="buttonClickSound" src="https://fawzinoo.github.io/audios/botonn.mp3" preload="auto"></audio>
+    <audio id="letterClickSound" src="https://fawzinoo.github.io/audios/teclas1.mp3" preload="auto"></audio>
 
     <div class="button-container">
         <button class="button" id="reset-button">Reiniciar</button>
@@ -3730,6 +3772,9 @@
         </button>
         <button class="button" id="shuffle-button" style="background-color: #9b59b6;">
             <i class="fas fa-random"></i> Mezclar
+        </button>
+        <button class="button sound-toggle" id="sound-toggle-btn" title="Silenciar sonidos de botones">
+            <i class="fas fa-volume-up" aria-hidden="true"></i>
         </button>
     </div>
     
@@ -3743,12 +3788,72 @@
     <script>
 
         
-
-        function vibrar(ms = 80) {
+        // Haptics centralizados con protección contra ráfagas
+        const DEFAULT_HAPTIC_MS = 50; // patrón único unificado
+        let __lastVibrateAt = 0;
+        function vibrar(ms = DEFAULT_HAPTIC_MS, opts = {}) {
+    const now = Date.now();
+    const { minGap = 160, force = false } = opts || {};
+    // Evitar vibraciones duplicadas en muy poco tiempo (pointerdown + click)
+    if (!force && now - __lastVibrateAt < minGap) {
+        return;
+    }
     if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(ms);
+        // Usar siempre la misma duración para uniformidad
+        window.navigator.vibrate(DEFAULT_HAPTIC_MS);
+        __lastVibrateAt = now;
     }
 }
+
+// ======= Control de mute para sonidos de botones =======
+const BTN_SOUNDS_LS_KEY = 'idiomas_btn_sounds_muted';
+function areButtonSoundsMuted() {
+    try { return localStorage.getItem(BTN_SOUNDS_LS_KEY) === '1'; } catch(e) { return false; }
+}
+function applyButtonSoundsMutedToElements() {
+    // Sincroniza la propiedad .muted de los audios controlados por el toggle
+    const muted = areButtonSoundsMuted();
+    ['buttonClickSound', 'shuffleSound', 'letterClickSound', 'soundResetButton'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.muted = muted;
+        }
+    });
+}
+function setButtonSoundsMuted(muted) {
+    try { localStorage.setItem(BTN_SOUNDS_LS_KEY, muted ? '1' : '0'); } catch(e) {}
+    updateSoundToggleIcon();
+    // Aplicar inmediatamente a los elementos de audio
+    applyButtonSoundsMutedToElements();
+}
+function updateSoundToggleIcon() {
+    const btn = document.getElementById('sound-toggle-btn');
+    if (!btn) return;
+    const icon = btn.querySelector('i');
+    const muted = areButtonSoundsMuted();
+    if (icon) {
+        icon.classList.toggle('fa-volume-up', !muted);
+        icon.classList.toggle('fa-volume-mute', muted);
+    }
+    btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    btn.title = muted ? 'Sonidos de botones silenciados' : 'Silenciar sonidos de botones';
+}
+document.addEventListener('DOMContentLoaded', () => {
+    // Inicializar icono según preferencia guardada
+    updateSoundToggleIcon();
+    // Sincronizar estado mute a elementos de audio en el arranque
+    applyButtonSoundsMutedToElements();
+    const btn = document.getElementById('sound-toggle-btn');
+    if (btn && !btn.dataset.listener) {
+        btn.dataset.listener = '1';
+        btn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const newState = !areButtonSoundsMuted();
+            setButtonSoundsMuted(newState);
+            vibrar(50);
+        });
+    }
+});
 
         function playErrorSound() {
     const errorAudio = new Audio('https://fawzinoo.github.io/audios/error.mp3');
@@ -3761,7 +3866,7 @@ function playButtonSound() {
     vibrar(50); // Vibración más suave que los botones principales
     
     const buttonAudio = document.getElementById('buttonClickSound');
-    if (buttonAudio) {
+    if (buttonAudio && !areButtonSoundsMuted()) {
         buttonAudio.currentTime = 0; // Reiniciar el audio
         buttonAudio.volume = 0.7;
         buttonAudio.play().catch(() => {});
@@ -3775,6 +3880,276 @@ function quitarAcentos(str){
       .normalize('NFD')
       .replace(/\p{Diacritic}+/gu,'')
       .trim();
+}
+
+// ====== SOPORTE TECLADO PC: activar botones existentes ======
+function isDesktopLike() {
+    // Consideramos escritorio cuando hay puntero fino y hover disponible
+    try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch { return true; }
+}
+
+function getActiveLettersContainer() {
+    const visibleCard = document.querySelector('.flashcard.is-visible');
+    if (!visibleCard) return null;
+    const back = visibleCard.querySelector('.back');
+    if (!back) return null;
+    const lc = back.querySelector('.letters-container');
+    return lc || null;
+}
+
+// Long-press para acentos por duración
+const LONG_PRESS_KEYS = { 'a': 'á', 'e': 'é', 'i': 'í', 'o': 'ó', 'u': 'ú', 'n': 'ñ' };
+const LP_DESELECT_MS = 1000; // 1s para deseleccionar acentuada
+const LP_SELECT_MS = 1500;   // 1.5s para seleccionar acentuada
+const __kh = new Map(); // key(base) -> { startAt, fired, t1, t2 }
+// Hold para tecla Suprimir (Delete)
+const DEL_HOLD_MS = 200; // 200ms mantener para borrar todo
+let __delState = null; // { t, fired }
+
+function selectExactLetter(ch) {
+    const container = getActiveLettersContainer();
+    if (!container) return false;
+    const btn = Array.from(container.querySelectorAll('.letter-option'))
+        .find(b => !b.disabled && (b.dataset.letter || b.textContent || '') === ch && !b.classList.contains('selected'));
+    if (!btn) return false;
+    try { vibrar(50, { minGap: 80 }); } catch {}
+    try {
+        const keyAudio = document.getElementById('letterClickSound');
+        if (keyAudio && !areButtonSoundsMuted()) {
+            keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {});
+        }
+    } catch {}
+    btn.click();
+    return true;
+}
+
+function deselectExactLetter(ch) {
+    const container = getActiveLettersContainer();
+    if (!container) return false;
+    const all = Array.from(container.querySelectorAll('.letter-option'));
+    const selectedMatch = all.filter(b => b.classList.contains('selected') && (b.dataset.letter || b.textContent || '') === ch);
+    if (selectedMatch.length === 0) return false;
+    const sb = selectedMatch[selectedMatch.length - 1];
+    try { vibrar(50, { minGap: 80 }); } catch {}
+    try {
+        const keyAudio = document.getElementById('letterClickSound');
+        if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); }
+    } catch {}
+    sb.click();
+    return true;
+}
+
+function deleteOneLetterFromEnd() {
+    if (Array.isArray(selectedButtons) && selectedButtons.length) {
+        const sb = selectedButtons[selectedButtons.length - 1];
+        try { vibrar(50, { minGap: 80 }); } catch {}
+        try {
+            const keyAudio = document.getElementById('letterClickSound');
+            if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); }
+        } catch {}
+        sb.click();
+        return true;
+    }
+    return false;
+}
+
+function handleDesktopKeyForLetters(e) {
+    if (!isDesktopLike()) return false; // Sólo en PC
+    // Evitar cuando se escribe en inputs por seguridad (no debería ocurrir)
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return false;
+
+    const k = e.key;
+    if (!k) return false;
+
+    // Atajos de control (Space, números y Suprimir)
+    if (!e.repeat) {
+        const code = e.code;
+        // Space: alternar Front <-> Back
+        if (k === ' ' || code === 'Space') {
+            const card = document.querySelector('.flashcard.is-visible');
+            if (card && (typeof canFlip === 'undefined' || canFlip)) {
+                e.preventDefault(); e.stopPropagation(); // evitar scroll
+                card.click(); // reutiliza la lógica central de flip
+                return true;
+            }
+        }
+        // 5: Reiniciar
+        if (k === '5' || code === 'Numpad5') {
+            const btn = document.getElementById('reset-button');
+            if (btn) { e.preventDefault(); e.stopPropagation(); btn.click(); return true; }
+        }
+        // 6: No sé (Skip)
+        if (k === '6' || code === 'Numpad6') {
+            const btn = document.getElementById('skip-button');
+            if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click(); return true; }
+        }
+        // 7: Mezclar
+        if (k === '7' || code === 'Numpad7') {
+            const btn = document.getElementById('shuffle-button');
+            if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click(); return true; }
+        }
+        // 8: Mutear/activar sonidos de botones
+        if (k === '8' || code === 'Numpad8') {
+            const btn = document.getElementById('sound-toggle-btn');
+            if (btn) { e.preventDefault(); e.stopPropagation(); btn.click(); return true; }
+        }
+        // Suprimir (Delete/Backspace): tap = borrar 1 letra al final; hold >=200ms = borrar toda la palabra
+        if (k === 'Delete' || code === 'Delete' || k === 'Backspace') {
+            if (!__delState) {
+                __delState = { fired: false, t: null };
+                __delState.t = setTimeout(() => {
+                    if (__delState) {
+                        __delState.fired = true;
+                        const clearBtn = document.getElementById('clear-word-btn');
+                        if (clearBtn) clearBtn.click();
+                    }
+                }, DEL_HOLD_MS);
+            }
+            e.preventDefault(); e.stopPropagation();
+            return true;
+        }
+    }
+
+    // Atajos de control desactivados temporalmente (R/N/M) hasta nueva asignación
+
+    // Letras del tablero (manejo por duración para acentos)
+    if (k.length === 1) {
+        const container = getActiveLettersContainer();
+        if (!container) return false;
+        const allButtons = Array.from(container.querySelectorAll('.letter-option'))
+            .filter(b => !b.disabled);
+        if (allButtons.length === 0) return false;
+
+        const keyNorm = quitarAcentos(k).toLowerCase();
+        // Si la tecla tiene versión acentuada, diferimos a keyup para medir duración
+        if (LONG_PRESS_KEYS[keyNorm]) {
+            if (!e.repeat) {
+                const accented = LONG_PRESS_KEYS[keyNorm];
+                const state = { startAt: Date.now(), fired: false, t1: null, t2: null };
+                // 1s: deseleccionar acentuada si existe
+                state.t1 = setTimeout(() => {
+                    // Si ya se ejecutó otra acción, no hacer nada
+                    if (state.fired) return;
+                    const ok = deselectExactLetter(accented);
+                    if (ok) {
+                        state.fired = true;
+                        if (state.t2) { clearTimeout(state.t2); state.t2 = null; }
+                    }
+                }, LP_DESELECT_MS);
+                // 2s: seleccionar acentuada si no se ejecutó la anterior
+                state.t2 = setTimeout(() => {
+                    if (state.fired) return;
+                    const ok = selectExactLetter(accented);
+                    if (ok) {
+                        state.fired = true;
+                    }
+                }, LP_SELECT_MS);
+                __kh.set(keyNorm, state);
+            }
+            e.preventDefault(); e.stopPropagation();
+            return true;
+        }
+
+        // Tecla sin versión acentuada: inserción inmediata base o deselección si no hay libres
+        let targetBtn = allButtons.find(b => !b.classList.contains('selected') && (
+            quitarAcentos(b.dataset.letter || b.textContent || '').toLowerCase() === keyNorm
+        ));
+        if (!targetBtn) {
+            // Buscar PARA DESELECCIONAR el último botón seleccionado que coincida normalizado
+            if (Array.isArray(selectedButtons) && selectedButtons.length) {
+                for (let i = selectedButtons.length - 1; i >= 0; i--) {
+                    const sb = selectedButtons[i];
+                    const txt = (sb && (sb.dataset.letter || sb.textContent || ''));
+                    if (quitarAcentos(txt).toLowerCase() === keyNorm) {
+                        try { vibrar(50, { minGap: 80 }); } catch {}
+                        try {
+                            const keyAudio = document.getElementById('letterClickSound');
+                            if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); }
+                        } catch {}
+                        e.preventDefault(); e.stopPropagation();
+                        sb.click();
+                        return true;
+                    }
+                }
+            }
+            return false; // nada que hacer
+        }
+        try { vibrar(50, { minGap: 80 }); } catch {}
+        try {
+            const keyAudio = document.getElementById('letterClickSound');
+            if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); }
+        } catch {}
+        e.preventDefault(); e.stopPropagation();
+        targetBtn.click();
+        return true;
+    }
+
+    return false;
+}
+
+// Resolver por duración en keyup: >=2s seleccionar acento, >=1s deseleccionar acento, <1s base toggle
+function handleDesktopKeyUpForLetters(e) {
+    if (!isDesktopLike()) return false;
+    const k = e.key;
+    // Resolver tecla Delete/Backspace tap vs hold
+    if (k === 'Delete' || k === 'Backspace') {
+        if (__delState) {
+            if (__delState.t) clearTimeout(__delState.t);
+            const didFire = __delState.fired;
+            __delState = null;
+            if (!didFire) {
+                // Tap corto: borrar una letra desde el final
+                e.preventDefault(); e.stopPropagation();
+                deleteOneLetterFromEnd();
+                return true;
+            }
+            // Si fired=true, ya se borró todo durante el hold
+            e.preventDefault(); e.stopPropagation();
+            return true;
+        }
+        return false;
+    }
+    if (!k || k.length !== 1) return false;
+    const base = quitarAcentos(k).toLowerCase();
+    const st = __kh.get(base);
+    const accented = LONG_PRESS_KEYS[base];
+    if (!st) return false; // no controlamos esta tecla
+    // limpiar timers
+    if (st.t1) clearTimeout(st.t1);
+    if (st.t2) clearTimeout(st.t2);
+    __kh.delete(base);
+    // Si alguna acción ya se disparó durante el hold, no hacemos nada más
+    if (st.fired) return true;
+    // Si no se disparó nada: toggle de la base (seleccionar libre o deseleccionar última)
+    const container = getActiveLettersContainer();
+    if (!container) return false;
+    let btn = Array.from(container.querySelectorAll('.letter-option'))
+        .find(b => !b.disabled && !b.classList.contains('selected') && (
+            quitarAcentos(b.dataset.letter || b.textContent || '').toLowerCase() === base
+        ));
+    if (btn) {
+        try { vibrar(50, { minGap: 80 }); } catch {}
+        try { const keyAudio = document.getElementById('letterClickSound'); if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); } } catch {}
+        e.preventDefault(); e.stopPropagation();
+        btn.click();
+        return true;
+    }
+    // Si no hay libre, deseleccionar la última base coincidente
+    if (Array.isArray(selectedButtons) && selectedButtons.length) {
+        for (let i = selectedButtons.length - 1; i >= 0; i--) {
+            const sb = selectedButtons[i];
+            const txt = (sb && (sb.dataset.letter || sb.textContent || ''));
+            if (quitarAcentos(txt).toLowerCase() === base) {
+                try { vibrar(50, { minGap: 80 }); } catch {}
+                try { const keyAudio = document.getElementById('letterClickSound'); if (keyAudio && !areButtonSoundsMuted()) { keyAudio.currentTime = 0; keyAudio.volume = 0.7; keyAudio.play().catch(() => {}); } } catch {}
+                e.preventDefault(); e.stopPropagation();
+                sb.click();
+                return true;
+            }
+        }
+    }
+    return true;
 }
 
 function goBack() {
@@ -4018,6 +4393,11 @@ function installShuffleButtonHandler() {
         // Prevenir propagación de eventos
         event.preventDefault();
         event.stopPropagation();
+        // Reproducir sonido de naipe inmediatamente como feedback del botón Mezclar
+        try {
+            const s = document.getElementById('shuffleSound');
+            if (s && !areButtonSoundsMuted()) { s.currentTime = 0; s.volume = 0.8; s.play().catch(() => {}); }
+        } catch(e) {}
         
         if (isShuffling) return;
         // Bloqueo en finales
@@ -4031,9 +4411,7 @@ function installShuffleButtonHandler() {
         btn.style.opacity = '0.6';
         btn.style.pointerEvents = 'none';
         
-        vibrar(80);
-        const s = document.getElementById('shuffleSound');
-        if (s) { s.play().catch(() => {}); }
+    vibrar(80);
         shuffleCards();
         shuffleCount += 1;
         saveShuffleCount();
@@ -4067,7 +4445,11 @@ const skipBtn = document.getElementById('skip-button');
 if (skipBtn) {
     skipBtn.addEventListener('click', () => {
         vibrar(60);
-        playButtonSound();
+        // Reproducir solo el sonido de naipe
+        try {
+            const s = document.getElementById('shuffleSound');
+            if (s && !areButtonSoundsMuted()) { s.currentTime = 0; s.volume = 0.8; s.play().catch(() => {}); }
+        } catch(e) {}
         skipCurrentCardAsUnknown();
     });
 }
@@ -4152,8 +4534,15 @@ function goToNextCard() {
     // Reactivar botón de mezclar según estado y límite
     updateShuffleButtonState();
 
-    // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
-    document.getElementById('shuffleSound').play().catch(() => {});
+    // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta (respetando mute)
+    try {
+        const s = document.getElementById('shuffleSound');
+        if (s && !areButtonSoundsMuted()) {
+            s.currentTime = 0;
+            s.volume = 0.8;
+            s.play().catch(() => {});
+        }
+    } catch (e) {}
 
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
     const prevIndex = currentCardIndex;
@@ -5223,9 +5612,17 @@ function showLetterCombination(backElement, correctAnswer) {
         letterButton.style.position = 'relative';
         letterButton.style.zIndex = '11'; // Asegurar que esté por encima de todo
         
-        // Vibración al presionar la letra (siempre activa)
+        // Vibración + sonido al presionar la letra
         letterButton.addEventListener('pointerdown', () => {
-            try { vibrar(50); } catch(e) {}
+            try { vibrar(50, { minGap: 80 }); } catch(e) {}
+            try {
+                const keyAudio = document.getElementById('letterClickSound');
+                if (keyAudio && !areButtonSoundsMuted()) {
+                    keyAudio.currentTime = 0;
+                    keyAudio.volume = 0.7;
+                    keyAudio.play().catch(() => {});
+                }
+            } catch (e) {}
         }, { passive: true });
 
         // Event listener para manejo de clics
@@ -5477,7 +5874,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
         }
         
         // Vibrar para confirmar eliminación
-        try { vibrar(80); } catch(e) {}
+    try { vibrar(80); } catch(e) {}
     } 
     // Si el botón NO está seleccionado, SELECCIONAR (agregar UNA instancia en posición del cursor)
     else {
@@ -5510,7 +5907,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement, attempts
     cursorPosition = formedWord.length;
         
         // Vibrar para confirmar selección
-        try { vibrar(80); } catch(e) {}
+    try { vibrar(80); } catch(e) {}
         
         // SOLO VERIFICAR CUANDO SE SELECCIONA (no cuando se deselecciona)
         // Verificar si se completó la palabra
@@ -6100,7 +6497,7 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
             errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><span style="margin-left: 12px;">Incorrecto</span>`;
             errorMessage.style.cssText = `
                 position: absolute;
-                top: 50px;
+                top: 70px;
                 left: 50%;
                 transform: translateX(-50%);
                 font-size: 1.8rem;
@@ -6199,7 +6596,7 @@ function checkFormedWordAutomatically(correctWord, originalAnswer, backElement, 
             errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><span style="margin-left: 12px;">Incorrecto</span>`;
             errorMessage.style.cssText = `
                 position: absolute;
-                top: 50px;
+                top: 70px;
                 left: 50%;
                 transform: translateX(-50%);
                 font-size: 1.8rem;
@@ -7532,7 +7929,14 @@ function saveLastGamePercentage() {
 }
 
 window.addEventListener('load', () => {
-    document.getElementById('soundResetButton').play().catch(e => console.log(e));
+    try {
+        const s = document.getElementById('soundResetButton');
+        if (s && !areButtonSoundsMuted()) {
+            s.currentTime = 0;
+            s.volume = 0.8;
+            s.play().catch(e => console.log(e));
+        }
+    } catch (e) { console.log(e); }
 });
 
 function stopAllAudios() {
@@ -7731,7 +8135,11 @@ function installResetButtonHandler() {
     btn.addEventListener('click', (e) => {
         vibrar(80);
         const soundResetButton = document.getElementById('soundResetButton');
-        soundResetButton && soundResetButton.play().catch(() => {});
+        if (soundResetButton && !areButtonSoundsMuted()) {
+            soundResetButton.currentTime = 0;
+            soundResetButton.volume = 0.8;
+            soundResetButton.play().catch(() => {});
+        }
 
         const overlaysPresent = (
             document.getElementById('euforia-maxima-overlay') ||
@@ -7823,7 +8231,11 @@ function installResetCaptureHandler() {
         event.preventDefault();
         vibrar(80);
         const soundResetButton = document.getElementById('soundResetButton');
-        soundResetButton && soundResetButton.play().catch(() => {});
+        if (soundResetButton && !areButtonSoundsMuted()) {
+            soundResetButton.currentTime = 0;
+            soundResetButton.volume = 0.8;
+            soundResetButton.play().catch(() => {});
+        }
         resetGame();
     }, true); // capture
 }
@@ -7964,12 +8376,19 @@ document.addEventListener('keydown', function(e) {
     // Capturar antes que otros manejadores
     document.addEventListener('keydown', function(e){
         if (!isLetterGameActive()) return;
-        // Permitir solo teclas de navegación si fuese necesario (aquí bloqueamos todo texto)
+        // Permitir únicamente teclas mapeadas en escritorio (letras existentes y R/N/M); bloquear el resto
+        const handled = handleDesktopKeyForLetters(e);
+        if (handled) return false;
         if (isTextProducingKey(e)) {
             e.preventDefault();
             e.stopPropagation();
             return false;
         }
+    }, true);
+    document.addEventListener('keyup', function(e){
+        if (!isLetterGameActive()) return;
+        const handled = handleDesktopKeyUpForLetters(e);
+        if (handled) { e.preventDefault(); e.stopPropagation(); return false; }
     }, true);
     // Bloquear pegado/entrada por IME
     ['beforeinput','input','paste','drop','compositionstart','compositionupdate','compositionend'].forEach(evt => {
@@ -7992,6 +8411,18 @@ document.addEventListener('keydown', function(e) {
         }
     }, true);
 })();
+
+// Atajos globales en Front (cuando NO está activo el juego de letras)
+document.addEventListener('keydown', function(e) {
+    // Si el juego de letras está activo, deja que el manejador específico lo gestione
+    if (document.querySelector('.letter-combination-container')) return;
+    // En Front/otros estados, permitir los atajos de control (5/6/7/8 y Delete) en escritorio
+    try { handleDesktopKeyForLetters(e); } catch(_) {}
+}, false);
+document.addEventListener('keyup', function(e) {
+    if (document.querySelector('.letter-combination-container')) return;
+    try { handleDesktopKeyUpForLetters(e); } catch(_) {}
+}, false);
 
 // ============ GUARDADO AUTOMÁTICO EN EVENTOS DE PÁGINA ============
 // Guardar progreso cuando el usuario cambie de pestaña, minimice la ventana o cierre la página

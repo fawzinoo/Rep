@@ -255,7 +255,7 @@
         /* Estilo de la parte trasera */
         .back {
     width: 100%;
-    background: linear-gradient(to bottom, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9)); /* Fondo azul oscuro */
+    background: linear-gradient(135deg, #e0b108 0%, #efdc9a 100%) !important; /* Fondo beis oscuro elegante */
     color: #ffffff; /* Color del texto */
     transform: rotateY(180deg); /* Rotación para el efecto */
     padding: 20px; /* Margen interno */
@@ -383,26 +383,6 @@
             100% { transform: rotate(360deg) scale(1); border-color: rgba(255, 255, 255, 0.5); }
         }
 
-.back::before, .back::after {
-    content: '';
-    position: absolute;
-    width: 150px; /* Ajusta el tamaño de la forma */
-    height: 150px; /* Ajusta el tamaño de la forma */
-    background: rgba(255, 255, 255, 0.3); /* Círculos más claros y visibles */
-    border-radius: 50%; /* Forma circular */
-    z-index: 0; /* Coloca detrás del texto */
-}
-
-.back::before {
-    top: -30px; /* Ajusta la posición */
-    left: -30px; /* Ajusta la posición */
-}
-
-.back::after {
-    bottom: -30px; /* Ajusta la posición */
-    right: -30px; /* Ajusta la posición */
-}
-
     
         /* El efecto de voltear */
         .flashcard.flipped {
@@ -442,6 +422,24 @@
 }
      
         .button:hover { transform: translateY(-3px); }
+
+/* Botón pequeño para silenciar sonidos de botones */
+.sound-toggle {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #4b5563;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.sound-toggle:hover {
+    transform: translateY(-2px);
+    background: #f8fafc;
+}
+.sound-toggle i { font-size: 18px; }
 
 
 
@@ -1161,7 +1159,7 @@
 
 .countdown-inline-text {
     font-size: 1.1rem;
-    color: #e0e7ef;
+    color: #1a202c; /* Color oscuro elegante que contrasta con fondo beis */
     margin-top: 2px;
     font-weight: 500;
     text-shadow: 0 1px 3px rgba(0,0,0,0.12);
@@ -1444,7 +1442,9 @@
     align-items: center;
     padding: 20px;
     z-index: 100;
-    background: linear-gradient(135deg, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9));
+    background: rgba(81, 3, 3, 0.1); /* Fondo transparente para mostrar el back */
+    backdrop-filter: blur(10px); /* Efecto de cristal */
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 25px;
 }
 
@@ -1551,6 +1551,7 @@
 }
 
 .multiple-choice-attempts {
+    display: none !important; /* Ocultar píldora de intentos - solo un intento permitido */
     position: absolute;
     top: 20px;
     left: 50%;
@@ -3375,7 +3376,7 @@
     ">
     <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
     <div class="pill" id="porcentaje-guardado" style="
-        background: rgba(255, 255, 255, 0.08);
+        background: #6b7280;
         color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
@@ -3392,7 +3393,7 @@
 
     <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
     <div class="pill" id="last-game-pill" style="
-        background: rgba(255, 255, 255, 0.08);
+        background: #6b7280;
         color: #FFD700;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.2);
@@ -3418,6 +3419,9 @@
         </button>
         <button class="button" id="shuffle-button" style="background-color: #9b59b6;">
             <i class="fas fa-random"></i> Mezclar
+        </button>
+        <button class="button sound-toggle" id="sound-toggle-btn" title="Silenciar sonidos de botones">
+            <i class="fas fa-volume-up" aria-hidden="true"></i>
         </button>
     </div>
     
@@ -3530,13 +3534,11 @@ function updateSkipButtonState() {
         setSkipEnabled(true);
         return;
     }
-    // Desde que se consume el primer intento y hasta cambiar de tarjeta: desactivado
+    // Con un solo intento, desactivar desde el primer intento fallido
     if (voiceAttempts >= 1) { setSkipEnabled(false); return; }
     // Back: activar por defecto salvo condiciones de bloqueo
-    // Bloqueos explícitos: mientras se muestran mensajes de error, y después del segundo incorrecto
+    // Bloqueos explícitos: mientras se muestran mensajes de error, y después del intento incorrecto
     if (showingErrorMessage || lockedAfterSecondIncorrect || lockedAfterCorrect) { setSkipEnabled(false); return; }
-    // En la ventana entre intentos tras el primer fallo: DESACTIVADO
-    if (betweenAttempts && voiceAttempts === 1) { setSkipEnabled(false); return; }
     // Si no estamos escuchando o no hay reconocimiento activo, permitir (otros casos de back)
     setSkipEnabled(true);
 }
@@ -3750,7 +3752,44 @@ function playSuccessSound() {
     successAudio.play().catch(() => {});
 }
 
+// ======= Control de mute para sonidos de botones =======
+const BTN_SOUNDS_LS_KEY = 'idiomas_btn_sounds_muted';
+function areButtonSoundsMuted() {
+    try { return localStorage.getItem(BTN_SOUNDS_LS_KEY) === '1'; } catch(e) { return false; }
+}
+function applyButtonSoundsMutedToElements() {
+    // Sincroniza la propiedad .muted de los audios controlados por el toggle
+    const muted = areButtonSoundsMuted();
+    ['buttonClickSound', 'shuffleSound', 'soundResetButton'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.muted = muted;
+        }
+    });
+}
+function setButtonSoundsMuted(muted) {
+    try { localStorage.setItem(BTN_SOUNDS_LS_KEY, muted ? '1' : '0'); } catch(e) {}
+    updateSoundToggleIcon();
+    // Aplicar inmediatamente a los elementos de audio
+    applyButtonSoundsMutedToElements();
+}
+function updateSoundToggleIcon() {
+    const btn = document.getElementById('sound-toggle-btn');
+    if (!btn) return;
+    const icon = btn.querySelector('i');
+    const muted = areButtonSoundsMuted();
+    if (icon) {
+        icon.classList.toggle('fa-volume-up', !muted);
+        icon.classList.toggle('fa-volume-mute', muted);
+    }
+    btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    btn.title = muted ? 'Sonidos de botones silenciados' : 'Silenciar sonidos de botones';
+}
+
 function showCountdown(card) {
+    // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
+    document.getElementById('shuffleSound').play().catch(() => {});
+    
     const back = card.querySelector('.back');
     
     // Elimina cualquier timer previo
@@ -4800,11 +4839,11 @@ function showMultipleChoice(backElement, correctAnswer) {
     const container = document.createElement('div');
     container.className = 'multiple-choice-container';
     
-    // Crear contador de intentos
-    const attemptsDiv = document.createElement('div');
-    attemptsDiv.className = 'multiple-choice-attempts';
-    attemptsDiv.innerHTML = `<i class="fas fa-target"></i> Intentos: ${2 - voiceAttempts}`;
-    container.appendChild(attemptsDiv);
+    // Contador de intentos eliminado - solo un intento permitido
+    // const attemptsDiv = document.createElement('div');
+    // attemptsDiv.className = 'multiple-choice-attempts';
+    // attemptsDiv.innerHTML = `<i class="fas fa-target"></i> Intentos: ${2 - voiceAttempts}`;
+    // container.appendChild(attemptsDiv);
     
     // Obtener o generar opciones para esta tarjeta y mantenerlas
     let options;
@@ -4839,7 +4878,7 @@ function showMultipleChoice(backElement, correctAnswer) {
 
         // Event listener para manejo de clics
         optionButton.addEventListener('click', () => {
-            handleMultipleChoiceSelection(optionButton, correctAnswer, backElement, attemptsDiv);
+            handleMultipleChoiceSelection(optionButton, correctAnswer, backElement);
         });
         
         optionsContainer.appendChild(optionButton);
@@ -4850,7 +4889,7 @@ function showMultipleChoice(backElement, correctAnswer) {
 }
 
 // Función para manejar la selección de una opción
-function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElement, attemptsDiv) {
+function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElement) {
     const isCorrect = selectedOption.dataset.isCorrect === 'true';
     const selectedAnswer = selectedOption.dataset.answer;
     
@@ -4883,9 +4922,9 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
     const mcContainer = backElement.querySelector('.multiple-choice-container');
     if (mcContainer) mcContainer.classList.add('correct-state');
         
-        // Actualizar contador de intentos
-        attemptsDiv.innerHTML = `<i class="fas fa-check"></i> ¡Correcto!`;
-        attemptsDiv.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+        // Contador de intentos ya no se muestra - un solo intento
+        // attemptsDiv.innerHTML = `<i class="fas fa-check"></i> ¡Correcto!`;
+        // attemptsDiv.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
         
         voiceAttempts = 0; // Reiniciar para la siguiente tarjeta
         canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
@@ -4934,66 +4973,23 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         // Marcar visualmente la opción incorrecta
         selectedOption.classList.add('incorrect-answer');
         
-        if (voiceAttempts < 2) {
-            // Primer intento fallido
-            playErrorSound();
-            
-            // Actualizar contador
-            attemptsDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Intentos: ${2 - voiceAttempts}`;
-            attemptsDiv.classList.add('flash-warning');
-            
-            // Mostrar mensaje de error temporal
-            const errorMessage = document.createElement('div');
-            errorMessage.className = 'mensaje-error';
-            errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><div>Incorrecto</div>`;
-            backElement.appendChild(errorMessage);
-            
-            // Durante el mensaje de error, desactivar botón
-            showingErrorMessage = true;
-            updateSkipButtonState();
-            
-            // Después de 2 segundos, eliminar mensaje y mostrar nuevas opciones
-            errorDelayTimeoutId = setTimeout(() => {
-                errorMessage.remove();
-                selectedOption.classList.remove('incorrect-answer');
-                
-                // Reactivar opciones para el segundo intento
-                allOptions.forEach(option => {
-                    if (!option.classList.contains('incorrect-answer')) {
-                        option.classList.remove('disabled');
-                    }
-                });
-                
-                // Abrir ventana entre intentos
-                betweenAttempts = true;
-                showingErrorMessage = false;
-                updateSkipButtonState();
-                
-                // Pequeño delay antes de reanudar
-                resumeRecognitionTimeoutId = setTimeout(() => {
-                    betweenAttempts = false;
-                    updateSkipButtonState();
-                }, 100);
-            }, 2000);
-            
-        } else {
-            // Segundo (último) intento fallido
-            playErrorSound();
-            incorrectCount++;
-            
-            // Agregar la palabra a la lista de incorrectas
-            incorrectWords.push(correctAnswer);
-            
-            voiceAttempts = 0;
-            canFlipBack = false;
-            canFlip = false;
-            
-            // Marcar la tarjeta como completada inmediatamente
-            if (!completedCards.has(currentCardIndex)) {
-                completedCards.add(currentCardIndex);
-                updateCardCounter();
-                saveGameProgress();
-            }
+        // Solo un intento permitido - ir directamente al fallo
+        playErrorSound();
+        incorrectCount++;
+        
+        // Agregar la palabra a la lista de incorrectas
+        incorrectWords.push(correctAnswer);
+        
+        voiceAttempts = 0;
+        canFlipBack = false;
+        canFlip = false;
+        
+        // Marcar la tarjeta como completada inmediatamente
+        if (!completedCards.has(currentCardIndex)) {
+            completedCards.add(currentCardIndex);
+            updateCardCounter();
+            saveGameProgress();
+        }
             
             // Si esta era la última tarjeta, actualizar el "avance anterior"
             try {
@@ -5003,23 +4999,19 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
                 }
             } catch (e) { /* noop */ }
             
-            // Mostrar mensaje de incorrecto final
-            const errorMessage = document.createElement('div');
-            errorMessage.className = 'mensaje-error';
-            errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><div>Incorrecto</div>`;
-            backElement.appendChild(errorMessage);
-            
-            // Actualizar contador
-            attemptsDiv.innerHTML = `<i class="fas fa-times"></i> Sin intentos`;
-            attemptsDiv.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-            
-            // Bloquear "No sé" mientras se muestra el mensaje final
-            showingErrorMessage = true;
-            lockedAfterSecondIncorrect = true;
-            updateSkipButtonState();
-            
-            // Después de un delay, mostrar la respuesta correcta
-            setTimeout(() => {
+        // Mensaje de incorrecto eliminado - solo sonido
+        // const errorMessage = document.createElement('div');
+        // errorMessage.className = 'mensaje-error';
+        // errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><div>Incorrecto</div>`;
+        // backElement.appendChild(errorMessage);
+        
+        // Bloquear "No sé" mientras se procesa el error
+        showingErrorMessage = true;
+        lockedAfterSecondIncorrect = true;
+        updateSkipButtonState();
+        
+        // Después de un delay más corto, mostrar la respuesta correcta (sin mensaje de error)
+        setTimeout(() => {
                 betweenAttempts = false;
                 showingErrorMessage = false;
                 updateSkipButtonState(); // sigue bloqueado por lockedAfterSecondIncorrect
@@ -5032,7 +5024,7 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                 respuestaCorrecta.style.fontSize = '2.5rem';
                 respuestaCorrecta.style.fontWeight = 'bold';
-                respuestaCorrecta.style.color = '#ffffff';
+                respuestaCorrecta.style.color = '#1a202c'; /* Color oscuro elegante que contrasta con fondo beis */
                 respuestaCorrecta.style.textAlign = 'center';
                 respuestaCorrecta.style.marginTop = '40px';
                 backElement.appendChild(respuestaCorrecta);
@@ -5052,14 +5044,13 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
                 } else {
                     showCountdown(card);
                 }
-            }, 2000);
-            
-            // Programar la aparición/actualización/ocultación del cuadro de stats
-            scheduleStatsBoxUpdate();
-            
-            // Guardar progreso automáticamente
-            saveGameProgress();
-        }
+            }, 2000); // Mantener estado de respuesta incorrecta visible 2 segundos
+        
+        // Programar la aparición/actualización/ocultación del cuadro de stats
+        scheduleStatsBoxUpdate();
+        
+        // Guardar progreso automáticamente
+        saveGameProgress();
     }
 }
 
@@ -6064,7 +6055,7 @@ function attachFlashcardHandlers() {
                     respuestaCorrecta.style.marginTop = '40px';
                     respuestaCorrecta.style.fontSize = '2.5rem';
                     respuestaCorrecta.style.fontWeight = 'bold';
-                    respuestaCorrecta.style.color = '#ffffff';
+                    respuestaCorrecta.style.color = '#1a202c'; /* Color oscuro elegante que contrasta con fondo beis */
                     respuestaCorrecta.style.textAlign = 'center';
                     backElement.appendChild(respuestaCorrecta);
                     
@@ -6119,8 +6110,8 @@ function initializePage() {
     if (porcentajeDiv && porcentajeSpan) {
         const percentage = savedPercentage !== null ? parseInt(savedPercentage) : NaN;
         porcentajeSpan.textContent = `${!isNaN(percentage) ? percentage : 0}%`;
-        // Fondo transparente como el cuadro; estilo neutro si 0 o no hay datos
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.08)';
+        // Fondo gris sólido en lugar de transparente
+        porcentajeDiv.style.background = '#6b7280';
         if (!isNaN(percentage) && percentage > 0) {
             if (percentage >= 80) {
                 porcentajeDiv.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6172,8 +6163,8 @@ function updateLastGamePillFromStorage() {
     if (lastGamePercentage !== null && lastGameDiv && lastGamePill) {
         const gamePercentage = parseInt(lastGamePercentage);
         lastGameDiv.textContent = `${isNaN(gamePercentage) ? 0 : gamePercentage}%`;
-        // Estilo visual del pill según nivel
-        lastGamePill.style.background = 'rgba(255,255,255,0.08)';
+        // Fondo gris sólido en lugar de transparente
+        lastGamePill.style.background = '#6b7280';
         if (!isNaN(gamePercentage)) {
             if (gamePercentage >= 80) {
                 lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6242,7 +6233,7 @@ function updateSuccessPercentage() {
     const porcentajeSpan = document.getElementById('current-percentage');
     if (porcentajeDiv && porcentajeSpan) {
         porcentajeSpan.textContent = `${percentage}%`;
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.08)';
+        porcentajeDiv.style.background = '#6b7280';
         if (totalCards > 0) {
             if (percentage >= 80) {
                 porcentajeDiv.style.borderColor = 'rgba(0, 200, 81, 0.6)';
@@ -6280,9 +6271,8 @@ function saveLastGamePercentage() {
     if (lastGameDiv && lastGamePill) {
         lastGameDiv.textContent = `${gamePercentage}%`;
         
-        // Cambiar color según el porcentaje del último partido
-        // Fondo transparente como el cuadro; solo resaltar borde según nivel
-        lastGamePill.style.background = 'rgba(255,255,255,0.08)';
+        // Fondo gris sólido en lugar de transparente
+        lastGamePill.style.background = '#6b7280';
         if (gamePercentage >= 80) {
             lastGamePill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
             lastGamePill.style.boxShadow = '0 4px 12px rgba(0, 200, 81, 0.25)';
@@ -6440,7 +6430,7 @@ function resetGame() {
     const porcentajeSpan = document.getElementById('current-percentage');
     if (porcentajeDiv && porcentajeSpan) {
         porcentajeSpan.textContent = `${percentage}%`;
-        porcentajeDiv.style.background = 'rgba(255,255,255,0.08)';
+        porcentajeDiv.style.background = '#6b7280';
         porcentajeDiv.style.borderColor = 'rgba(255, 255, 255, 0.2)';
         porcentajeDiv.style.boxShadow = 'none';
     }
@@ -7170,6 +7160,128 @@ function goToNextCardWithDebug() {
     
     console.log('🔄 goToNextCard finished');
 }
+
+// ======= Configuración del control de mute =======
+// Configurar botón de sonido al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    updateSoundToggleIcon();
+    applyButtonSoundsMutedToElements();
+    
+    const soundToggleBtn = document.getElementById('sound-toggle-btn');
+    if (soundToggleBtn) {
+        soundToggleBtn.addEventListener('click', function() {
+            const currentlyMuted = areButtonSoundsMuted();
+            setButtonSoundsMuted(!currentlyMuted);
+        });
+    }
+});
+
+// ======= Controles de teclado para PC =======
+function isDesktopLike() {
+    // Detectar si es un dispositivo de escritorio
+    return window.innerWidth >= 768 && !('ontouchstart' in window);
+}
+
+// Prevenir selección con teclado (Ctrl+A, Ctrl+C, Ctrl+S, F12)
+document.addEventListener('keydown', function(e) {
+    // Prevenir combinaciones de teclado comunes
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A' || 
+        e.key === 'c' || e.key === 'C' || e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }
+    // Prevenir F12 (DevTools)
+    if (e.key === 'F12') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }
+}, true);
+
+// Atajos de teclado para control del juego (solo en PC)
+document.addEventListener('keydown', function(e) {
+    if (!isDesktopLike()) return; // Solo en PC
+    
+    // Evitar cuando se escribe en inputs
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    
+    const key = e.key;
+    const code = e.code;
+    
+    if (!e.repeat) { // Evitar repetición automática
+        // 1, 2, 3, 4: Seleccionar opciones de respuesta múltiple
+        if ((key >= '1' && key <= '4') || (code >= 'Numpad1' && code <= 'Numpad4')) {
+            const optionIndex = (key >= '1' && key <= '4') ? parseInt(key) - 1 : parseInt(code.replace('Numpad', '')) - 1;
+            const multipleChoiceContainer = document.querySelector('.multiple-choice-container');
+            if (multipleChoiceContainer && multipleChoiceContainer.style.display !== 'none') {
+                const options = multipleChoiceContainer.querySelectorAll('.multiple-choice-option');
+                if (options[optionIndex] && !options[optionIndex].classList.contains('disabled')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    options[optionIndex].click(); // Simular click en la opción correspondiente
+                    return;
+                }
+            }
+        }
+        
+        // Espacio: alternar Front <-> Back de la tarjeta
+        if (key === ' ' || code === 'Space') {
+            const card = document.querySelector('.flashcard.is-visible');
+            if (card && canFlip) {
+                e.preventDefault();
+                e.stopPropagation();
+                card.click(); // Usa la lógica existente de flip
+                return;
+            }
+        }
+        
+        // 5: Reiniciar juego
+        if (key === '5' || code === 'Numpad5') {
+            const resetBtn = document.getElementById('reset-button');
+            if (resetBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                resetBtn.click(); // Simular click del botón para mantener toda la lógica
+                return;
+            }
+        }
+        
+        // 6: Siguiente tarjeta (Skip)
+        if (key === '6' || code === 'Numpad6') {
+            const skipBtn = document.getElementById('skip-button');
+            if (skipBtn && !skipBtn.disabled) {
+                e.preventDefault();
+                e.stopPropagation();
+                skipBtn.click(); // Simular click del botón para mantener toda la lógica
+                return;
+            }
+        }
+        
+        // 7: Mezclar tarjetas
+        if (key === '7' || code === 'Numpad7') {
+            const shuffleBtn = document.getElementById('shuffle-button');
+            if (shuffleBtn && !shuffleBtn.disabled) {
+                e.preventDefault();
+                e.stopPropagation();
+                shuffleBtn.click(); // Simular click del botón para mantener toda la lógica
+                return;
+            }
+        }
+        
+        // 8: Toggle mute/sonidos
+        if (key === '8' || code === 'Numpad8') {
+            const soundBtn = document.getElementById('sound-toggle-btn');
+            if (soundBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                soundBtn.click();
+                return;
+            }
+        }
+    }
+}, false);
     </script>
     
     

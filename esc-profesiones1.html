@@ -3282,8 +3282,108 @@
             .vk-accents .vk-key { height: 42px; font-size: 17px; }
             .vk-accents .row-accents, .vk-accents .row-n-tilde { gap: 3px; }
         }
+
+        /* Logo en esquina superior izquierda - EFECTO MANCHA */
+        .logo-corner {
+            position: fixed;
+            top: 10px;
+            left: 20px;
+            width: 60px;
+            height: 60px;
+            z-index: 1000;
+            cursor: pointer;
+            animation: splashEffect 13s infinite ease-in-out;
+        }
+
+        .logo-corner:hover {
+            transform: scale(1.1);
+            animation-play-state: paused;
+        }
+
+        .logo-corner img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+            transition: filter 0.3s ease;
+        }
+
+        .logo-corner:hover img {
+            filter: drop-shadow(0 4px 12px rgba(255, 107, 53, 0.4));
+        }
+
+        /* Animación de salpicadura de mancha - cada 10s, dura 3s */
+        @keyframes splashEffect {
+            /* 0-3s: Animación de salpicadura */
+            0% { 
+                transform: scale(1) rotate(0deg);
+                filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+                border-radius: 15px;
+            }
+            5% { 
+                transform: scale(1.2) rotate(-5deg) skewX(10deg);
+                filter: drop-shadow(0 4px 12px rgba(255, 107, 53, 0.4));
+                border-radius: 50% 20% 40% 30%;
+            }
+            10% { 
+                transform: scale(0.9) rotate(3deg) skewY(5deg);
+                filter: drop-shadow(0 6px 16px rgba(220, 53, 69, 0.5));
+                border-radius: 30% 60% 20% 50%;
+            }
+            15% { 
+                transform: scale(1.1) rotate(-2deg) skewX(-5deg);
+                filter: drop-shadow(0 3px 10px rgba(245, 158, 11, 0.4));
+                border-radius: 40% 30% 60% 20%;
+            }
+            20% { 
+                transform: scale(1.05) rotate(1deg);
+                filter: drop-shadow(0 4px 8px rgba(239, 68, 68, 0.3));
+                border-radius: 25% 45% 35% 55%;
+            }
+            23% { 
+                transform: scale(1) rotate(0deg);
+                filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+                border-radius: 15px;
+            }
+            
+            /* 23-100%: Reposo hasta la siguiente salpicadura */
+            24%, 100% { 
+                transform: scale(1) rotate(0deg);
+                filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+                border-radius: 15px;
+            }
+        }
+
+        /* Responsivo para móvil */
+        @media (max-width: 480px) {
+            .logo-corner {
+                width: 50px;
+                height: 50px;
+                top: 2px;
+                left: 5px;
+                /* Mantiene la misma animación de mancha */
+                animation: splashEffect 13s infinite ease-in-out;
+            }
+            
+            .logo-corner:hover {
+                transform: scale(1.05); /* Menos agresivo en móvil */
+            }
+        }
+
+        /* Responsivo para PC/Desktop - Acercar logo al título */
+        @media (min-width: 1024px) {
+            .logo-corner {
+                top: 5px;
+                left: calc(45% - 200px); /* Posicionado cerca del título centrado */
+            }
+        }
     </style></head>
 <body>
+
+<!-- Logo en esquina superior izquierda -->
+<div class="logo-corner">
+    <img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" draggable="false">
+</div>
 
 <!-- Overlay de Conectividad -->
 <div id="connectivity-overlay" class="connectivity-overlay">
@@ -3350,7 +3450,7 @@
 <!--------------------------------------------------------------------->
 
 <div id="flashcard-container">
-    <div class="editor-name">@Faouzi ElHilali</div>
+    <div class="editor-name">@Profe Faouzi</div>
  <!-- Tarjetas de imágenes -->
     <div class="flashcard">
         <div class="front">                 
@@ -4046,11 +4146,7 @@ function updateSkipButtonState() {
         setSkipEnabled(false); 
         return; 
     }
-    // En la ventana entre intentos tras el primer fallo: desactivado
-    if (betweenAttempts) {
-        setSkipEnabled(false);
-        return;
-    }
+    // MODIFICADO: Mantener "No sé" disponible siempre, incluso entre intentos
     // Para modo escritura, permitir "No sé" por defecto en back
     setSkipEnabled(true);
 }
@@ -6680,10 +6776,11 @@ function attachFlashcardHandlers() {
                     document.body.classList.add('keyboard-hidden');
                     document.documentElement.classList.add('keyboard-hidden');
                     
-                    // Ocultar botón "No sé" duplicado cuando se pierde el focus (con delay para permitir clicks)
-                    setTimeout(() => {
-                        noDuplicateBtn.classList.remove('show-on-focus');
-                    }, 150);
+                    // MODIFICADO: No ocultar automáticamente el botón "No sé" en blur
+                    // Solo ocultarlo si realmente debe estar oculto según el estado del juego
+                    // setTimeout(() => {
+                    //     noDuplicateBtn.classList.remove('show-on-focus');
+                    // }, 150);
                     if (window.innerWidth <= 768) {
                         const { vk, vkOverlay } = getVK();
                         // Si el foco se mueve a algún elemento dentro del teclado, no cerrar
@@ -7122,8 +7219,10 @@ function attachFlashcardHandlers() {
                         inputEl.removeEventListener('click', ensureVKVisibleOnTap);
                         restorePlaceholder();
                     } catch {}
-                    // En cleanup, ocultar botón móvil si helper existe
-                        if (typeof hideMobileSkipButton === 'function') hideMobileSkipButton(true);
+                    // MODIFICADO: En lugar de ocultar siempre el botón móvil "No sé", 
+                    // solo ocultarlo si realmente debe estar oculto según el estado del juego
+                    // if (typeof hideMobileSkipButton === 'function') hideMobileSkipButton(true);
+                    
                     // Forzar ocultado del overlay del teclado virtual si está visible
                     try {
                         const vkEl = document.getElementById('vk');
@@ -7138,8 +7237,8 @@ function attachFlashcardHandlers() {
                     document.documentElement.classList.add('keyboard-hidden');
                     document.body.classList.remove('keyboard-visible');
                     document.documentElement.classList.remove('keyboard-visible');
-                    // Limpiar estado visual de todos los botones móviles "No sé" por seguridad
-                    try { document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible')); } catch {}
+                    // MODIFICADO: No limpiar automáticamente los botones móviles "No sé"
+                    // try { document.querySelectorAll('.mobile-skip-button').forEach(btn => btn.classList.remove('keyboard-visible')); } catch {}
                 };
 
                 // Guardar función de limpieza para uso posterior

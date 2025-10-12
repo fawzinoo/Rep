@@ -526,6 +526,24 @@
         .button:hover { transform: translateY(-3px); }
 
 
+.sound-toggle {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #4b5563;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.sound-toggle:hover {
+    transform: translateY(-2px);
+    background: #f8fafc;
+}
+.sound-toggle i { font-size: 18px; }
+
+
 
 
 
@@ -3970,6 +3988,9 @@
         <button class="button" id="shuffle-button" style="background-color: #9b59b6;">
             <i class="fas fa-random"></i> Mezclar
         </button>
+        <button class="button sound-toggle" id="sound-toggle-btn" title="Silenciar sonidos de botones" aria-label="Silenciar sonidos de botones">
+            <i class="fas fa-volume-up" aria-hidden="true"></i>
+        </button>
     </div>
     
 
@@ -4035,6 +4056,61 @@
     errorAudio.play().catch(() => {});
 }
 
+        // ======= Control de mute para sonidos de botones (calco de sel-idiomas) =======
+        const BTN_SOUNDS_LS_KEY = 'idiomas_btn_sounds_muted';
+        function areButtonSoundsMuted() {
+            try {
+                return localStorage.getItem(BTN_SOUNDS_LS_KEY) === '1';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function applyButtonSoundsMutedToElements() {
+            const muted = areButtonSoundsMuted();
+            ['buttonClickSound', 'shuffleSound', 'soundResetButton', 'keyboardSound', 'trashSound'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.muted = muted;
+                }
+            });
+        }
+
+        function updateSoundToggleIcon() {
+            const btn = document.getElementById('sound-toggle-btn');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            const muted = areButtonSoundsMuted();
+            if (icon) {
+                icon.classList.toggle('fa-volume-up', !muted);
+                icon.classList.toggle('fa-volume-mute', muted);
+                icon.classList.toggle('fa-volume-high', !muted);
+                icon.classList.toggle('fa-volume-xmark', muted);
+            }
+            btn.title = muted ? 'Sonidos de botones silenciados' : 'Silenciar sonidos de botones';
+            btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+        }
+
+        function setButtonSoundsMuted(muted) {
+            try {
+                localStorage.setItem(BTN_SOUNDS_LS_KEY, muted ? '1' : '0');
+            } catch (e) {}
+            applyButtonSoundsMutedToElements();
+            updateSoundToggleIcon();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            applyButtonSoundsMutedToElements();
+            updateSoundToggleIcon();
+            const toggle = document.getElementById('sound-toggle-btn');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    vibrar(40);
+                    setButtonSoundsMuted(!areButtonSoundsMuted());
+                });
+            }
+        });
+
 function playButtonSound() {
     // Agregar vibración leve a todos los botones
     vibrar(50); // Vibración más suave que los botones principales
@@ -4043,7 +4119,9 @@ function playButtonSound() {
     if (buttonAudio) {
         buttonAudio.currentTime = 0; // Reiniciar el audio
         buttonAudio.volume = 0.7;
-        buttonAudio.play().catch(() => {});
+                if (!areButtonSoundsMuted()) {
+                    buttonAudio.play().catch(() => {});
+                }
     }
 }
 
@@ -4052,7 +4130,9 @@ function playKeyboardSound() {
     if (keyboardSound) {
         keyboardSound.currentTime = 0;
         keyboardSound.volume = 0.4;
-        keyboardSound.play().catch(() => {});
+                if (!areButtonSoundsMuted()) {
+                    keyboardSound.play().catch(() => {});
+                }
     }
 }
 
@@ -4061,7 +4141,9 @@ function playTrashSound() {
     if (trashSound) {
         trashSound.currentTime = 0;
         trashSound.volume = 0.6;
-        trashSound.play().catch(() => {});
+                if (!areButtonSoundsMuted()) {
+                    trashSound.play().catch(() => {});
+                }
     }
 }
 
@@ -5610,7 +5692,7 @@ function saveGameProgress() {
     
     try {
         const stateString = JSON.stringify(gameState);
-        localStorage.setItem('profesiones12_gameProgress', stateString); // ✅ Cambiado de profesiones12_gameProgress
+        localStorage.setItem(' _gameProgress', stateString); // ✅ Cambiado de profesiones12_gameProgress
         console.log(`✅ Progreso guardado automáticamente. voiceAttempts: ${voiceAttempts}`);
     } catch (error) {
         if (error.name === 'QuotaExceededError') {
@@ -8406,6 +8488,80 @@ function initConnectivityMonitor() {
     // Iniciar verificación periódica cada 10 segundos
     startPeriodicConnectivityCheck();
 }
+
+// ======= Controles de teclado para PC =======
+function isDesktopLike() {
+    // Considera desktop si la pantalla es amplia y no hay interacción táctil primaria
+    return window.innerWidth >= 768 && !('ontouchstart' in window);
+}
+
+document.addEventListener('keydown', function(e) {
+    if (!isDesktopLike()) return;
+
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+    }
+
+    if (e.repeat) return;
+
+    const key = e.key;
+    const code = e.code;
+
+    // Espacio: voltear tarjeta
+    if (key === ' ' || code === 'Space') {
+        const card = document.querySelector('.flashcard.is-visible');
+        if (card && typeof canFlip !== 'undefined' && canFlip) {
+            e.preventDefault();
+            e.stopPropagation();
+            card.click();
+        }
+        return;
+    }
+
+    // 5: Reiniciar juego
+    if (key === '5' || code === 'Numpad5') {
+        const resetBtn = document.getElementById('reset-button');
+        if (resetBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            resetBtn.click();
+        }
+        return;
+    }
+
+    // 6: Botón No sé
+    if (key === '6' || code === 'Numpad6') {
+        const skipBtn = document.getElementById('skip-button');
+        if (skipBtn && !skipBtn.disabled) {
+            e.preventDefault();
+            e.stopPropagation();
+            skipBtn.click();
+        }
+        return;
+    }
+
+    // 7: Mezclar tarjetas
+    if (key === '7' || code === 'Numpad7') {
+        const shuffleBtn = document.getElementById('shuffle-button');
+        if (shuffleBtn && !shuffleBtn.disabled) {
+            e.preventDefault();
+            e.stopPropagation();
+            shuffleBtn.click();
+        }
+        return;
+    }
+
+    // 8: Alternar mute
+    if (key === '8' || code === 'Numpad8') {
+        const soundBtn = document.getElementById('sound-toggle-btn');
+        if (soundBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            soundBtn.click();
+        }
+    }
+}, false);
 
 // Manejar evento de conexión online
 function handleOnlineEvent() {

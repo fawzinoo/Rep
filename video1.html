@@ -1491,53 +1491,25 @@
 			return current === target;
 		};
 
-		const toggleFullscreen = () => {
-			bumpControls();
-			const target = getFullscreenTarget();
-			if (!isFullscreenActive()) {
-				if (target?.requestFullscreen) {
-					target.requestFullscreen().catch(() => {});
-					return;
-				}
-				if (target?.webkitRequestFullscreen) {
-					target.webkitRequestFullscreen();
-					return;
-				}
-				if (target?.mozRequestFullScreen) {
-					target.mozRequestFullScreen();
-					return;
-				}
-				if (target?.msRequestFullscreen) {
-					target.msRequestFullscreen();
-				}
-			} else {
-				if (document.exitFullscreen) {
-					document.exitFullscreen().catch(() => {});
-					return;
-				}
-				if (document.webkitExitFullscreen) {
-					document.webkitExitFullscreen();
-					return;
-				}
-				if (document.mozCancelFullScreen) {
-					document.mozCancelFullScreen();
-					return;
-				}
-				if (document.msExitFullscreen) {
-					document.msExitFullscreen();
-				}
+		const callMaybePromise = async (fn, context) => {
+			if (typeof fn !== "function") {
+				return false;
 			}
-		};
-
-		const updateFullscreenButton = () => {
-			const active = isFullscreenActive();
-			fullBtn.dataset.state = active ? "exit" : "enter";
-			fullBtn.setAttribute("aria-label", active ? "Salir de pantalla completa" : "Pantalla completa");
+			try {
+				const result = fn.call(context);
+				if (result && typeof result.then === "function") {
+					await result;
+				}
+				return true;
+			} catch {
+				return false;
+			}
 		};
 
 		const ORIENTATION_LOCK_QUERY = "(max-width: 1024px)";
 		const orientationLockMediaQuery = typeof window.matchMedia === "function" ? window.matchMedia(ORIENTATION_LOCK_QUERY) : null;
 		let orientationLockActive = false;
+		let orientationLockMode = null;
 
 		const isHandheldViewport = () => Boolean(orientationLockMediaQuery?.matches);
 
@@ -1553,18 +1525,36 @@
 			return Boolean(orientation && typeof orientation.lock === "function");
 		};
 
-		const requestLandscapeOrientation = async () => {
+		const requestOrientationLock = async (modes) => {
+			if (!Array.isArray(modes)) {
+				modes = [modes];
+			}
 			if (!isHandheldViewport() || !isLikelyTouchDevice() || !canLockOrientation()) {
 				orientationLockActive = false;
-				return;
+				orientationLockMode = null;
+				return false;
 			}
-			try {
-				await window.screen.orientation.lock("landscape");
-				orientationLockActive = true;
-			} catch {
-				orientationLockActive = false;
+			for (const mode of modes) {
+				try {
+					const result = window.screen.orientation.lock(mode);
+					if (result && typeof result.then === "function") {
+						await result;
+					}
+					orientationLockActive = true;
+					orientationLockMode = mode;
+					return true;
+				} catch {
+					continue;
+				}
 			}
+			orientationLockActive = false;
+			orientationLockMode = null;
+			return false;
 		};
+
+		const requestLandscapeOrientation = () => requestOrientationLock(["landscape", "landscape-primary", "landscape-secondary"]);
+
+		const requestPortraitOrientation = () => requestOrientationLock(["portrait-primary", "portrait"]);
 
 		const releaseOrientationLock = () => {
 			if (!orientationLockActive) {
@@ -1573,6 +1563,7 @@
 			const orientation = window.screen?.orientation;
 			if (!orientation || typeof orientation.unlock !== "function") {
 				orientationLockActive = false;
+				orientationLockMode = null;
 				return;
 			}
 			try {
@@ -1581,6 +1572,44 @@
 				// Ignore unlock errors on platforms that do not support it.
 			}
 			orientationLockActive = false;
+			orientationLockMode = null;
+		};
+
+		const toggleFullscreen = async () => {
+			bumpControls();
+			const target = getFullscreenTarget();
+			if (!isFullscreenActive()) {
+				if (await callMaybePromise(target?.requestFullscreen, target)) {
+					return;
+				}
+				if (await callMaybePromise(target?.webkitRequestFullscreen, target)) {
+					return;
+				}
+				if (await callMaybePromise(target?.mozRequestFullScreen, target)) {
+					return;
+				}
+				await callMaybePromise(target?.msRequestFullscreen, target);
+				return;
+			}
+			if (orientationLockMode?.startsWith("landscape")) {
+				await requestPortraitOrientation();
+			}
+			if (await callMaybePromise(document.exitFullscreen, document)) {
+				return;
+			}
+			if (await callMaybePromise(document.webkitExitFullscreen, document)) {
+				return;
+			}
+			if (await callMaybePromise(document.mozCancelFullScreen, document)) {
+				return;
+			}
+			await callMaybePromise(document.msExitFullscreen, document);
+		};
+
+		const updateFullscreenButton = () => {
+			const active = isFullscreenActive();
+			fullBtn.dataset.state = active ? "exit" : "enter";
+			fullBtn.setAttribute("aria-label", active ? "Salir de pantalla completa" : "Pantalla completa");
 		};
 
 		const handleFullscreenChange = () => {
@@ -1588,7 +1617,7 @@
 			updateFullscreenButton();
 			if (active) {
 				requestLandscapeOrientation();
-			} else {
+			} else if (!orientationLockMode || orientationLockMode.startsWith("landscape")) {
 				releaseOrientationLock();
 			}
 		};

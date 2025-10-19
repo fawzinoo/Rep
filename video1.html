@@ -38,6 +38,33 @@
 			position: relative;
 		}
 
+		.player-shell:fullscreen,
+		.player-shell:-webkit-full-screen {
+			width: 100vw;
+			height: 100vh;
+			max-width: none;
+			margin: 0;
+			border-radius: 0;
+			padding: 0 !important;
+		}
+
+		.player-shell:fullscreen video,
+		.player-shell:-webkit-full-screen video,
+		.player-shell:fullscreen .video-background,
+		.player-shell:-webkit-full-screen .video-background {
+			border-radius: 0;
+			height: 100%;
+			width: 100%;
+			object-fit: contain;
+		}
+
+		.player-shell:fullscreen .controls,
+		.player-shell:-webkit-full-screen .controls {
+			left: 0;
+			right: 0;
+			bottom: 0;
+		}
+
 		h1 {
 			margin: 0 0 24px;
 			font-size: 1.6rem;
@@ -1414,17 +1441,63 @@
 			player.muted = !player.muted;
 		};
 
+		const getFullscreenTarget = () => playerShell || player.parentElement || player;
+
+		const getActiveFullscreenElement = () => document.fullscreenElement
+			|| document.webkitFullscreenElement
+			|| document.mozFullScreenElement
+			|| document.msFullscreenElement
+			|| null;
+
+		const isFullscreenActive = () => {
+			const current = getActiveFullscreenElement();
+			if (!current) {
+				return false;
+			}
+			const target = getFullscreenTarget();
+			return current === target;
+		};
+
 		const toggleFullscreen = () => {
 			bumpControls();
-			if (!document.fullscreenElement) {
-				player.parentElement.requestFullscreen?.();
+			const target = getFullscreenTarget();
+			if (!isFullscreenActive()) {
+				if (target?.requestFullscreen) {
+					target.requestFullscreen().catch(() => {});
+					return;
+				}
+				if (target?.webkitRequestFullscreen) {
+					target.webkitRequestFullscreen();
+					return;
+				}
+				if (target?.mozRequestFullScreen) {
+					target.mozRequestFullScreen();
+					return;
+				}
+				if (target?.msRequestFullscreen) {
+					target.msRequestFullscreen();
+				}
 			} else {
-				document.exitFullscreen?.();
+				if (document.exitFullscreen) {
+					document.exitFullscreen().catch(() => {});
+					return;
+				}
+				if (document.webkitExitFullscreen) {
+					document.webkitExitFullscreen();
+					return;
+				}
+				if (document.mozCancelFullScreen) {
+					document.mozCancelFullScreen();
+					return;
+				}
+				if (document.msExitFullscreen) {
+					document.msExitFullscreen();
+				}
 			}
 		};
 
 		const updateFullscreenButton = () => {
-			const active = Boolean(document.fullscreenElement);
+			const active = isFullscreenActive();
 			fullBtn.dataset.state = active ? "exit" : "enter";
 			fullBtn.setAttribute("aria-label", active ? "Salir de pantalla completa" : "Pantalla completa");
 		};
@@ -1478,8 +1551,9 @@
 		};
 
 		const handleFullscreenChange = () => {
+			const active = isFullscreenActive();
 			updateFullscreenButton();
-			if (document.fullscreenElement) {
+			if (active) {
 				requestLandscapeOrientation();
 			} else {
 				releaseOrientationLock();
@@ -1732,6 +1806,12 @@
 		fullBtn.addEventListener("click", toggleFullscreen);
 		document.addEventListener("fullscreenchange", handleFullscreenChange);
 		document.addEventListener("fullscreenerror", releaseOrientationLock);
+		document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+		document.addEventListener("webkitfullscreenerror", releaseOrientationLock);
+		document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+		document.addEventListener("mozfullscreenerror", releaseOrientationLock);
+		document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+		document.addEventListener("MSFullscreenError", releaseOrientationLock);
 		
 		// Botón de subtítulos/transcripción
 		ccToggle.addEventListener("click", () => {

@@ -967,6 +967,14 @@ input[type="number"]::-webkit-outer-spin-button {
 		let lastPinchDistance = 0;
 		const MIN_ZOOM = 0.5;
 		const MAX_ZOOM = 4.0;
+		let exerciseZoom = 1.0;
+		let exerciseTranslateX = 0;
+		let exerciseTranslateY = 0;
+		let isExercisePinchZooming = false;
+		let lastExercisePinchDistance = 0;
+		let isExercisePanning = false;
+		const MIN_EXERCISE_ZOOM = 1.0;
+		const MAX_EXERCISE_ZOOM = 4.0;
 		// Variables para control de ancho de ejercicios
 		let exerciseWidthScale = 1.0;
 		const MIN_WIDTH_SCALE = 0.5;
@@ -1083,7 +1091,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		function applyZoomToElement() {
 			const canvas = document.getElementById('pdf-canvas');
 			
-			// SOLO aplicar zoom al PDF, NUNCA a las imágenes de ejercicios
+			// Aplicar zoom únicamente al PDF; las imágenes usan applyExerciseTransform
 			if (!isExerciseVisible() && canvas && canvas.style.display !== 'none') {
 				// Aplicar zoom a canvas PDF únicamente
 				canvas.classList.add('zooming');
@@ -1092,6 +1100,39 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Remover clase después de un breve delay para reactivar transiciones
 				setTimeout(() => canvas.classList.remove('zooming'), 50);
 			}
+		}
+
+		function clampExerciseTranslation() {
+			const limit = Math.max(window.innerWidth, window.innerHeight) * 2;
+			exerciseTranslateX = Math.max(-limit, Math.min(limit, exerciseTranslateX));
+			exerciseTranslateY = Math.max(-limit, Math.min(limit, exerciseTranslateY));
+		}
+
+		function applyExerciseTransform() {
+			const img = document.getElementById('exercise-img');
+			if (!img) return;
+			const base = (img.dataset && img.dataset.baseTransform)
+				? img.dataset.baseTransform
+				: (window.innerWidth <= 768 ? 'translateX(-50%)' : 'translate(-50%, -50%)');
+			clampExerciseTranslation();
+			if (!img.style.transformOrigin) {
+				img.style.transformOrigin = 'center center';
+			}
+			img.style.transform = `${base} translate(${exerciseTranslateX}px, ${exerciseTranslateY}px) scale(${exerciseZoom})`;
+		}
+
+		function resetExerciseZoom() {
+			exerciseZoom = 1.0;
+			exerciseTranslateX = 0;
+			exerciseTranslateY = 0;
+			isExercisePinchZooming = false;
+			isExercisePanning = false;
+			lastExercisePinchDistance = 0;
+			const img = document.getElementById('exercise-img');
+			if (img) {
+				img.style.transformOrigin = 'center center';
+			}
+			applyExerciseTransform();
 		}
 
 		// Funciones para gestionar historial con localStorage
@@ -1344,6 +1385,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				exerciseImgEl.style.transition='opacity 140ms ease';
 				exerciseImgEl.src = cached.url;
 				exerciseImgEl.dataset.exerciseNumber=String(n);
+				resetExerciseZoom();
 				adjustImageSize();
 				showWidthControls();
 				const mapped = exerciseToPage[n];
@@ -1368,7 +1410,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			exerciseImgEl.style.display='block';
 			exerciseImgEl.style.opacity='0';
 			exerciseImgEl.style.transition='opacity 160ms ease';
-			exerciseImgEl.style.transform='translate(-50%, -50%)';
+			resetExerciseZoom();
 			adjustImageSize();
 			showWidthControls();
 			const base = baseImageUrl.replace(/\/$/,'');
@@ -1396,7 +1438,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				const testImg=new Image(); let timeoutId;
 				function cleanup(){ try { testImg.onload=null; testImg.onerror=null; } catch(e){} if(timeoutId){ clearTimeout(timeoutId); timeoutId=null; } }
 				testImg.onload=function(){ if (myReq!==showImageRequestId){ cleanup(); return; }
-					exerciseImgEl.src=url; exerciseImgEl.dataset.exerciseNumber=String(n); exerciseImageCache.set(n,{url,status:'ok'}); adjustImageSize(); showWidthControls();
+					exerciseImgEl.src=url; exerciseImgEl.dataset.exerciseNumber=String(n); exerciseImageCache.set(n,{url,status:'ok'}); resetExerciseZoom(); adjustImageSize(); showWidthControls();
 					const mapped=exerciseToPage[n]; if(mapped){ currentPage=mapped; const pageInput=document.getElementById('page-input'); if(pageInput) pageInput.value=mapped; const pageCounter=document.getElementById('page-counter'); if(pageCounter && totalPages){ pageCounter.innerHTML=`Página <span class=\"pc-num\">${mapped}</span> de <span class=\"pc-num\">${totalPages}</span>`; } }
 					saveUserState('exercise',{exerciseNumber:n}); setLastValidExercise(n);
 					requestAnimationFrame(()=>{ exerciseImgEl.style.opacity='1'; setTimeout(()=>{ if(pdfCanvas){ pdfCanvas.style.display='none'; pdfCanvas.style.visibility='hidden'; } },170); });
@@ -2299,6 +2341,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			// Transición instantánea de la imagen al PDF
 			if (isExerciseVisible()) {
 				playButtonSound();
+				resetExerciseZoom();
 				
 				// Ocultar botones de control de ancho
 				hideWidthControls();
@@ -2585,6 +2628,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			const visibleTop = menuHeight;
 			const visibleBottom = Math.min(window.innerHeight, counterRect.top);
 			const availableHeight = Math.max(100, visibleBottom - visibleTop);
+			let baseTransform = 'translateX(-50%)';
 
 			// Preferir ocupar todo el alto disponible en móviles y ajustar ancho proporcional
 			if (window.innerWidth <= 768) {
@@ -2597,7 +2641,6 @@ input[type="number"]::-webkit-outer-spin-button {
 				} else {
 					img.style.width = 'auto';
 				}
-				img.style.transform = 'translateX(-50%)';
 				img.style.maxWidth = (100 * exerciseWidthScale) + 'vw';
 				img.style.top = visibleTop + 'px';
 				img.style.left = '50%';
@@ -2622,7 +2665,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				
 				img.style.width = targetWidth + 'vw';
 				img.style.height = 'auto';
-				img.style.transform = 'translate(-50%, -50%)';
+				baseTransform = 'translate(-50%, -50%)';
 				
 				if (img.naturalHeight && img.naturalWidth) {
 					const multiplier = targetWidth / 100;
@@ -2639,6 +2682,11 @@ input[type="number"]::-webkit-outer-spin-button {
 				img.style.top = (visibleTop + (availableHeight/2)) + 'px';
 				img.style.left = '50%';
 			}
+			img.dataset.baseTransform = baseTransform;
+			if (!img.style.transformOrigin) {
+				img.style.transformOrigin = 'center center';
+			}
+			applyExerciseTransform();
 		}
 
 		window.addEventListener('resize', function() {
@@ -2843,76 +2891,93 @@ input[type="number"]::-webkit-outer-spin-button {
 		let activeIndicator = null;
 		let lastTapTime = 0;
 		const SWIPE_THRESHOLD = 20; // ULTRA SENSIBLE: mínima distancia para considerar swipe
-		const SWIPE_VELOCITY_THRESHOLD = 0.1; // ULTRA SENSIBLE: mínima velocidad
 		const EDGE_ZONE_WIDTH = 100; // MÁXIMA ZONA: ancho de zona lateral para iniciar swipe (px)
 		const MAX_VERTICAL_DRIFT = 200; // MÁXIMA TOLERANCIA: máxima desviación vertical permitida
 
 		// Detectar inicio del gesto táctil
 		document.addEventListener('touchstart', function(e) {
-			// NO permitir zoom con dos dedos en ejercicios (solo en PDF)
 			if (e.touches.length === 2) {
-				// Si está viendo un ejercicio, bloquear el zoom
-				if (isExerciseVisible()) {
-					e.preventDefault();
-					return;
-				}
-				
-				// Solo permitir zoom en páginas PDF
 				e.preventDefault();
-				isPinchZooming = true;
 				isSwipeGesture = false;
-				lastPinchDistance = getTouchDistance(e.touches);
-				const center = getTouchCenter(e.touches);
-				zoomOriginX = center.x - window.innerWidth / 2;
-				zoomOriginY = center.y - window.innerHeight / 2;
-				
-				// Ocultar indicadores si estaban activos
 				if (activeIndicator) {
 					activeIndicator.classList.remove('active');
 					activeIndicator = null;
 				}
+				if (isExerciseVisible()) {
+					isExercisePinchZooming = true;
+					isPinchZooming = false;
+					lastExercisePinchDistance = getTouchDistance(e.touches);
+					const center = getTouchCenter(e.touches);
+					const img = document.getElementById('exercise-img');
+					if (img) {
+						const rect = img.getBoundingClientRect();
+						if (rect.width && rect.height) {
+							const originX = ((center.x - rect.left) / rect.width) * 100;
+							const originY = ((center.y - rect.top) / rect.height) * 100;
+							img.style.transformOrigin = `${originX}% ${originY}%`;
+						} else {
+							img.style.transformOrigin = 'center center';
+						}
+					}
+				} else {
+					isExercisePinchZooming = false;
+					isPinchZooming = true;
+					lastPinchDistance = getTouchDistance(e.touches);
+					const center = getTouchCenter(e.touches);
+					zoomOriginX = center.x - window.innerWidth / 2;
+					zoomOriginY = center.y - window.innerHeight / 2;
+				}
 				return;
 			}
 
-			// Detectar doble tap para reset de zoom (solo en PDF)
 			if (e.touches.length === 1) {
 				const currentTime = Date.now();
-				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0 && !isExerciseVisible()) {
+				if (!isExerciseVisible() && currentTime - lastTapTime < 300 && Math.abs(currentZoom - 1.0) > 0.01) {
 					e.preventDefault();
 					resetZoom();
+					lastTapTime = 0;
+					return;
+				}
+				if (isExerciseVisible() && currentTime - lastTapTime < 300 && Math.abs(exerciseZoom - 1.0) > 0.01) {
+					e.preventDefault();
+					resetExerciseZoom();
+					lastTapTime = 0;
 					return;
 				}
 				lastTapTime = currentTime;
 			}
 
-			if (e.touches.length !== 1 || isPinchZooming) return; // solo gestos de un dedo para swipe
-			
+			if (e.touches.length !== 1 || isPinchZooming || isExercisePinchZooming) return;
+
 			const touch = e.touches[0];
-			const screenWidth = window.innerWidth;
-			
-			// Solo permitir inicio desde las zonas laterales si no hay zoom activo
-			if (currentZoom > 1.1) {
-				// Con zoom activo, permitir paneo desde cualquier parte
-				touchStartX = touch.clientX;
-				touchStartY = touch.clientY;
-				touchStartTime = Date.now();
-				return;
-			}
-			
-			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
-			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
-			
-			if (!isLeftEdge && !isRightEdge) return;
-			
 			touchStartX = touch.clientX;
 			touchStartY = touch.clientY;
 			touchStartTime = Date.now();
+
+			if (isExerciseVisible()) {
+				if (exerciseZoom > 1.05) {
+					isExercisePanning = true;
+					isSwipeGesture = false;
+					return;
+				}
+			} else if (currentZoom > 1.1) {
+				return;
+			}
+
+			const screenWidth = window.innerWidth;
+			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
+			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
+
+			if (!isLeftEdge && !isRightEdge) {
+				isSwipeGesture = false;
+				return;
+			}
+
 			isSwipeGesture = true;
-			
-			// Activar indicador visual
+
 			const leftIndicator = document.getElementById('swipe-indicator-left');
 			const rightIndicator = document.getElementById('swipe-indicator-right');
-			
+
 			if (isLeftEdge && leftIndicator) {
 				leftIndicator.classList.add('active');
 				activeIndicator = leftIndicator;
@@ -2924,53 +2989,85 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Procesar el movimiento táctil
 		document.addEventListener('touchmove', function(e) {
-			// Manejar zoom con dos dedos (SOLO en PDF, NO en ejercicios)
+			// Pinch zoom sobre ejercicios
+			if (isExercisePinchZooming && isExerciseVisible() && e.touches.length === 2) {
+				e.preventDefault();
+				const currentDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+				if (lastExercisePinchDistance > 0) {
+					const zoomDelta = currentDistance / lastExercisePinchDistance;
+					const newZoom = Math.max(MIN_EXERCISE_ZOOM, Math.min(MAX_EXERCISE_ZOOM, exerciseZoom * zoomDelta));
+					if (newZoom !== exerciseZoom) {
+						exerciseZoom = newZoom;
+					}
+					const img = document.getElementById('exercise-img');
+					if (img) {
+						const rect = img.getBoundingClientRect();
+						if (rect.width && rect.height) {
+							const originX = ((center.x - rect.left) / rect.width) * 100;
+							const originY = ((center.y - rect.top) / rect.height) * 100;
+							img.style.transformOrigin = `${originX}% ${originY}%`;
+						}
+					}
+					applyExerciseTransform();
+				}
+				lastExercisePinchDistance = currentDistance;
+				return;
+			}
+
+			// Paneo con ejercicio ampliado
+			if (isExercisePanning && isExerciseVisible() && e.touches.length === 1) {
+				e.preventDefault();
+				const touch = e.touches[0];
+				const deltaX = (touch.clientX - touchStartX) / exerciseZoom;
+				const deltaY = (touch.clientY - touchStartY) / exerciseZoom;
+				exerciseTranslateX += deltaX;
+				exerciseTranslateY += deltaY;
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+				applyExerciseTransform();
+				return;
+			}
+
+			// Manejar zoom con dos dedos en PDF
 			if (isPinchZooming && e.touches.length === 2 && !isExerciseVisible()) {
 				e.preventDefault();
 				const currentDistance = getTouchDistance(e.touches);
 				const center = getTouchCenter(e.touches);
-				
 				if (lastPinchDistance > 0) {
 					const zoomDelta = currentDistance / lastPinchDistance;
 					const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * zoomDelta));
-					
 					if (newZoom !== currentZoom) {
 						currentZoom = newZoom;
-						// Actualizar origen basado en el centro del gesto
 						zoomOriginX = center.x - window.innerWidth / 2;
 						zoomOriginY = center.y - window.innerHeight / 2;
 						applyZoomToElement();
 					}
 				}
-				
 				lastPinchDistance = currentDistance;
 				return;
 			}
 
-			// Manejar paneo con zoom activo (SOLO en PDF)
+			// Paneo con PDF ampliado
 			if (currentZoom > 1.1 && e.touches.length === 1 && !isExerciseVisible()) {
 				e.preventDefault();
 				const touch = e.touches[0];
 				const deltaX = (touch.clientX - touchStartX) / currentZoom;
 				const deltaY = (touch.clientY - touchStartY) / currentZoom;
-				
 				zoomOriginX += deltaX;
 				zoomOriginY += deltaY;
-				
 				touchStartX = touch.clientX;
 				touchStartY = touch.clientY;
-				
 				applyZoomToElement();
 				return;
 			}
 
 			if (!isSwipeGesture || e.touches.length !== 1) return;
-			
+
 			const touch = e.touches[0];
 			const deltaX = touch.clientX - touchStartX;
 			const deltaY = touch.clientY - touchStartY;
-			
-			// Cancelar si hay mucha desviación vertical
+
 			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) {
 				isSwipeGesture = false;
 				if (activeIndicator) {
@@ -2979,72 +3076,72 @@ input[type="number"]::-webkit-outer-spin-button {
 				}
 				return;
 			}
-			
-			// Prevenir scroll durante el swipe
+
 			e.preventDefault();
 		}, { passive: false });
 
 		// Finalizar el gesto y ejecutar navegación
 		document.addEventListener('touchend', function(e) {
-			// Finalizar zoom con dos dedos
-			if (isPinchZooming) {
+			if (isExercisePinchZooming && e.touches.length < 2) {
+				isExercisePinchZooming = false;
+				lastExercisePinchDistance = 0;
+				return;
+			}
+
+			if (isExercisePanning && e.touches.length === 0) {
+				isExercisePanning = false;
+				return;
+			}
+
+			if (isPinchZooming && e.touches.length < 2) {
 				isPinchZooming = false;
 				lastPinchDistance = 0;
 				return;
 			}
 
-			// Limpiar indicador visual
 			if (activeIndicator) {
 				activeIndicator.classList.remove('active');
 				activeIndicator = null;
 			}
-			
+
 			if (!isSwipeGesture) return;
-			
+
 			const touch = e.changedTouches[0];
 			const deltaX = touch.clientX - touchStartX;
 			const deltaY = touch.clientY - touchStartY;
 			const deltaTime = Date.now() - touchStartTime;
-			const velocity = deltaTime > 0 ? Math.abs(deltaX) / deltaTime : 0;
-			
+
 			isSwipeGesture = false;
-			
-			// Verificar si cumple los requisitos de swipe (ULTRA SENSIBLES)
+
 			if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
 			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) return;
-			// REMOVIDO: el requerimiento de velocidad mínima para máxima sensibilidad
-			
-			// Determinar dirección y navegar
+
 			if (deltaX > 0) {
-				// Swipe derecha → página anterior
 				if (isExerciseVisible()) {
 					navigateExercise(-1, true);
 				} else if (currentPage > 1) {
-					// Usar el sonido específico para swipes
 					isPaging = true;
 					animatePage('left');
 					playSwipeSound();
 					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-					setTimeout(() => { 
-						prevPage(); 
-						isPaging = false; 
-						updateNavigationArrows(); 
+					setTimeout(() => {
+						prevPage();
+						isPaging = false;
+						updateNavigationArrows();
 					}, 220);
 				}
 			} else {
-				// Swipe izquierda → página siguiente
 				if (isExerciseVisible()) {
 					navigateExercise(+1, true);
 				} else if (currentPage < totalPages) {
-					// Usar el sonido específico para swipes
 					isPaging = true;
 					animatePage('right');
 					playSwipeSound();
 					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-					setTimeout(() => { 
-						nextPage(); 
-						isPaging = false; 
-						updateNavigationArrows(); 
+					setTimeout(() => {
+						nextPage();
+						isPaging = false;
+						updateNavigationArrows();
 					}, 220);
 				}
 			}

@@ -711,6 +711,39 @@ input[type="number"]::-webkit-outer-spin-button {
 			line-height: 1;
 		}
 
+		.download-corner-btn {
+			position: fixed;
+			top: calc(env(safe-area-inset-top, 0) + clamp(16px, 4vh, 28px));
+			right: calc(env(safe-area-inset-right, 0) + clamp(16px, 5vw, 32px));
+			padding: 10px 16px;
+			border-radius: 999px;
+			background: linear-gradient(135deg, #0d2342, #1b3358);
+			color: #ffffff;
+			font-weight: 600;
+			font-size: 13px;
+			text-decoration: none;
+			box-shadow: 0 8px 20px rgba(13, 35, 66, 0.25);
+			z-index: 3600;
+			transition: transform 0.2s ease, box-shadow 0.2s ease;
+		}
+
+		.download-corner-btn.downloading {
+			pointer-events: none;
+			opacity: 0.75;
+		}
+
+		.download-corner-btn:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 12px 28px rgba(13, 35, 66, 0.32);
+		}
+
+		@media (max-width: 768px) {
+			.download-corner-btn {
+				font-size: 12px;
+				padding: 10px 18px;
+			}
+		}
+
 		/* Botón de aumentar - Verde */
 		#width-increase-btn-menu {
 			background: rgba(34, 197, 94, 0.8);
@@ -814,6 +847,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			@-moz-document url-prefix() {
 				.input-with-icon.with-prefix .control-input {
 					-moz-appearance: textfield;
+					appearance: textfield;
 				}
 			}
 		}
@@ -901,6 +935,8 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		<div class="page-counter" id="page-counter">Página 1</div>
 		<div class="loading" id="loading">Cargando PDF...</div>
+
+		<a id="download-corner-btn" class="download-corner-btn" href="https://fawzinoo.github.io/Rep/U2ejericios.pdf" download>Descargar PDF</a>
 		
 		<canvas id="pdf-canvas"></canvas>
 		<img id="exercise-img" alt="Ejercicio" />
@@ -953,6 +989,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		
 		// Variables globales
 		const urlDefault = 'https://fawzinoo.github.io/Rep/unidad2.pdf';
+	 	const EXERCISE_PDF_URL = 'https://fawzinoo.github.io/Rep/U2ejericios.pdf';
 		let pdfDoc = null;
 		let currentPage = 1;
 		let totalPages = 0;
@@ -3397,6 +3434,38 @@ enableClickToClear(document.getElementById('page-input'));
 // Event listeners para botones de control de ancho
 document.getElementById('width-increase-btn-menu').addEventListener('click', increaseExerciseWidth);
 document.getElementById('width-decrease-btn-menu').addEventListener('click', decreaseExerciseWidth);
+
+const downloadCornerBtn = document.getElementById('download-corner-btn');
+if (downloadCornerBtn) {
+	downloadCornerBtn.addEventListener('click', async (event) => {
+		event.preventDefault();
+		if (downloadCornerBtn.classList.contains('downloading')) return;
+		playButtonSound();
+		haptic(20);
+		downloadCornerBtn.classList.add('downloading');
+		try {
+			const response = await fetch(EXERCISE_PDF_URL, { mode: 'cors', cache: 'no-store' });
+			if (!response.ok) {
+				throw new Error(`Respuesta ${response.status}`);
+			}
+			const blob = await response.blob();
+			const objectUrl = URL.createObjectURL(blob);
+			const tempLink = document.createElement('a');
+			tempLink.href = objectUrl;
+			tempLink.download = 'U2ejericios.pdf';
+			tempLink.style.display = 'none';
+			document.body.appendChild(tempLink);
+			tempLink.click();
+			document.body.removeChild(tempLink);
+			URL.revokeObjectURL(objectUrl);
+		} catch (error) {
+			console.error('No se pudo descargar el PDF:', error);
+			alert('No se pudo descargar el PDF en este momento. Inténtalo nuevamente.');
+		} finally {
+			downloadCornerBtn.classList.remove('downloading');
+		}
+	});
+}
 	</script>
 </body>
 </html>

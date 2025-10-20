@@ -972,13 +972,6 @@ input[type="number"]::-webkit-outer-spin-button {
 		const MIN_WIDTH_SCALE = 0.5;
 		const MAX_WIDTH_SCALE = 2.0;
 		const WIDTH_SCALE_STEP = 0.1;
-		// Escala de altura ajustable con gestos táctiles
-		let exerciseHeightScale = 1.0;
-		const MIN_HEIGHT_SCALE = 0.7;
-		const MAX_HEIGHT_SCALE = 1.5;
-		let isHeightAdjusting = false;
-		let initialHeightScale = 1.0;
-		let initialPinchDistance = 0;
 		// Control de modales para evitar múltiples simultáneos
 		let isModalVisible = false;
 		let lastModalTime = 0;
@@ -1090,7 +1083,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		function applyZoomToElement() {
 			const canvas = document.getElementById('pdf-canvas');
 			
-			// Aplicar zoom únicamente al PDF
+			// SOLO aplicar zoom al PDF, NUNCA a las imágenes de ejercicios
 			if (!isExerciseVisible() && canvas && canvas.style.display !== 'none') {
 				// Aplicar zoom a canvas PDF únicamente
 				canvas.classList.add('zooming');
@@ -1099,14 +1092,6 @@ input[type="number"]::-webkit-outer-spin-button {
 				// Remover clase después de un breve delay para reactivar transiciones
 				setTimeout(() => canvas.classList.remove('zooming'), 50);
 			}
-		}
-
-		function resetExerciseHeight() {
-			exerciseHeightScale = 1.0;
-			initialHeightScale = 1.0;
-			initialPinchDistance = 0;
-			isHeightAdjusting = false;
-			adjustImageSize();
 		}
 
 		// Funciones para gestionar historial con localStorage
@@ -1163,12 +1148,6 @@ input[type="number"]::-webkit-outer-spin-button {
 		const baseImageUrl = 'https://fawzinoo.github.io/Fotos/';
 		const imageLinks = Array.from({ length: 22 }, (_, i) => `${baseImageUrl}U2L${i+1}.png`);
 		const exerciseImg = document.getElementById('exercise-img');
-		if (exerciseImg) {
-			exerciseImg.addEventListener('load', () => {
-				// Ajustar dimensiones apenas la imagen esté lista para asegurar el ancho actualizado
-				adjustImageSize();
-			});
-		}
 		// Mapeo de ejercicios a páginas del PDF
 		const exerciseToPage = {
 			1: 1,
@@ -1365,7 +1344,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				exerciseImgEl.style.transition='opacity 140ms ease';
 				exerciseImgEl.src = cached.url;
 				exerciseImgEl.dataset.exerciseNumber=String(n);
-				resetExerciseHeight();
+				adjustImageSize();
 				showWidthControls();
 				const mapped = exerciseToPage[n];
 				if (mapped){
@@ -1389,7 +1368,8 @@ input[type="number"]::-webkit-outer-spin-button {
 			exerciseImgEl.style.display='block';
 			exerciseImgEl.style.opacity='0';
 			exerciseImgEl.style.transition='opacity 160ms ease';
-			resetExerciseHeight();
+			exerciseImgEl.style.transform='translate(-50%, -50%)';
+			adjustImageSize();
 			showWidthControls();
 			const base = baseImageUrl.replace(/\/$/,'');
 			const candidates=[];
@@ -1416,7 +1396,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				const testImg=new Image(); let timeoutId;
 				function cleanup(){ try { testImg.onload=null; testImg.onerror=null; } catch(e){} if(timeoutId){ clearTimeout(timeoutId); timeoutId=null; } }
 				testImg.onload=function(){ if (myReq!==showImageRequestId){ cleanup(); return; }
-					exerciseImgEl.src=url; exerciseImgEl.dataset.exerciseNumber=String(n); exerciseImageCache.set(n,{url,status:'ok'}); resetExerciseHeight(); showWidthControls();
+					exerciseImgEl.src=url; exerciseImgEl.dataset.exerciseNumber=String(n); exerciseImageCache.set(n,{url,status:'ok'}); adjustImageSize(); showWidthControls();
 					const mapped=exerciseToPage[n]; if(mapped){ currentPage=mapped; const pageInput=document.getElementById('page-input'); if(pageInput) pageInput.value=mapped; const pageCounter=document.getElementById('page-counter'); if(pageCounter && totalPages){ pageCounter.innerHTML=`Página <span class=\"pc-num\">${mapped}</span> de <span class=\"pc-num\">${totalPages}</span>`; } }
 					saveUserState('exercise',{exerciseNumber:n}); setLastValidExercise(n);
 					requestAnimationFrame(()=>{ exerciseImgEl.style.opacity='1'; setTimeout(()=>{ if(pdfCanvas){ pdfCanvas.style.display='none'; pdfCanvas.style.visibility='hidden'; } },170); });
@@ -2319,7 +2299,6 @@ input[type="number"]::-webkit-outer-spin-button {
 			// Transición instantánea de la imagen al PDF
 			if (isExerciseVisible()) {
 				playButtonSound();
-				resetExerciseHeight();
 				
 				// Ocultar botones de control de ancho
 				hideWidthControls();
@@ -2597,36 +2576,68 @@ input[type="number"]::-webkit-outer-spin-button {
 		function adjustImageSize() {
 			const img = document.getElementById('exercise-img');
 			if (!img || img.style.display === 'none') return;
+			// La cinta debe superponerse (overlay); no debe empujar la imagen hacia abajo
+			// Por eso ignoramos la altura del menú en el cálculo de área visible
+			let menuHeight = 0;
 			const counter = document.getElementById('page-counter');
 			const counterRect = counter.getBoundingClientRect();
-			const visibleTop = 0;
+			// espacio visible entre menú superior y contador inferior
+			const visibleTop = menuHeight;
 			const visibleBottom = Math.min(window.innerHeight, counterRect.top);
 			const availableHeight = Math.max(100, visibleBottom - visibleTop);
-			const targetHeight = Math.max(100, availableHeight * exerciseHeightScale);
-			let computedWidth = null;
-			if (img.naturalWidth && img.naturalHeight) {
-				const aspectRatio = img.naturalWidth / img.naturalHeight;
-				const baseWidth = targetHeight * aspectRatio;
-				computedWidth = Math.max(1, baseWidth * exerciseWidthScale);
-			}
 
-			if (typeof computedWidth === 'number' && Number.isFinite(computedWidth)) {
-				img.style.width = computedWidth + 'px';
-			} else {
-				img.style.width = 'auto';
-			}
-			img.style.height = targetHeight + 'px';
-			img.style.maxWidth = 'none';
-			img.style.maxHeight = 'none';
-			img.style.background = '#1a1a1a';
-			img.style.zIndex = '2400';
-			img.style.left = '50%';
+			// Preferir ocupar todo el alto disponible en móviles y ajustar ancho proporcional
 			if (window.innerWidth <= 768) {
+				img.style.height = availableHeight + 'px';
+				// Calcular ancho real en lugar de usar transform scale para evitar superposición
+				if (img.naturalHeight && img.naturalWidth) {
+					const baseWidth = (availableHeight * img.naturalWidth) / img.naturalHeight;
+					const scaledWidth = baseWidth * exerciseWidthScale;
+					img.style.width = scaledWidth + 'px';
+				} else {
+					img.style.width = 'auto';
+				}
 				img.style.transform = 'translateX(-50%)';
+				img.style.maxWidth = (100 * exerciseWidthScale) + 'vw';
 				img.style.top = visibleTop + 'px';
+				img.style.left = '50%';
+				// Asegurar que la imagen esté por encima pero no cause superposición
+				img.style.background = '#1a1a1a';
+				img.style.zIndex = '2400';
 			} else {
+				// Desktop: detectar si la imagen tiene poco ancho (aspect ratio estrecho) para agrandarla
+				let targetWidth = 100 * exerciseWidthScale; // Aplicar escala de ancho
+				
+				if (img.naturalHeight && img.naturalWidth) {
+					const aspectRatio = img.naturalWidth / img.naturalHeight;
+					// Si la imagen es estrecha (ratio < 1.3), usar más ancho
+					// Esto incluye fotos verticales (ratio < 1) y cuadradas/casi cuadradas
+					if (aspectRatio < 1.3) {
+						targetWidth = 140 * exerciseWidthScale; // 40% más ancho para imágenes estrechas
+					} else if (aspectRatio < 1.8) {
+						targetWidth = 120 * exerciseWidthScale; // 20% más ancho para imágenes moderadamente estrechas
+					}
+					// Para imágenes muy anchas (ratio >= 1.8), mantener targetWidth base
+				}
+				
+				img.style.width = targetWidth + 'vw';
+				img.style.height = 'auto';
 				img.style.transform = 'translate(-50%, -50%)';
-				img.style.top = (visibleTop + availableHeight / 2) + 'px';
+				
+				if (img.naturalHeight && img.naturalWidth) {
+					const multiplier = targetWidth / 100;
+					const renderedHeight = (window.innerWidth * multiplier * img.naturalHeight) / img.naturalWidth;
+					if (renderedHeight > availableHeight) {
+						// Si la altura resultante excede el espacio, ajustar por altura pero mantener la proporción con la escala personalizada
+						img.style.height = availableHeight + 'px';
+						// Calcular el ancho proporcional manteniendo la escala de ejercicio
+						const baseAutoWidth = (availableHeight * img.naturalWidth) / img.naturalHeight;
+						const scaledWidth = baseAutoWidth * exerciseWidthScale;
+						img.style.width = scaledWidth + 'px';
+					}
+				}
+				img.style.top = (visibleTop + (availableHeight/2)) + 'px';
+				img.style.left = '50%';
 			}
 		}
 
@@ -2832,76 +2843,76 @@ input[type="number"]::-webkit-outer-spin-button {
 		let activeIndicator = null;
 		let lastTapTime = 0;
 		const SWIPE_THRESHOLD = 20; // ULTRA SENSIBLE: mínima distancia para considerar swipe
+		const SWIPE_VELOCITY_THRESHOLD = 0.1; // ULTRA SENSIBLE: mínima velocidad
 		const EDGE_ZONE_WIDTH = 100; // MÁXIMA ZONA: ancho de zona lateral para iniciar swipe (px)
 		const MAX_VERTICAL_DRIFT = 200; // MÁXIMA TOLERANCIA: máxima desviación vertical permitida
 
 		// Detectar inicio del gesto táctil
 		document.addEventListener('touchstart', function(e) {
+			// NO permitir zoom con dos dedos en ejercicios (solo en PDF)
 			if (e.touches.length === 2) {
+				// Si está viendo un ejercicio, bloquear el zoom
+				if (isExerciseVisible()) {
+					e.preventDefault();
+					return;
+				}
+				
+				// Solo permitir zoom en páginas PDF
 				e.preventDefault();
+				isPinchZooming = true;
 				isSwipeGesture = false;
+				lastPinchDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+				zoomOriginX = center.x - window.innerWidth / 2;
+				zoomOriginY = center.y - window.innerHeight / 2;
+				
+				// Ocultar indicadores si estaban activos
 				if (activeIndicator) {
 					activeIndicator.classList.remove('active');
 					activeIndicator = null;
 				}
-				if (isExerciseVisible()) {
-					isHeightAdjusting = true;
-					isPinchZooming = false;
-					initialPinchDistance = getTouchDistance(e.touches);
-					initialHeightScale = exerciseHeightScale;
-				} else {
-					isHeightAdjusting = false;
-					isPinchZooming = true;
-					lastPinchDistance = getTouchDistance(e.touches);
-					const center = getTouchCenter(e.touches);
-					zoomOriginX = center.x - window.innerWidth / 2;
-					zoomOriginY = center.y - window.innerHeight / 2;
-				}
 				return;
 			}
 
+			// Detectar doble tap para reset de zoom (solo en PDF)
 			if (e.touches.length === 1) {
 				const currentTime = Date.now();
-				if (!isExerciseVisible() && currentTime - lastTapTime < 300 && Math.abs(currentZoom - 1.0) > 0.01) {
+				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0 && !isExerciseVisible()) {
 					e.preventDefault();
 					resetZoom();
-					lastTapTime = 0;
-					return;
-				}
-				if (isExerciseVisible() && currentTime - lastTapTime < 300 && Math.abs(exerciseHeightScale - 1.0) > 0.01) {
-					e.preventDefault();
-					resetExerciseHeight();
-					lastTapTime = 0;
 					return;
 				}
 				lastTapTime = currentTime;
 			}
 
-			if (e.touches.length !== 1 || isPinchZooming || isHeightAdjusting) return;
-
+			if (e.touches.length !== 1 || isPinchZooming) return; // solo gestos de un dedo para swipe
+			
 			const touch = e.touches[0];
+			const screenWidth = window.innerWidth;
+			
+			// Solo permitir inicio desde las zonas laterales si no hay zoom activo
+			if (currentZoom > 1.1) {
+				// Con zoom activo, permitir paneo desde cualquier parte
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+				touchStartTime = Date.now();
+				return;
+			}
+			
+			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
+			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
+			
+			if (!isLeftEdge && !isRightEdge) return;
+			
 			touchStartX = touch.clientX;
 			touchStartY = touch.clientY;
 			touchStartTime = Date.now();
-
-			if (!isExerciseVisible() && currentZoom > 1.1) {
-				return;
-			}
-
-			const screenWidth = window.innerWidth;
-			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
-			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
-
-			if (!isLeftEdge && !isRightEdge) {
-				isSwipeGesture = false;
-				return;
-			}
-
 			isSwipeGesture = true;
-
+			
+			// Activar indicador visual
 			const leftIndicator = document.getElementById('swipe-indicator-left');
 			const rightIndicator = document.getElementById('swipe-indicator-right');
-
+			
 			if (isLeftEdge && leftIndicator) {
 				leftIndicator.classList.add('active');
 				activeIndicator = leftIndicator;
@@ -2913,60 +2924,53 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Procesar el movimiento táctil
 		document.addEventListener('touchmove', function(e) {
-			// Ajuste de altura con gesto de pinza en ejercicios
-			if (isHeightAdjusting && isExerciseVisible() && e.touches.length === 2) {
-				e.preventDefault();
-				const currentDistance = getTouchDistance(e.touches);
-				if (initialPinchDistance > 0) {
-					const scaleDelta = currentDistance / initialPinchDistance;
-					const newScale = Math.max(MIN_HEIGHT_SCALE, Math.min(MAX_HEIGHT_SCALE, initialHeightScale * scaleDelta));
-					if (Math.abs(newScale - exerciseHeightScale) > 0.001) {
-						exerciseHeightScale = newScale;
-						adjustImageSize();
-					}
-				}
-				return;
-			}
-
-			// Manejar zoom con dos dedos en PDF
+			// Manejar zoom con dos dedos (SOLO en PDF, NO en ejercicios)
 			if (isPinchZooming && e.touches.length === 2 && !isExerciseVisible()) {
 				e.preventDefault();
 				const currentDistance = getTouchDistance(e.touches);
 				const center = getTouchCenter(e.touches);
+				
 				if (lastPinchDistance > 0) {
 					const zoomDelta = currentDistance / lastPinchDistance;
 					const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * zoomDelta));
+					
 					if (newZoom !== currentZoom) {
 						currentZoom = newZoom;
+						// Actualizar origen basado en el centro del gesto
 						zoomOriginX = center.x - window.innerWidth / 2;
 						zoomOriginY = center.y - window.innerHeight / 2;
 						applyZoomToElement();
 					}
 				}
+				
 				lastPinchDistance = currentDistance;
 				return;
 			}
 
-			// Paneo con PDF ampliado
+			// Manejar paneo con zoom activo (SOLO en PDF)
 			if (currentZoom > 1.1 && e.touches.length === 1 && !isExerciseVisible()) {
 				e.preventDefault();
 				const touch = e.touches[0];
 				const deltaX = (touch.clientX - touchStartX) / currentZoom;
 				const deltaY = (touch.clientY - touchStartY) / currentZoom;
+				
 				zoomOriginX += deltaX;
 				zoomOriginY += deltaY;
+				
 				touchStartX = touch.clientX;
 				touchStartY = touch.clientY;
+				
 				applyZoomToElement();
 				return;
 			}
 
 			if (!isSwipeGesture || e.touches.length !== 1) return;
-
+			
 			const touch = e.touches[0];
 			const deltaX = touch.clientX - touchStartX;
 			const deltaY = touch.clientY - touchStartY;
-
+			
+			// Cancelar si hay mucha desviación vertical
 			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) {
 				isSwipeGesture = false;
 				if (activeIndicator) {
@@ -2975,68 +2979,72 @@ input[type="number"]::-webkit-outer-spin-button {
 				}
 				return;
 			}
-
+			
+			// Prevenir scroll durante el swipe
 			e.preventDefault();
 		}, { passive: false });
 
 		// Finalizar el gesto y ejecutar navegación
 		document.addEventListener('touchend', function(e) {
-			if (isHeightAdjusting && e.touches.length < 2) {
-				isHeightAdjusting = false;
-				initialPinchDistance = 0;
-				initialHeightScale = exerciseHeightScale;
-				return;
-			}
-
-			if (isPinchZooming && e.touches.length < 2) {
+			// Finalizar zoom con dos dedos
+			if (isPinchZooming) {
 				isPinchZooming = false;
 				lastPinchDistance = 0;
 				return;
 			}
 
+			// Limpiar indicador visual
 			if (activeIndicator) {
 				activeIndicator.classList.remove('active');
 				activeIndicator = null;
 			}
-
+			
 			if (!isSwipeGesture) return;
-
+			
 			const touch = e.changedTouches[0];
 			const deltaX = touch.clientX - touchStartX;
 			const deltaY = touch.clientY - touchStartY;
 			const deltaTime = Date.now() - touchStartTime;
-
+			const velocity = deltaTime > 0 ? Math.abs(deltaX) / deltaTime : 0;
+			
 			isSwipeGesture = false;
-
+			
+			// Verificar si cumple los requisitos de swipe (ULTRA SENSIBLES)
 			if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
 			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) return;
-
+			// REMOVIDO: el requerimiento de velocidad mínima para máxima sensibilidad
+			
+			// Determinar dirección y navegar
 			if (deltaX > 0) {
+				// Swipe derecha → página anterior
 				if (isExerciseVisible()) {
 					navigateExercise(-1, true);
 				} else if (currentPage > 1) {
+					// Usar el sonido específico para swipes
 					isPaging = true;
 					animatePage('left');
 					playSwipeSound();
 					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-					setTimeout(() => {
-						prevPage();
-						isPaging = false;
-						updateNavigationArrows();
+					setTimeout(() => { 
+						prevPage(); 
+						isPaging = false; 
+						updateNavigationArrows(); 
 					}, 220);
 				}
 			} else {
+				// Swipe izquierda → página siguiente
 				if (isExerciseVisible()) {
 					navigateExercise(+1, true);
 				} else if (currentPage < totalPages) {
+					// Usar el sonido específico para swipes
 					isPaging = true;
 					animatePage('right');
 					playSwipeSound();
 					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch(e) {}
-					setTimeout(() => {
-						nextPage();
-						isPaging = false;
-						updateNavigationArrows();
+					setTimeout(() => { 
+						nextPage(); 
+						isPaging = false; 
+						updateNavigationArrows(); 
 					}, 220);
 				}
 			}

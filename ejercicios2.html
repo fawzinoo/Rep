@@ -967,11 +967,14 @@ input[type="number"]::-webkit-outer-spin-button {
 		let lastPinchDistance = 0;
 		const MIN_ZOOM = 0.5;
 		const MAX_ZOOM = 4.0;
-		// Variables para control de ancho de ejercicios
+		// Variables para control de tamaño de ejercicios (se usa como escala general)
 		let exerciseWidthScale = 1.0;
 		const MIN_WIDTH_SCALE = 0.5;
 		const MAX_WIDTH_SCALE = 2.0;
 		const WIDTH_SCALE_STEP = 0.1;
+		let isExercisePinching = false;
+		let initialExercisePinchDistance = 0;
+		let initialExerciseScale = 1.0;
 		// Control de modales para evitar múltiples simultáneos
 		let isModalVisible = false;
 		let lastModalTime = 0;
@@ -2584,17 +2587,16 @@ input[type="number"]::-webkit-outer-spin-button {
 
 			// Preferir ocupar todo el alto disponible en móviles y ajustar ancho proporcional
 			if (window.innerWidth <= 768) {
-				img.style.height = availableHeight + 'px';
-				// Calcular ancho real en lugar de usar transform scale para evitar superposición
+				const targetHeight = availableHeight * exerciseWidthScale;
+				img.style.height = targetHeight + 'px';
 				if (img.naturalHeight && img.naturalWidth) {
-					const baseWidth = (availableHeight * img.naturalWidth) / img.naturalHeight;
-					const scaledWidth = baseWidth * exerciseWidthScale;
+					const scaledWidth = (targetHeight * img.naturalWidth) / img.naturalHeight;
 					img.style.width = scaledWidth + 'px';
 				} else {
 					img.style.width = 'auto';
 				}
 				img.style.transform = 'translateX(-50%)';
-				img.style.maxWidth = (100 * exerciseWidthScale) + 'vw';
+				img.style.maxWidth = 'none';
 				img.style.top = visibleTop + 'px';
 				img.style.left = '50%';
 				// Asegurar que la imagen esté por encima pero no cause superposición
@@ -2845,17 +2847,19 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Detectar inicio del gesto táctil
 		document.addEventListener('touchstart', function(e) {
-			// NO permitir zoom con dos dedos en ejercicios (solo en PDF)
 			if (e.touches.length === 2) {
-				// Si está viendo un ejercicio, bloquear el zoom
 				if (isExerciseVisible()) {
 					e.preventDefault();
+					isExercisePinching = true;
+					isSwipeGesture = false;
+					initialExercisePinchDistance = getTouchDistance(e.touches);
+					initialExerciseScale = exerciseWidthScale;
 					return;
 				}
-				
 				// Solo permitir zoom en páginas PDF
 				e.preventDefault();
 				isPinchZooming = true;
+				isExercisePinching = false;
 				isSwipeGesture = false;
 				lastPinchDistance = getTouchDistance(e.touches);
 				const center = getTouchCenter(e.touches);
@@ -2920,7 +2924,22 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Procesar el movimiento táctil
 		document.addEventListener('touchmove', function(e) {
-			// Manejar zoom con dos dedos (SOLO en PDF, NO en ejercicios)
+			// Manejar zoom con dos dedos sobre ejercicios
+			if (isExercisePinching && e.touches.length === 2 && isExerciseVisible()) {
+				e.preventDefault();
+				const currentDistance = getTouchDistance(e.touches);
+				if (initialExercisePinchDistance > 0) {
+					const scaleFactor = currentDistance / initialExercisePinchDistance;
+					const proposed = initialExerciseScale * scaleFactor;
+					const clamped = Math.max(MIN_WIDTH_SCALE, Math.min(MAX_WIDTH_SCALE, proposed));
+					if (Math.abs(clamped - exerciseWidthScale) > 0.01) {
+						exerciseWidthScale = clamped;
+						adjustImageSize();
+					}
+				}
+				return;
+			}
+			// Manejar zoom con dos dedos (SOLO en PDF)
 			if (isPinchZooming && e.touches.length === 2 && !isExerciseVisible()) {
 				e.preventDefault();
 				const currentDistance = getTouchDistance(e.touches);
@@ -2982,6 +3001,13 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Finalizar el gesto y ejecutar navegación
 		document.addEventListener('touchend', function(e) {
+			if (isExercisePinching) {
+				if (e.touches.length < 2) {
+					isExercisePinching = false;
+					initialExercisePinchDistance = 0;
+				}
+				return;
+			}
 			// Finalizar zoom con dos dedos
 			if (isPinchZooming) {
 				isPinchZooming = false;

@@ -16,6 +16,59 @@
             color: #333;
         }
 
+        .global-loading-overlay {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, rgba(8, 56, 215, 0.75), rgba(255, 196, 0, 0.65));
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+        }
+
+        .global-loading-card {
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 18px;
+            padding: 28px 34px;
+            box-shadow: 0 16px 48px rgba(8, 56, 215, 0.25);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            max-width: min(90vw, 360px);
+            text-align: center;
+        }
+
+        .global-loading-spinner {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            border: 4px solid rgba(8, 56, 215, 0.18);
+            border-top-color: #0838d7;
+            animation: globalSpin 1s linear infinite;
+        }
+
+        .global-loading-message {
+            font-size: 18px;
+            font-weight: 600;
+            color: #0838d7;
+        }
+
+        .global-loading-detail {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.4;
+        }
+
+        @keyframes globalSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         /* Barra de estado / footer compacto debajo del header (estilo sel-idiomas) */
         .top-status-bar {
             width: 100%;
@@ -1503,6 +1556,70 @@ Español A1
     <!---------------------------------------------------------------------------------------------->
 
     <script>
+
+        const GLOBAL_LOADING_CONFIG = {
+            message: 'Cargando contenido…',
+            detail: 'Estamos preparando el material. Gracias por esperar.'
+        };
+
+        let globalLoadingOverlay = null;
+        let globalLoadingHideTimeout = null;
+
+        function showGlobalLoading() {
+            if (globalLoadingOverlay) return;
+            const overlay = document.createElement('div');
+            overlay.className = 'global-loading-overlay';
+            overlay.setAttribute('role', 'status');
+            overlay.setAttribute('aria-live', 'polite');
+
+            const card = document.createElement('div');
+            card.className = 'global-loading-card';
+
+            const spinner = document.createElement('div');
+            spinner.className = 'global-loading-spinner';
+
+            const title = document.createElement('div');
+            title.className = 'global-loading-message';
+            title.textContent = GLOBAL_LOADING_CONFIG.message;
+
+            const detail = document.createElement('div');
+            detail.className = 'global-loading-detail';
+            detail.textContent = GLOBAL_LOADING_CONFIG.detail;
+
+            card.appendChild(spinner);
+            card.appendChild(title);
+            card.appendChild(detail);
+            overlay.appendChild(card);
+            document.body.appendChild(overlay);
+
+            globalLoadingOverlay = overlay;
+
+            // Fallback: asegurar que se oculta tras cierto tiempo aunque falle load
+            globalLoadingHideTimeout = setTimeout(() => hideGlobalLoading(true), 10000);
+
+            setTimeout(() => hideGlobalLoading(false), 1200);
+        }
+
+        function hideGlobalLoading(isFallback = false) {
+            if (!globalLoadingOverlay) return;
+            if (globalLoadingHideTimeout) {
+                clearTimeout(globalLoadingHideTimeout);
+                globalLoadingHideTimeout = null;
+            }
+
+            globalLoadingOverlay.style.opacity = '0';
+            globalLoadingOverlay.style.transition = 'opacity 0.4s ease';
+            setTimeout(() => {
+                if (globalLoadingOverlay && globalLoadingOverlay.parentNode) {
+                    globalLoadingOverlay.parentNode.removeChild(globalLoadingOverlay);
+                }
+                globalLoadingOverlay = null;
+            }, isFallback ? 0 : 400);
+        }
+
+        showGlobalLoading();
+
+        window.addEventListener('load', () => hideGlobalLoading(false));
 
 
         const CANDADOS = {

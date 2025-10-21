@@ -856,7 +856,7 @@ input[type="number"]::-webkit-outer-spin-button {
 		<div class="top-menu-wrapper">
 			<div class="top-menu">
 				<span class="input-with-icon with-prefix prefix-e" data-prefix="E">
-					<input id="exercise-input" type="number" min="1" max="22" value="1" class="has-icon control-input" />
+					<input id="exercise-input" type="number" min="1" max="35" value="1" class="has-icon control-input" />
 					<button id="show-exercise-btn" class="icon-btn" title="Ir al ejercicio">Ir</button>
 					<button id="show-all-btn" class="icon-btn" title="Mostrar PDF" aria-label="Mostrar PDF">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1004,14 +1004,16 @@ input[type="number"]::-webkit-outer-spin-button {
 		function prefetchExercise(n){
 			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') return;
 			if (n < 1 || n > imageLinks.length) return;
-			const base = baseImageUrl.replace(/\/$/, '');
-			const candidates = [];
-			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
-			candidates.push(`${base}/U2E${n}.png`,`$${'base'}/U2E${n}.png`,`$${'base'}/U2E${n}.png`); // intentionally redundant fallback
-			if (n < 10){
-				const nn = `0${n}`;
-				candidates.push(`${base}/U2E${nn}.png`,`$${'base'}/U2E${nn}.png`,`$${'base'}/U2E${nn}.png`);
+			const candidates = getImageCandidates(n);
+			if (!candidates.length) {
+				exerciseImageCache.set(n,{status:'fail'});
+				if (!suppressError) {
+					showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+				}
+				if (typeof onFail==='function') onFail();
+				return;
 			}
+			if (!candidates.length) return;
 			// intentar primer candidato solamente para no saturar
 			const url = candidates[0];
 			const img = new Image();
@@ -1152,7 +1154,32 @@ input[type="number"]::-webkit-outer-spin-button {
 
 		// Base de imágenes (ajusta si guardas en otro sitio)
 		const baseImageUrl = 'https://fawzinoo.github.io/Fotos/';
-		const imageLinks = Array.from({ length: 31 }, (_, i) => `${baseImageUrl}U2E${i+1}.png`);
+		const imageLinks = [
+			`${baseImageUrl}U2EE1.png`,
+			`${baseImageUrl}U2EE2.png`,
+			`${baseImageUrl}U2EE3.png`,
+			`${baseImageUrl}U2EE4.png`,
+			...Array.from({ length: 31 }, (_, i) => `${baseImageUrl}U2E${i + 3}.png`)
+		];
+
+		function getImageCandidates(n) {
+			const base = baseImageUrl.replace(/\/$/, '');
+			const candidates = [];
+			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
+			if (n >= 1 && n <= 4) {
+				const label = `U2EE${n}`;
+				candidates.push(`${base}/${label}.png`, `$${'base'}/${label}.png`, `$${'base'}/${label}.png`);
+			} else if (n >= 5 && n <= 35) {
+				const suffix = n - 2;
+				const label = `U2E${suffix}`;
+				candidates.push(`${base}/${label}.png`, `$${'base'}/${label}.png`, `$${'base'}/${label}.png`);
+				if (suffix < 10) {
+					const nn = `0${suffix}`;
+					candidates.push(`${base}/U2E${nn}.png`, `$${'base'}/U2E${nn}.png`, `$${'base'}/U2E${nn}.png`);
+				}
+			}
+			return candidates;
+		}
 		const exerciseImg = document.getElementById('exercise-img');
 		// Mapeo de ejercicios a páginas del PDF
 		const exerciseToPage = {
@@ -1162,7 +1189,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			13: 4, 14: 4, 15: 4, 16: 4,
 			17: 5, 18: 5, 19: 5, 20: 5, 21: 5, 22: 5,
 			23: 6, 24: 6, 25: 6, 26: 6, 27: 6,
-			28: 7, 29: 7, 30: 7, 31: 7
+			28: 7, 29: 7, 30: 7, 31: 7, 32: 7, 33: 7, 34: 7, 35: 7
 		};
 		// Conjunto rápido de ejercicios definidos
 		const definedExercises = new Set(Object.keys(exerciseToPage).map(k => parseInt(k,10)));
@@ -1373,11 +1400,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			exerciseImgEl.style.transform='translate(-50%, -50%)';
 			adjustImageSize();
 			showWidthControls();
-			const base = baseImageUrl.replace(/\/$/,'');
-			const candidates=[];
-			if (imageLinks[n-1]) candidates.push(imageLinks[n-1]);
-			candidates.push(`${base}/U2E${n}.png`,`$${'base'}/U2E${n}.png`,`$${'base'}/U2E${n}.png`);
-			if (n<10){ const nn=`0${n}`; candidates.push(`${base}/U2E${nn}.png`,`$${'base'}/U2E${nn}.png`,`$${'base'}/U2E${nn}.png`); }
+			const candidates = getImageCandidates(n);
 			let tried=0; let round=1;
 			function tryNext(){
 				if (tried>=candidates.length){

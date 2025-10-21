@@ -25,6 +25,59 @@
 			touch-action: pan-x pan-y pinch-zoom; /* Permitir zoom y paneo */
 			user-select: none;
 		}
+
+		.global-loading-overlay {
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+			background: linear-gradient(135deg, rgba(8, 56, 215, 0.75), rgba(255, 196, 0, 0.65));
+			backdrop-filter: blur(6px);
+			-webkit-backdrop-filter: blur(6px);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			z-index: 120000;
+		}
+
+		.global-loading-card {
+			background: rgba(255, 255, 255, 0.92);
+			border-radius: 18px;
+			padding: 28px 34px;
+			box-shadow: 0 16px 48px rgba(8, 56, 215, 0.25);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 16px;
+			max-width: min(90vw, 360px);
+			text-align: center;
+		}
+
+		.global-loading-spinner {
+			width: 54px;
+			height: 54px;
+			border-radius: 50%;
+			border: 4px solid rgba(8, 56, 215, 0.18);
+			border-top-color: #0838d7;
+			animation: globalSpin 1s linear infinite;
+		}
+
+		.global-loading-message {
+			font-size: 18px;
+			font-weight: 600;
+			color: #0838d7;
+		}
+
+		.global-loading-detail {
+			font-size: 14px;
+			color: #4b5563;
+			line-height: 1.4;
+		}
+
+		@keyframes globalSpin {
+			from { transform: rotate(0deg); }
+			to { transform: rotate(360deg); }
+		}
 		
 		.pdf-viewer-container {
 			width: 100vw;
@@ -813,6 +866,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			/* Firefox controla los spinners de forma distinta: ocultamos y podríamos implementar propios si hiciera falta */
 			@-moz-document url-prefix() {
 				.input-with-icon.with-prefix .control-input {
+					appearance: textfield;
 					-moz-appearance: textfield;
 				}
 			}
@@ -820,6 +874,13 @@ input[type="number"]::-webkit-outer-spin-button {
 	</style>
 </head>
 <body>
+	<div class="global-loading-overlay" role="status" aria-live="polite">
+		<div class="global-loading-card">
+			<div class="global-loading-spinner"></div>
+			<div class="global-loading-message">Cargando contenido…</div>
+			<div class="global-loading-detail">Estamos preparando el material. Gracias por esperar.</div>
+		</div>
+	</div>
 	<!-- Botón para mostrar/ocultar el menú -->
 	<button id="menu-toggle-btn" class="menu-toggle-btn" aria-label="Mostrar u ocultar menú" aria-controls="top-menu" aria-expanded="false" title="Menú">
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -922,6 +983,45 @@ input[type="number"]::-webkit-outer-spin-button {
 	<script>
 		// Configurar PDF.js worker
 		pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+		const GLOBAL_LOADING_TEXT = {
+			message: 'Cargando contenido…',
+			detail: 'Estamos preparando el material. Gracias por esperar.'
+		};
+		const globalLoadingOverlay = document.querySelector('.global-loading-overlay');
+		const globalLoadingMessageEl = globalLoadingOverlay ? globalLoadingOverlay.querySelector('.global-loading-message') : null;
+		const globalLoadingDetailEl = globalLoadingOverlay ? globalLoadingOverlay.querySelector('.global-loading-detail') : null;
+		let globalLoadingFallbackId = null;
+
+		if (globalLoadingMessageEl) globalLoadingMessageEl.textContent = GLOBAL_LOADING_TEXT.message;
+		if (globalLoadingDetailEl) globalLoadingDetailEl.textContent = GLOBAL_LOADING_TEXT.detail;
+
+		function hideGlobalLoading(isFallback = false) {
+			if (!globalLoadingOverlay) return;
+			if (globalLoadingFallbackId) {
+				clearTimeout(globalLoadingFallbackId);
+				globalLoadingFallbackId = null;
+			}
+			globalLoadingOverlay.style.transition = isFallback ? '' : 'opacity 0.35s ease';
+			globalLoadingOverlay.style.opacity = '0';
+			globalLoadingOverlay.style.pointerEvents = 'none';
+			const finalize = () => {
+				globalLoadingOverlay.style.display = 'none';
+			};
+			if (isFallback) {
+				finalize();
+			} else {
+				setTimeout(finalize, 360);
+			}
+		}
+
+		function scheduleGlobalLoadingFallback() {
+			if (!globalLoadingOverlay) return;
+			if (globalLoadingFallbackId) clearTimeout(globalLoadingFallbackId);
+			globalLoadingFallbackId = setTimeout(() => hideGlobalLoading(true), 12000);
+		}
+
+		scheduleGlobalLoadingFallback();
 		
 		// Inicialización temprana para prevenir parpadeos en móvil
 		let isInitialLoad = true; // Flag para controlar la primera carga
@@ -1327,6 +1427,7 @@ input[type="number"]::-webkit-outer-spin-button {
 			   } else {
 				   canvas.style.opacity = '1';
 			   }
+			   hideGlobalLoading(false);
 			   isInitialLoad = false;
 			   // (Badge autor removido; sin clases adicionales)
 			   // En escritorio, anclar scroll del contenedor a la esquina superior izquierda para paneo inicial
@@ -1364,6 +1465,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					if (!suppressError) showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
 					if (typeof onFail === 'function') onFail();
 				}
+				hideGlobalLoading(false);
 				return;
 			}
 			const pdfCanvas = document.getElementById('pdf-canvas');
@@ -1397,6 +1499,7 @@ input[type="number"]::-webkit-outer-spin-button {
 				if (typeof onSuccess==='function') onSuccess();
 				for (let i=1;i<=PREFETCH_AHEAD;i++){ prefetchExercise(n+i); }
 				updateNavigationArrows();
+				hideGlobalLoading(false);
 				return;
 			}
 			// Preparar imagen para carga: visible pero transparente; mantener PDF de fondo
@@ -1421,7 +1524,7 @@ input[type="number"]::-webkit-outer-spin-button {
 							pdfCanvas.style.display='block'; pdfCanvas.style.visibility='visible'; pdfCanvas.style.opacity='0';
 							requestAnimationFrame(()=>{ pdfCanvas.style.transition='opacity .3s'; pdfCanvas.style.opacity='1'; });
 						}
-						exerciseImgEl.style.display='none'; hideWidthControls(); if (typeof onFail==='function') onFail();
+						exerciseImgEl.style.display='none'; hideWidthControls(); if (typeof onFail==='function') onFail(); hideGlobalLoading(false);
 						return; }
 				}
 				const url=candidates[tried++];
@@ -1432,7 +1535,7 @@ input[type="number"]::-webkit-outer-spin-button {
 					const mapped=exerciseToPage[n]; if(mapped){ currentPage=mapped; const pageInput=document.getElementById('page-input'); if(pageInput) pageInput.value=mapped; const pageCounter=document.getElementById('page-counter'); if(pageCounter && totalPages){ pageCounter.innerHTML=`Página <span class=\"pc-num\">${mapped}</span> de <span class=\"pc-num\">${totalPages}</span>`; } }
 					saveUserState('exercise',{exerciseNumber:n}); setLastValidExercise(n);
 					requestAnimationFrame(()=>{ exerciseImgEl.style.opacity='1'; setTimeout(()=>{ if(pdfCanvas){ pdfCanvas.style.display='none'; pdfCanvas.style.visibility='hidden'; } },170); });
-					if (typeof onSuccess==='function') onSuccess(); for(let i=1;i<=PREFETCH_AHEAD;i++){ prefetchExercise(n+i); } updateNavigationArrows(); cleanup(); };
+					if (typeof onSuccess==='function') onSuccess(); for(let i=1;i<=PREFETCH_AHEAD;i++){ prefetchExercise(n+i); } updateNavigationArrows(); hideGlobalLoading(false); cleanup(); };
 				testImg.onerror=function(){ if (isStale()){ cleanup(); return; } cleanup(); tryNext(); };
 				timeoutId=setTimeout(()=>{ try { testImg.src=''; } catch(e){}; testImg.onerror && testImg.onerror(); }, IMAGE_TIMEOUT_MS);
 				testImg.src=url;

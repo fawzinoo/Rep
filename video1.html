@@ -3551,26 +3551,100 @@
 					// ignore playback errors (e.g., autoplay restrictions)
 				}
 			};
+			const resultAudioMap = {
+				perfect: [
+					{ src: 'https://fawzinoo.github.io/audios/winner.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/excelente.mp3', offsetMs: 1000 },
+				],
+				strong: [
+					{ src: 'https://fawzinoo.github.io/audios/winner.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/apormas.mp3', offsetMs: 1000 },
+				],
+				weak: [
+					{ src: 'https://fawzinoo.github.io/audios/lose.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/quepena.mp3', offsetMs: 2000 },
+				],
+				none: [
+					{ src: 'https://fawzinoo.github.io/audios/lose.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/denuevo.mp3', offsetMs: 2500 },
+				],
+			};
+			let activeResultAudios = [];
+			let resultAudioTimeouts = [];
+			const clearResultAudioTimeouts = () => {
+				if (!resultAudioTimeouts.length) return;
+				resultAudioTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+				resultAudioTimeouts = [];
+			};
+			const stopResultAudio = () => {
+				clearResultAudioTimeouts();
+				if (!activeResultAudios.length) {
+					return;
+				}
+				activeResultAudios.forEach((audio) => {
+					try {
+						audio.pause();
+						audio.currentTime = 0;
+					} catch (_) {
+						// ignore
+					}
+				});
+				activeResultAudios = [];
+			};
+			const playResultAudio = (state) => {
+				const playlist = resultAudioMap[state];
+				if (!Array.isArray(playlist) || !playlist.length) {
+					return;
+				}
+				stopResultAudio();
+				playlist.forEach((track) => {
+					if (!track || !track.src) {
+						return;
+					}
+					const offset = Math.max(0, Number(track.offsetMs) || 0);
+					const timeoutId = setTimeout(() => {
+						resultAudioTimeouts = resultAudioTimeouts.filter((id) => id !== timeoutId);
+						try {
+							const audio = new Audio(track.src);
+							const cleanup = () => {
+								activeResultAudios = activeResultAudios.filter((item) => item !== audio);
+							};
+							audio.addEventListener('ended', cleanup, { once: true });
+							audio.addEventListener('error', cleanup, { once: true });
+							activeResultAudios.push(audio);
+							const playPromise = audio.play();
+							if (playPromise && typeof playPromise.catch === 'function') {
+								playPromise.catch(() => {
+									cleanup();
+								});
+							}
+						} catch (_) {
+							// ignore playback errors
+						}
+					}, offset);
+					resultAudioTimeouts.push(timeoutId);
+				});
+			};
 			const templates = {
 				incomplete: {
-					title: "Responde todas las preguntas",
-					message: "Selecciona una opción en cada pregunta antes de comprobar el resultado.",
+					title: "Responde a todas las preguntas",
+					message: "",
 				},
 				perfect: {
-					title: "¡Respuestas completas!",
-					message: "Has acertado el 100% de las preguntas. ¡Excelente dominio del vocabulario y las presentaciones!",
+					title: "¡Excelente!",
+					message: "",
 				},
 				strong: {
 					title: "¡Buen avance!",
-					message: "Tus respuestas correctas son mayoría. Repasa el video una vez más para llegar al 100%.",
+					message: "",
 				},
 				weak: {
 					title: "Sigue practicando",
-					message: "Las respuestas incorrectas superan a las correctas. Revisa la transcripción y vuelve a intentarlo.",
+					message: "",
 				},
 				none: {
 					title: "Empecemos de nuevo",
-					message: "Aún no hay respuestas correctas. Mira de nuevo el video y enfócate en las presentaciones.",
+					message: "",
 				},
 			};
 
@@ -3740,6 +3814,7 @@
 			
 			const closeModal = () => {
 				modalOverlay.classList.remove('visible');
+				stopResultAudio();
 				// Desactivar bandera de resultado del quiz
 				showingQuizResult = false;
 				// Si había que bloquear, iniciarlo al cerrar
@@ -3810,6 +3885,7 @@
 						</div>
 					</div>
 				`;
+				playResultAudio(state);
 				modalOverlay.classList.add('visible');
 
 				// También mostramos el resultado de forma elegante en el área superior (background-content)
@@ -3888,6 +3964,7 @@
 
 			// Helper: resetear selección y clases de las preguntas para un nuevo intento
 			const resetQuizAnswers = () => {
+				stopResultAudio();
 				[...quizForm.querySelectorAll('input')].forEach((el) => {
 					el.checked = false;
 					el.disabled = false;

@@ -1,0 +1,4580 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Reproductor de Video</title>
+	<style>
+		:root {
+			color-scheme: light dark;
+		}
+
+    html {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: linear-gradient(145deg, #f8f4ec 0%, #f2e8d5 100%);
+            color: #0b1120;
+            padding: 32px clamp(16px, 6vw, 52px) 160px;
+            box-sizing: border-box;
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+		.player-shell {
+			--shell-pad-x: 0;
+			--shell-pad-y: 0;
+			width: 100%;
+			max-width: 960px;
+			margin: 0 auto;
+			padding: 0;
+			border-radius: 24px;
+			background: transparent;
+			box-shadow: none;
+			transition: padding 160ms ease, border-radius 160ms ease;
+			position: relative;
+		}
+
+		.player-shell .video-stage {
+			position: relative;
+		}
+
+		.player-header {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 28px;
+			text-align: center;
+		}
+
+		.player-badges {
+			display: inline-flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: center;
+			gap: 10px;
+		}
+
+		.player-badge {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 6px 14px;
+			border-radius: 999px;
+			font-size: 0.82rem;
+			font-weight: 600;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			background: rgba(15, 23, 42, 0.76);
+			color: rgba(241, 245, 249, 0.92);
+			box-shadow: 0 10px 24px rgba(15, 23, 42, 0.28);
+			border: 1px solid rgba(148, 163, 184, 0.3);
+			backdrop-filter: blur(10px);
+		}
+
+		.player-badge::before {
+			content: "";
+			width: 6px;
+			height: 6px;
+			border-radius: 50%;
+			background: currentColor;
+			opacity: 0.6;
+		}
+
+		.player-badge--accent {
+			background: rgba(37, 99, 235, 0.78);
+			border-color: rgba(165, 180, 252, 0.4);
+			color: #f8fafc;
+			box-shadow: 0 16px 32px rgba(37, 99, 235, 0.25);
+		}
+
+		.player-subtitle {
+			margin: 0;
+			font-size: 0.98rem;
+			color: rgba(30, 41, 59, 0.66);
+			letter-spacing: 0.02em;
+		}
+
+		.player-shell,
+		.player-shell * {
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		.player-shell video,
+		.player-shell .controls,
+		.player-shell .playback-overlay,
+		.player-shell .video-background {
+			-webkit-touch-callout: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		@media (orientation: landscape) and (max-width: 1024px) {
+			body {
+				padding: 0 0 64px;
+				align-items: stretch;
+			}
+
+			.player-shell {
+				max-width: none;
+				width: 100%;
+				border-radius: 0;
+				background: #000;
+			}
+
+			.player-header {
+				display: none;
+			}
+
+			video,
+			.video-background {
+				width: 100%;
+				height: calc(100vh - 64px);
+				max-height: 100vh;
+				border-radius: 0;
+				object-fit: cover;
+			}
+
+			.transcript-container {
+				max-width: none;
+			}
+		}
+
+		.player-shell:fullscreen,
+		.player-shell:-webkit-full-screen {
+			width: 100vw;
+			height: 100vh;
+			height: 100svh;
+			height: 100dvh;
+			max-width: none;
+			margin: 0;
+			border-radius: 0;
+			padding: 0 !important;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		.player-shell:fullscreen .video-stage,
+		.player-shell:-webkit-full-screen .video-stage {
+			flex: 1 1 auto;
+			display: flex;
+		}
+
+		.player-shell:fullscreen .video-stage video,
+		.player-shell:-webkit-full-screen .video-stage video {
+			flex: 1 1 auto;
+			max-height: 100%;
+		}
+
+		.player-shell:fullscreen video,
+		.player-shell:-webkit-full-screen video,
+		.player-shell:fullscreen .video-background,
+		.player-shell:-webkit-full-screen .video-background {
+			border-radius: 0;
+			height: 100%;
+			width: 100%;
+			object-fit: cover;
+		}
+
+		.player-shell:fullscreen .controls,
+		.player-shell:-webkit-full-screen .controls {
+			left: 0;
+			right: 0;
+			bottom: 0;
+		}
+
+		.player-shell:fullscreen h1,
+		.player-shell:-webkit-full-screen h1 {
+			display: none;
+		}
+
+		h1 {
+			position: relative;
+			margin: 0 auto 28px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 6px 18px;
+			font-size: clamp(1.8rem, 4vw, 2.6rem);
+			font-weight: 700;
+			letter-spacing: 0.12em;
+			text-transform: uppercase;
+			background: linear-gradient(120deg, #f97316 0%, #ea580c 20%, #dc2626 40%, #1d4ed8 65%, #312e81 100%);
+			background-size: 250% 250%;
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			text-shadow: 0 8px 22px rgba(29, 78, 216, 0.55), 0 2px 8px rgba(220, 38, 38, 0.45);
+			animation: titleGlow 6s ease-in-out infinite alternate;
+			text-align: center;
+		}
+
+		h1::before {
+			content: "";
+			position: absolute;
+			inset: 50% -18px -18px;
+			transform: translateY(-50%);
+			background: radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.25), rgba(14, 165, 233, 0));
+			filter: blur(18px);
+			z-index: -1;
+			pointer-events: none;
+		}
+
+		h1::after {
+			content: "";
+			position: absolute;
+			bottom: -10px;
+			left: 50%;
+			transform: translateX(-50%);
+			transform-origin: center;
+			width: clamp(80px, 30vw, 180px);
+			height: 4px;
+			border-radius: 999px;
+			background: linear-gradient(90deg, rgba(234, 88, 12, 0.9), rgba(220, 38, 38, 0.9), rgba(30, 64, 175, 0.9));
+			box-shadow: 0 0 14px rgba(30, 64, 175, 0.65), 0 0 26px rgba(220, 38, 38, 0.6);
+			animation: titlePulse 3.6s ease-in-out infinite;
+		}
+
+		video {
+			width: 100%;
+			display: block;
+			border-radius: 18px;
+			background: #000;
+			object-fit: cover;
+			object-position: center;
+			position: relative;
+		}
+		
+		.video-background {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			pointer-events: none;
+			z-index: 1;
+			border-radius: 18px;
+			box-sizing: border-box;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+			background: linear-gradient(135deg, #ffb347 0%, #ff8c42 100%);
+		}
+		
+		.video-background.visible {
+			opacity: 1;
+		}
+		
+		/* Cuando se muestra el resultado del quiz, el fondo debe ser transparente para ver el video */
+		.video-background.show-quiz-result {
+			background: rgba(0, 0, 0, 0.5);
+			backdrop-filter: blur(4px);
+		}
+		
+		.background-content {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 14px;
+			text-align: center;
+			max-width: 520px;
+			padding: 0;
+			border-radius: 24px;
+			background: transparent;
+			backdrop-filter: none;
+			box-shadow: none;
+			/* elevar títulos ligeramente para evitar solapamiento con notificaciones */
+			transform: translateY(-18px);
+			transition: transform 200ms ease;
+		}
+
+		/* Resultado elegante mostrado sobre el fondo (ej. "¡Buen trabajo! 80%") */
+		.background-result {
+			display: inline-flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 16px;
+			padding: 0;
+			border-radius: 0;
+			background: transparent;
+			backdrop-filter: none;
+			box-shadow: none;
+			color: #fff;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+			font-size: 0.95rem;
+			transform: translateY(-6px);
+			transition: transform 300ms cubic-bezier(.2,.9,.2,1), opacity 260ms ease;
+			opacity: 0;
+			min-width: 96px;
+		}
+
+		.background-result.show {
+			opacity: 1;
+			transform: translateY(0);
+		}
+
+		/* Cuando aparece la valoración, ocultar los badges de título para evitar solapamientos */
+		.background-content .background-result.show ~ .background-level,
+		.background-content .background-result.show ~ .background-unit {
+			opacity: 0;
+			transform: translateY(6px);
+			pointer-events: none;
+			visibility: hidden;
+			transition: opacity 220ms ease, transform 220ms ease, visibility 220ms step-end;
+		}
+
+		/* Circular modern score (uses same palette as modal score) */
+		.background-result .score {
+			display: grid;
+			place-items: center;
+			width: 120px;
+			height: 120px;
+			border-radius: 50%;
+			font-size: 2rem;
+			font-weight: 900;
+			color: #1e293b;
+			background: linear-gradient(145deg, #dbeafe 0%, #e0e7ff 100%);
+			box-shadow: 
+				0 20px 50px rgba(59, 130, 246, 0.35),
+				0 10px 25px rgba(99, 102, 241, 0.25),
+				inset 0 -3px 8px rgba(148, 163, 184, 0.15),
+				inset 0 3px 8px rgba(255, 255, 255, 0.8);
+			position: relative;
+			animation: scoreFloat 3s ease-in-out infinite;
+		}
+
+		.background-result .score::before {
+			content: '';
+			position: absolute;
+			inset: -4px;
+			border-radius: 50%;
+			background: linear-gradient(145deg, rgba(147, 197, 253, 0.6), rgba(167, 139, 250, 0.4));
+			filter: blur(8px);
+			opacity: 0.7;
+			z-index: -1;
+			animation: glowPulse 2s ease-in-out infinite;
+		}
+
+		/* Estado perfect - Verde */
+		.background-result[data-state="perfect"] .score {
+			background: linear-gradient(150deg, rgba(134, 239, 172, 1), rgba(74, 222, 128, 1));
+			box-shadow: 
+				0 20px 50px rgba(34, 197, 94, 0.45),
+				0 10px 25px rgba(34, 197, 94, 0.35),
+				inset 0 -3px 8px rgba(21, 128, 61, 0.2),
+				inset 0 3px 8px rgba(255, 255, 255, 0.9);
+		}
+
+		.background-result[data-state="perfect"] .score::before {
+			background: linear-gradient(145deg, rgba(134, 239, 172, 0.6), rgba(74, 222, 128, 0.4));
+		}
+
+		/* Estado strong - Azul */
+		.background-result[data-state="strong"] .score {
+			background: linear-gradient(150deg, rgba(147, 197, 253, 1), rgba(96, 165, 250, 1));
+			box-shadow: 
+				0 20px 50px rgba(59, 130, 246, 0.45),
+				0 10px 25px rgba(59, 130, 246, 0.35),
+				inset 0 -3px 8px rgba(37, 99, 235, 0.2),
+				inset 0 3px 8px rgba(255, 255, 255, 0.9);
+		}
+
+		.background-result[data-state="strong"] .score::before {
+			background: linear-gradient(145deg, rgba(147, 197, 253, 0.6), rgba(96, 165, 250, 0.4));
+		}
+
+		/* Estado weak - Rojo claro */
+		.background-result[data-state="weak"] .score {
+			background: linear-gradient(150deg, rgba(252, 165, 165, 1), rgba(248, 113, 113, 1));
+			box-shadow: 
+				0 20px 50px rgba(239, 68, 68, 0.45),
+				0 10px 25px rgba(239, 68, 68, 0.35),
+				inset 0 -3px 8px rgba(220, 38, 38, 0.2),
+				inset 0 3px 8px rgba(255, 255, 255, 0.9);
+		}
+
+		.background-result[data-state="weak"] .score::before {
+			background: linear-gradient(145deg, rgba(252, 165, 165, 0.6), rgba(248, 113, 113, 0.4));
+		}
+
+		/* Estado none - Rojo intenso */
+		.background-result[data-state="none"] .score {
+			background: linear-gradient(150deg, rgba(248, 113, 113, 1), rgba(239, 68, 68, 1));
+			box-shadow: 
+				0 20px 50px rgba(239, 68, 68, 0.5),
+				0 10px 25px rgba(239, 68, 68, 0.4),
+				inset 0 -3px 8px rgba(220, 38, 38, 0.25),
+				inset 0 3px 8px rgba(255, 255, 255, 0.9);
+		}
+
+		.background-result[data-state="none"] .score::before {
+			background: linear-gradient(145deg, rgba(248, 113, 113, 0.6), rgba(239, 68, 68, 0.4));
+		}
+
+		/* Estado incomplete - Amarillo (si se muestra) */
+		.background-result[data-state="incomplete"] .score {
+			background: linear-gradient(150deg, rgba(253, 230, 138, 1), rgba(252, 211, 77, 1));
+			box-shadow: 
+				0 20px 50px rgba(251, 191, 36, 0.45),
+				0 10px 25px rgba(251, 191, 36, 0.35),
+				inset 0 -3px 8px rgba(245, 158, 11, 0.2),
+				inset 0 3px 8px rgba(255, 255, 255, 0.9);
+		}
+
+		.background-result[data-state="incomplete"] .score::before {
+			background: linear-gradient(145deg, rgba(253, 230, 138, 0.6), rgba(252, 211, 77, 0.4));
+		}
+
+		@keyframes scoreFloat {
+			0%, 100% { transform: translateY(0px); }
+			50% { transform: translateY(-8px); }
+		}
+
+		@keyframes glowPulse {
+			0%, 100% { opacity: 0.6; filter: blur(8px); }
+			50% { opacity: 0.9; filter: blur(12px); }
+		}
+
+		.background-result .label {
+			opacity: 1;
+			font-weight: 900;
+			color: #ffffff;
+			font-size: 1.4rem;
+			text-align: center;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			text-shadow: 
+				0 4px 12px rgba(0, 0, 0, 0.4),
+				0 2px 6px rgba(0, 0, 0, 0.3),
+				0 8px 24px rgba(59, 130, 246, 0.2);
+			filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3));
+		}
+
+		@media (max-width: 680px) {
+			.background-content {
+				transform: translateY(-8px);
+			}
+		}
+
+		.background-level,
+		.background-unit {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 8px;
+			padding: 8px 18px;
+			border-radius: 999px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.12em;
+			color: rgba(248, 250, 252, 0.95);
+			background: rgba(37, 99, 235, 0.65);
+			box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.25);
+		}
+
+		.background-unit {
+			background: rgba(220, 38, 38, 0.68);
+		}
+
+		.background-prompt {
+			font-size: 1rem;
+			line-height: 1.6;
+			color: rgba(226, 232, 240, 0.88);
+			letter-spacing: 0.05em;
+			text-transform: uppercase;
+			opacity: 0.92;
+		}
+
+		.background-title {
+			font-size: 1.4rem;
+			font-weight: 600;
+			color: #111827;
+			text-transform: none;
+			letter-spacing: 0.02em;
+		}
+
+		.playback-overlay {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			opacity: 0;
+			pointer-events: none;
+			transition: opacity 0.22s ease;
+			z-index: 3;
+		}
+
+		.playback-overlay.show {
+			opacity: 1;
+		}
+
+		.playback-overlay .overlay-circle {
+			width: 72px;
+			height: 72px;
+			border-radius: 50%;
+			background: rgba(15, 23, 42, 0.35);
+			backdrop-filter: blur(8px);
+			display: grid;
+			place-items: center;
+			box-shadow: 0 18px 38px rgba(15, 23, 42, 0.35);
+		}
+
+		.playback-overlay svg {
+			width: 50px;
+			height: 50px;
+			fill: #f8fafc;
+			opacity: 0.92;
+			filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.55));
+		}
+
+		.playback-overlay [data-icon] {
+			display: none;
+		}
+
+		.playback-overlay[data-state="play"] [data-icon="play"],
+		.playback-overlay[data-state="pause"] [data-icon="pause"] {
+			display: block;
+		}
+
+	.controls {
+		position: absolute;
+		left: var(--shell-pad-x);
+		right: var(--shell-pad-x);
+		bottom: var(--shell-pad-y);
+		padding: 18px 22px 2px 22px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px;
+		background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.3) 50%, transparent 100%);
+		border-bottom-left-radius: 18px;
+		border-bottom-right-radius: 18px;
+		z-index: 2;
+		padding-top: 60px;
+		transform: translateY(0);
+		opacity: 1;
+		transition: opacity 200ms ease, transform 200ms ease;
+	}		.controls button,
+		.controls input[type="range"] {
+			-webkit-appearance: none;
+			appearance: none;
+		}
+
+	.controls.hidden {
+		opacity: 0;
+		transform: translateY(18px);
+		pointer-events: none;
+	}
+
+		.controls button {
+			width: 44px;
+			height: 44px;
+			border-radius: 12px;
+			border: none;
+			cursor: pointer;
+			background: transparent;
+			color: #f8fafc;
+			font-size: 18px;
+			display: grid;
+			place-items: center;
+			transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+		}
+
+		.controls button:hover {
+			background: transparent;
+			box-shadow: none;
+		}
+
+		.controls button:active {
+			transform: scale(0.96);
+		}
+
+		.controls button:active,
+		.controls button:focus {
+			background: transparent;
+		}
+
+		.controls button svg {
+			width: 26px;
+			height: 26px;
+			fill: currentColor;
+			display: none;
+			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+			stroke: currentColor;
+			stroke-width: 0.5;
+			stroke-linejoin: round;
+			stroke-linecap: round;
+		}
+
+	#control-play[data-state="play"] .icon-play,
+	#control-play[data-state="pause"] .icon-pause,
+	#control-play[data-state="replay"] .icon-replay {
+		display: block;
+	}		#control-volume[data-state="high"] .icon-volume-high,
+		#control-volume[data-state="mute"] .icon-volume-muted {
+			display: block;
+		}
+
+		#control-fullscreen[data-state="enter"] .icon-enter,
+		#control-fullscreen[data-state="exit"] .icon-exit {
+			display: block;
+            margin-left: 8px;
+		}
+
+		.controls .progress {
+			flex: 1 1 460px;
+			min-width: 240px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+			align-items: flex-start;
+			margin-bottom: -10px;
+			
+			position: relative;
+			z-index: 3;
+		}
+
+		.controls .progress input[type="range"] {
+			flex: 1;
+			width: 100%;
+			height: 6px;
+			background: none;
+			touch-action: pan-y;
+		}
+
+		.controls .progress input[type="range"]::-webkit-slider-runnable-track {
+			height: 6px;
+			border-radius: 999px;
+			background: linear-gradient(90deg, #38bdf8 var(--seek-filled, 0%), rgba(148, 163, 184, 0.4) var(--seek-filled, 0%));
+		}
+
+		.controls .progress input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+			background: #38bdf8;
+			box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.22);
+			margin-top: -4px;
+		}
+
+		.controls .progress input[type="range"]::-moz-range-track {
+			height: 6px;
+			border-radius: 999px;
+			background: linear-gradient(90deg, #38bdf8 var(--seek-filled, 0%), rgba(148, 163, 184, 0.4) var(--seek-filled, 0%));
+		}
+
+		.controls .progress input[type="range"]::-moz-range-thumb {
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+			border: none;
+			background: #38bdf8;
+			box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.22);
+		}
+
+		.controls .primary-controls {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			gap: 12px;
+			margin-right: auto;
+			margin-right: auto;
+		}
+
+		.controls .primary-controls #control-play {
+			order: 0;
+		}
+
+		.controls .primary-controls .volume {
+			order: 1;
+			flex: 0 0 auto;
+		}
+
+		.controls .primary-controls .timecode {
+			order: 2;
+		}
+
+		.timecode {
+			display: flex;
+			align-items: center;
+			height: 44px;
+			font-variant-numeric: tabular-nums;
+			font-size: 0.9rem;
+			color: #f8fafc;
+			margin-top: 0;
+			text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+			gap: 4px;
+		}
+		
+		.skip-button {
+			background: rgba(0, 0, 0, 0.4);
+			border: none;
+			padding: 8px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 44px;
+			height: 44px;
+			color: #ffffff;
+			transition: transform 0.15s ease, background 0.15s ease;
+			border-radius: 4px;
+			margin-top: -9px;
+            margin-right: 1px;
+            margin-left: -5px;
+
+		}
+		
+		.skip-button:hover {
+			transform: scale(1.1);
+			background: rgba(0, 0, 0, 0.6);
+		}
+		
+		.skip-button .icon {
+			width: 35px;
+			height: 35px;
+			display: block;
+			fill: currentColor;
+			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+
+           
+		}
+
+        		.skip-button1 {
+			background: rgba(0, 0, 0, 0.4);
+			border: none;
+			padding: 8px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 44px;
+			height: 44px;
+			color: #ffffff;
+			transition: transform 0.15s ease, background 0.15s ease;
+			border-radius: 4px;
+			margin-top: -9px;
+		}		.skip-button1:hover {
+			transform: scale(1.1);
+			background: rgba(0, 0, 0, 0.6);
+
+		}
+		
+		.skip-button1 .icon1 {
+			width: 35px;
+			height: 35px;
+			display: block;
+			fill: currentColor;
+			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+             margin-left: -10px;
+          
+
+		}
+
+		.controls .volume {
+			position: relative;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin-left: -12px;
+			z-index: 4;
+		}
+
+		.controls .volume button {
+			z-index: 2;
+		}
+
+		.volume.open #control-volume {
+			background: transparent;
+			color: #f8fafc;
+			box-shadow: none;
+		}
+
+	.volume-slider {
+		position: absolute;
+		left: 50%;
+		bottom: 100%;
+		margin-bottom: 2px;
+		transform: translateX(-50%);
+		display: none;
+		align-items: center;
+		justify-content: center;
+		padding: 4px 2px;
+		border-radius: 10px;
+		background: rgba(10, 15, 24, 0.92);
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+		backdrop-filter: blur(12px);
+		width: 12px;
+		height: auto;
+		min-height: 100px;
+		z-index: 5;
+	}		.volume.open .volume-slider {
+			display: flex;
+		}
+
+	.volume-slider input[type="range"] {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 90px;
+		height: 6px;
+		padding: 0;
+		margin: 0;
+		background: transparent;
+		transform: rotate(-90deg);
+		transform-origin: center;
+		cursor: pointer;
+	}		.volume-slider input[type="range"]::-webkit-slider-runnable-track {
+			height: 6px;
+			border-radius: 999px;
+			background: linear-gradient(90deg, #38bdf8 var(--volume-filled, 100%), rgba(148, 163, 184, 0.35) var(--volume-filled, 100%));
+		}
+
+		.volume-slider input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 0;
+			height: 0;
+			opacity: 0;
+		}
+
+		.volume-slider input[type="range"]::-moz-range-track {
+			height: 6px;
+			border-radius: 999px;
+			background: linear-gradient(90deg, #38bdf8 var(--volume-filled, 100%), rgba(148, 163, 184, 0.35) var(--volume-filled, 100%));
+		}
+
+		.volume-slider input[type="range"]::-moz-range-thumb {
+			width: 0;
+			height: 0;
+			border: none;
+			opacity: 0;
+		}
+
+		.volume-slider input[type="range"]:focus-visible {
+			outline: none;
+			box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+			border-radius: 12px;
+		}
+
+		.controls .speed {
+			position: relative;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+            margin-right: -20px;
+		}
+
+		.controls .secondary-controls {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			margin-left: auto;
+		}
+
+		#control-fullscreen {
+			margin-left: 0;
+		}
+
+		#cc-toggle {
+			width: 44px;
+			height: 44px;
+			border-radius: 12px;
+			border: none;
+			cursor: pointer;
+			display: grid;
+			place-items: center;
+			background: transparent;
+			color: #f8fafc;
+			font-size: 0.85rem;
+			font-weight: 700;
+			line-height: 1;
+			transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+			text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+			letter-spacing: 0.5px;
+			    margin-right: -10px;
+			    margin-left: -20px;
+			    position: relative; /* para posicionar la badge absoluta sobre él */
+			    overflow: visible; /* permitir que la badge sobresalga */
+		}
+
+		#cc-toggle:hover {
+			background: transparent;
+			box-shadow: none;
+		}
+
+		#cc-toggle:active {
+			transform: scale(0.97);
+		}
+
+		#cc-toggle.active {
+			color: #38bdf8;
+		}
+
+		#speed-toggle {
+			width: 44px;
+			height: 44px;
+			border-radius: 12px;
+			border: none;
+			cursor: pointer;
+			display: grid;
+			place-items: center;
+			background: transparent;
+			color: #f8fafc;
+			font-size: 0.95rem;
+			font-weight: 600;
+			line-height: 1;
+			transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+			text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+            margin-left: -8px;
+		}
+
+		#speed-toggle:hover {
+			background: transparent;
+			box-shadow: none;
+		}
+
+		#speed-toggle:active {
+			transform: scale(0.97);
+		}
+
+		.speed.open #speed-toggle {
+			background: transparent;
+			color: #f8fafc;
+			box-shadow: none;
+		}
+
+		.speed-menu {
+			position: absolute;
+			bottom: 50px;
+			right: 0;
+			display: none;
+			flex-direction: column;
+			gap: 2px;
+			padding: 4px 10px;
+			border-radius: 12px;
+			background: rgba(10, 15, 24, 0.92);
+			box-shadow: 0 22px 44px rgba(0, 0, 0, 0.45);
+			backdrop-filter: blur(12px);
+			min-width: 100px;
+			z-index: 5;
+			max-height: calc(100vh - 200px);
+			overflow-y: auto;
+		}
+
+		.speed-menu button {
+			width: 100%;
+			padding: 6px 10px;
+			border-radius: 8px;
+			border: none;
+			background: transparent;
+			color: rgba(226, 232, 240, 0.9);
+			font-size: 0.9rem;
+			text-align: left;
+			cursor: pointer;
+			transition: background 120ms ease, color 120ms ease;
+		}
+
+		.speed-menu button:hover,
+		.speed-menu button:focus-visible {
+			background: transparent;
+			color: #e0f2fe;
+		}
+
+		.speed-menu button.active {
+			background: transparent;
+			color: #38bdf8;
+		}
+
+		.speed.open .speed-menu {
+			display: flex;
+		}
+
+		.status {
+			min-height: 0;
+			margin: 0;
+			color: rgba(148, 163, 184, 0.9);
+			text-align: center;
+		}
+
+		.status:not(:empty) {
+			margin-top: 10px;
+		}
+
+	.quiz-section {
+		width: 100%;
+		max-width: 900px;
+		margin: 10px auto 0;
+		padding: 10px clamp(24px, 5vw, 40px) clamp(24px, 5vw, 40px);
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		gap: clamp(20px, 3vw, 28px);
+		align-items: stretch;
+		background: rgba(255, 255, 255, 0.5);
+		border-radius: 32px;
+		box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.6);
+	}	.quiz-section h2 {
+		margin: 0 0 2px 0;
+		font-size: clamp(1.3rem, 3.5vw, 1.8rem);
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-align: center;
+		background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #ec4899 100%);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		text-shadow: 0 2px 20px rgba(124, 58, 237, 0.3);
+		position: relative;
+		padding-bottom: 16px;
+	}		.quiz-section h2 span {
+			display: inline-block;
+			background: linear-gradient(120deg, #2563eb, #7c3aed);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+		}
+
+		.quiz-intro {
+			margin: 0 auto;
+			max-width: 620px;
+			text-align: center;
+			color: rgba(15, 23, 42, 0.72);
+			font-size: 1rem;
+			line-height: 1.7;
+		}
+
+	#lesson-quiz {
+		display: flex;
+		flex-direction: column;
+		gap: clamp(24px, 4vw, 32px);
+		width: 100%;
+		margin: 0;
+		padding: 0;
+		counter-reset: question-counter;
+	}	.quiz-question {
+		border: 2px solid transparent;
+		border-radius: 24px;
+		padding: clamp(14px, 2vw, 16px);
+		background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+		box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08), 
+		            0 4px 12px rgba(15, 23, 42, 0.04);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+		position: relative;
+		overflow: visible;
+		counter-reset: option-counter;
+		max-width: 500px;
+	}
+
+	.quiz-question::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 4px;
+		background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+		opacity: 0;
+		transition: opacity 280ms ease;
+	}
+
+	.quiz-question::after {
+		content: '';
+		position: absolute;
+		bottom: -14px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 70%;
+		height: 1px;
+		background: linear-gradient(90deg, 
+			transparent 0%, 
+			rgba(148, 163, 184, 0.15) 20%, 
+			rgba(148, 163, 184, 0.3) 50%, 
+			rgba(148, 163, 184, 0.15) 80%, 
+			transparent 100%);
+		opacity: 0.5;
+		transition: opacity 280ms ease;
+	}
+
+	.quiz-question:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12), 
+		            0 8px 16px rgba(15, 23, 42, 0.08);
+		border-color: rgba(148, 163, 184, 0.15);
+	}
+
+	/* Cuando el quiz está bloqueado, desactivar visuales hover para evitar feedback mientras corre el contador */
+	.quiz-section.quiz-locked .quiz-question:hover,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):hover,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):active,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):hover,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):active,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within {
+		transform: none !important;
+		box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+		border-color: rgba(226, 232, 240, 0.8) !important;
+		background: #fff !important;
+		cursor: default !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect) {
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.5), rgba(254, 240, 138, 0.4)) !important;
+		border-color: #eab308 !important;
+		box-shadow: 0 8px 24px rgba(234, 179, 8, 0.2), 
+		            0 4px 12px rgba(234, 179, 8, 0.15) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option.quiz-option--correct {
+		background: linear-gradient(135deg, rgba(134, 239, 172, 0.95), rgba(74, 222, 128, 0.85)) !important;
+		border-color: #16a34a !important;
+		box-shadow: 0 8px 24px rgba(34, 197, 94, 0.4),
+		            0 4px 12px rgba(34, 197, 94, 0.3) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option.quiz-option--incorrect {
+		background: linear-gradient(135deg, rgba(252, 165, 165, 0.95), rgba(248, 113, 113, 0.85)) !important;
+		border-color: #b91c1c !important;
+		box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4),
+		            0 4px 12px rgba(220, 38, 38, 0.3) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect)::before,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):hover::before,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):active::before,
+	.quiz-section.quiz-locked .quiz-option:not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within::before {
+		background: rgba(226, 232, 240, 0.5) !important;
+		color: #64748b !important;
+		box-shadow: none !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect)::before,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):hover::before,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):active::before,
+	.quiz-section.quiz-locked .quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within::before {
+		background: linear-gradient(135deg, #eab308, #fbbf24) !important;
+		color: #ffffff !important;
+		box-shadow: 0 2px 8px rgba(234, 179, 8, 0.3) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option.quiz-option--correct::before {
+		background: linear-gradient(135deg, #16a34a, #22c55e) !important;
+		color: #ffffff !important;
+		box-shadow: 0 2px 8px rgba(34, 197, 94, 0.5) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-option.quiz-option--incorrect::before {
+		background: linear-gradient(135deg, #b91c1c, #dc2626) !important;
+		color: #ffffff !important;
+		box-shadow: 0 2px 8px rgba(220, 38, 38, 0.5) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-question--correct:hover {
+		border-color: rgba(34, 197, 94, 0.6) !important;
+		box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.22) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-question--incorrect:hover {
+		border-color: rgba(220, 38, 38, 0.6) !important;
+		box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2) !important;
+	}
+
+	.quiz-section.quiz-locked .quiz-question--incomplete:hover {
+		border-color: rgba(251, 191, 36, 0.6) !important;
+		box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.2) !important;
+	}
+
+	.quiz-question:hover::before {
+		opacity: 1;
+	}
+
+	.quiz-question:hover::after {
+		opacity: 0;
+	}	.quiz-question legend {
+		margin: 0;
+		font-size: clamp(1.05rem, 2.6vw, 1.2rem);
+		font-weight: 600;
+		color: #0f172a;
+		letter-spacing: 0.02em;
+	}
+
+	.quiz-question-title {
+		margin: 0 0 10px 0;
+		padding: 10px 14px 10px 48px;
+		font-size: clamp(1.05rem, 2.5vw, 1.2rem);
+		font-weight: 700;
+		color: #1e293b;
+		letter-spacing: -0.01em;
+		line-height: 1.35;
+		background: linear-gradient(135deg, rgba(219, 234, 254, 0.6), rgba(221, 214, 254, 0.5));
+		border-radius: 14px;
+		border-left: 4px solid #3b82f6;
+		box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+		position: relative;
+		counter-increment: question-counter;
+	}
+
+	.quiz-question-title::before {
+		content: counter(question-counter);
+		position: absolute;
+		left: 14px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 28px;
+		height: 28px;
+		display: grid;
+		place-items: center;
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: #ffffff;
+		background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+		border-radius: 8px;
+		box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+	}
+
+	.quiz-question > p {
+		margin: 0 0 16px 0;
+		padding: 0;
+		font-size: clamp(1.1rem, 2.8vw, 1.3rem);
+		font-weight: 700;
+		color: #0f172a;
+		letter-spacing: 0.01em;
+		text-align: left;
+		background: transparent;
+		border: none;
+	}		.quiz-question > p {
+			margin: 0 0 14px 0;
+			padding: 14px 18px;
+			font-size: clamp(1.05rem, 2.6vw, 1.2rem);
+			font-weight: 600;
+			color: #0f172a;
+			letter-spacing: 0.02em;
+			text-align: center;
+			background: linear-gradient(135deg, rgba(219, 234, 254, 0.5), rgba(191, 219, 254, 0.4));
+			border-radius: 14px;
+			border: 1px solid rgba(148, 163, 184, 0.2);
+		}
+
+	.quiz-option {
+		position: relative;
+		display: block;
+		padding: 10px 14px 10px 44px;
+		border-radius: 14px;
+		border: 2px solid rgba(226, 232, 240, 0.8);
+		background: #ffffff;
+		cursor: pointer;
+		transition: all 220ms cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+		counter-increment: option-counter;
+		-webkit-tap-highlight-color: transparent;
+		outline: none;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	.quiz-option::before {
+		content: counter(option-counter, lower-alpha);
+		position: absolute;
+		left: 14px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 26px;
+		height: 26px;
+		display: grid;
+		place-items: center;
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #64748b;
+		background: rgba(226, 232, 240, 0.5);
+		border-radius: 7px;
+		transition: all 220ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.quiz-option input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.quiz-option input:focus,
+	.quiz-option input:focus-visible {
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	.quiz-option span {
+		display: block;
+		color: #334155;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		font-weight: 500;
+	}
+
+	.quiz-option:hover {
+		transform: translateX(4px);
+		border-color: rgba(234, 179, 8, 0.4);
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.6), rgba(255, 255, 255, 0.9));
+		box-shadow: 0 4px 12px rgba(234, 179, 8, 0.15);
+	}
+
+	.quiz-option:hover::before {
+		background: rgba(234, 179, 8, 0.15);
+		color: #eab308;
+	}
+
+	.quiz-option:focus-within {
+		transform: translateX(4px);
+		border-color: rgba(234, 179, 8, 0.4);
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.6), rgba(255, 255, 255, 0.9));
+		box-shadow: 0 4px 12px rgba(234, 179, 8, 0.15);
+	}
+
+	.quiz-option:focus-within::before {
+		background: rgba(234, 179, 8, 0.15);
+		color: #eab308;
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect) {
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.5), rgba(254, 240, 138, 0.4));
+		border-color: #eab308;
+		box-shadow: 0 8px 24px rgba(234, 179, 8, 0.2), 
+		            0 4px 12px rgba(234, 179, 8, 0.15);
+		transform: translateX(0);
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect)::before {
+		background: linear-gradient(135deg, #eab308, #fbbf24);
+		color: #ffffff;
+		box-shadow: 0 2px 8px rgba(234, 179, 8, 0.3);
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):hover {
+		border-color: rgba(234, 179, 8, 0.6);
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.7), rgba(254, 240, 138, 0.5));
+		box-shadow: 0 8px 24px rgba(234, 179, 8, 0.25), 
+		            0 4px 12px rgba(234, 179, 8, 0.2);
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):hover::before {
+		background: linear-gradient(135deg, #eab308, #fbbf24);
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):active,
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within {
+		border-color: rgba(234, 179, 8, 0.6);
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.7), rgba(254, 240, 138, 0.5));
+		box-shadow: 0 8px 24px rgba(234, 179, 8, 0.25), 
+		            0 4px 12px rgba(234, 179, 8, 0.2);
+	}
+
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):active::before,
+	.quiz-option:has(input:checked):not(.quiz-option--correct):not(.quiz-option--incorrect):focus-within::before {
+		background: linear-gradient(135deg, #eab308, #fbbf24);
+	}
+
+	.quiz-option:active {
+		transform: translateX(4px);
+		border-color: rgba(234, 179, 8, 0.4);
+		background: linear-gradient(135deg, rgba(254, 249, 195, 0.6), rgba(255, 255, 255, 0.9));
+		box-shadow: 0 4px 12px rgba(234, 179, 8, 0.15);
+	}
+
+	.quiz-option:active::before {
+		background: rgba(234, 179, 8, 0.15);
+		color: #eab308;
+	}
+
+	.quiz-question--incomplete {
+		border-color: rgba(251, 191, 36, 0.6);
+		box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.2);
+	}
+
+	.quiz-question--correct {
+		border-color: rgba(34, 197, 94, 0.6);
+		box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.22);
+	}
+
+	.quiz-question--correct .quiz-option:has(input:checked) {
+		background: linear-gradient(135deg, rgba(134, 239, 172, 0.95), rgba(74, 222, 128, 0.85)) !important;
+		border-color: #16a34a !important;
+		box-shadow: 0 8px 24px rgba(34, 197, 94, 0.4), 
+		            0 4px 12px rgba(34, 197, 94, 0.3) !important;
+	}
+
+	.quiz-question--correct .quiz-option:has(input:checked)::before {
+		background: linear-gradient(135deg, #16a34a, #22c55e) !important;
+		color: #ffffff;
+		box-shadow: 0 2px 8px rgba(34, 197, 94, 0.5) !important;
+	}
+
+	.quiz-option.quiz-option--correct {
+		background: linear-gradient(135deg, rgba(134, 239, 172, 0.95), rgba(74, 222, 128, 0.85)) !important;
+		border-color: #16a34a !important;
+		box-shadow: 0 8px 24px rgba(34, 197, 94, 0.4),
+		            0 4px 12px rgba(34, 197, 94, 0.3) !important;
+	}
+
+	.quiz-option.quiz-option--correct::before {
+		background: linear-gradient(135deg, #16a34a, #22c55e) !important;
+		color: #ffffff !important;
+		box-shadow: 0 2px 8px rgba(34, 197, 94, 0.5) !important;
+	}
+
+	.quiz-question--incorrect {
+		border-color: rgba(220, 38, 38, 0.6);
+		box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2);
+	}
+
+	.quiz-question--incorrect .quiz-option:has(input:checked) {
+		background: linear-gradient(135deg, rgba(252, 165, 165, 0.95), rgba(248, 113, 113, 0.85)) !important;
+		border-color: #b91c1c !important;
+		box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4), 
+		            0 4px 12px rgba(220, 38, 38, 0.3) !important;
+	}
+
+	.quiz-question--incorrect .quiz-option:has(input:checked)::before {
+		background: linear-gradient(135deg, #b91c1c, #dc2626) !important;
+		color: #ffffff;
+		box-shadow: 0 2px 8px rgba(220, 38, 38, 0.5) !important;
+	}
+
+	.quiz-option.quiz-option--incorrect {
+		background: linear-gradient(135deg, rgba(252, 165, 165, 0.95), rgba(248, 113, 113, 0.85)) !important;
+		border-color: #b91c1c !important;
+		box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4),
+		            0 4px 12px rgba(220, 38, 38, 0.3) !important;
+	}
+
+	.quiz-option.quiz-option--incorrect::before {
+		background: linear-gradient(135deg, #b91c1c, #dc2626) !important;
+		color: #ffffff !important;
+		box-shadow: 0 2px 8px rgba(220, 38, 38, 0.5) !important;
+	}
+
+	.quiz-submit {
+		align-self: center;
+		border: none;
+		border-radius: 999px;
+		padding: 18px 52px;
+		font-size: 1.05rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+		background-size: 200% 200%;
+		color: #ffffff;
+		cursor: pointer;
+		box-shadow: 0 12px 32px rgba(124, 58, 237, 0.35), 
+		            0 4px 12px rgba(59, 130, 246, 0.2);
+		transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.quiz-submit::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 0;
+		height: 0;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.3);
+		transform: translate(-50%, -50%);
+		transition: width 500ms ease, height 500ms ease;
+	}
+
+	.quiz-submit:hover {
+		transform: translateY(-3px) scale(1.02);
+		box-shadow: 0 20px 48px rgba(124, 58, 237, 0.4), 
+		            0 8px 20px rgba(59, 130, 246, 0.3);
+		background-position: 100% 0;
+	}
+
+	.quiz-submit:hover::before {
+		width: 300px;
+		height: 300px;
+	}
+
+	.quiz-submit:active {
+		transform: translateY(-1px) scale(0.98);
+		box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
+	}		/* Modal overlay */
+	.quiz-modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(15, 23, 42, 0.75);
+		backdrop-filter: blur(8px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 9999;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 20px;
+		overflow-y: auto;
+		box-sizing: border-box;
+	}		.quiz-modal-overlay.visible {
+			opacity: 1;
+			pointer-events: auto;
+		}
+
+	.quiz-result {
+		position: relative;
+		max-width: 520px;
+		width: 100%;
+		border-radius: 28px;
+		background: rgba(255, 255, 255, 0.98);
+		border: 1px solid transparent;
+		box-shadow: 0 32px 80px rgba(15, 23, 42, 0.25), 0 12px 40px rgba(15, 23, 42, 0.15);
+		transform: scale(0.9) translateY(20px);
+		opacity: 0;
+		transition: all 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+		margin: 0;
+		max-height: 90vh;
+		overflow-y: auto;
+		box-sizing: border-box;
+	}		.quiz-modal-overlay.visible .quiz-result {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+
+		.quiz-result__close {
+			position: absolute;
+			top: 16px;
+			right: 16px;
+			width: 36px;
+			height: 36px;
+			border-radius: 12px;
+			border: none;
+			background: rgba(148, 163, 184, 0.1);
+			color: #64748b;
+			font-size: 20px;
+			font-weight: 700;
+			cursor: pointer;
+			transition: all 200ms ease;
+			display: grid;
+			place-items: center;
+			z-index: 1;
+		}
+
+		.quiz-result__close:hover {
+			background: rgba(148, 163, 184, 0.2);
+			color: #334155;
+			transform: rotate(90deg);
+		}
+
+		.quiz-result__inner {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 24px;
+			padding: 48px 36px;
+			text-align: center;
+		}
+
+		.quiz-result__score {
+			display: grid;
+			place-items: center;
+			width: 120px;
+			height: 120px;
+			border-radius: 50%;
+			font-size: 2.2rem;
+			font-weight: 800;
+			color: #0f172a;
+			background: linear-gradient(150deg, rgba(219, 234, 254, 0.9), rgba(221, 214, 254, 0.9));
+			box-shadow: 0 8px 24px rgba(59, 130, 246, 0.2), inset 0 0 0 3px rgba(148, 163, 184, 0.15);
+			animation: scoreAppear 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms backwards;
+		}
+
+		@keyframes scoreAppear {
+			from {
+				opacity: 0;
+				transform: scale(0) rotate(-180deg);
+			}
+			to {
+				opacity: 1;
+				transform: scale(1) rotate(0deg);
+			}
+		}
+
+		.quiz-result__content {
+			display: grid;
+			gap: 12px;
+			color: rgba(15, 23, 42, 0.85);
+			max-width: 420px;
+		}
+
+		.quiz-result__title {
+			margin: 0;
+			font-size: 1.6rem;
+			font-weight: 800;
+			text-transform: uppercase;
+			letter-spacing: 0.02em;
+			background: linear-gradient(135deg, #2563eb, #7c3aed);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			word-break: break-word;
+		}
+
+		.quiz-result__message,
+		.quiz-result__summary {
+			margin: 0;
+			font-size: 1.05rem;
+			line-height: 1.7;
+			color: #475569;
+		}
+
+		.quiz-result__action {
+			margin-top: 12px;
+			padding: 12px 26px;
+			border-radius: 999px;
+			border: none;
+			font-size: 1rem;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			background: linear-gradient(135deg, #2563eb, #7c3aed);
+			color: #ffffff;
+			cursor: pointer;
+			box-shadow: 0 8px 20px rgba(59, 130, 246, 0.25);
+			transition: transform 180ms ease, box-shadow 180ms ease;
+		}
+
+		.quiz-result__action:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 12px 28px rgba(124, 58, 237, 0.28);
+		}
+
+		.quiz-result__action:focus-visible {
+			outline: 3px solid rgba(59, 130, 246, 0.45);
+			outline-offset: 3px;
+		}
+
+		/* Contador: tarjeta fija pegada al lateral derecho (ligeramente desplazada) */
+		.quiz-lock-timer {
+			position: fixed;
+			top: 50%;
+			right: calc(-96px + env(safe-area-inset-right, 0px)); /* desplazar más hacia fuera del viewport */
+			transform: translateY(-50%);
+			z-index: 10010;
+			display: flex;
+			align-items: center;
+			justify-content: flex-start;
+			height:30px;
+			min-height: 3px;
+			min-width: 140px;
+			padding: 0 4px 0 32px;
+			/* fondo suave azulado para destacar sobre la tarjeta */
+			background: linear-gradient(180deg, rgba(239, 246, 255, 1), rgba(235, 249, 250, 0.98));
+			border-radius: 999px;
+			/* sombra más marcada, sutil desplazamiento a la izquierda para separación del contenido */
+			box-shadow: -14px 28px 60px rgba(9, 18, 38, 0.18), 0 10px 30px rgba(15,23,42,0.08);
+			font-weight: 800;
+			color: #0f172a;
+			backdrop-filter: blur(6px);
+			transition: transform 360ms cubic-bezier(0.2,0.9,0.2,1), box-shadow 220ms ease, opacity 260ms ease;
+			opacity: 0;
+			pointer-events: none;
+			border: 1px solid rgba(148,163,184,0.06);
+		}
+
+		.quiz-lock-timer.visible {
+			/* mantener desplazamiento sin revelar el borde derecho */
+			transform: translateY(-50%);
+			opacity: 1;
+			pointer-events: auto;
+		}
+
+		/* animación de entrada */
+		.quiz-lock-timer.visible {
+			animation: fabEnter 420ms cubic-bezier(0.2,0.9,0.2,1) both;
+		}
+
+		@keyframes fabEnter {
+			from { transform: translateY(-50%) translateX(12px) scale(0.96); opacity: 0; }
+			to { transform: translateY(-50%) translateX(0) scale(1); opacity: 1; }
+		}
+
+		/* estado urgente: parpadeo sutil y degradado brillante */
+		.quiz-lock-timer.urgent .count {
+			animation: urgentPulse 900ms ease-in-out infinite;
+			background: linear-gradient(90deg, #ef4444, #f97316);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+		}
+
+		@keyframes urgentPulse {
+			0% { transform: scale(1); filter: drop-shadow(0 6px 18px rgba(249,115,22,0.12)); }
+			50% { transform: scale(1.06); filter: drop-shadow(0 12px 28px rgba(239,68,68,0.18)); }
+			100% { transform: scale(1); filter: drop-shadow(0 6px 18px rgba(249,115,22,0.12)); }
+		}
+
+		/* Cuenta horizontal dentro del semicírculo */
+		.quiz-lock-timer .count {
+			font-size: 1.25rem;
+			color: #0b1220;
+			background: linear-gradient(135deg, #4f46e5, #06b6d4);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-weight: 900;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			text-orientation: mixed;
+			writing-mode: horizontal-tb;
+			transform: none;
+			width: auto;
+			line-height: 1;
+		}
+
+		/* Ajuste para mobile: reducir dimensiones y acercar un poco más al interior */
+		@media (max-width: 680px) {
+			.quiz-lock-timer {
+				right: calc(-84px + env(safe-area-inset-right, 0px));
+				top: 50%;
+				transform: translateY(-50%);
+				height: 46px;
+				min-height: 46px;
+				min-width: 120px;
+				padding: 0 -4px 0 24px;
+				border-radius: 999px;
+				background: linear-gradient(180deg, rgba(241, 249, 255, 1), rgba(235, 249, 250, 0.98));
+				box-shadow: -10px 20px 44px rgba(9, 18, 38, 0.14), 0 8px 22px rgba(15,23,42,0.06);
+			}
+
+			/* ...existing code... */
+			.quiz-lock-timer.visible { transform: translateY(-50%); }
+			.quiz-lock-timer .count {
+				font-size: 1.1rem;
+				writing-mode: horizontal-tb;
+				transform: none;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				line-height: 1;
+			}
+
+			/* Badge roja estilo "notificación" sobre el botón CC */
+			.cc-badge {
+				position: absolute; /* dentro del botón CC */
+				right: -6px; /* ligeramente fuera a la derecha */
+				top: -6px; /* ligeramente por encima */
+				min-width: 20px;
+				height: 20px;
+				padding: 0 1px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border-radius: 99px; /* permite números de dos dígitos */
+				background: linear-gradient(180deg,#ef4444,#dc2626);
+				box-shadow: 0 6px 18px rgba(220,38,38,0.28);
+				border: 2px solid rgba(255,255,255,0.95);
+				color: #fff;
+				font-weight: 700;
+				font-size: 7px;
+				line-height: 1;
+				z-index: 12000;
+				transform: scale(0.92);
+				transition: transform 220ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease;
+				opacity: 0;
+				pointer-events: none; /* no bloquear clicks en el botón */
+			}
+
+			.cc-badge.show {
+				opacity: 1;
+				transform: scale(1);
+			}
+
+			/* pulso suave para llamar la atención */
+			.cc-badge.pulse {
+				animation: cc-badge-pulse 1100ms ease-in-out infinite;
+			}
+
+			@keyframes cc-badge-pulse {
+				0% { transform: scale(0.98); box-shadow: 0 6px 18px rgba(220,38,38,0.28); }
+				50% { transform: scale(1.06); box-shadow: 0 10px 26px rgba(220,38,38,0.32); }
+				100% { transform: scale(0.98); box-shadow: 0 6px 18px rgba(220,38,38,0.28); }
+			}
+		}
+
+/* Reglas globales para badge: usamos position:fixed y posicionamiento calculado por JS
+   (estas reglas anulan la variante dentro del media query para pantallas grandes) */
+.cc-badge {
+	position: fixed !important;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 99px;
+	background: linear-gradient(180deg,#ef4444,#dc2626);
+	box-shadow: 0 6px 18px rgba(220,38,38,0.28);
+	border: 2px solid rgba(255,255,255,0.95);
+	color: #fff;
+	font-weight: 700;
+	font-size: 14px;
+	line-height: 1;
+	z-index: 12000;
+	transform: scale(0.92);
+	transition: transform 220ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease;
+	opacity: 0;
+	pointer-events: none;
+}
+.cc-badge.show { opacity: 1; transform: scale(1); }
+
+/* Mensaje llamativo encima de CC */
+.cc-msg {
+	position: fixed; /* fijo relativo al viewport, colocado por JS */
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 8px 12px;
+	background: linear-gradient(180deg,#ff6b6b,#ef4444);
+	color: #fff;
+	font-weight: 800;
+	font-size: clamp(12px, 1.6vw, 14px);
+	border-radius: 12px;
+	box-shadow: 0 12px 30px rgba(14, 28, 50, 0.32);
+	z-index: 13000;
+	opacity: 0;
+	transform: scale(0.96);
+	transition: opacity 200ms ease, transform 220ms cubic-bezier(.2,.8,.2,1);
+	pointer-events: none;
+	max-width: calc(100vw - 32px); /* evitar overflow en pantallas pequeñas */
+	text-align: center;
+	white-space: normal; /* permitir wrap */
+}
+.cc-msg.show { opacity: 1; transform: scale(1); }
+.cc-msg__arrow {
+	position: absolute;
+	width: 0;
+	height: 0;
+	border-left: 8px solid transparent;
+	border-right: 8px solid transparent;
+	border-top: 8px solid rgba(239,68,68,1);
+	bottom: -8px;
+	pointer-events: none;
+	transition: all 160ms ease;
+}
+
+.cc-msg[data-pos="bottom"] .cc-msg__arrow {
+	border-top: none;
+	border-bottom: 8px solid rgba(239,68,68,1);
+	top: -8px;
+	bottom: auto;
+}
+
+.cc-msg.pulse { animation: cc-badge-pulse 1100ms ease-in-out infinite; }
+
+/* destacar el icono CC: color rojo y parpadeo suave */
+#cc-toggle.cc-highlight {
+	color: #ff4b4b !important;
+	text-shadow: 0 2px 8px rgba(255,75,75,0.6);
+	animation: cc-icon-blink 1000ms ease-in-out infinite;
+}
+
+@keyframes cc-icon-blink {
+	0% { transform: translateY(0) scale(1); filter: drop-shadow(0 2px 4px rgba(255,75,75,0.2)); }
+	50% { transform: translateY(-2px) scale(1.02); filter: drop-shadow(0 6px 14px rgba(255,75,75,0.35)); }
+	100% { transform: translateY(0) scale(1); filter: drop-shadow(0 2px 4px rgba(255,75,75,0.2)); }
+}
+
+
+		.quiz-result[data-state="perfect"] {
+			background: linear-gradient(180deg, rgba(220, 252, 231, 0.98), rgba(187, 247, 208, 0.95));
+			border-color: rgba(34, 197, 94, 0.3);
+		}
+
+		.quiz-result[data-state="perfect"] .quiz-result__score {
+			background: linear-gradient(150deg, rgba(134, 239, 172, 1), rgba(74, 222, 128, 1));
+			box-shadow: 0 12px 32px rgba(34, 197, 94, 0.35), inset 0 0 0 3px rgba(255, 255, 255, 0.4);
+		}
+
+		.quiz-result[data-state="strong"] {
+			background: linear-gradient(180deg, rgba(219, 234, 254, 0.98), rgba(191, 219, 254, 0.95));
+			border-color: rgba(59, 130, 246, 0.3);
+		}
+
+		.quiz-result[data-state="strong"] .quiz-result__score {
+			background: linear-gradient(150deg, rgba(147, 197, 253, 1), rgba(96, 165, 250, 1));
+			box-shadow: 0 12px 32px rgba(59, 130, 246, 0.35), inset 0 0 0 3px rgba(255, 255, 255, 0.4);
+		}
+
+		.quiz-result[data-state="weak"] {
+			background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(254, 202, 202, 0.95));
+			border-color: rgba(248, 113, 113, 0.3);
+		}
+
+		.quiz-result[data-state="weak"] .quiz-result__score {
+			background: linear-gradient(150deg, rgba(252, 165, 165, 1), rgba(248, 113, 113, 1));
+			box-shadow: 0 12px 32px rgba(239, 68, 68, 0.35), inset 0 0 0 3px rgba(255, 255, 255, 0.4);
+		}
+
+		.quiz-result[data-state="none"] {
+			background: linear-gradient(180deg, rgba(254, 202, 202, 0.98), rgba(254, 178, 178, 0.95));
+			border-color: rgba(239, 68, 68, 0.3);
+		}
+
+		.quiz-result[data-state="none"] .quiz-result__score {
+			background: linear-gradient(150deg, rgba(248, 113, 113, 1), rgba(239, 68, 68, 1));
+			box-shadow: 0 12px 32px rgba(239, 68, 68, 0.4), inset 0 0 0 3px rgba(255, 255, 255, 0.4);
+		}
+
+		.quiz-result[data-state="incomplete"] {
+			background: linear-gradient(180deg, rgba(254, 243, 199, 0.98), rgba(253, 230, 138, 0.95));
+			border-color: rgba(251, 191, 36, 0.3);
+		}
+
+		.quiz-result[data-state="incomplete"] .quiz-result__score {
+			display: none;
+		}
+
+		@media (max-width: 680px) {
+			.quiz-section {
+				gap: 24px;
+			}
+
+			.quiz-question {
+				border-radius: 20px;
+				padding: 16px;
+			}
+
+			.quiz-option {
+				padding: 14px 16px 14px 52px;
+			}
+
+		.quiz-modal-overlay {
+			padding: 16px;
+		}
+
+		.quiz-result {
+			width: 100%;
+			border-radius: 20px;
+		}
+
+		.quiz-result__inner {
+			gap: 18px;
+			padding: 32px 24px;
+		}
+
+		.quiz-result__score {
+			width: 90px;
+			height: 90px;
+			font-size: 1.6rem;
+		}
+
+		.quiz-result__close {
+			top: 12px;
+			right: 12px;
+			width: 32px;
+			height: 32px;
+			font-size: 18px;
+		}
+
+		.quiz-result__title {
+			font-size: 1.25rem;
+			letter-spacing: 0.01em;
+		}
+
+		.quiz-result__message,
+		.quiz-result__summary {
+			font-size: 0.95rem;
+		}
+	} 	@media (max-width: 430px) {
+			.quiz-section {
+				margin: 10px auto 0;
+				padding: 10px 6px 24px;
+			}
+
+			#lesson-quiz {
+				gap: 16px;
+			}
+
+			.quiz-question {
+				padding: 14px;
+			}
+
+			.quiz-option {
+				padding-left: 50px;
+			}
+
+			.quiz-option span {
+				font-size: 0.9rem;
+			}
+
+			.quiz-submit {
+				width: 100%;
+				padding: 14px;
+			}
+
+		.quiz-modal-overlay {
+			padding: 12px;
+		}
+
+		.quiz-result {
+			width: 100%;
+			border-radius: 18px;
+		}
+
+		.quiz-result__inner {
+			padding: 28px 20px;
+			gap: 16px;
+		}
+
+		.quiz-result__score {
+			width: 80px;
+			height: 80px;
+			font-size: 1.4rem;
+		}
+
+		.quiz-result__close {
+			top: 10px;
+			right: 10px;
+			width: 30px;
+			height: 30px;
+			font-size: 18px;
+		}
+
+		.quiz-result__title {
+			font-size: 1.1rem;
+		}
+
+		.quiz-result__message,
+		.quiz-result__summary {
+			font-size: 0.9rem;
+		}
+	}
+		@media (max-width: 680px) {
+			body {
+				padding: 24px clamp(14px, 6vw, 28px) 140px;
+				align-items: center;
+			}
+
+			.player-header {
+				gap: 10px;
+				margin-bottom: 22px;
+			}
+
+			.player-badge {
+				font-size: 0.76rem;
+				padding: 5px 12px;
+			}
+
+			.player-subtitle {
+				font-size: 0.9rem;
+			}
+
+			.player-shell {
+				width: 100%;
+				max-width: 640px;
+				margin: 0 auto;
+				--shell-pad-x: 0;
+				--shell-pad-y: 0;
+				padding: 0 !important;
+				border-radius: 18px;
+			}
+
+			.transcript-container {
+				max-width: 640px;
+			}
+
+			h1 {
+				font-size: 1.28rem;
+				margin-bottom: 16px;
+			}
+
+			video {
+				border-radius: 14px;
+				height: 42vh;
+				width: 100%;
+				object-fit: fill;
+			}
+			
+			.video-background {
+				border-radius: 14px;
+				height: 42vh;
+			}
+
+			.playback-overlay .overlay-circle {
+				width: 64px;
+				height: 64px;
+				box-shadow: 0 14px 30px rgba(15, 23, 42, 0.3);
+			}
+
+			.playback-overlay svg {
+				width: 42px;
+				height: 42px;
+			}
+
+			.controls {
+				gap: 8px;
+				padding: 12px 14px 4px 14px;
+				border-bottom-left-radius: 14px;
+				border-bottom-right-radius: 14px;
+			}
+
+			.controls button,
+			#speed-toggle {
+				width: 36px;
+				height: 36px;
+				border-radius: 9px;
+			}
+
+			.controls .progress {
+				order: 1;
+				flex-basis: 100%;
+				margin-top: 0;
+			}
+
+			.controls .primary-controls {
+				order: 2;
+				width: auto;
+				margin-right: 0;
+			}
+
+			.controls .secondary-controls {
+				order: 3;
+				margin-left: auto;
+			}
+
+			.timecode {
+				display: flex;
+				align-items: center;
+				height: 36px;
+				font-size: 0.84rem;
+				color: #f8fafc;
+				margin-top: 0;
+                margin-left: -10px;
+			}
+
+			.speed-menu {
+				bottom: 42px;
+			}
+		}
+
+		@media (max-width: 430px) {
+			body {
+				padding: 20px 3px 120px;
+			}
+
+			.player-header {
+				gap: 8px;
+				margin-bottom: 18px;
+			}
+
+			.player-badge {
+				font-size: 0.7rem;
+				padding: 4px 10px;
+			}
+
+			.player-subtitle {
+				font-size: 0.82rem;
+			}
+
+			.player-shell {
+				width: 100%;
+				max-width: 420px;
+				margin: 0 auto;
+				--shell-pad-x: 0;
+				--shell-pad-y: 0;
+				padding: 0 !important;
+			}
+
+			.transcript-container {
+				max-width: 420px;
+				border-radius: 12px;
+			}
+
+			.controls {
+				padding: 10px 10px 14px;
+				gap: 6px;
+				border-bottom-left-radius: 12px;
+				border-bottom-right-radius: 12px;
+			}
+
+			video {
+				border-radius: 12px;
+				height: 38vh;
+				width: 100%;
+				object-fit: fill;
+			}
+			
+			.video-background {
+				border-radius: 12px;
+				height: 38vh;
+			}
+
+			.playback-overlay .overlay-circle {
+				width: 56px;
+				height: 56px;
+				box-shadow: 0 12px 24px rgba(15, 23, 42, 0.28);
+			}
+
+			.playback-overlay svg {
+				width: 36px;
+				height: 36px;
+			}
+			
+			.background-content {
+				padding: 24px 20px;
+				gap: 12px;
+				border-radius: 20px;
+			}
+
+			.background-level,
+			.background-unit {
+				font-size: 0.75rem;
+				padding: 6px 14px;
+				letter-spacing: 0.1em;
+			}
+
+			.background-prompt {
+				font-size: 0.88rem;
+			}
+
+			.timecode {
+				display: flex;
+				align-items: center;
+				height: 32px;
+				font-size: 0.8rem;
+				color: #f8fafc;
+				margin-top: 0;
+			}
+
+			.controls .progress input[type="range"]::-webkit-slider-thumb,
+			.controls .progress input[type="range"]::-moz-range-thumb {
+				width: 10px;
+				height: 10px;
+			}
+
+			.speed-menu {
+				bottom: 38px;
+			}
+		}
+
+		a {
+			color: #38bdf8;
+		}
+
+		.loading-overlay {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			display: none;
+			align-items: center;
+			justify-content: center;
+			background: rgba(0, 0, 0, 0.5);
+			backdrop-filter: blur(4px);
+			z-index: 10;
+			border-radius: 18px;
+		}
+
+		.loading-overlay.active {
+			display: flex;
+		}
+
+		.spinner-container {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 16px;
+		}
+
+		.spinner {
+			width: 48px;
+			height: 48px;
+			border: 4px solid rgba(56, 189, 248, 0.2);
+			border-top-color: #38bdf8;
+			border-radius: 50%;
+			animation: spin 0.8s linear infinite;
+		}
+
+		.loading-text {
+			color: #f8fafc;
+			font-size: 0.95rem;
+			font-weight: 500;
+			text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+		}
+
+		@keyframes spin {
+			to { transform: rotate(360deg); }
+		}
+
+		@keyframes titleGlow {
+			0% {
+				background-position: 0% 50%;
+			}
+
+			100% {
+				background-position: 100% 50%;
+			}
+		}
+
+		@keyframes titlePulse {
+			0%, 100% {
+				opacity: 0.7;
+				transform: translateX(-50%) scaleX(0.9);
+			}
+
+			50% {
+				opacity: 1;
+				transform: translateX(-50%) scaleX(1.1);
+			}
+		}
+
+		@media (max-width: 680px) {
+			.loading-overlay {
+				border-radius: 14px;
+			}
+
+			.spinner {
+				width: 40px;
+				height: 40px;
+				border-width: 3px;
+			}
+
+			.loading-text {
+				font-size: 0.88rem;
+			}
+		}
+
+		@media (max-width: 430px) {
+			.loading-overlay {
+				border-radius: 12px;
+			}
+
+			.spinner {
+				width: 36px;
+				height: 36px;
+			}
+
+			.loading-text {
+				font-size: 0.84rem;
+			}
+		}
+
+		.transcript-container {
+			width: 100%;
+			max-width: 960px;
+			margin: 5px auto 0;
+			background: rgba(10, 15, 24, 0.96);
+			backdrop-filter: blur(12px);
+			border-radius: 18px;
+			padding: 0;
+			max-height: 0;
+			overflow: hidden;
+			box-sizing: border-box;
+			transition: max-height 0.3s ease, padding 0.3s ease;
+			box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+			position: relative;
+		}
+
+		.transcript-close {
+			position: absolute;
+			top: 14px;
+			right: 14px;
+			width: 32px;
+			height: 32px;
+			border: none;
+			border-radius: 999px;
+			background: rgba(148, 163, 184, 0.2);
+			color: rgba(226, 232, 240, 0.85);
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+			display: grid;
+			place-items: center;
+			transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+			opacity: 0;
+			pointer-events: none;
+			visibility: hidden;
+		}
+
+		.transcript-close:hover,
+		.transcript-close:focus-visible {
+			background: rgba(56, 189, 248, 0.25);
+			color: #e0f2fe;
+			outline: none;
+		}
+	.transcript-container.visible .transcript-close {
+		opacity: 1;
+		pointer-events: auto;
+		visibility: visible;
+	}
+
+		.transcript-close:active {
+			transform: scale(0.94);
+		}
+
+		.transcript-container.visible {
+			max-height: 280px;
+			padding: 24px;
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+		}
+
+		.transcript-title {
+			font-size: 1.2rem;
+			font-weight: 600;
+			color: #38bdf8;
+			margin: 0;
+			text-align: center;
+		}
+
+		.transcript-content {
+			color: #e2e8f0;
+			line-height: 1.8;
+			font-size: 0.95rem;
+			flex: 1;
+			min-height: 0;
+			overflow-y: auto;
+			padding-right: 8px;
+			margin-right: -4px;
+		}
+
+		.transcript-content p {
+			margin: 0 0 12px 0;
+		}
+
+		.transcript-content strong {
+			color: #38bdf8;
+			font-weight: 600;
+		}
+
+		.transcript-content::-webkit-scrollbar {
+			width: 8px;
+		}
+
+		.transcript-content::-webkit-scrollbar-track {
+			background: rgba(148, 163, 184, 0.1);
+			border-radius: 999px;
+			margin: 6px 0;
+		}
+
+		.transcript-content::-webkit-scrollbar-thumb {
+			background: rgba(56, 189, 248, 0.7);
+			border-radius: 999px;
+			border: 2px solid transparent;
+			background-clip: padding-box;
+		}
+
+		.transcript-content::-webkit-scrollbar-thumb:hover {
+			background: rgba(37, 99, 235, 0.85);
+			background-clip: padding-box;
+		}
+
+		@media (max-width: 680px) {
+			.transcript-container.visible {
+				max-height: 220px;
+				padding: 20px;
+				gap: 12px;
+			}
+
+			.transcript-close {
+				top: 10px;
+				right: 10px;
+				width: 28px;
+				height: 28px;
+				font-size: 14px;
+			}
+
+			.transcript-title {
+				font-size: 1.1rem;
+			}
+
+			.transcript-content {
+				font-size: 0.9rem;
+				padding-right: 6px;
+				margin-right: -2px;
+			}
+		}
+
+		@media (max-width: 430px) {
+			.transcript-container {
+				border-radius: 12px;
+			}
+
+			.transcript-container.visible {
+				max-height: 200px;
+				padding: 16px;
+				gap: 10px;
+			}
+
+			.transcript-close {
+				top: 8px;
+				right: 8px;
+				width: 26px;
+				height: 26px;
+				font-size: 13px;
+			}
+
+			.transcript-title {
+				font-size: 1rem;
+			}
+
+			.transcript-content {
+				font-size: 0.85rem;
+				padding-right: 4px;
+				margin-right: -1px;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="player-shell">
+		<h1 style="text-align: center;">Mis tiendas preferidas</h1>
+		<div class="loading-overlay" id="loading-overlay">
+			<div class="spinner-container">
+				<div class="spinner"></div>
+				<div class="loading-text">Cargando video...</div>
+			</div>
+		</div>
+		<div class="video-stage">
+			<div class="video-background visible" id="video-background">
+				<div class="background-content">
+					<div class="background-level">ESPAÑOL A1</div>
+					<div class="background-unit">UNIDAD 4: ¿Cuál prefieres?</div>
+
+				</div>
+			</div>
+			<video id="player" src="https://ik.imagekit.io/b8cowcw9j/video4.mp4" preload="auto" playsinline tabindex="0" controlslist="nodownload noremoteplayback">
+				Tu navegador no puede reproducir este video.
+			</video>
+			<div class="playback-overlay" id="playback-overlay" data-state="pause" aria-hidden="true">
+				<span class="overlay-circle">
+					<svg data-icon="play" viewBox="0 0 32 32" aria-hidden="true">
+						<path d="M12 8v16l12-8z"></path>
+					</svg>
+					<svg data-icon="pause" viewBox="0 0 32 32" aria-hidden="true">
+						<path d="M11 9h4v14h-4zm6 0h4v14h-4z"></path>
+					</svg>
+				</span>
+			</div>
+		</div>
+		<div class="controls">
+			<div class="progress" style="flex: 1 0 100%; order: 0;">
+				<input id="seek" type="range" min="0" value="0" step="0.05" aria-label="Barra de progreso">
+			</div>
+			<div class="primary-controls" style="display: flex; flex-direction: row; align-items: center; gap: 12px;">
+			<button id="control-play" type="button" aria-label="Reproducir" data-state="play">
+				<svg class="icon icon-play" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 6.5v19l16-9.5z"></path></svg>
+				<svg class="icon icon-pause" viewBox="0 0 32 32" aria-hidden="true"><path d="M11 7h4v18h-4zm6 0h4v18h-4z"></path></svg>
+				<svg class="icon icon-replay" viewBox="0 0 32 32" aria-hidden="true">
+					<path d="M16 6 L16 2.5 L10.5 7 L16 11.5 L16 8 C20.4 8 24 11.6 24 16 C24 20.4 20.4 24 16 24 C11.6 24 8 20.4 8 16 L5 16 C5 22 9.9 27 16 27 C22.1 27 27 22 27 16 C27 10 22.1 5 16 5 Z"></path>
+				</svg>
+			</button>
+				<div class="volume" id="volume-control">
+					<button id="control-volume" type="button" aria-label="Silenciar" data-state="high" aria-haspopup="true" aria-expanded="false">
+						<svg class="icon icon-volume-high" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 12h5l6-5v18l-6-5H6zm15.5-6.5v3.3c2.2 0.9 3.5 2.6 3.5 4.7s-1.3 3.8-3.5 4.7v3.3c4-1.2 6.5-4.1 6.5-7.9s-2.6-6.7-6.5-7.9z"></path></svg>
+						<svg class="icon icon-volume-muted" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 12h5l6-5v18l-6-5H6zm16.8 3.6 2.6-2.6 1.6 1.6-2.6 2.6 2.6 2.6-1.6 1.6-2.6-2.6-2.6 2.6-1.6-1.6 2.6-2.6-2.6-2.6 1.6-1.6z"></path></svg>
+					</button>
+					<div class="volume-slider" id="volume-popover" role="presentation" aria-hidden="true">
+						<input id="volume" type="range" min="0" max="1" step="0.01" value="0.5" aria-label="Volumen" orient="vertical">
+					</div>
+				</div>
+				<div class="timecode" id="time">
+					<span>00:00 / 00:00</span>
+					<button id="forward-10" type="button" aria-label="Retrasar 10 segundos" class="skip-button">
+						<svg class="icon" viewBox="0 0 32 32" aria-hidden="true">
+							<path d="M16 8c-4.4 0-8 3.6-8 8s3.6 8 8 8 8-3.6 8-8h-2c0 3.3-2.7 6-6 6s-6-2.7-6-6 2.7-6 6-6v3l4-4-4-4v3z"></path>
+							<text x="16" y="18" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">10</text>
+						</svg>
+					</button>
+					<button id="rewind-10" type="button" aria-label="Adelantar 10 segundos" class="skip-button1">
+						<svg class="icon1" viewBox="0 0 32 32" aria-hidden="true">
+							<path d="M16 8c4.4 0 8 3.6 8 8s-3.6 8-8 8-8-3.6-8-8h2c0 3.3 2.7 6 6 6s6-2.7 6-6-2.7-6-6-6v3l-4-4 4-4v3z"></path>
+							<text x="16" y="18" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">10</text>
+						</svg>
+					</button>
+				</div>
+		</div>
+		<div class="secondary-controls">
+			<button id="cc-toggle" type="button" aria-label="Subtítulos" title="Subtítulos">CC</button>
+			<div class="speed" id="speed-control">
+				<button id="speed-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Cambiar velocidad">1x</button>
+				<div id="speed-menu" class="speed-menu" role="menu" aria-label="Seleccionar velocidad">
+					<button type="button" role="menuitemradio" data-rate="0.5">0,5×</button>
+					<button type="button" role="menuitemradio" data-rate="0.75">0,75×</button>
+					<button type="button" role="menuitemradio" data-rate="1" aria-checked="true">Normal</button>
+					<button type="button" role="menuitemradio" data-rate="1.25">1,25×</button>
+					<button type="button" role="menuitemradio" data-rate="1.5">1,5×</button>
+					<button type="button" role="menuitemradio" data-rate="2">2×</button>
+				</div>
+			</div>
+			<button id="control-fullscreen" type="button" aria-label="Pantalla completa" data-state="enter">
+				<svg class="icon icon-enter" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 6h8v2H8v6H6zm12 0h8v8h-2V8h-6zm6 12h2v8h-8v-2h6zm-14 6h6v2H6v-8h2z"></path></svg>
+				<svg class="icon icon-exit" viewBox="0 0 32 32" aria-hidden="true">
+					<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M16 13h-6.5V5.5"></path>
+						<path d="M16 13h6.5V5.5"></path>
+						<path d="M16 19h-6.5v7.5"></path>
+						<path d="M16 19h6.5v7.5"></path>
+					</g>
+				</svg>
+			</button>
+		</div>
+        </div>
+	</div>
+	<div class="transcript-container" id="transcript">
+		<button type="button" class="transcript-close" id="transcript-close" aria-label="Cerrar transcripción">X</button>
+		<div class="transcript-title">Transcripción del video</div>
+		<div class="transcript-content">
+			<p><strong>1Dayana:</strong> Hola, mi gente. Me llamo Dayana. Soy de Cuba, pero llevo unos años viviendo aquí en Madrid. Hoy estamos en la calle Santa Ana... Y es una callecita muy pequeñita, a mí me gusta mucho, y les voy a enseñar algunas de las tiendas que a mí me gustan muchísimo... Son esos lugares donde yo, cuando tengo algún evento especial, voy y siempre encuentro la prenda adecuada. Y es esta: Closet-Club.</p>
+			<p><strong>1Dayana:</strong> Vengan para acá.</p>
+			<p><strong>1Dayana:</strong> Ropa para chicos, complementos para chicos... Miren esta "chupa" por 20 €, maravillosa. Estas ropas, que las podemos utilizar para ir a un evento, para ir a alguna gala, por muy buen precio. Estamos en oferta, lo regalamos. Cositas maravillosas. Yo ya acabo de llegar y ya me he enamorado de una prenda. Miren qué monada.</p>
+			<p><strong>1Dayana:</strong> Tenemos pantalones, estos vaqueros, fantásticos, de marcas muy conocidas, en una variedad de tallas impresionantes, y también a muy buen precio; barato, diría yo.</p>
+			<p><strong>1Dayana:</strong> Y bueno, creo que ha llegado el momento de probarme esta prenda. Vamos para allá.</p>
+			<p><strong>1Dayana:</strong> Bueno, ya hemos salido de aquí. Esta es de mis favoritas, pero la que más me gusta a mí, realmente, es la que más, es la que vamos a ver ahora. Está en esta misma calle, acompáñenme.</p>
+			<p><strong>1Dayana:</strong> Es maravillosa. Aparte, hoy tenemos suerte porque justo es el día donde hay ofertas puestas en la calle, o sea que tú pasas y ya, de pasar solo, te enamoras. Pero vamos a entrar.</p>
+			<p><strong>1Dayana:</strong> Bueno, pues ya estamos aquí. Miren estos diseños fabulosos, ropa sostenible. Son diseños propios de esta chica que está ahí que se llama Lorena, que es fantástica.</p>
+			<p><strong>1Lorena:</strong> Hola, guapa.</p>
+			<p><strong>1Dayana:</strong> Entonces... Hacen una selección muy cuidadosa de los diseños. ¿Veis, aquí? Hecho por ellos. Todo. Van reciclando los materiales y, a partir del material reciclado, se obtienen estos diseños maravillosos a un precio asequible.</p>
+			<p><strong>1Dayana:</strong> Igual... me la llevo "de paseo".</p>
+		</div>
+	</div>
+	<p id="status" class="status" role="alert"></p>
+	<div class="quiz-section" id="quiz">
+		<h2>Ve el video y contesta:</h2>
+	<div id="quiz-lock-timer" class="quiz-lock-timer" aria-live="polite"></div>
+	<audio id="quiz-option-sound" src="https://fawzinoo.github.io/audios/botonn.mp3" preload="auto"></audio>
+
+		<form id="lesson-quiz" novalidate>
+				<p class="quiz-question-title">En Closet Club, hay también...</p>
+				<fieldset class="quiz-question" data-question="q1" data-answer="b">
+					<label class="quiz-option">
+						<input type="radio" name="q1" value="a">
+						<span>Ropa de niñas.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q1" value="b">
+						<span>Ropa de hombres.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q1" value="c">
+						<span>Ropa bebés.</span>
+					</label>
+				</fieldset>
+				<p class="quiz-question-title">En Closet Club, no hay...</p>
+				<fieldset class="quiz-question" data-question="q2" data-answer="c">
+					<label class="quiz-option">
+						<input type="radio" name="q2" value="a">
+						<span>Ropa para adultos.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q2" value="b">
+						<span>Ropa de marcas conocicas.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q2" value="c">
+						<span>Ropa sostenible.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">En Santa y Señora, hay...</p>
+				<fieldset class="quiz-question" data-question="q3" data-answer="a">
+					<label class="quiz-option">
+						<input type="radio" name="q3" value="a">
+						<span>Diseños modernos.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q3" value="b">
+						<span>Vaqueros muy baratos.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q3" value="c">
+						<span>Ropa hecha con materiales reciclados.</span>
+					</label>
+				</fieldset>
+
+				<p class="quiz-question-title">En Santa y Señora, no venden...</p>
+				<fieldset class="quiz-question" data-question="q4" data-answer="a">
+					<label class="quiz-option">
+						<input type="radio" name="q4" value="a">
+						<span>Ropa de hombres.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q4" value="b">
+						<span>Ropa de mujeres.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q4" value="c">
+						<span>Ropa barata.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">Los pantalones son</p>
+				<fieldset class="quiz-question" data-question="q5" data-answer="c">
+					<label class="quiz-option">
+						<input type="radio" name="q5" value="a">
+						<span>Fantásticos pero caros.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q5" value="b">
+						<span>Fantásticos pero de marcas menos conocidas.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q5" value="c">
+						<span>Fantásticos.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">En Closet club se venden...</p>
+				<fieldset class="quiz-question" data-question="q6" data-answer="c">
+					<label class="quiz-option">
+						<input type="radio" name="q6" value="a">
+						<span>Solo vestidos.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q6" value="b">
+						<span>Vestidos y joyas.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q6" value="c">
+						<span>Ropa y calzados.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">Dayana, en Closet Club...</p>
+				<fieldset class="quiz-question" data-question="q7" data-answer="c">
+					<label class="quiz-option">
+						<input type="radio" name="q7" value="a">
+						<span>Se interesa solo en un tipo de calzado.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q7" value="b">
+						<span>prueba 4 productos.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q7" value="c">
+						<span>Prueba también una chaqueta.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">A Dayana, le gusta más...</p>
+				<fieldset class="quiz-question" data-question="q8" data-answer="b">
+					<label class="quiz-option">
+						<input type="radio" name="q8" value="a">
+						<span>Closet Club.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q8" value="b">
+						<span>Santa y Señora.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q8" value="c">
+						<span>Las dos.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">En Santa y Señora, Dayana...</p>
+				<fieldset class="quiz-question" data-question="q9" data-answer="b">
+					<label class="quiz-option">
+						<input type="radio" name="q9" value="a">
+						<span>Prueba la chaqueta en un probador.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q9" value="b">
+						<span>En un sitio de la tienda.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q9" value="c">
+						<span>En el escaparate.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">La chaqueta que prueba en Santa y Señora...</p>
+				<fieldset class="quiz-question" data-question="q10" data-answer="a">
+					<label class="quiz-option">
+						<input type="radio" name="q10" value="a">
+						<span>Es de cuadros.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q10" value="b">
+						<span>Es de rayas rojas y negras.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q10" value="c">
+						<span>Es de rayas negras y topos rojos.</span>
+					</label>
+				</fieldset>
+
+
+				<p class="quiz-question-title">Los precios en Santa y Señora</p>
+				<fieldset class="quiz-question" data-question="q11" data-answer="a">
+					<label class="quiz-option">
+						<input type="radio" name="q11" value="a">
+						<span>Son asequibles.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q11" value="b">
+						<span>Son caros.</span>
+					</label>
+					<label class="quiz-option">
+						<input type="radio" name="q11" value="c">
+						<span>Son baratos.</span>
+					</label>
+				</fieldset>
+
+
+		</form>
+		<button type="button" id="quiz-submit" class="quiz-submit">Comprobar</button>
+	</div>
+	<script>
+		const statusEl = document.getElementById("status");
+		const player = document.getElementById("player");
+		const loadingOverlay = document.getElementById("loading-overlay");
+		const playBtn = document.getElementById("control-play");
+		const seek = document.getElementById("seek");
+		const timecode = document.getElementById("time");
+		const timecodeText = timecode.querySelector("span");
+		const volumeBtn = document.getElementById("control-volume");
+		const volumeControl = document.getElementById("volume-control");
+		const volumePopover = document.getElementById("volume-popover");
+		const volumeSlider = document.getElementById("volume");
+		const fullBtn = document.getElementById("control-fullscreen");
+		const speedControl = document.getElementById("speed-control");
+		const speedToggle = document.getElementById("speed-toggle");
+		const speedMenu = document.getElementById("speed-menu");
+		const speedOptions = [...speedMenu.querySelectorAll("button[data-rate]")];
+		const ccToggle = document.getElementById("cc-toggle");
+		// Estado de intentos y bloqueo de transcripción
+		let attemptCount = 0;
+		let ccLocked = true; // bloquear CC hasta que termine el primer lock
+		let ccBadgeVisible = false;
+		let showingQuizResult = false; // indicador para mantener controles visibles durante resultado del quiz
+		const rewindBtn = document.getElementById("rewind-10");
+		const forwardBtn = document.getElementById("forward-10");
+		const transcript = document.getElementById("transcript");
+		const transcriptClose = document.getElementById("transcript-close");
+		const controlsContainer = document.querySelector(".controls");
+		const playerShell = document.querySelector(".player-shell");
+		const playbackOverlay = document.getElementById("playback-overlay");
+		let volumeCycleStage = 0;
+		let lastVolume = Number(volumeSlider.value) || 0.5;
+		let volumeAutoHideTimeout;
+		let playbackOverlayTimer;
+	const HIDE_CONTROLS_DELAY = 3000;
+	let controlsHideTimer;
+	let controlsRevealedOnInteraction = false;
+	let lastInteractionInput = "pointer";
+	let hasPlayedOnce = false;		const rememberPointerInput = (event) => {
+			lastInteractionInput = event.pointerType || (event.type.startsWith("touch") ? "touch" : "mouse");
+		};
+
+		document.addEventListener("pointerdown", rememberPointerInput, true);
+		if (!window.PointerEvent) {
+			document.addEventListener("mousedown", rememberPointerInput, true);
+			document.addEventListener("touchstart", rememberPointerInput, true);
+		}
+		document.addEventListener("keydown", () => {
+			lastInteractionInput = "keyboard";
+		}, true);
+
+	const triggerHapticFeedback = (duration = 80) => {
+		if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+			try {
+				navigator.vibrate(duration);
+			} catch (_) {
+				// ignore vibration errors on unsupported devices
+			}
+		}
+	};
+
+		const formatTime = (seconds) => {
+			if (!Number.isFinite(seconds)) {
+				return "00:00";
+			}
+			const total = Math.max(seconds, 0);
+			const h = Math.floor(total / 3600);
+			const m = Math.floor((total % 3600) / 60);
+			const s = Math.floor(total % 60);
+			const base = `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+			return h > 0 ? `${h}:${base}` : base;
+		};
+
+		const updateSeekVisual = () => {
+			if (!seek.max) {
+				return;
+			}
+			const percent = (seek.value / seek.max) * 100;
+			seek.style.setProperty("--seek-filled", `${percent}%`);
+		};
+
+		const updateVolumeVisual = () => {
+			const percent = Number(volumeSlider.value) * 100;
+			volumeSlider.style.setProperty("--volume-filled", `${percent}%`);
+		};
+
+		const openVolumeMenu = () => {
+			volumeControl.classList.add("open");
+			volumeBtn.setAttribute("aria-expanded", "true");
+			volumePopover.setAttribute("aria-hidden", "false");
+			scheduleVolumeAutoHide();
+			bumpControls();
+		};
+
+		const closeVolumeMenu = (resetStage = false) => {
+			clearTimeout(volumeAutoHideTimeout);
+			volumeControl.classList.remove("open");
+			volumeBtn.setAttribute("aria-expanded", "false");
+			volumePopover.setAttribute("aria-hidden", "true");
+			if (resetStage) {
+				volumeCycleStage = 0;
+			}
+		};
+
+		function scheduleVolumeAutoHide() {
+			clearTimeout(volumeAutoHideTimeout);
+			volumeAutoHideTimeout = window.setTimeout(() => {
+				if (!volumeControl.classList.contains("open")) {
+					return;
+				}
+				closeVolumeMenu(true);
+			}, 3000);
+		}
+
+		function controlsAreHidden() {
+			return !controlsContainer || controlsContainer.classList.contains("hidden");
+		}
+
+		function showControls() {
+			if (!controlsContainer) {
+				return;
+			}
+			controlsContainer.classList.remove("hidden");
+		}
+
+		function shouldDelayControlsHide() {
+			if (volumeControl && volumeControl.classList.contains("open")) {
+				return true;
+			}
+			if (speedControl && speedControl.classList.contains("open")) {
+				return true;
+			}
+			if (controlsContainer && document.activeElement && controlsContainer.contains(document.activeElement)) {
+				return lastInteractionInput === "keyboard";
+			}
+			return false;
+		}
+
+		function hideControls() {
+			if (!controlsContainer) {
+				return;
+			}
+			if (shouldDelayControlsHide()) {
+				scheduleControlsAutoHide();
+				return;
+			}
+			controlsContainer.classList.add("hidden");
+			controlsRevealedOnInteraction = false;
+		}
+
+	function scheduleControlsAutoHide() {
+		if (!controlsContainer) {
+			return;
+		}
+		// No ocultar controles si el video no ha sido reproducido o ha terminado
+		if (!hasPlayedOnce || player.ended) {
+			return;
+		}
+		// No ocultar controles si se está mostrando el resultado del quiz
+		if (showingQuizResult) {
+			return;
+		}
+		clearTimeout(controlsHideTimer);
+		controlsHideTimer = window.setTimeout(() => {
+			hideControls();
+		}, HIDE_CONTROLS_DELAY);
+	}	function bumpControls() {
+		if (!controlsContainer) {
+			return;
+		}
+		showControls();
+		// Solo programar auto-hide si el video está reproduciéndose
+		if (hasPlayedOnce && !player.ended && !player.paused) {
+			scheduleControlsAutoHide();
+		}
+	}		const handleVolumePointer = (event) => {
+			event.stopPropagation();
+			scheduleVolumeAutoHide();
+			bumpControls();
+		};
+
+		const suppressLongPressMenu = (event) => {
+			if (!playerShell) {
+				return;
+			}
+			if (playerShell.contains(event.target)) {
+				event.preventDefault();
+			}
+		};
+
+		document.addEventListener("contextmenu", suppressLongPressMenu, { capture: true });
+
+		const flashPlaybackOverlay = (state) => {
+			if (!playbackOverlay) {
+				return;
+			}
+			const nextState = state === "pause" ? "pause" : "play";
+			playbackOverlay.dataset.state = nextState;
+			playbackOverlay.setAttribute("aria-hidden", "false");
+			playbackOverlay.classList.remove("show");
+			void playbackOverlay.offsetWidth;
+			playbackOverlay.classList.add("show");
+			clearTimeout(playbackOverlayTimer);
+			playbackOverlayTimer = window.setTimeout(() => {
+				playbackOverlay.classList.remove("show");
+				playbackOverlay.setAttribute("aria-hidden", "true");
+			}, 520);
+		};
+
+		const openTranscript = () => {
+			if (!transcript) {
+				return;
+			}
+			transcript.classList.add("visible");
+			if (ccToggle) {
+				ccToggle.classList.add("active");
+				// eliminar badge si existía
+				if (typeof removeCcBadge === 'function') removeCcBadge();
+			}
+		};
+
+		const closeTranscript = () => {
+			if (!transcript) {
+				return;
+			}
+			transcript.classList.remove("visible");
+			if (ccToggle) {
+				ccToggle.classList.remove("active");
+			}
+			if (transcriptClose) {
+				transcriptClose.blur();
+			}
+			// asegurar que la badge no quede colgada
+			if (typeof removeCcBadge === 'function') removeCcBadge();
+		};
+
+		const syncTime = () => {
+			const duration = Number.isFinite(player.duration) ? player.duration : 0;
+			timecodeText.textContent = `${formatTime(player.currentTime)} / ${formatTime(duration)}`;
+			seek.value = player.currentTime;
+			updateSeekVisual();
+		};
+
+	const togglePlay = () => {
+		controlsRevealedOnInteraction = false;
+		bumpControls();
+		if (player.ended || playBtn.dataset.state === "replay") {
+			player.currentTime = 0;
+			player.play().catch(() => {});
+		} else if (player.paused) {
+			player.play().catch(() => {});
+		} else {
+			player.pause();
+		}
+	};		const updatePlayButton = () => {
+			playBtn.dataset.state = player.paused ? "play" : "pause";
+			playBtn.setAttribute("aria-label", player.paused ? "Reproducir" : "Pausar");
+		};
+
+		const updateVolumeButton = () => {
+			const muted = player.muted || player.volume === 0;
+			volumeBtn.dataset.state = muted ? "mute" : "high";
+			volumeBtn.setAttribute("aria-label", muted ? "Activar sonido" : "Silenciar");
+		};
+
+		const toggleMute = () => {
+			player.muted = !player.muted;
+		};
+
+		const getFullscreenTarget = () => playerShell || player.parentElement || player;
+
+		const getActiveFullscreenElement = () => document.fullscreenElement
+			|| document.webkitFullscreenElement
+			|| document.mozFullScreenElement
+			|| document.msFullscreenElement
+			|| null;
+
+		const isFullscreenActive = () => {
+			const current = getActiveFullscreenElement();
+			if (!current) {
+				return false;
+			}
+			const target = getFullscreenTarget();
+			return current === target;
+		};
+
+		const callMaybePromise = async (fn, context) => {
+			if (typeof fn !== "function") {
+				return false;
+			}
+			try {
+				const result = fn.call(context);
+				if (result && typeof result.then === "function") {
+					await result;
+				}
+				return true;
+			} catch {
+				return false;
+			}
+		};
+
+		const ORIENTATION_LOCK_QUERY = "(max-width: 1024px)";
+		const orientationLockMediaQuery = typeof window.matchMedia === "function" ? window.matchMedia(ORIENTATION_LOCK_QUERY) : null;
+		let orientationLockActive = false;
+		let orientationLockMode = null;
+
+		const isHandheldViewport = () => Boolean(orientationLockMediaQuery?.matches);
+
+		const isLikelyTouchDevice = () => {
+			if (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) {
+				return true;
+			}
+			return "ontouchstart" in window;
+		};
+
+		const canLockOrientation = () => {
+			const orientation = window.screen?.orientation;
+			return Boolean(orientation && typeof orientation.lock === "function");
+		};
+
+		const requestOrientationLock = async (modes) => {
+			if (!Array.isArray(modes)) {
+				modes = [modes];
+			}
+			if (!isHandheldViewport() || !isLikelyTouchDevice() || !canLockOrientation()) {
+				orientationLockActive = false;
+				orientationLockMode = null;
+				return false;
+			}
+			for (const mode of modes) {
+				try {
+					const result = window.screen.orientation.lock(mode);
+					if (result && typeof result.then === "function") {
+						await result;
+					}
+					orientationLockActive = true;
+					orientationLockMode = mode;
+					return true;
+				} catch {
+					continue;
+				}
+			}
+			orientationLockActive = false;
+			orientationLockMode = null;
+			return false;
+		};
+
+		const requestLandscapeOrientation = () => requestOrientationLock(["landscape", "landscape-primary", "landscape-secondary"]);
+
+		const requestPortraitOrientation = () => requestOrientationLock(["portrait-primary", "portrait"]);
+
+		const releaseOrientationLock = () => {
+			if (!orientationLockActive) {
+				return;
+			}
+			const orientation = window.screen?.orientation;
+			if (!orientation || typeof orientation.unlock !== "function") {
+				orientationLockActive = false;
+				orientationLockMode = null;
+				return;
+			}
+			try {
+				orientation.unlock();
+			} catch {
+				// Ignore unlock errors on platforms that do not support it.
+			}
+			orientationLockActive = false;
+			orientationLockMode = null;
+		};
+
+		const toggleFullscreen = async () => {
+			bumpControls();
+			const target = getFullscreenTarget();
+			if (!isFullscreenActive()) {
+				if (await callMaybePromise(target?.requestFullscreen, target)) {
+					return;
+				}
+				if (await callMaybePromise(target?.webkitRequestFullscreen, target)) {
+					return;
+				}
+				if (await callMaybePromise(target?.mozRequestFullScreen, target)) {
+					return;
+				}
+				await callMaybePromise(target?.msRequestFullscreen, target);
+				return;
+			}
+			if (orientationLockMode?.startsWith("landscape")) {
+				await requestPortraitOrientation();
+			}
+			if (await callMaybePromise(document.exitFullscreen, document)) {
+				return;
+			}
+			if (await callMaybePromise(document.webkitExitFullscreen, document)) {
+				return;
+			}
+			if (await callMaybePromise(document.mozCancelFullScreen, document)) {
+				return;
+			}
+			await callMaybePromise(document.msExitFullscreen, document);
+		};
+
+		const updateFullscreenButton = () => {
+			const active = isFullscreenActive();
+			fullBtn.dataset.state = active ? "exit" : "enter";
+			fullBtn.setAttribute("aria-label", active ? "Salir de pantalla completa" : "Pantalla completa");
+		};
+
+		const handleFullscreenChange = () => {
+			const active = isFullscreenActive();
+			updateFullscreenButton();
+			if (active) {
+				requestLandscapeOrientation();
+			} else if (!orientationLockMode || orientationLockMode.startsWith("landscape")) {
+				releaseOrientationLock();
+			}
+		};
+
+		const formatRate = (rate) => rate.toLocaleString("es-ES", { maximumFractionDigits: 2 });
+
+		const closeSpeedMenu = () => {
+			speedControl.classList.remove("open");
+			speedToggle.setAttribute("aria-expanded", "false");
+			speedMenu.setAttribute("aria-hidden", "true");
+			bumpControls();
+		};
+
+		const openSpeedMenu = () => {
+			speedControl.classList.add("open");
+			speedToggle.setAttribute("aria-expanded", "true");
+			speedMenu.setAttribute("aria-hidden", "false");
+			bumpControls();
+		};
+
+		const toggleSpeedMenu = () => {
+			if (speedControl.classList.contains("open")) {
+				closeSpeedMenu();
+			} else {
+				openSpeedMenu();
+				const active = speedOptions.find((btn) => btn.classList.contains("active"));
+				active?.focus({ preventScroll: true });
+			}
+		};
+
+		const updateSpeedVisuals = () => {
+			const current = player.playbackRate;
+			const label = current === 1 ? "1x" : `${formatRate(current)}x`;
+			speedToggle.textContent = label;
+			speedOptions.forEach((button) => {
+				const rate = Number(button.dataset.rate);
+				const active = Math.abs(rate - current) < 0.011;
+				button.classList.toggle("active", active);
+				button.setAttribute("aria-checked", active ? "true" : "false");
+			});
+		};
+
+	playBtn.addEventListener("click", () => {
+		triggerHapticFeedback();
+		togglePlay();
+	});
+	player.addEventListener("play", () => {
+		updatePlayButton();
+		flashPlaybackOverlay("play");
+		hasPlayedOnce = true;
+		// Mostrar controles y programar auto-hide cuando se reproduce
+		showControls();
+		scheduleControlsAutoHide();
+	});
+	player.addEventListener("pause", () => {
+		updatePlayButton();
+		if (!player.ended) {
+			flashPlaybackOverlay("pause");
+		}
+		bumpControls();
+	});
+	player.addEventListener("ended", () => {
+		playBtn.dataset.state = "replay";
+		playBtn.setAttribute("aria-label", "Reiniciar");
+		flashPlaybackOverlay("play");
+		// Mostrar controles permanentemente cuando termina el video
+		showControls();
+		clearTimeout(controlsHideTimer);
+	});
+	
+	if (playerShell) {
+		playerShell.addEventListener("click", (event) => {
+			if (controlsContainer && controlsContainer.contains(event.target)) {
+				bumpControls();
+				return;
+			}
+			if (loadingOverlay && loadingOverlay.classList.contains("active") && loadingOverlay.contains(event.target)) {
+				return;
+			}
+			if (controlsRevealedOnInteraction || controlsAreHidden()) {
+				bumpControls();
+				controlsRevealedOnInteraction = false;
+				return;
+			}
+			togglePlay();
+		});
+
+		const handleSurfaceActivity = (event) => {
+			if (controlsContainer && controlsContainer.contains(event.target)) {
+				return;
+			}
+			if (event.type === "pointerdown" || event.type === "touchstart" || event.type === "mousedown") {
+				controlsRevealedOnInteraction = controlsAreHidden();
+			}
+			bumpControls();
+		};
+
+		playerShell.addEventListener("pointermove", handleSurfaceActivity);
+		playerShell.addEventListener("pointerdown", handleSurfaceActivity);
+		playerShell.addEventListener("mousemove", handleSurfaceActivity);
+		if (!window.PointerEvent) {
+			playerShell.addEventListener("touchstart", (event) => {
+				handleSurfaceActivity(event);
+			}, { passive: true });
+			playerShell.addEventListener("touchmove", (event) => {
+				handleSurfaceActivity(event);
+			}, { passive: true });
+		}
+	}
+
+	if (controlsContainer) {
+		const reinforceControlsVisible = () => bumpControls();
+		controlsContainer.addEventListener("pointerenter", reinforceControlsVisible);
+		controlsContainer.addEventListener("pointermove", reinforceControlsVisible);
+		controlsContainer.addEventListener("pointerdown", reinforceControlsVisible);
+		controlsContainer.addEventListener("pointerleave", () => {
+			scheduleControlsAutoHide();
+		});
+		if (!window.PointerEvent) {
+			controlsContainer.addEventListener("touchstart", reinforceControlsVisible, { passive: true });
+			controlsContainer.addEventListener("touchmove", reinforceControlsVisible, { passive: true });
+			controlsContainer.addEventListener("touchend", () => scheduleControlsAutoHide(), { passive: true });
+			controlsContainer.addEventListener("touchcancel", () => scheduleControlsAutoHide(), { passive: true });
+		}
+		controlsContainer.addEventListener("focusin", () => {
+			bumpControls();
+		});
+		controlsContainer.addEventListener("focusout", () => {
+			window.requestAnimationFrame(() => {
+				if (!controlsContainer.contains(document.activeElement)) {
+					scheduleControlsAutoHide();
+				}
+			});
+		});
+	}
+
+	if (transcriptClose) {
+		transcriptClose.addEventListener("click", () => {
+			closeTranscript();
+			bumpControls();
+		});
+	}
+
+	// Control de visibilidad del fondo informativo
+	const videoBackground = document.getElementById("video-background");
+	
+	player.addEventListener("play", () => {
+		if (videoBackground) {
+			videoBackground.classList.remove("visible");
+			videoBackground.classList.remove("show-quiz-result");
+		}
+		// Desactivar bandera de resultado del quiz al reproducir
+		showingQuizResult = false;
+	});
+	
+	player.addEventListener("ended", () => {
+		if (videoBackground) {
+			videoBackground.classList.add("visible");
+			videoBackground.classList.remove("show-quiz-result");
+		}
+		// Desactivar bandera cuando termina el video
+		showingQuizResult = false;
+	});
+	
+	player.addEventListener("loadedmetadata", () => {
+			const duration = Number.isFinite(player.duration) ? player.duration : 0;
+			seek.max = duration;
+			seek.disabled = duration === 0;
+			syncTime();
+			statusEl.textContent = "";
+		});
+
+		player.addEventListener("timeupdate", syncTime);
+
+		seek.addEventListener("input", () => {
+			const newTime = Number(seek.value);
+			player.currentTime = newTime;
+			const duration = Number.isFinite(player.duration) ? player.duration : 0;
+			timecodeText.textContent = `${formatTime(newTime)} / ${formatTime(duration)}`;
+			updateSeekVisual();
+			bumpControls();
+		});
+
+		volumeSlider.addEventListener("input", () => {
+			const level = Number(volumeSlider.value);
+			player.volume = level;
+			if (level > 0) {
+				lastVolume = level;
+				if (player.muted) {
+					player.muted = false;
+				}
+			}
+			updateVolumeVisual();
+			scheduleVolumeAutoHide();
+			bumpControls();
+		});
+
+		player.addEventListener("volumechange", () => {
+			const current = player.muted ? 0 : player.volume;
+			volumeSlider.value = current;
+			if (!player.muted && current > 0) {
+				lastVolume = current;
+			}
+			updateVolumeButton();
+			updateVolumeVisual();
+		});
+
+		volumeBtn.addEventListener("click", (event) => {
+			event.stopPropagation();
+			triggerHapticFeedback();
+			bumpControls();
+			const isMuted = player.muted || Number(volumeSlider.value) === 0;
+			if (isMuted) {
+				player.muted = false;
+				const restored = lastVolume > 0 ? lastVolume : 0.5;
+				player.volume = restored;
+				openVolumeMenu();
+				volumeSlider.focus({ preventScroll: true });
+				volumeCycleStage = 1;
+				return;
+			}
+			if (volumeCycleStage === 0) {
+				openVolumeMenu();
+				volumeSlider.focus({ preventScroll: true });
+				volumeCycleStage = 1;
+				return;
+			}
+			if (volumeCycleStage === 1) {
+				closeVolumeMenu();
+				volumeCycleStage = 2;
+				return;
+			}
+			if (volumeCycleStage === 2) {
+				lastVolume = Number(volumeSlider.value) || lastVolume || 0.5;
+				player.muted = true;
+				closeVolumeMenu(true);
+				volumeCycleStage = 0;
+				return;
+			}
+			// Fallback: reset and open
+			volumeCycleStage = 0;
+			openVolumeMenu();
+		});
+
+		volumePopover.addEventListener("click", handleVolumePointer);
+		volumePopover.addEventListener("pointerdown", handleVolumePointer);
+		volumePopover.addEventListener("pointermove", handleVolumePointer);
+		volumeControl.addEventListener("pointerdown", handleVolumePointer);
+		volumeControl.addEventListener("pointermove", handleVolumePointer);
+		volumeSlider.addEventListener("focus", () => {
+			openVolumeMenu();
+			if (volumeCycleStage < 1) {
+				volumeCycleStage = 1;
+			}
+		});
+		volumeSlider.addEventListener("pointerdown", handleVolumePointer);
+		volumeSlider.addEventListener("pointermove", handleVolumePointer);
+		volumeSlider.addEventListener("mousedown", handleVolumePointer);
+		volumeSlider.addEventListener("keydown", () => scheduleVolumeAutoHide());
+		volumeSlider.addEventListener("touchstart", handleVolumePointer, { passive: true });
+		volumeSlider.addEventListener("touchmove", handleVolumePointer, { passive: true });
+
+		fullBtn.addEventListener("click", () => {
+			triggerHapticFeedback();
+			toggleFullscreen();
+		});
+		document.addEventListener("fullscreenchange", handleFullscreenChange);
+		document.addEventListener("fullscreenerror", releaseOrientationLock);
+		document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+		document.addEventListener("webkitfullscreenerror", releaseOrientationLock);
+		document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+		document.addEventListener("mozfullscreenerror", releaseOrientationLock);
+		document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+		document.addEventListener("MSFullscreenError", releaseOrientationLock);
+		
+			// Botón de subtítulos/transcripción
+			ccToggle.addEventListener("click", () => {
+				triggerHapticFeedback();
+				if (ccLocked) {
+					showInfoModal('Responde primero al quiz para ver la transcripción.');
+					bumpControls();
+					return;
+				}
+				if (transcript && transcript.classList.contains("visible")) {
+					closeTranscript();
+				} else {
+					openTranscript();
+					if (typeof removeCcBadge === 'function') removeCcBadge();
+				}
+				bumpControls();
+			});
+		
+		// Botones de adelantar y retrasar
+		rewindBtn.addEventListener("click", () => {
+			triggerHapticFeedback();
+			player.currentTime = Math.max(0, player.currentTime - 10);
+			bumpControls();
+		});
+		
+		forwardBtn.addEventListener("click", () => {
+			triggerHapticFeedback();
+			player.currentTime = Math.min(player.duration, player.currentTime + 10);
+			bumpControls();
+		});
+
+		speedToggle.addEventListener("click", () => {
+			triggerHapticFeedback();
+			toggleSpeedMenu();
+		});
+
+		speedOptions.forEach((button) => {
+			button.addEventListener("click", () => {
+				triggerHapticFeedback();
+				const rate = Number(button.dataset.rate);
+				player.playbackRate = rate;
+				updateSpeedVisuals();
+				closeSpeedMenu();
+				speedToggle.focus({ preventScroll: true });
+			});
+		});
+
+		document.addEventListener("click", (event) => {
+			if (!speedControl.contains(event.target)) {
+				closeSpeedMenu();
+			}
+			if (!volumeControl.contains(event.target)) {
+				closeVolumeMenu(true);
+			}
+		});
+
+		document.addEventListener("keydown", (event) => {
+			if (event.key !== "Escape") {
+				return;
+			}
+			let handled = false;
+			if (speedControl.classList.contains("open")) {
+				closeSpeedMenu();
+				speedToggle.focus({ preventScroll: true });
+				handled = true;
+			}
+			if (volumeControl.classList.contains("open")) {
+				closeVolumeMenu(true);
+				volumeBtn.focus({ preventScroll: true });
+				handled = true;
+			}
+			if (handled) {
+				bumpControls();
+				event.preventDefault();
+			}
+		});
+
+	player.addEventListener("ratechange", updateSpeedVisuals);
+
+	player.addEventListener("keydown", (event) => {
+		if (quizLocked) {
+			event.preventDefault();
+			event.stopPropagation();
+			return false;
+		}
+		if (event.code === "Space") {
+			event.preventDefault();
+			togglePlay();
+		}
+	});		// Mostrar spinner cuando el video está esperando datos
+		player.addEventListener("waiting", () => {
+			loadingOverlay.classList.add("active");
+		});
+
+		// Ocultar spinner cuando el video puede reproducirse
+		player.addEventListener("canplay", () => {
+			loadingOverlay.classList.remove("active");
+		});
+
+		// Ocultar spinner cuando el video empieza a reproducirse
+		player.addEventListener("playing", () => {
+			loadingOverlay.classList.remove("active");
+		});
+
+		// Mostrar spinner durante la carga inicial
+		player.addEventListener("loadstart", () => {
+			loadingOverlay.classList.add("active");
+		});
+
+		const quizForm = document.getElementById("lesson-quiz");
+		const quizSubmit = document.getElementById("quiz-submit");
+		const quizSection = document.querySelector('.quiz-section');
+		const quizOptionSound = document.getElementById('quiz-option-sound');
+
+		if (quizForm && quizSubmit) {
+			const quizQuestions = [...quizForm.querySelectorAll(".quiz-question")];
+			const playQuizOptionSound = () => {
+				triggerHapticFeedback();
+				if (!quizOptionSound) return;
+				try {
+					quizOptionSound.currentTime = 0;
+					const playPromise = quizOptionSound.play();
+					if (playPromise && typeof playPromise.catch === 'function') {
+						playPromise.catch(() => {});
+					}
+				} catch (_) {
+					// ignore playback errors (e.g., autoplay restrictions)
+				}
+			};
+			const resultAudioMap = {
+				perfect: [
+					{ src: 'https://fawzinoo.github.io/audios/winner.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/excelente.mp3', offsetMs: 1000 },
+				],
+				strong: [
+					{ src: 'https://fawzinoo.github.io/audios/winner.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/apormas.mp3', offsetMs: 1000 },
+				],
+				weak: [
+					{ src: 'https://fawzinoo.github.io/audios/lose.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/quepena.mp3', offsetMs: 2000 },
+				],
+				none: [
+					{ src: 'https://fawzinoo.github.io/audios/lose.mp3', offsetMs: 0 },
+					{ src: 'https://fawzinoo.github.io/audios/denuevo.mp3', offsetMs: 2500 },
+				],
+			};
+			let activeResultAudios = [];
+			let resultAudioTimeouts = [];
+			const clearResultAudioTimeouts = () => {
+				if (!resultAudioTimeouts.length) return;
+				resultAudioTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+				resultAudioTimeouts = [];
+			};
+			const stopResultAudio = () => {
+				clearResultAudioTimeouts();
+				if (!activeResultAudios.length) {
+					return;
+				}
+				activeResultAudios.forEach((audio) => {
+					try {
+						audio.pause();
+						audio.currentTime = 0;
+					} catch (_) {
+						// ignore
+					}
+				});
+				activeResultAudios = [];
+			};
+			const playResultAudio = (state) => {
+				const playlist = resultAudioMap[state];
+				if (!Array.isArray(playlist) || !playlist.length) {
+					return;
+				}
+				stopResultAudio();
+				playlist.forEach((track) => {
+					if (!track || !track.src) {
+						return;
+					}
+					const offset = Math.max(0, Number(track.offsetMs) || 0);
+					const timeoutId = setTimeout(() => {
+						resultAudioTimeouts = resultAudioTimeouts.filter((id) => id !== timeoutId);
+						try {
+							const audio = new Audio(track.src);
+							const cleanup = () => {
+								activeResultAudios = activeResultAudios.filter((item) => item !== audio);
+							};
+							audio.addEventListener('ended', cleanup, { once: true });
+							audio.addEventListener('error', cleanup, { once: true });
+							activeResultAudios.push(audio);
+							const playPromise = audio.play();
+							if (playPromise && typeof playPromise.catch === 'function') {
+								playPromise.catch(() => {
+									cleanup();
+								});
+							}
+						} catch (_) {
+							// ignore playback errors
+						}
+					}, offset);
+					resultAudioTimeouts.push(timeoutId);
+				});
+			};
+		const templates = {
+			incomplete: {
+				title: "Responde a todas las preguntas",
+				message: "",
+			},
+			perfect: {
+				title: "¡Excelente!",
+				message: "",
+			},
+			strong: {
+				title: "¡Buen avance!",
+				message: "",
+			},
+			weak: {
+				title: "Sigue practicando",
+				message: "",
+			},
+			none: {
+				title: "Empecemos de nuevo",
+				message: "",
+			},
+		};
+
+		// === CONFIGURACIÓN DEL VIDEO (Cambiar solo esta línea para cada video) ===
+		const VIDEO_ID = 'video4'; // Para video2.html usar 'video2', para video3.html usar 'video3', etc.
+		
+		// Las claves de localStorage se generan automáticamente
+		const QUIZ_LOCK_STORAGE_KEY = `${VIDEO_ID}QuizLockState`;
+		const CC_STATE_STORAGE_KEY = `${VIDEO_ID}CcState`;			const loadQuizLockState = () => {
+				try {
+					const raw = localStorage.getItem(QUIZ_LOCK_STORAGE_KEY);
+					if (!raw) {
+						return null;
+					}
+					const data = JSON.parse(raw);
+					if (!data || typeof data !== 'object') {
+						return null;
+					}
+					return data;
+				} catch (err) {
+					console.warn('No se pudo leer el estado del timer', err);
+					return null;
+				}
+			};
+
+			const saveQuizLockState = (state) => {
+				try {
+					if (!state) {
+						localStorage.removeItem(QUIZ_LOCK_STORAGE_KEY);
+						return;
+					}
+					localStorage.setItem(QUIZ_LOCK_STORAGE_KEY, JSON.stringify(state));
+				} catch (err) {
+					console.warn('No se pudo guardar el estado del timer', err);
+				}
+			};
+
+			const clearQuizLockState = () => {
+				saveQuizLockState(null);
+			};
+
+			const computeRemainingSeconds = (expiresAt) => {
+				if (!Number.isFinite(expiresAt)) {
+					return 0;
+				}
+				return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+			};
+
+			const loadCcState = () => {
+				try {
+					const raw = localStorage.getItem(CC_STATE_STORAGE_KEY);
+					if (!raw) {
+						return null;
+					}
+					const data = JSON.parse(raw);
+					if (!data || typeof data !== 'object') {
+						return null;
+					}
+					const locked = typeof data.locked === 'boolean' ? data.locked : null;
+					const badgeVisible = typeof data.badgeVisible === 'boolean' ? data.badgeVisible : null;
+					return { locked, badgeVisible };
+				} catch (err) {
+					console.warn('No se pudo leer el estado de CC', err);
+					return null;
+				}
+			};
+
+			const saveCcState = (state) => {
+				try {
+					if (!state) {
+						localStorage.removeItem(CC_STATE_STORAGE_KEY);
+						return;
+					}
+					localStorage.setItem(CC_STATE_STORAGE_KEY, JSON.stringify({
+						locked: Boolean(state.locked),
+						badgeVisible: Boolean(state.badgeVisible),
+					}));
+				} catch (err) {
+					console.warn('No se pudo guardar el estado de CC', err);
+				}
+			};
+
+			const updateCcStateStorage = () => {
+				saveCcState({ locked: ccLocked, badgeVisible: ccBadgeVisible });
+			};
+
+			const restoredCcState = loadCcState();
+			if (restoredCcState) {
+				if (typeof restoredCcState.locked === 'boolean') {
+					ccLocked = restoredCcState.locked;
+				}
+				if (typeof restoredCcState.badgeVisible === 'boolean') {
+					ccBadgeVisible = restoredCcState.badgeVisible;
+				}
+				if (ccLocked && ccBadgeVisible) {
+					ccBadgeVisible = false;
+				}
+				updateCcStateStorage();
+			}
+
+			const persistVideoResult = (state, detail = {}) => {
+				if (!state || state === 'incomplete') {
+					return;
+				}
+				try {
+					// Primero eliminar resultado anterior de este video
+					localStorage.removeItem(`${VIDEO_ID}LastResult`);
+					
+					const payload = {
+						state,
+						title: templates?.[state]?.title || '',
+						percent: Number.isFinite(detail.percent) ? detail.percent : null,
+						correct: Number.isFinite(detail.correct) ? detail.correct : null,
+						total: Number.isFinite(detail.total) ? detail.total : null,
+						timestamp: Date.now(),
+					};
+					localStorage.setItem(`${VIDEO_ID}LastResult`, JSON.stringify(payload));
+				} catch (err) {
+					console.warn('No se pudo guardar el resultado del video', err);
+				}
+			};
+
+			const modalOverlay = document.createElement('div');
+			modalOverlay.className = 'quiz-modal-overlay';
+			modalOverlay.innerHTML = '<div id="quiz-result" class="quiz-result" role="dialog" aria-modal="true"></div>';
+			document.body.appendChild(modalOverlay);
+			
+			const modalResult = modalOverlay.querySelector('#quiz-result');
+
+			// Asegurar que el FAB del contador esté en el body (evitar transform/overflow de padres)
+			const existingPageTimer = document.getElementById('quiz-lock-timer');
+			if (existingPageTimer && existingPageTimer.parentElement !== document.body) {
+				document.body.appendChild(existingPageTimer);
+				existingPageTimer.style.display = 'none';
+			}
+
+			// Lock state to prevent retrying immediately
+			let quizLocked = false;
+			let quizLockInterval = null;
+			let quizLockExpiresAt = 0;
+		// Si se muestra el modal, sólo iniciar el lock cuando el usuario lo cierre o pulse la acción
+		let pendingLock = false;
+		let pendingLockSeconds = 60;
+		let pendingLockExpiresAt = 0;
+		let pendingInterval = null;			// Bloquear todas las teclas excepto las del botón CC durante el timer
+			document.addEventListener('keydown', (event) => {
+				if (quizLocked) {
+					// Permitir solo teclas relacionadas con CC (por si tiene atajo de teclado)
+					// Bloquear espacio, flechas, y otras teclas de control del reproductor
+					const blockedKeys = [' ', 'Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 
+					                     'k', 'K', 'j', 'J', 'l', 'L', 'm', 'M', 'f', 'F'];
+					if (blockedKeys.includes(event.key) || blockedKeys.includes(event.code)) {
+						event.preventDefault();
+						event.stopPropagation();
+						return false;
+					}
+				}
+			}, true);
+
+			
+
+			const updateLockUI = () => {
+				let remaining = 0;
+				if (quizLocked) {
+					remaining = Math.max(0, Math.ceil((quizLockExpiresAt - Date.now()) / 1000));
+				} else if (pendingLock) {
+					remaining = Math.max(0, Math.ceil((pendingLockExpiresAt - Date.now()) / 1000));
+				}
+				const actionBtn = modalResult.querySelector('.quiz-result__action');
+				const pageTimer = document.getElementById('quiz-lock-timer');
+				if (quizLocked) {
+					// marcar el contenedor para anular estilos :hover
+					quizSection?.classList.add('quiz-locked');
+					// disable all inputs and submit
+					[...quizForm.querySelectorAll('input')].forEach((el) => el.disabled = true);
+					quizSubmit.disabled = true;
+					
+					// Bloquear reproductor durante el timer
+					if (player) player.pause();
+					if (controlsContainer) controlsContainer.style.pointerEvents = 'none';
+					if (playerShell) playerShell.style.pointerEvents = 'none';
+				
+				// Permitir interacción con el botón CC
+				if (ccToggle) {
+					ccToggle.style.pointerEvents = 'auto';
+					ccToggle.style.position = 'relative';
+					ccToggle.style.zIndex = '10000';
+				}
+					
+					if (actionBtn) {
+						actionBtn.textContent = `Reintentar en ${remaining}s`;
+						actionBtn.disabled = true;
+					}
+					if (pageTimer) {
+						pageTimer.style.display = 'grid';
+						pageTimer.classList.add('visible');
+						pageTimer.setAttribute('aria-hidden', 'false');
+						pageTimer.setAttribute('role', 'status');
+						pageTimer.innerHTML = `<div class="count" aria-hidden="false">${remaining}s</div>`;
+						pageTimer.setAttribute('aria-label', `Reintentar en ${remaining} segundos`);
+						// efecto urgente si quedan pocos segundos
+						if (remaining <= 10) {
+							pageTimer.classList.add('urgent');
+						} else {
+							pageTimer.classList.remove('urgent');
+						}
+					}
+				} else {
+					// quitar la marca que anula :hover
+					quizSection?.classList.remove('quiz-locked');
+					[...quizForm.querySelectorAll('input')].forEach((el) => el.disabled = false);
+					quizSubmit.disabled = false;
+					
+				// Desbloquear reproductor
+				if (controlsContainer) controlsContainer.style.pointerEvents = '';
+				if (playerShell) playerShell.style.pointerEvents = '';
+				
+				// Restaurar estilo del botón CC
+				if (ccToggle) {
+					ccToggle.style.pointerEvents = '';
+					ccToggle.style.zIndex = '';
+				}
+									if (actionBtn) {
+						if (pendingLock) {
+							// mostrar contador en el botón mientras el modal está abierto y hay pendingLock
+							actionBtn.textContent = `Reintentar en ${remaining}s`;
+							// permitir que el usuario pulse para salir/iniciar lock
+							actionBtn.disabled = false;
+						} else {
+							actionBtn.textContent = actionBtn.dataset?.label || 'Seguir practicando';
+							actionBtn.disabled = false;
+						}
+					}
+					if (pageTimer) {
+						pageTimer.classList.remove('visible', 'urgent');
+						pageTimer.innerHTML = '';
+						pageTimer.style.display = 'none';
+						pageTimer.setAttribute('aria-hidden', 'true');
+						pageTimer.removeAttribute('aria-label');
+					}
+				}
+			};
+
+			const startQuizLock = (seconds = 5) => {
+				if (quizLockInterval) {
+					clearInterval(quizLockInterval);
+				}
+				// limpiar pending interval si existe
+				if (pendingInterval) {
+					clearInterval(pendingInterval);
+					pendingInterval = null;
+				}
+				const durationMs = Math.max(0, (Number(seconds) || 0)) * 1000;
+				if (durationMs <= 0) {
+					quizLocked = false;
+					quizLockExpiresAt = 0;
+					clearQuizLockState();
+					updateLockUI();
+					return;
+				}
+				quizLocked = true;
+				quizLockExpiresAt = Date.now() + durationMs;
+				saveQuizLockState({ status: 'active', expiresAt: quizLockExpiresAt });
+				updateLockUI();
+				quizLockInterval = setInterval(() => {
+					if (Date.now() >= quizLockExpiresAt) {
+						quizLocked = false;
+						ccLocked = true; // Bloquear CC cuando termina el timer
+						updateCcStateStorage();
+						clearInterval(quizLockInterval);
+						quizLockInterval = null;
+						clearQuizLockState();
+						// Ocultar aviso de transcripción disponible y restaurar el botón CC
+						if (typeof removeCcBadge === 'function') {
+							removeCcBadge();
+						}
+						if (ccToggle) {
+							ccToggle.classList.remove('cc-highlight');
+						}
+						// Cuando termina el lock: solo resetear respuestas
+						// La transcripción ya fue desbloqueada al presionar comprobar
+						resetQuizAnswers();
+						updateLockUI();
+						return;
+					}
+					updateLockUI();
+				}, 1000);
+			};
+
+			const clearQuizLock = () => {
+				if (quizLockInterval) {
+					clearInterval(quizLockInterval);
+					quizLockInterval = null;
+				}
+				quizLocked = false;
+				quizLockExpiresAt = 0;
+				clearQuizLockState();
+				updateLockUI();
+			};
+			
+			const closeModal = () => {
+				modalOverlay.classList.remove('visible');
+				stopResultAudio();
+				// Desactivar bandera de resultado del quiz
+				showingQuizResult = false;
+				// Si había que bloquear, iniciarlo al cerrar
+				if (pendingLock) {
+					startQuizLock(pendingLockSeconds);
+					pendingLock = false;
+				}
+			};
+			
+			modalOverlay.addEventListener('click', (e) => {
+				if (e.target === modalOverlay) {
+					closeModal();
+				}
+			});
+			
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && modalOverlay.classList.contains('visible')) {
+					closeModal();
+				}
+			});
+
+			const showResult = (state, detail = {}) => {
+				const { percent = 0, correct = 0, total = quizQuestions.length } = detail;
+				const template = templates[state];
+				if (!template) {
+					return;
+				}
+				
+				// Si el video está reproduciéndose, pausarlo para mostrar la valoración
+				if (player && !player.paused) {
+					player.pause();
+				}
+				
+				// Mostrar el video-background para que se vea la valoración en el reproductor
+				const videoBackground = document.getElementById('video-background');
+				if (videoBackground) {
+					videoBackground.classList.add('visible');
+					// Solo agregar clase transparente si el video ha sido reproducido alguna vez
+					// Y NO ha terminado. Si nunca se reprodujo o ya terminó, mantener el fondo naranja
+					if (hasPlayedOnce && !player.ended) {
+						videoBackground.classList.add('show-quiz-result');
+					}
+				}
+				
+				// Activar bandera para mantener controles visibles
+				showingQuizResult = true;
+				// Asegurar que los controles estén visibles
+				showControls();
+				// Cancelar cualquier temporizador de auto-hide
+				clearTimeout(controlsHideTimer);
+				
+				if (state !== 'incomplete') {
+					persistVideoResult(state, { percent, correct, total });
+				}
+
+				const summary = state === "incomplete"
+					? ""
+					: `<p class="quiz-result__summary">${correct} de ${total} respuestas correctas.</p>`;
+				const scoreLabel = state === "incomplete" ? "--" : `${percent}%`;
+				const scoreHTML = state === "incomplete" ? '' : `<div class="quiz-result__score">${scoreLabel}</div>`;
+				const actionLabel = state === "incomplete" ? "Completar ahora" : "Seguir practicando";
+				modalResult.dataset.state = state;
+				modalResult.innerHTML = `
+					<button class="quiz-result__close" aria-label="Cerrar" type="button">×</button>
+					<div class="quiz-result__inner">
+						${scoreHTML}
+						<div class="quiz-result__content">
+							<p class="quiz-result__title">${template.title}</p>
+							<p class="quiz-result__message">${template.message}</p>
+							${summary}
+							<button type="button" class="quiz-result__action" data-label="${actionLabel}">${actionLabel}</button>
+						</div>
+					</div>
+				`;
+				playResultAudio(state);
+				modalOverlay.classList.add('visible');
+
+				// También mostramos el resultado de forma elegante en el área superior (background-content)
+				try {
+					const bg = document.querySelector('.background-content');
+					if (bg) {
+						let res = bg.querySelector('.background-result');
+						if (state === 'incomplete') {
+							// eliminar cualquier tarjeta previa para que no se muestre mensaje en el reproductor
+							if (res) {
+								res.remove();
+							}
+						} else {
+							const title = template.title || '';
+							const scoreText = `${percent}%`;
+							const labelText = title;
+							if (!res) {
+								res = document.createElement('div');
+								res.className = 'background-result';
+								res.setAttribute('aria-live','polite');
+								// insert before the first child so the pill appears above "ESPAÑOL A1"
+								bg.insertBefore(res, bg.firstElementChild || null);
+							} else {
+								// if it already exists, ensure it's placed at the top
+								bg.insertBefore(res, bg.firstElementChild || null);
+							}
+							// Agregar el data-state para aplicar los colores correspondientes
+							res.setAttribute('data-state', state);
+							// Only show the short valuation above the circular score
+							res.innerHTML = `
+								<div class="label">
+									<div style="font-size:0.95rem;font-weight:800">${labelText}</div>
+								</div>
+								<div class="score">${scoreText}</div>
+							`;
+							// trigger show animation
+							requestAnimationFrame(()=> res.classList.add('show'));
+						}
+					}
+				} catch (e) {
+					console.warn('No se pudo renderizar background-result', e);
+				}
+				
+				const closeBtn = modalResult.querySelector('.quiz-result__close');
+				closeBtn.addEventListener('click', closeModal);
+				const actionBtn = modalResult.querySelector('.quiz-result__action');
+				actionBtn?.addEventListener('click', (e) => {
+					// si el usuario pulsa la acción mientras hay pendingLock, iniciar el lock y luego cerrar
+					if (pendingLock) {
+						startQuizLock(pendingLockSeconds);
+						pendingLock = false;
+					}
+					closeModal();
+				});
+				// No iniciar el lock todavía: marcar pendiente para que arranque al cerrar el modal
+				if (state !== 'incomplete') {
+					pendingLock = true;
+					pendingLockSeconds = 60;
+					pendingLockExpiresAt = Date.now() + (pendingLockSeconds * 1000);
+					saveQuizLockState({ status: 'pending', expiresAt: pendingLockExpiresAt });
+					// arrancar intervalo que actualiza la UI del modal cada segundo
+					if (pendingInterval) { clearInterval(pendingInterval); pendingInterval = null; }
+					pendingInterval = setInterval(() => {
+						if (!modalOverlay.classList.contains('visible')) {
+							// si el modal ya no está visible, limpiar
+							clearInterval(pendingInterval);
+							pendingInterval = null;
+							return;
+						}
+						updateLockUI();
+					}, 1000);
+				} else {
+					pendingLock = false;
+					if (pendingInterval) { clearInterval(pendingInterval); pendingInterval = null; }
+					clearQuizLockState();
+				}
+			};
+
+			const restoreQuizLockState = () => {
+				const saved = loadQuizLockState();
+				if (!saved || !Number.isFinite(saved.expiresAt)) {
+					clearQuizLockState();
+					return;
+				}
+				const remaining = computeRemainingSeconds(saved.expiresAt);
+				if (remaining <= 0) {
+					clearQuizLockState();
+					return;
+				}
+				if (saved.status === 'active' || saved.status === 'pending') {
+					pendingLock = false;
+					startQuizLock(remaining);
+				}
+			};
+
+			// Helper: resetear selección y clases de las preguntas para un nuevo intento
+			const resetQuizAnswers = () => {
+				stopResultAudio();
+				[...quizForm.querySelectorAll('input')].forEach((el) => {
+					el.checked = false;
+					el.disabled = false;
+				});
+				[...quizForm.querySelectorAll('.quiz-question')].forEach((qs) => {
+					qs.classList.remove('quiz-question--correct', 'quiz-question--incorrect', 'quiz-question--incomplete');
+				});
+				[...quizForm.querySelectorAll('.quiz-option')].forEach((opt) => {
+					opt.classList.remove('quiz-option--correct', 'quiz-option--incorrect');
+				});
+				// limpiar modal si está abierto
+				if (modalOverlay.classList.contains('visible')) {
+					modalOverlay.classList.remove('visible');
+					modalResult.innerHTML = '';
+				}
+			};
+
+			quizSubmit.addEventListener("click", () => {
+				triggerHapticFeedback();
+				let correct = 0;
+				let incorrect = 0;
+				let unanswered = 0;
+
+				quizQuestions.forEach((fieldset) => {
+					const questionId = fieldset.dataset.question;
+					const expectedAnswer = fieldset.dataset.answer;
+					const selected = quizForm.querySelector(`input[name="${questionId}"]:checked`);
+					
+					// Primero eliminar todas las clases de estado de ESTE fieldset
+					fieldset.classList.remove("quiz-question--correct", "quiz-question--incorrect", "quiz-question--incomplete");
+					[...fieldset.querySelectorAll('.quiz-option')].forEach((option) => {
+						option.classList.remove('quiz-option--correct', 'quiz-option--incorrect');
+					});
+					
+					if (!selected) {
+						unanswered += 1;
+						fieldset.classList.add("quiz-question--incomplete");
+						return;
+					}
+					if (selected.value === expectedAnswer) {
+						correct += 1;
+						fieldset.classList.add("quiz-question--correct");
+						selected.closest('.quiz-option')?.classList.add('quiz-option--correct');
+					} else {
+						incorrect += 1;
+						fieldset.classList.add("quiz-question--incorrect");
+						const selectedOption = selected.closest('.quiz-option');
+						selectedOption?.classList.add('quiz-option--incorrect');
+					}
+				});
+
+				if (unanswered) {
+					showResult("incomplete");
+					const firstIncomplete = quizForm.querySelector(".quiz-question--incomplete");
+					firstIncomplete?.scrollIntoView({ behavior: "smooth", block: "center" });
+					return;
+				}
+
+				const total = quizQuestions.length;
+				const percent = Math.round((correct / total) * 100);
+				let state = "strong";
+				if (percent === 100) {
+					state = "perfect";
+				} else if (percent === 0) {
+					state = "none";
+				} else if (incorrect > correct) {
+					state = "weak";
+				} else if (correct > incorrect) {
+					state = "strong";
+				}
+
+				// Contar este intento completo
+				attemptCount += 1;
+				
+				// Desbloquear transcripción y mostrar badge inmediatamente al presionar comprobar
+				ccLocked = false;
+				updateCcStateStorage();
+				if (typeof showCcBadge === 'function') {
+					showCcBadge();
+				}
+				
+				showResult(state, { percent, correct, total });
+			});
+
+			quizForm.addEventListener("change", (event) => {
+				const fieldset = event.target.closest(".quiz-question");
+				if (fieldset) {
+					// Restablecer estados visuales para permitir una nueva comprobación limpia
+					fieldset.classList.remove("quiz-question--incomplete", "quiz-question--correct", "quiz-question--incorrect");
+					[...fieldset.querySelectorAll('.quiz-option')].forEach((option) => {
+						option.classList.remove('quiz-option--correct', 'quiz-option--incorrect');
+					});
+				}
+				playQuizOptionSound();
+				if (modalOverlay?.classList.contains("visible")) {
+					closeModal();
+				}
+				if (modalResult) {
+					modalResult.dataset.state = "";
+					modalResult.innerHTML = "";
+				}
+			});
+
+			// Helper: mostrar una pequeña badge roja encima del botón CC (persistente hasta abrir el transcript)
+			function showCcBadge() {
+				try {
+					removeCcBadge();
+					const btn = document.getElementById('cc-toggle');
+					const msg = document.createElement('div');
+					msg.className = 'cc-msg';
+					msg.setAttribute('role', 'status');
+					msg.setAttribute('aria-live', 'polite');
+					msg.setAttribute('aria-atomic', 'true');
+					msg.innerHTML = '¡Ya está disponible la transcripción!';
+					document.body.appendChild(msg);
+					// create an arrow element so we can position it precisely from JS
+					const arrowEl = document.createElement('span');
+					arrowEl.className = 'cc-msg__arrow';
+					msg.appendChild(arrowEl);
+					msg.__arrow = arrowEl;
+
+					const positionMsg = () => {
+						if (!btn || !msg) return;
+						const rect = btn.getBoundingClientRect();
+						// reducir gap y altura de la cola para acercar la burbuja al icono
+						const gap = 2;
+						const triangleH = 6; // altura de la cola (::after)
+
+						// Ensure message wraps within viewport
+						msg.style.maxWidth = `calc(100vw - 32px)`;
+
+						// horizontal center over the button
+						const buttonCenter = rect.left + (rect.width / 2);
+						// raw left to center message over button
+						const rawLeft = Math.round(buttonCenter - (msg.offsetWidth / 2));
+						const minLeft = 8;
+						const maxLeft = Math.max(8, window.innerWidth - msg.offsetWidth - 8);
+						const left = Math.min(Math.max(minLeft, rawLeft), maxLeft);
+
+						// compute arrow offset: distance from message left to button center
+						// apply a small nudge so the arrow visually aligns a bit to the left
+						const arrowNudge = -6; // negative = shift left, positive = shift right
+						let arrowOffset = Math.round(buttonCenter - left) + arrowNudge;
+						// clamp arrowOffset so the arrow doesn't escape the bubble (12px padding)
+						const minArrow = 8;
+						const maxArrow = Math.max(minArrow, msg.offsetWidth - 12);
+						arrowOffset = Math.min(Math.max(minArrow, arrowOffset), maxArrow);
+
+						// Prefer placing above the button. If there isn't enough space, place below.
+						let top = Math.round(rect.top - msg.offsetHeight - gap - triangleH);
+						let pos = 'top';
+						if (top < 8) {
+							// place below the button
+							top = Math.round(rect.bottom + gap + triangleH);
+							pos = 'bottom';
+						}
+
+						msg.style.left = `${left}px`;
+						msg.style.top = `${top}px`;
+						// position the arrow element precisely relative to the bubble left
+						if (msg.__arrow) {
+							msg.__arrow.style.left = `${arrowOffset}px`;
+						}
+						msg.setAttribute('data-pos', pos);
+					};
+
+					const schedulePosition = () => {
+						positionMsg();
+						requestAnimationFrame(() => positionMsg());
+						setTimeout(positionMsg, 120);
+					};
+					schedulePosition();
+					const onReposition = () => positionMsg();
+					window.addEventListener('resize', onReposition);
+					window.addEventListener('scroll', onReposition, true);
+					msg.__onReposition = onReposition;
+					msg.__schedulePosition = schedulePosition;
+					// destacar el botón CC (color rojo y parpadeo)
+					if (btn) {
+						btn.classList.add('cc-highlight');
+						msg.__btn = btn;
+					}
+					ccBadgeVisible = true;
+					updateCcStateStorage();
+					requestAnimationFrame(() => {
+						schedulePosition();
+						msg.classList.add('show');
+						msg.classList.add('pulse');
+						setTimeout(() => msg.classList.remove('pulse'), 3000);
+					});
+				} catch (err) {
+					console.error('showCcBadge error', err);
+				}
+			}
+
+			function removeCcBadge() {
+				// eliminar tanto badge antiguo como mensaje, y limpiar listeners
+				const selectors = ['.cc-badge', '.cc-msg'];
+				for (const sel of selectors) {
+					const existing = document.querySelector(sel);
+					if (existing) {
+						if (existing.__onReposition) {
+							window.removeEventListener('resize', existing.__onReposition);
+							window.removeEventListener('scroll', existing.__onReposition, true);
+						}
+						// si era el mensaje, quitar clase highlight del botón CC
+						if (sel === '.cc-msg') {
+							const btn = document.getElementById('cc-toggle');
+							if (btn) btn.classList.remove('cc-highlight');
+						}
+						existing.remove();
+					}
+				}
+				ccBadgeVisible = false;
+				updateCcStateStorage();
+			}
+
+			// Si el usuario interactúa con cualquier control/icono del reproductor,
+			// ocultar la burbuja de "transcripción disponible" inmediatamente.
+			const _hideCcOnInteract = (e) => {
+				try {
+					const el = e.target;
+					if (!el) return;
+					// controles principales y secundarios, barra de progreso, botones dentro de .controls
+					if (el.closest && (
+						el.closest('.controls') ||
+						el.closest('.secondary-controls') ||
+						el.closest('#cc-toggle') ||
+						el.closest('#control-play') ||
+						el.closest('#control-volume') ||
+						el.closest('#control-fullscreen') ||
+						el.closest('#speed-toggle') ||
+						el.closest('.progress') ||
+						el.closest('.skip-button') ||
+						el.closest('.skip-button1')
+					)) {
+						if (typeof removeCcBadge === 'function') removeCcBadge();
+					}
+				} catch (err) {
+					// ignore
+				}
+			};
+			// usar capture para detectar interacciones antes que handlers específicos
+			document.addEventListener('pointerdown', _hideCcOnInteract, true);
+			document.addEventListener('touchstart', _hideCcOnInteract, true);
+			// también soportar activación por teclado (Enter / Space) cuando un botón tiene foco
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					const active = document.activeElement;
+					if (active && active.closest && (active.closest('.controls') || active.id === 'cc-toggle' || active.tagName === 'BUTTON')) {
+						if (typeof removeCcBadge === 'function') removeCcBadge();
+					}
+				}
+			});
+
+			if (!ccLocked && ccBadgeVisible && typeof showCcBadge === 'function') {
+				showCcBadge();
+			} else if (ccLocked && ccBadgeVisible) {
+				removeCcBadge();
+			}
+
+			restoreQuizLockState();
+		}
+
+		function removeBackgroundResult() {
+			try {
+				const bg = document.querySelector('.background-result');
+				if (!bg) return;
+				bg.classList.remove('show');
+				// remove after transition
+				setTimeout(() => {
+					if (bg && bg.parentElement) bg.remove();
+				}, 260);
+			} catch (err) {
+				console.warn('removeBackgroundResult error', err);
+			}
+		}
+
+		player.addEventListener("error", () => {
+			loadingOverlay.classList.remove("active");
+			statusEl.textContent = "";
+		});
+
+		player.volume = Number(volumeSlider.value);
+		lastVolume = player.volume || lastVolume;
+		updatePlayButton();
+		updateVolumeButton();
+		updateFullscreenButton();
+		updateSeekVisual();
+		updateVolumeVisual();
+		player.playbackRate = 1;
+		updateSpeedVisuals();
+		closeSpeedMenu();
+		closeVolumeMenu(true);
+		bumpControls();
+	</script>
+			<!-- Informational modal for blocked CC -->
+			<div id="info-modal-overlay" class="quiz-modal-overlay" aria-hidden="true" style="display:none;">
+				<div class="quiz-result" role="alertdialog" aria-modal="true" aria-labelledby="info-modal-title" aria-describedby="info-modal-desc">
+					<button class="quiz-result__close" id="info-modal-close" aria-label="Cerrar">×</button>
+					<div class="quiz-result__inner">
+						<div class="quiz-result__content">
+							<p id="info-modal-desc" class="quiz-result__message"></p>
+							<button type="button" id="info-modal-ok" class="quiz-result__action">Entendido</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<script>
+				function showInfoModal(message) {
+					const overlay = document.getElementById('info-modal-overlay');
+					const desc = document.getElementById('info-modal-desc');
+					const ok = document.getElementById('info-modal-ok');
+					const close = document.getElementById('info-modal-close');
+					desc.textContent = message;
+					overlay.style.display = 'flex';
+					overlay.classList.add('visible');
+					overlay.setAttribute('aria-hidden', 'false');
+					ok.focus();
+					const hide = () => {
+						overlay.classList.remove('visible');
+						overlay.setAttribute('aria-hidden', 'true');
+						overlay.style.display = 'none';
+					};
+					ok.onclick = hide;
+					close.onclick = hide;
+					overlay.onclick = (e) => { if (e.target === overlay) hide(); };
+				}
+			</script>
+</body>
+</html>

@@ -4332,7 +4332,7 @@ if (quizSubmit) {
 				}
 			};
 
-			const startQuizLock = (seconds = 60) => { // 60 segundos por defecto
+			const startQuizLock = (seconds = 60) => { // 60 segundos por defecto (modo prueba)
 				if (quizLockInterval) {
 					clearInterval(quizLockInterval);
 				}
@@ -4524,9 +4524,11 @@ if (quizSubmit) {
 				// No iniciar el lock todavía: marcar pendiente para que arranque al cerrar el modal
 				if (state !== 'incomplete') {
 					pendingLock = true;
-					pendingLockSeconds = 60; // 60 segundos
+					pendingLockSeconds = 60; // 60 segundos (modo prueba)
 					pendingLockExpiresAt = Date.now() + (pendingLockSeconds * 1000);
 					saveQuizLockState({ status: 'pending', expiresAt: pendingLockExpiresAt });
+					// actualizar UI inmediatamente para mostrar el contador empezando en 60s
+					updateLockUI();
 					// arrancar intervalo que actualiza la UI del modal cada segundo
 					if (pendingInterval) { clearInterval(pendingInterval); pendingInterval = null; }
 					pendingInterval = setInterval(() => {
@@ -4553,6 +4555,12 @@ if (quizSubmit) {
 				}
 				const remaining = computeRemainingSeconds(saved.expiresAt);
 				if (remaining <= 0) {
+					// Si el lock expiró mientras el usuario estaba fuera, asegurar que
+					// la transcripción (CC) se marque como bloqueada y se persista.
+					ccLocked = true;
+					// ocultar badge porque CC está ahora bloqueado
+					ccBadgeVisible = false;
+					updateCcStateStorage();
 					clearQuizLockState();
 					return;
 				}

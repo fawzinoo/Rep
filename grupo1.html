@@ -2230,7 +2230,7 @@ Español A1
             "Las estaciones del año": false,
             "Cuaderno de ejercicios3": false,
             "Unidad3(A1)": false,
-            "Curiosidades de Venezuela": true,
+            "Curiosidades de Venezuela": false,
 
       // <!------------------------------unidad4------------------------------->
            "Ropa masculina": true,
@@ -2248,7 +2248,7 @@ Español A1
                 "El carácter":true,
                 "Cuaderno de ejercicios5": true,
                 "Unidad5(A1)": true,
-                "¿Qué dice de ti la música que escuchas?": false,
+                "¿Qué dice de ti la música que escuchas?": true,
             
      // <!------------------------------unidad6------------------------------->
        "Mi día a día (Infinitivos)": true,
@@ -2401,7 +2401,89 @@ Español A1
                     }
                 }
             }
-            
+
+            // Helper: aplicar un scrollLeft guardado con pequeño retardo para que el layout se estabilice
+            function applySavedScroll(container, left, behavior = 'auto') {
+                if (!container) return;
+                try {
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            try {
+                                if (typeof container.scrollTo === 'function') {
+                                    container.scrollTo({ left: Math.max(0, Math.round(left)), behavior: behavior });
+                                } else {
+                                    container.scrollLeft = Math.max(0, Math.round(left));
+                                }
+                            } catch (e) {
+                                try { container.scrollLeft = Math.max(0, Math.round(left)); } catch(_){ }
+                            }
+                        });
+                    });
+                    // Fallback: asegurar después del load
+                    window.addEventListener('load', function f() {
+                        try {
+                            if (typeof container.scrollTo === 'function') {
+                                container.scrollTo({ left: Math.max(0, Math.round(left)), behavior: behavior });
+                            } else {
+                                container.scrollLeft = Math.max(0, Math.round(left));
+                            }
+                        } catch (e) {}
+                        window.removeEventListener('load', f);
+                    });
+                } catch (e) {}
+            }
+
+            // Encontrar el contenedor scrollable más cercano (busca overflow o scrollWidth>clientWidth)
+            function findScrollContainer(el) {
+                if (!el) return null;
+                let p = el.parentElement;
+                while (p) {
+                    try {
+                        const style = window.getComputedStyle(p);
+                        const overflowX = style.overflowX;
+                        if (/(auto|scroll)/.test(overflowX) || p.scrollWidth > p.clientWidth) return p;
+                    } catch (e) {}
+                    p = p.parentElement;
+                }
+                return null;
+            }
+
+            // Calcular scrollLeft necesario para que el botón quede visible en el extremo derecho del contenedor
+            function calcScrollForRightEdge(container, btn) {
+                if (!container || !btn) return 0;
+                try {
+                    const contRect = container.getBoundingClientRect();
+                    const btnRect = btn.getBoundingClientRect();
+                    // posición relativa dentro del contenido (incluye container.scrollLeft)
+                    const relativeLeft = (btnRect.left - contRect.left) + container.scrollLeft;
+                    const desired = Math.max(0, Math.round(relativeLeft + btnRect.width - container.clientWidth));
+                    return desired;
+                } catch (e) {
+                    // fallback a offsetLeft-based calc
+                    try { return Math.max(0, Math.round(btn.offsetLeft - (container.clientWidth - btn.clientWidth))); } catch(_) { return 0; }
+                }
+            }
+
+            // Calcular scrollLeft necesario para que el botón quede alineado al borde izquierdo del contenedor
+            // Devuelve un valor clamped entre 0 y maxScroll. `margin` deja un pequeño espacio desde el borde izquierdo (por defecto 12px).
+            function calcScrollForLeftEdge(container, btn, margin = 12) {
+                if (!container || !btn) return 0;
+                try {
+                    const contRect = container.getBoundingClientRect();
+                    const btnRect = btn.getBoundingClientRect();
+                    // posición relativa dentro del contenido (incluye container.scrollLeft)
+                    const relativeLeft = (btnRect.left - contRect.left) + container.scrollLeft;
+                    // Queremos que el borde izquierdo del botón quede en el borde izquierdo del contenedor (con una pequeña margin)
+                    let desired = Math.round(relativeLeft - margin);
+                    desired = Math.max(0, desired);
+                    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+                    if (desired > maxScroll) desired = maxScroll;
+                    return desired;
+                } catch (e) {
+                    try { return Math.max(0, Math.round(btn.offsetLeft - (margin))); } catch(_) { return 0; }
+                }
+            }
+
             // Restaurar unidad activa desde localStorage
             const lastUnitId = localStorage.getItem('activeUnitToggle');
             if (lastUnitId) {
@@ -2423,12 +2505,27 @@ Español A1
                 }
             }
             
-            // Restaurar pestaña activa (léxico, ejercicios, comunicación)
+            // Restaurar pestaña activa (léxico, ejercicios, comunicación) y su scroll por unidad
             const lastSubTabId = localStorage.getItem('activeSubTab');
             if (lastSubTabId) {
                 const lastSubToggle = document.querySelector('.unit-subtoggle[data-target="' + lastSubTabId + '"]');
                 const lastSubContent = document.getElementById(lastSubTabId);
                 if (lastSubToggle && lastSubContent) {
+                    // Asegurar unidad padre abierta
+                    try {
+                        const parentUnit = lastSubToggle.closest('.unit-content');
+                        const parentUnitId = parentUnit ? parentUnit.id : null;
+                        if (parentUnit && parentUnitId) {
+                            const parentToggle = document.querySelector('.unit-toggle[data-target="' + parentUnitId + '"]');
+                            if (parentToggle && !parentToggle.classList.contains('active')) {
+                                document.querySelectorAll('.unit-toggle').forEach(function(t){ t.classList.remove('active'); t.setAttribute('aria-expanded','false'); });
+                                document.querySelectorAll('.unit-content').forEach(function(c){ c.classList.remove('active'); });
+                                parentToggle.classList.add('active'); parentToggle.setAttribute('aria-expanded','true'); parentUnit.classList.add('active');
+                                try { localStorage.setItem('activeUnitToggle', parentUnitId); } catch(e){}
+                            }
+                        }
+                    } catch (e) {}
+
                     // Desactivar todas las pestañas dentro de la misma unidad
                     const unitContent = lastSubToggle.closest('.unit-content');
                     if (unitContent) {
@@ -2440,10 +2537,39 @@ Español A1
                             c.classList.remove('active');
                         });
                     }
+
                     // Activar la última pestaña
                     lastSubToggle.classList.add('active');
                     lastSubToggle.setAttribute('aria-expanded', 'true');
                     lastSubContent.classList.add('active');
+
+                    // Restaurar posición de la cinta de subtabs (por unidad) si hay una guardada, si no colocar la subtaba en el extremo derecho visible
+                    try {
+                        const unitId = unitContent ? unitContent.id : null;
+                        const sc = findScrollContainer(lastSubToggle) || lastSubToggle.closest('.unit-subnav') || lastSubToggle.parentElement;
+                        if (sc) {
+                            if (unitId) {
+                                const saved = localStorage.getItem('subnavScroll_' + unitId);
+                                if (saved !== null) {
+                                    const n = parseInt(saved, 10);
+                                    if (!Number.isNaN(n)) {
+                                        applySavedScroll(sc, n, 'auto');
+                                    } else {
+                                        const desired = calcScrollForLeftEdge(sc, lastSubToggle);
+                                        applySavedScroll(sc, desired, 'auto');
+                                    }
+                                } else {
+                                    const desired = calcScrollForLeftEdge(sc, lastSubToggle);
+                                    applySavedScroll(sc, desired, 'auto');
+                                }
+                            } else {
+                                const desired = calcScrollForLeftEdge(sc, lastSubToggle);
+                                applySavedScroll(sc, desired, 'auto');
+                            }
+                        } else {
+                            requestAnimationFrame(() => lastSubToggle.scrollIntoView({ block: 'center', behavior: 'auto' }));
+                        }
+                    } catch (e) { /* ignore */ }
                 }
             }
             // preload click sound and helper to play with light volume + vibration
@@ -2561,6 +2687,19 @@ Español A1
                     
                     // Guardar la pestaña activa en localStorage
                     localStorage.setItem('activeSubTab', targetId);
+                    // Guardar posición de la subtaba dentro de su cinta (scrollLeft) para restauración por unidad
+                    try {
+                        const unitId = unitContent ? unitContent.id : null;
+                        const sc = findScrollContainer(button) || (unitContent && unitContent.querySelector('.unit-subnav')) || button.parentElement;
+                        if (sc) {
+                            // calcular scrollLeft para que el botón quede alineado al borde izquierdo visible (más robusto)
+                            const desired = calcScrollForLeftEdge(sc, button);
+                            try { sc.scrollTo({ left: desired, behavior: 'smooth' }); } catch(e){ sc.scrollLeft = desired; }
+                            if (unitId) {
+                                localStorage.setItem('subnavScroll_' + unitId, String(desired));
+                            }
+                        }
+                    } catch (e) {}
                 });
             });
 

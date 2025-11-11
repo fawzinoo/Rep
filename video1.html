@@ -3200,6 +3200,46 @@ h1::after {
 			lastInteractionInput = "keyboard";
 		}, true);
 
+		// Atajos de teclado para escritorio: avanzar/retroceder 5s con las flechas derecha/izquierda
+		// Solo se activan en dispositivos con pointer fine (PC/laptop) y cuando el foco no está en un input/textarea
+		document.addEventListener('keydown', function (e) {
+			try {
+				// detectar desktop (puntero fino) — evita activar en móviles táctiles
+				if (window.matchMedia && !window.matchMedia('(pointer:fine)').matches) return;
+				if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+				const active = document.activeElement;
+				// evitar interferir con campos de texto o elementos editables
+				if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable || active.tagName === 'SELECT')) return;
+				// permitir atajos incluso si un botón de los controles tiene foco (por ejemplo tras pausar)
+				// pero bloquear si el foco está sobre la barra de progreso (id=seek) o un control que espera teclado
+				if (active && active.id === 'seek') return;
+				if (!player) return;
+				const delta = e.key === 'ArrowRight' ? 5 : -5;
+				const current = Number(player.currentTime) || 0;
+				const duration = Number.isFinite(player.duration) ? player.duration : Infinity;
+				let next = Math.max(0, Math.min(duration, current + delta));
+				// si no hay cambio significativo, salir
+				if (Math.abs(next - current) < 0.05) return;
+				player.currentTime = next;
+				// forzar actualización de la UI y notificar events para listeners externos
+				try { syncTime(); } catch(_) {}
+				try { player.dispatchEvent(new Event('seeked')); } catch(_) {}
+				// actualizar interfaz
+				try { syncTime(); } catch(_) {}
+				// mostrar overlay breve indicando acción
+				if (typeof playbackOverlay !== 'undefined' && playbackOverlay) {
+					playbackOverlay.dataset.state = player.paused ? 'pause' : 'play';
+					playbackOverlay.classList.add('show');
+					if (window.__playbackOverlayHideTimeout) clearTimeout(window.__playbackOverlayHideTimeout);
+					window.__playbackOverlayHideTimeout = setTimeout(() => playbackOverlay.classList.remove('show'), 600);
+				}
+				try { triggerHapticFeedback(40); } catch(_) {}
+				e.preventDefault();
+			} catch (err) {
+				// ignore
+			}
+		}, true);
+
 	const triggerHapticFeedback = (duration = 80) => {
 		if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
 			try {
@@ -4362,11 +4402,28 @@ if (quizSubmit) {
 						quizLockInterval = null;
 						clearQuizLockState();
 						// Ocultar aviso de transcripción disponible y restaurar el botón CC
-						if (typeof removeCcBadge === 'function') {
-							removeCcBadge();
-						}
-						if (ccToggle) {
-							ccToggle.classList.remove('cc-highlight');
+						try {
+							// eliminar badge/mensaje si existe y limpiar cualquier listener asociado
+							if (typeof removeCcBadge === 'function') removeCcBadge();
+							// safety: also remove any remaining DOM nodes and storage keys
+							const leftover = document.querySelectorAll('.cc-msg, .cc-badge');
+							leftover.forEach(el => {
+								if (el.__onReposition) {
+									window.removeEventListener('resize', el.__onReposition);
+									window.removeEventListener('scroll', el.__onReposition, true);
+								}
+								el.remove();
+							});
+							try { localStorage.removeItem(CC_STATE_STORAGE_KEY); } catch(e) {}
+							if (ccToggle) {
+								ccToggle.classList.remove('cc-highlight');
+								ccToggle.style.pointerEvents = '';
+								ccToggle.style.zIndex = '';
+							}
+							ccBadgeVisible = false;
+							updateCcStateStorage();
+						} catch (e) {
+							// ignore cleanup errors
 						}
 						// Cuando termina el lock: solo resetear respuestas
 						// La transcripción ya fue desbloqueada al presionar comprobar

@@ -2785,6 +2785,51 @@ h1::after {
 		margin-top: 6px !important;
 	}
 
+@media (max-width: 385px) {
+  .player-shell .controls .primary-controls #control-play,
+  .player-shell .controls .primary-controls .volume,
+  			.player-shell .controls .primary-controls .skip-button,
+			.player-shell .controls .primary-controls .skip-button1{
+    display: none !important;
+  }
+   .player-shell .controls .primary-controls .timecode {
+    margin-left: 3px;
+  }
+}
+
+.quiz-result__summary {
+			font-size: 0.95rem;
+		}
+	 	
+	@media (max-width: 447px) {
+			.quiz-section {
+				margin: 1px auto 0;
+				padding: 10px 6px 24px;
+			}
+		}
+
+		
+		@media (max-width: 447px) {
+			body {
+				padding: 20px 3px 120px;
+			}
+			}
+	
+
+		
+		@media (max-width: 447px) {
+			.loading-overlay {
+				border-radius: 12px;
+			}
+			}
+		
+
+		
+		@media (max-width: 447px) {
+			.transcript-container {
+				border-radius: 12px;
+			}
+			}
 	</style>
 </head>
 <body>
@@ -3402,6 +3447,47 @@ h1::after {
 			volumeBtn.dataset.state = muted ? "mute" : "high";
 			volumeBtn.setAttribute("aria-label", muted ? "Activar sonido" : "Silenciar");
 		};
+
+						const compactVolumeQuery = window.matchMedia ? window.matchMedia("(max-width: 385px)") : null;
+		const enforceCompactVolumeLevel = (event) => {
+			if (!compactVolumeQuery || !volumeSlider || !player) {
+				return;
+			}
+			const matches = typeof event?.matches === "boolean" ? event.matches : compactVolumeQuery.matches;
+			if (!matches) {
+				return;
+			}
+			const desiredVolume = 1;
+			const currentSlider = Number(volumeSlider.value);
+			if (currentSlider === desiredVolume && player.volume === desiredVolume) {
+				return;
+			}
+			volumeSlider.value = desiredVolume.toString();
+			player.volume = desiredVolume;
+			lastVolume = desiredVolume;
+			updateVolumeVisual();
+			updateVolumeButton();
+		};
+
+		if (compactVolumeQuery) {
+			const handler = (event) => enforceCompactVolumeLevel(event);
+			if (typeof compactVolumeQuery.addEventListener === "function") {
+				compactVolumeQuery.addEventListener("change", handler);
+			} else if (typeof compactVolumeQuery.addListener === "function") {
+				compactVolumeQuery.addListener(handler);
+			}
+		}
+
+
+		if (volumeSlider) {
+			enforceCompactVolumeLevel();
+			player.volume = Number(volumeSlider.value);
+			lastVolume = player.volume || lastVolume || 0.5;
+			updateVolumeVisual();
+		const toggleMute = () => {
+			player.muted = !player.muted;
+		};
+		}	
 
 		const toggleMute = () => {
 			player.muted = !player.muted;
@@ -4219,7 +4305,7 @@ if (quizSubmit) {
 			let quizLockExpiresAt = 0;
 		// Si se muestra el modal, sólo iniciar el lock cuando el usuario lo cierre o pulse la acción
 		let pendingLock = false;
-		let pendingLockSeconds = 60;
+		let pendingLockSeconds = 86400;
 		let pendingLockExpiresAt = 0;
 		let pendingInterval = null;			// Bloquear todas las teclas excepto las del botón CC durante el timer
 			document.addEventListener('keydown', (event) => {
@@ -4321,7 +4407,7 @@ if (quizSubmit) {
 				}
 			};
 
-			const startQuizLock = (seconds = 60) => { // 60 segundos por defecto (modo prueba)
+			const startQuizLock = (seconds = 86400) => { // 24 horas por defecto (timer extendido)
 				if (quizLockInterval) {
 					clearInterval(quizLockInterval);
 				}
@@ -4530,7 +4616,7 @@ if (quizSubmit) {
 				// No iniciar el lock todavía: marcar pendiente para que arranque al cerrar el modal
 				if (state !== 'incomplete') {
 					pendingLock = true;
-					pendingLockSeconds = 60; // 60 segundos (modo prueba)
+					pendingLockSeconds = 86400; // 24 horas (timer extendido)
 					pendingLockExpiresAt = Date.now() + (pendingLockSeconds * 1000);
 					saveQuizLockState({ status: 'pending', expiresAt: pendingLockExpiresAt });
 					// actualizar UI inmediatamente para mostrar el contador empezando en 60s
@@ -4833,14 +4919,14 @@ if (quizSubmit) {
 					}
 				}
 			});
-
+restoreQuizLockState();
 			if (!ccLocked && ccBadgeVisible && typeof showCcBadge === 'function') {
 				showCcBadge();
 			} else if (ccLocked && ccBadgeVisible) {
 				removeCcBadge();
 			}
 
-			restoreQuizLockState();
+			
 		}
 
 		function removeBackgroundResult() {

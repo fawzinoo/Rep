@@ -2860,9 +2860,9 @@ h1::after {
 				playsinline
 				webkit-playsinline
 				tabindex="0"
-				controlslist="nodownload noremoteplayback"
-				data-primary-src="https://ik.imagekit.io/b8cowcw9j/video4.mp4"
-				data-backup-src="media/video4.mp4">
+				controlslist="nodownload noremoteplayback">
+				<source src="https://ik.imagekit.io/b8cowcw9j/video4.mp4" type="video/mp4">
+				<source src="media/video4.mp4" type="video/mp4">
 				Tu navegador no puede reproducir este video.
 			</video>
 			<div class="playback-overlay" id="playback-overlay" data-state="pause" aria-hidden="true">
@@ -3181,90 +3181,6 @@ h1::after {
 		const controlsContainer = document.querySelector(".controls");
 		const playerShell = document.querySelector(".player-shell");
 		const playbackOverlay = document.getElementById("playback-overlay");
-		const setStatusMessage = (message = "") => {
-			if (!statusEl) {
-				return;
-			}
-			statusEl.textContent = message;
-		};
-		const buildVideoSources = () => {
-			if (!player) {
-				return [];
-			}
-			const sources = [];
-			const primary = player.dataset?.primarySrc?.trim();
-			const backup = player.dataset?.backupSrc?.trim();
-			if (primary) {
-				sources.push({ src: primary, label: "cloud" });
-			}
-			if (backup) {
-				sources.push({ src: backup, label: "local" });
-			}
-			return sources;
-		};
-		const videoSources = buildVideoSources();
-		let activeVideoSourceIndex = 0;
-		let resumeAfterSourceSwap = false;
-		const loadVideoSource = (index, announceMessage = "") => {
-			if (!player || !videoSources[index]) {
-				return false;
-			}
-			activeVideoSourceIndex = index;
-			const source = videoSources[index];
-			try {
-				player.src = source.src;
-				player.load();
-				player.dataset.activeSource = source.label || `source-${index}`;
-			} catch (err) {
-				console.warn("No se pudo cargar la fuente del video", err);
-				return false;
-			}
-			if (announceMessage) {
-				setStatusMessage(announceMessage);
-			}
-			return true;
-		};
-		if (!player?.getAttribute("src") && videoSources.length) {
-			loadVideoSource(0);
-		}
-		const tryAdvanceVideoSource = (triggeredByUser = false) => {
-			const nextIndex = activeVideoSourceIndex + 1;
-			if (!videoSources[nextIndex]) {
-				return false;
-			}
-			const next = videoSources[nextIndex];
-			const announcement = next.label === "local"
-				? "El reproductor usa ahora la copia local del video."
-				: "Intentando otra fuente del video...";
-			if (loadingOverlay) {
-				loadingOverlay.classList.add("active");
-			}
-			if (!loadVideoSource(nextIndex, announcement)) {
-				return false;
-			}
-			resumeAfterSourceSwap = triggeredByUser;
-			return true;
-		};
-		const handlePlaybackError = (error, triggeredByUser = false) => {
-			console.warn("Error al reproducir el video", error);
-			if (tryAdvanceVideoSource(triggeredByUser)) {
-				return true;
-			}
-			resumeAfterSourceSwap = false;
-			setStatusMessage("No se pudo cargar el video. Intenta nuevamente más tarde.");
-			if (loadingOverlay) {
-				loadingOverlay.classList.remove("active");
-			}
-			return false;
-		};
-		const attemptVideoPlay = () => {
-			if (!player) {
-				return;
-			}
-			player.play().catch((err) => {
-				handlePlaybackError(err, true);
-			});
-		};
 		let volumeCycleStage = 0;
 		let lastVolume = Number(volumeSlider.value) || 0.5;
 		let volumeAutoHideTimeout;
@@ -3518,18 +3434,18 @@ h1::after {
 			updateSeekVisual();
 		};
 
-	const togglePlay = () => {
-		controlsRevealedOnInteraction = false;
-		bumpControls();
-		if (player.ended || playBtn.dataset.state === "replay") {
-			player.currentTime = 0;
-			attemptVideoPlay();
-		} else if (player.paused) {
-			attemptVideoPlay();
-		} else {
-			player.pause();
-		}
-	};		const updatePlayButton = () => {
+const togglePlay = () => {
+	controlsRevealedOnInteraction = false;
+	bumpControls();
+	if (player.ended || playBtn.dataset.state === "replay") {
+		player.currentTime = 0;
+		player.play().catch(() => {});
+	} else if (player.paused) {
+		player.play().catch(() => {});
+	} else {
+		player.pause();
+	}
+};		const updatePlayButton = () => {
 			playBtn.dataset.state = player.paused ? "play" : "pause";
 			playBtn.setAttribute("aria-label", player.paused ? "Reproducir" : "Pausar");
 		};
@@ -3782,7 +3698,6 @@ h1::after {
 		if (loadingOverlay) {
 			loadingOverlay.classList.remove("active");
 		}
-		setStatusMessage("");
 		// Mostrar controles y programar auto-hide cuando se reproduce
 		showControls();
 		scheduleControlsAutoHide();
@@ -3902,19 +3817,8 @@ h1::after {
 			seek.max = duration;
 			seek.disabled = duration === 0;
 			syncTime();
-			setStatusMessage("");
+			statusEl.textContent = "";
 			});
-
-		player.addEventListener("loadeddata", () => {
-			if (resumeAfterSourceSwap) {
-				resumeAfterSourceSwap = false;
-				attemptVideoPlay();
-			}
-			if (loadingOverlay) {
-				loadingOverlay.classList.remove("active");
-			}
-			setStatusMessage("");
-		});
 
 		player.addEventListener("timeupdate", syncTime);
 
@@ -4112,7 +4016,6 @@ h1::after {
 			if (loadingOverlay) {
 				loadingOverlay.classList.add("active");
 			}
-			setStatusMessage("Recuperando video...");
 		});
 
 		// Ocultar spinner cuando el video puede reproducirse
@@ -4120,7 +4023,6 @@ h1::after {
 			if (loadingOverlay) {
 				loadingOverlay.classList.remove("active");
 			}
-			setStatusMessage("");
 		});
 
 		// Ocultar spinner cuando el video empieza a reproducirse
@@ -4128,7 +4030,6 @@ h1::after {
 			if (loadingOverlay) {
 				loadingOverlay.classList.remove("active");
 			}
-			setStatusMessage("");
 		});
 
 		// Mostrar spinner durante la carga inicial
@@ -4136,7 +4037,6 @@ h1::after {
 			if (loadingOverlay) {
 				loadingOverlay.classList.add("active");
 			}
-			setStatusMessage("Preparando video...");
 		});
 
 		const quizForm = document.getElementById("lesson-quiz");
@@ -5052,11 +4952,11 @@ restoreQuizLockState();
 			}
 		}
 
-		player.addEventListener("error", (event) => {
-			const recovered = handlePlaybackError(event?.error || new Error("video-error"));
-			if (!recovered && loadingOverlay) {
+		player.addEventListener("error", () => {
+			if (loadingOverlay) {
 				loadingOverlay.classList.remove("active");
 			}
+			statusEl.textContent = "";
 		});
 
 		player.volume = Number(volumeSlider.value);

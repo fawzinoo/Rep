@@ -2935,32 +2935,22 @@ h1::after {
 		<!-- PANTALLA DE ACCESO DENEGADO -->
 <div id="access-denied-screen" class="access-denied">
 	<div>
-			<div class="access-actions">
-				<button type="button" class="access-back-button" onclick="history.back()" aria-label="Volver atrás">← Volver atrás</button>
-				<button
-					type="button"
-					class="access-refresh-button"
-					aria-label="Refrescar página"
-					onmousedown="(function(e){e.stopImmediatePropagation();e.preventDefault();window.location.replace(window.location.href.split('#')[0] + (window.location.href.indexOf('?')>-1 ? '&' : '?') + '_=' + Date.now() + (window.location.hash||''));})(event)"
-					ontouchstart="(function(e){e.stopImmediatePropagation();e.preventDefault();window.location.replace(window.location.href.split('#')[0] + (window.location.href.indexOf('?')>-1 ? '&' : '?') + '_=' + Date.now() + (window.location.hash||''));})(event)"
-					onclick="(function(e){e.stopImmediatePropagation();e.preventDefault();/* fallback if mousedown/touch didn't run */ window.location.replace(window.location.href.split('#')[0] + (window.location.href.indexOf('?')>-1 ? '&' : '?') + '_=' + Date.now() + (window.location.hash||''));})(event)">
-					⟳ Refrescar
-				</button>
-			</div>
+		<div class="access-actions">
+			<button type="button" class="access-back-button" onclick="history.back()" aria-label="Volver atrás">← Volver atrás</button>
+			<button type="button" class="access-refresh-button" aria-label="Refrescar página" onmousedown="handleAccessRefresh(event)" ontouchstart="handleAccessRefresh(event)" onclick="handleAccessRefresh(event)">⟳ Refrescar</button>
+		</div>
 		<h1>🚫 Acceso Denegado</h1>
 		<p>Esta página solo es accesible desde la aplicación principal.</p>
 		<p>Código: 403 - Forbidden</p>
 	</div>
 </div>
 
-	<!-- Script: listener en fase de captura para forzar recarga real desde el botón Refrescar -->
+	<!-- Script: manejo del botón Refrescar que usa localStorage para preservar estado -->
 	<script>
 		(function(){
 			function doCacheBustingReload(e){
-				try{
-					if(e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-					if(e && typeof e.preventDefault === 'function') e.preventDefault();
-				}catch(_){}
+				try{ if(e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); }catch(_){}
+				try{ if(e && typeof e.preventDefault === 'function') e.preventDefault(); }catch(_){}
 				try{
 					var href = window.location.href.split('#')[0];
 					var sep = href.indexOf('?') > -1 ? '&' : '?';
@@ -2969,19 +2959,43 @@ h1::after {
 				}catch(_){}
 			}
 
-			var checkAndReload = function(evt){
-				try{
-					var btn = evt && evt.target && evt.target.closest ? evt.target.closest('.access-refresh-button') : null;
-					if(btn) doCacheBustingReload(evt);
-				}catch(_){}
+			window.handleAccessRefresh = function(e){
+				try{ if(e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); }catch(_){}
+				try{ if(e && typeof e.preventDefault === 'function') e.preventDefault(); }catch(_){}
+
+				var stored = null;
+				try { stored = localStorage.getItem('pageAccess'); } catch(_) { try { stored = sessionStorage.getItem('pageAccess'); } catch(_) { stored = null; } }
+
+				if(stored === 'granted'){
+					try{
+						if(typeof showContent === 'function'){
+							showContent();
+							return;
+						}
+						var accessDenied = document.getElementById('access-denied-screen');
+						var content = document.getElementById('content');
+						if(accessDenied) accessDenied.style.display = 'none';
+						if(content) { content.style.display = 'block'; content.classList.add('show'); }
+						return;
+					}catch(_){ }
+				}
+
+				if(stored === 'denied'){
+					try{ if(typeof blockAccess === 'function') { blockAccess('Preservar denegado en refresh'); return; } }catch(_){}
+					try{
+						var accessDenied = document.getElementById('access-denied-screen');
+						if(accessDenied) { accessDenied.style.display = 'flex'; accessDenied.classList.add('show'); }
+						return;
+					}catch(_){}
+				}
+
+				doCacheBustingReload(e);
 			};
 
-			// Registrar en fase de captura lo antes posible para que actúe antes que handlers posteriores
-			document.addEventListener('pointerdown', checkAndReload, true);
-			document.addEventListener('touchstart', checkAndReload, {capture:true, passive:false});
-			document.addEventListener('mousedown', checkAndReload, true);
-			// onclick en capture como último recurso
-			document.addEventListener('click', checkAndReload, true);
+			document.addEventListener('pointerdown', function(evt){ if(evt && evt.target && evt.target.closest && evt.target.closest('.access-refresh-button')) window.handleAccessRefresh(evt); }, true);
+			document.addEventListener('touchstart', function(evt){ if(evt && evt.target && evt.target.closest && evt.target.closest('.access-refresh-button')) window.handleAccessRefresh(evt); }, {capture:true, passive:false});
+			document.addEventListener('mousedown', function(evt){ if(evt && evt.target && evt.target.closest && evt.target.closest('.access-refresh-button')) window.handleAccessRefresh(evt); }, true);
+			document.addEventListener('click', function(evt){ if(evt && evt.target && evt.target.closest && evt.target.closest('.access-refresh-button')) window.handleAccessRefresh(evt); }, true);
 		})();
 	</script>
 
@@ -3453,7 +3467,8 @@ h1::after {
         }
     }
     
-    // 6. MOSTRAR CONTENIDO AUTORIZADO
+	// 6. MOSTRAR CONTENIDO AUTORIZADO
+// Guarda en localStorage si el acceso fue concedido/denegado para que el botón "Refrescar" pueda usarlo
 function showContent() {
     const loadingScreen = document.getElementById('loading-screen');
     const accessDenied = document.getElementById('access-denied-screen');
@@ -3471,7 +3486,7 @@ function showContent() {
     }, 50);
     
     // Marcar sesión como válida
-    sessionStorage.setItem('pageAccess', 'granted');
+	try { localStorage.setItem('pageAccess', 'granted'); } catch(_) { try { sessionStorage.setItem('pageAccess', 'granted'); } catch(_) {} }
 }
 
 // 7. BLOQUEAR ACCESO NO AUTORIZADO - MEJORADA
@@ -3492,6 +3507,7 @@ function blockAccess(reason) {
     setTimeout(() => {
         accessDenied.classList.add('show');
     }, 50);
+	try { localStorage.setItem('pageAccess', 'denied'); } catch(_) { try { sessionStorage.setItem('pageAccess', 'denied'); } catch(_) {} }
 }
     
     // 8. VERIFICACIÓN INMEDIATA AL CARGAR - NUEVA FUNCIÓN

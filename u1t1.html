@@ -446,11 +446,33 @@
             padding: 6px 12px;
             text-align: center;
             box-shadow: 0 6px 12px rgba(248,113,113,0.2);
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .text-page p strong:focus-visible {
+            outline: 2px solid rgba(248,113,113,0.4);
+            outline-offset: 4px;
         }
 
         .text-page p:nth-of-type(even) strong {
             background: linear-gradient(120deg,#bfdbfe,#dbeafe);
             box-shadow: 0 6px 12px rgba(59,130,246,0.2);
+        }
+
+        .text-page p strong.dialog-speaker--active {
+            transform: translateY(1px);
+            box-shadow: 0 10px 18px rgba(15,23,42,0.18);
+        }
+
+        .text-page p:nth-of-type(odd) strong.dialog-speaker--active {
+            background: linear-gradient(120deg, #f472b6, #9d174d);
+            box-shadow: 0 12px 24px rgba(244,114,182,0.5);
+        }
+
+        .text-page p:nth-of-type(even) strong.dialog-speaker--active {
+            background: linear-gradient(120deg, #60a5fa, #1d4ed8);
+            box-shadow: 0 12px 24px rgba(59,130,246,0.45);
         }
 
         .dialog-line--playing {
@@ -1197,6 +1219,9 @@
         let lastVolumeLevel = 1;
         let volumeAutoHideTimeout = null;
         let speedAutoHideTimeout = null;
+        let isSegmentPlayback = false;
+        let segmentEndTime = null;
+        let currentSegmentLineEl = null;
 
         const clearDialogHighlights = () => {
             dialogLines.forEach(({ el }) => el.classList.remove('dialog-line--playing'));
@@ -1230,6 +1255,70 @@
                 clearDialogHighlights();
             }
         };
+
+        const stopSegmentPlayback = () => {
+            isSegmentPlayback = false;
+            segmentEndTime = null;
+            currentSegmentLineEl = null;
+        };
+
+        const playDialogLineSegment = (start, end, lineEl) => {
+            segmentEndTime = end;
+            isSegmentPlayback = true;
+            currentSegmentLineEl = lineEl;
+            dialogAudio.currentTime = start;
+            const playPromise = dialogAudio.play();
+            if (playPromise?.catch) {
+                playPromise.catch(() => {});
+            }
+            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+        };
+
+        dialogLines.forEach(({ el, start, end }) => {
+            const speaker = el.querySelector('strong');
+            if (!speaker) return;
+            speaker.setAttribute('role', 'button');
+            speaker.setAttribute('tabindex', '0');
+            const cleanLabel = speaker.textContent.replace(':', '').trim();
+            speaker.setAttribute('aria-label', `Reproducir frase de ${cleanLabel}`);
+            const triggerSegment = () => {
+                if (navigator.vibrate) navigator.vibrate(60);
+                if (isSegmentPlayback && currentSegmentLineEl === el) {
+                    if (dialogAudio.paused) {
+                        const resumePromise = dialogAudio.play();
+                        if (resumePromise?.catch) {
+                            resumePromise.catch(() => {});
+                        }
+                        if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+                    } else {
+                        dialogAudio.pause();
+                    }
+                    return;
+                }
+                dialogAudio.pause();
+                stopSegmentPlayback();
+                playDialogLineSegment(start, end, el);
+            };
+            speaker.addEventListener('click', (event) => {
+                event.stopPropagation();
+                triggerSegment();
+            });
+            speaker.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    triggerSegment();
+                }
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!isSegmentPlayback) return;
+            if (event.target.closest('.dialog-line strong')) return;
+            dialogAudio.pause();
+            stopSegmentPlayback();
+            clearDialogHighlights();
+            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+        });
 
         const toggleVolumeSlider = (forceVisible) => {
             if (!dialogAudioVolumeBtn || !dialogAudioVolumeSlider) return;
@@ -1270,6 +1359,7 @@
             dialogAudioBtn.addEventListener('click', () => {
                 if (navigator.vibrate) navigator.vibrate(100);
                 if (dialogAudio.paused) {
+                    stopSegmentPlayback();
                     const playPromise = dialogAudio.play();
                     if (playPromise?.catch) {
                         playPromise.catch(() => {});
@@ -1297,6 +1387,7 @@
             updateDialogAudioUI();
             clearDialogHighlights();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+            stopSegmentPlayback();
         };
 
         if (dialogAudioStopIcon) {
@@ -1418,6 +1509,7 @@
             updateDialogAudioUI();
             clearDialogHighlights();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+            stopSegmentPlayback();
             if (dialogLoopEnabled) {
                 const playPromise = dialogAudio.play();
                 if (playPromise?.catch) {
@@ -1426,10 +1518,15 @@
             }
         });
         dialogAudio.addEventListener('timeupdate', () => {
-            if (dialogAudio.paused) {
-                return;
+            if (!dialogAudio.paused) {
+                highlightDialogLine(dialogAudio.currentTime);
             }
-            highlightDialogLine(dialogAudio.currentTime);
+            if (isSegmentPlayback && segmentEndTime !== null && dialogAudio.currentTime >= segmentEndTime) {
+                dialogAudio.pause();
+                stopSegmentPlayback();
+                clearDialogHighlights();
+                if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+            }
         });
         dialogAudio.addEventListener('volumechange', () => {
             updateVolumeUI();

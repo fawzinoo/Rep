@@ -162,40 +162,6 @@
             transition: transform 0.15s ease;
         }
 
-        /* ===== Fix: evitar fondo azul en móviles y asegurar play transparente ===== */
-        /* Quitar apariencia nativa y el 'tap highlight' en iOS/Android */
-        .audio-toggle-btn,
-        .audio-toggle-btn > span,
-        .audio-toggle-btn * {
-            background: transparent !important;
-            -webkit-appearance: none !important;
-            appearance: none !important;
-            -webkit-tap-highlight-color: transparent !important;
-            outline: none !important;
-            border: none !important;
-            box-shadow: none !important;
-        }
-
-        /* Forzar que el icono de play sea transparente y centrado */
-        #dialog-audio-icon {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 22px;
-            height: 22px;
-            padding: 0;
-            margin: 0;
-            background: transparent !important;
-            color: inherit;
-        }
-
-        /* Stop icon también sin fondo */
-        .audio-stop-icon {
-            background: transparent !important;
-            -webkit-appearance: none !important;
-            appearance: none !important;
-        }
-
         .audio-stop-icon {
             width: 24px;
             height: 24px;
@@ -499,6 +465,14 @@
             color: #fff !important;
             box-shadow: 0 14px 34px rgba(15,23,42,0.30) !important;
             transform: translateY(1px) scale(0.99) !important;
+        }
+
+        /* Estado pausado: pintar en amarillo para indicar que la reproducción está pausada */
+        .speaker-pill.paused {
+            background: linear-gradient(120deg,#fef3c7,#f59e0b) !important;
+            color: #78350f !important;
+            box-shadow: 0 10px 24px rgba(245,158,11,0.22) !important;
+            transform: translateY(0) scale(1) !important;
         }
 
         .text-page p strong:focus-visible {
@@ -1075,12 +1049,7 @@
             <div class="text-audio-player">
                 <button class="audio-toggle-btn" type="button" id="dialog-audio-toggle" aria-pressed="false">
                     <span class="audio-stop-icon" id="dialog-audio-stop" hidden role="button" tabindex="0" aria-label="Detener audio"></span>
-                    <!-- Reemplazado el caracter por un SVG inline para evitar fondos nativos en móviles -->
-                    <span aria-hidden="true" id="dialog-audio-icon">
-                        <svg width="23" height="23" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M8 5v14l11-7z" fill="currentColor" />
-                        </svg>
-                    </span>
+                    <span aria-hidden="true" id="dialog-audio-icon">▶</span>
                 </button>
                 <span class="audio-repeat-icon" id="dialog-audio-repeat" role="button" tabindex="0" aria-label="Repetir automáticamente" aria-pressed="false">
                     <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
@@ -1287,7 +1256,10 @@
         // Además de quitar la clase visual de reproducción, quitar el estado "pressed"
         const clearDialogHighlightsAndPressed = () => {
             clearDialogHighlights();
-            document.querySelectorAll('.speaker-pill.pressed').forEach((el) => el.classList.remove('pressed'));
+            document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
+                el.classList.remove('pressed');
+                el.classList.remove('paused');
+            });
         };
 
         const ensureLineVisible = (lineEl) => {
@@ -1346,26 +1318,34 @@
             const cleanLabel = speaker.textContent.replace(':', '').trim();
             speaker.setAttribute('aria-label', `Reproducir frase de ${cleanLabel}`);
             const triggerSegment = () => {
-                if (navigator.vibrate) navigator.vibrate(60);
+                if (navigator.vibrate) navigator.vibrate(100);
                 // Si ya se está reproduciendo este segmento: pausar/reanudar
                 if (isSegmentPlayback && currentSegmentLineEl === el) {
                     if (dialogAudio.paused) {
+                        // reanudar: quitar estado paused y poner pressed
                         const resumePromise = dialogAudio.play();
                         if (resumePromise?.catch) {
                             resumePromise.catch(() => {});
                         }
                         if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+                        speaker.classList.remove('paused');
                         speaker.classList.add('pressed');
                     } else {
+                        // pausar: quitar pressed y añadir paused (amarillo)
                         dialogAudio.pause();
+                        speaker.classList.remove('pressed');
+                        speaker.classList.add('paused');
                     }
                     return;
                 }
                 // pausa cualquier reproducción anterior y quitar estados
                 dialogAudio.pause();
                 stopSegmentPlayback();
-                // marcar visualmente esta píldora como presionada
-                document.querySelectorAll('.speaker-pill.pressed').forEach((el) => el.classList.remove('pressed'));
+                // quitar cualquier estado visual previo (pressed/paused) y marcar la nueva píldora como presionada
+                document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
+                    el.classList.remove('pressed');
+                    el.classList.remove('paused');
+                });
                 speaker.classList.add('pressed');
                 playDialogLineSegment(start, end, el);
             };
@@ -1422,10 +1402,7 @@
             if (!dialogAudioBtn || !dialogAudioIcon) return;
             const isPlaying = !dialogAudio.paused;
             dialogAudioBtn.setAttribute('aria-pressed', String(isPlaying));
-            // Usar SVGs inline para evitar que navegadores móviles pinten un fondo sobre caracteres
-            const playSvg = '<svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>';
-            const pauseSvg = '<svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"/></svg>';
-            dialogAudioIcon.innerHTML = isPlaying ? pauseSvg : playSvg;
+            dialogAudioIcon.textContent = isPlaying ? '⏸' : '▶';
         };
 
         if (dialogAudioBtn) {

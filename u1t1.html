@@ -1154,6 +1154,11 @@
                 <span class="quiz-shard"></span>
                 <span class="quiz-shard"></span>
             </div>
+            <!-- Pantalla inicial: botón para empezar el quiz -->
+            <div id="quiz-start" style="text-align:center; padding: 20px 0;">
+                <button id="quiz-start-btn" class="quiz-check-btn" type="button">Empezar el quiz</button>
+            </div>
+
             <div id="quiz-body">
                 <div class="quiz-meter__label-row">
                     <p class="quiz-meter__label" id="quiz-meter-label"></p>
@@ -1183,53 +1188,66 @@
 
         const questions = shuffle([
             {
+                id: 1,
                 question: '¿Dónde vive Ana López?',
                 answers: [
                     { text: 'En Barcelona con su hermana.', correct: true },
                     { text: 'En Madrid con Luis.', correct: false },
                     { text: 'En Quito con su familia.', correct: false }
-                ]
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p1.mp3'
             },
             {
+                id: 2,
                 question: '¿De dónde es Luis Pérez?',
                 answers: [
                     { text: 'De Perú.', correct: true },
                     { text: 'De México.', correct: false },
                     { text: 'De España.', correct: false }
-                ]
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p2.mp3'
             },
             {
+                id: 3,
                 question: '¿En qué trabaja Ana?',
                 answers: [
                     { text: 'En una cafetería.', correct: true },
                     { text: 'En una librería.', correct: false },
                     { text: 'En una oficina.', correct: false }
-                ]
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p3.mp3'
             },
             {
+                id: 4,
                 question: '¿Qué estudia Luis en la universidad?',
                 answers: [
                     { text: 'Español.', correct: true },
                     { text: 'Ingeniería.', correct: false },
                     { text: 'Medicina.', correct: false }
-                ]
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p4.mp3'
             },
+            
             {
-                question: '¿Qué idiomas habla Ana?',
-                answers: [
-                    { text: 'Español y un poco de inglés.', correct: true },
-                    { text: 'Español y francés.', correct: false },
-                    { text: 'Solo inglés.', correct: false }
-                ]
-            },
-            {
+                id: 5,
                 question: '¿Qué idioma extra estudia Luis?',
                 answers: [
                     { text: 'Alemán.', correct: true },
                     { text: 'Italiano.', correct: false },
                     { text: 'Portugués.', correct: false }
-                ]
-            }
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p5.mp3'
+            },
+            {
+                id: 6,
+                question: '¿Qué idiomas habla Ana?',
+                answers: [
+                    { text: 'Español y un poco de inglés.', correct: true },
+                    { text: 'Español y francés.', correct: false },
+                    { text: 'Solo inglés.', correct: false }
+                ],
+                audioUrl: 'https://fawzinoo.github.io/audios/1p6.mp3'
+            },
         ]);
 
         const quizCard = document.getElementById('quiz-card');
@@ -1302,6 +1320,49 @@
         failSound.preload = 'auto';
         const dialogAudio = new Audio('https://fawzinoo.github.io/audios/L1.mp3');
         dialogAudio.preload = 'auto';
+        // Reproductor para audios de cada pregunta (archivos individuales L1p1..L1p6)
+        const questionAudio = new Audio();
+        questionAudio.preload = 'auto';
+        let isQuestionPlayback = false;
+
+        const stopQuestionPlayback = () => {
+            try {
+                isQuestionPlayback = false;
+                questionAudio.pause();
+                // opcional: limpiar src para liberar descriptor
+                try { questionAudio.removeAttribute('src'); questionAudio.load(); } catch (_) {}
+                if (quizCard) quizCard.removeAttribute('data-play-url');
+            } catch (_) {}
+        };
+
+        const playQuestionSegment = (index) => {
+            stopQuestionPlayback();
+            const url = questions?.[index]?.audioUrl;
+            const qid = questions?.[index]?.id ?? null;
+            const qtext = questions?.[index]?.question ?? '';
+            if (!url) return;
+            try {
+                if (quizCard) {
+                    quizCard.dataset.playUrl = url;
+                    if (qid !== null) quizCard.dataset.questionId = String(qid);
+                    // store a short version of the question text for quick inspection
+                    quizCard.dataset.questionText = qtext.length > 60 ? qtext.slice(0, 57) + '...' : qtext;
+                }
+                // log para depuración en consola
+                console.log('playQuestionSegment -> index:', index, 'qid:', qid, 'url:', url, 'text:', qtext);
+                // pausar diálogo principal para evitar solapamientos
+                try { dialogAudio.pause(); } catch (_) {}
+                questionAudio.src = url;
+                try { questionAudio.load(); } catch (_) {}
+                const p = questionAudio.play();
+                isQuestionPlayback = true;
+                if (p?.catch) p.catch(() => { stopQuestionPlayback(); });
+            } catch (err) {
+                stopQuestionPlayback();
+            }
+        };
+
+        questionAudio.addEventListener('ended', () => stopQuestionPlayback());
         let lastVolumeLevel = 1;
         let volumeAutoHideTimeout = null;
         let speedAutoHideTimeout = null;
@@ -1499,6 +1560,8 @@
             clearDialogHighlightsAndPressed();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
             stopSegmentPlayback();
+            // detener también el audio de preguntas si está en curso
+            try { stopQuestionPlayback(); } catch (_) {}
         };
 
         if (dialogAudioStopIcon) {
@@ -1901,6 +1964,8 @@
         const restartQuiz = () => {
             stopResultAudio();
             resetCountdown();
+            // detener cualquier audio de pregunta en curso
+            try { stopQuestionPlayback(); } catch (_) {}
             if (retryIntervalId) {
                 clearInterval(retryIntervalId);
                 retryIntervalId = null;
@@ -1922,6 +1987,8 @@
 
         const showResults = () => {
             resetCountdown();
+            // detener audio de pregunta si estaba en reproducción
+            try { stopQuestionPlayback(); } catch (_) {}
             if (retryIntervalId) {
                 clearInterval(retryIntervalId);
                 retryIntervalId = null;
@@ -2037,6 +2104,8 @@
                 });
                 setStatus(`Pregunta ${currentQuestionIndex + 1} de ${totalQuestions}.`);
                 updateMeter();
+                // reproducir el audio asociado a esta pregunta (usa audioUrl en el objeto pregunta)
+                try { playQuestionSegment(currentQuestionIndex); } catch (_) {}
             };
 
             runQuestionTransition(applyQuestionContent);
@@ -2055,6 +2124,8 @@
 
         const handleAttempt = () => {
             if (locked) return;
+            // detener audio de la pregunta activa para evitar solapamientos
+            try { stopQuestionPlayback(); } catch (_) {}
             const options = getOptions();
             const selected = options.find((opt) => opt.checked);
             if (!selected) return;
@@ -2102,7 +2173,48 @@
         };
 
         buttonEl.addEventListener('click', handleAttempt);
-        renderQuestion();
+
+        // Mostrar pantalla de inicio y esperar a que el usuario pulse para comenzar
+        const quizStartDiv = document.getElementById('quiz-start');
+        const quizStartBtn = document.getElementById('quiz-start-btn');
+        if (quizBody) {
+            // ocultamos el cuerpo hasta que se pulse empezar
+            quizBody.style.display = 'none';
+        }
+        if (quizStartBtn) {
+            quizStartBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (navigator.vibrate) navigator.vibrate(100);
+                // evitar múltiples pulsaciones
+                quizStartBtn.disabled = true;
+                // ocultar la pantalla de inicio
+                if (quizStartDiv) quizStartDiv.style.display = 'none';
+                // pausar cualquier audio de diálogo para evitar solapamientos
+                try { dialogAudio.pause(); } catch (_) {}
+
+                // reproducir sonido de inicio (acierto.mp3) de forma asíncrona sin bloquear
+                try {
+                    const startTone = new Audio('https://fawzinoo.github.io/audios/starting.mp3');
+                    startTone.preload = 'auto';
+                    // intentar reproducir, no esperamos a que termine
+                    const playPromise = startTone.play();
+                    if (playPromise?.catch) playPromise.catch(() => {});
+                } catch (e) {
+                    // ignore playback errors — el quiz seguirá
+                }
+
+                // iniciar/reiniciar el quiz inmediatamente (no esperar al sonido)
+                restartQuiz();
+                // hacer scroll suave hacia la tarjeta del quiz
+                setTimeout(() => {
+                    const quizCardEl = document.getElementById('quiz-card');
+                    if (quizCardEl) {
+                        const top = quizCardEl.getBoundingClientRect().top + window.scrollY - 16; // pequeño offset
+                        window.scrollTo({ top, behavior: 'smooth' });
+                    }
+                }, 40);
+            });
+        }
     </script>
 </body>
 </html>

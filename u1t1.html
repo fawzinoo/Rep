@@ -1985,6 +1985,50 @@
             renderQuestion();
         };
 
+        // Mostrar la pantalla inicial con el botón "Empezar el quiz",
+        // sin iniciar el quiz automáticamente. Limpia estados, audios y timers.
+        const showStartScreen = () => {
+            // Detener audios activos
+            try { stopResultAudio(); } catch (_) {}
+            try { stopQuestionPlayback(); } catch (_) {}
+            try { stopDialogAudio(); } catch (_) {}
+
+            // Limpiar intervalos / timers relacionados con retry
+            if (retryIntervalId) {
+                clearInterval(retryIntervalId);
+                retryIntervalId = null;
+            }
+            hideRetryBanner();
+
+            // Reset visual: ocultar cuerpo del quiz y resultados, mostrar el inicio
+            if (quizBody) quizBody.style.display = 'none';
+            if (resultEl) {
+                resultEl.hidden = true;
+                resultEl.innerHTML = '';
+            }
+            if (quizStartDiv) quizStartDiv.style.display = '';
+            if (quizStartBtn) quizStartBtn.disabled = false;
+
+            // Reset estado de juego para que al pulsar empezar esté limpio
+            locked = false;
+            currentQuestionIndex = 0;
+            score = 0;
+            quizStartTime = null;
+            updateScore();
+            updateMeter();
+            setStatus('');
+            // Restaurar la sección de texto (lección) si estaba oculta
+            try {
+                const textPage = document.querySelector('.text-page');
+                if (textPage) textPage.style.display = '';
+                // Quitar desplazamientos inline aplicados cuando se centró la tarjeta
+                if (quizCard) {
+                    quizCard.style.top = '';
+                    quizCard.style.position = '';
+                }
+            } catch (_) {}
+        };
+
         const showResults = () => {
             resetCountdown();
             // detener audio de pregunta si estaba en reproducción
@@ -2052,7 +2096,9 @@
                     updateRetryDisplays();
                     clearInterval(retryIntervalId);
                     retryIntervalId = null;
-                    restartQuiz();
+                    // Cuando el temporizador llega a 0, volver a la pantalla de inicio
+                    // con el botón "Empezar el quiz" y NO iniciar el quiz automáticamente.
+                    showStartScreen();
                 } else {
                     updateRetryDisplays();
                 }
@@ -2189,6 +2235,24 @@
                 quizStartBtn.disabled = true;
                 // ocultar la pantalla de inicio
                 if (quizStartDiv) quizStartDiv.style.display = 'none';
+                // ocultar el texto/oferta de la lección (mantener la configuración/forma del div)
+                const textPage = document.querySelector('.text-page');
+                if (textPage) textPage.style.display = 'none';
+                // mover la tarjeta del quiz para que su borde superior quede
+                // a 10px por debajo del título dentro de .page-header
+                try {
+                    const rect = quizCard.getBoundingClientRect();
+                    const headerEl = document.querySelector('.page-header');
+                    if (headerEl) {
+                        const headerRect = headerEl.getBoundingClientRect();
+                        // Queremos que el top del quiz (en coordenadas viewport) sea headerRect.bottom + 10
+                        const desiredTopViewport = headerRect.bottom + 100;
+                        const delta = Math.round(desiredTopViewport - rect.top);
+                        // usamos position: relative + top para no cambiar paddings/anchos originales
+                        quizCard.style.position = 'relative';
+                        quizCard.style.top = `${delta}px`;
+                    }
+                } catch (_) {}
                 // pausar cualquier audio de diálogo para evitar solapamientos
                 try { dialogAudio.pause(); } catch (_) {}
 

@@ -1336,6 +1336,58 @@
             },
         ]);
 
+        const STORAGE_KEY = 'texto1';
+        const storageAvailable = (() => {
+            try {
+                const testKey = '__u1t1__';
+                localStorage.setItem(testKey, '1');
+                localStorage.removeItem(testKey);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        })();
+
+        const readStorage = () => {
+            if (!storageAvailable) return {};
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {};
+            } catch (_) {
+                return {};
+            }
+        };
+
+        let storageSnapshot = readStorage();
+
+        const writeStorage = (next) => {
+            if (!storageAvailable) return;
+            storageSnapshot = { ...storageSnapshot, ...next, updatedAt: Date.now() };
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(storageSnapshot));
+            } catch (_) {}
+        };
+
+        const updateStorageSection = (section, payload) => {
+            if (!storageAvailable) return;
+            const previous = (storageSnapshot && typeof storageSnapshot[section] === 'object' && !Array.isArray(storageSnapshot[section]))
+                ? storageSnapshot[section]
+                : {};
+            writeStorage({ [section]: { ...previous, ...payload } });
+        };
+
+        const applyStoredQuestionOrder = () => {
+            const order = storageSnapshot?.quiz?.questionOrder;
+            if (!Array.isArray(order) || order.length !== questions.length) return;
+            const position = new Map(order.map((id, index) => [id, index]));
+            questions.sort((a, b) => {
+                const ai = position.get(a.id);
+                const bi = position.get(b.id);
+                if (ai === undefined || bi === undefined) return 0;
+                return ai - bi;
+            });
+        };
+        applyStoredQuestionOrder();
+
         const quizCard = document.getElementById('quiz-card');
         const questionEl = document.getElementById('quiz-question');
         const optionsContainer = document.getElementById('quiz-options');
@@ -1456,6 +1508,54 @@
         let segmentEndTime = null;
         let currentSegmentLineEl = null;
 
+        const getLineMeta = (lineEl) => {
+            if (!lineEl) return null;
+            const match = dialogLines.find(({ el }) => el === lineEl);
+            const speaker = lineEl.querySelector('strong')?.textContent?.replace(':', '').trim() || null;
+            return {
+                speaker,
+                start: match?.start ?? null,
+                end: match?.end ?? null
+            };
+        };
+
+        let lastAudioPersistTs = 0;
+        const persistAudioState = (source = 'player', options = {}) => {
+            if (!storageAvailable) return;
+            const now = Date.now();
+            if (!options.force && now - lastAudioPersistTs < 700) return;
+            lastAudioPersistTs = now;
+            const lineMeta = (isSegmentPlayback && currentSegmentLineEl) ? getLineMeta(currentSegmentLineEl) : null;
+            updateStorageSection('audio', {
+                dialog: {
+                    currentTime: Number(dialogAudio?.currentTime ?? 0),
+                    isPlaying: dialogAudio ? !dialogAudio.paused : false,
+                    playbackRate: dialogAudio?.playbackRate ?? 1,
+                    loop: !!dialogLoopEnabled,
+                    source,
+                    segment: lineMeta ? { ...lineMeta, state: dialogAudio.paused ? 'paused' : 'playing' } : null
+                },
+                lastAction: options.lastAction || source,
+                lastUpdated: now
+            });
+        };
+
+        const persistPillAction = (actionType, lineEl) => {
+            if (!storageAvailable) return;
+            const meta = getLineMeta(lineEl);
+            updateStorageSection('audio', {
+                lastPillAction: {
+                    type: actionType,
+                    speaker: meta?.speaker ?? null,
+                    start: meta?.start ?? null,
+                    end: meta?.end ?? null,
+                    currentTime: dialogAudio?.currentTime ?? 0,
+                    at: Date.now()
+                }
+            });
+            persistAudioState('pill', { force: true, lastAction: actionType });
+        };
+
         const clearDialogHighlights = () => {
             dialogLines.forEach(({ el }) => el.classList.remove('dialog-line--playing'));
             currentDialogLine = null;
@@ -1514,6 +1614,7 @@
                 playPromise.catch(() => {});
             }
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+            persistPillAction('play', lineEl);
         };
 
         dialogLines.forEach(({ el, start, end }) => {
@@ -1538,11 +1639,13 @@
                         if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
                         speaker.classList.remove('paused');
                         speaker.classList.add('pressed');
+                        persistPillAction('play', el);
                     } else {
                         // pausar: quitar pressed y añadir paused (amarillo)
                         dialogAudio.pause();
                         speaker.classList.remove('pressed');
                         speaker.classList.add('paused');
+                        persistPillAction('pause', el);
                     }
                     return;
                 }
@@ -1572,7 +1675,9 @@
         document.addEventListener('click', (event) => {
             if (!isSegmentPlayback) return;
             if (event.target.closest('.dialog-line strong')) return;
+            const activeLine = currentSegmentLineEl;
             dialogAudio.pause();
+            if (activeLine) persistPillAction('pause', activeLine);
             stopSegmentPlayback();
             clearDialogHighlightsAndPressed();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
@@ -1627,6 +1732,7 @@
                     dialogAudio.pause();
                     if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
                 }
+                persistAudioState('player', { force: true, lastAction: dialogAudio.paused ? 'pause' : 'play' });
             });
         }
 
@@ -1646,6 +1752,7 @@
             clearDialogHighlightsAndPressed();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
             stopSegmentPlayback();
+            persistAudioState('player', { force: true, lastAction: 'stop' });
             // detener también el audio de preguntas si está en curso
             try { stopQuestionPlayback(); } catch (_) {}
         };
@@ -1686,6 +1793,12 @@
                     updateRepeatIconState();
                 }
             });
+            updateRepeatIconState();
+        }
+
+        const savedAudioDialogState = storageSnapshot?.audio?.dialog;
+        if (savedAudioDialogState && typeof savedAudioDialogState.loop === 'boolean') {
+            dialogLoopEnabled = savedAudioDialogState.loop;
             updateRepeatIconState();
         }
 
@@ -1762,14 +1875,19 @@
         dialogAudio.addEventListener('play', () => {
             revealStopIcon();
             updateDialogAudioUI();
+            persistAudioState('player', { lastAction: 'play' });
         });
-        dialogAudio.addEventListener('pause', updateDialogAudioUI);
+        dialogAudio.addEventListener('pause', () => {
+            updateDialogAudioUI();
+            persistAudioState('player', { lastAction: 'pause' });
+        });
         dialogAudio.addEventListener('ended', () => {
             dialogAudio.currentTime = 0;
             updateDialogAudioUI();
             clearDialogHighlightsAndPressed();
             if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
             stopSegmentPlayback();
+            persistAudioState('player', { force: true, lastAction: 'ended' });
             if (dialogLoopEnabled) {
                 const playPromise = dialogAudio.play();
                 if (playPromise?.catch) {
@@ -1780,6 +1898,7 @@
         dialogAudio.addEventListener('timeupdate', () => {
             if (!dialogAudio.paused) {
                 highlightDialogLine(dialogAudio.currentTime);
+                persistAudioState(isSegmentPlayback ? 'pill' : 'player');
             }
             if (isSegmentPlayback && segmentEndTime !== null && dialogAudio.currentTime >= segmentEndTime) {
                 dialogAudio.pause();
@@ -1852,9 +1971,30 @@
                 }
             });
 
+            if (savedAudioDialogState && typeof savedAudioDialogState.playbackRate === 'number') {
+                dialogAudio.playbackRate = savedAudioDialogState.playbackRate;
+            }
+
             updateSpeedDisplay();
         }
         updateDialogAudioUI();
+
+        const restoreAudioProgress = () => {
+            if (!savedAudioDialogState) return;
+            const time = Number(savedAudioDialogState.currentTime);
+            if (!Number.isFinite(time) || time <= 0) return;
+            const applyTime = () => {
+                try {
+                    dialogAudio.currentTime = Math.max(0, time);
+                } catch (_) {}
+            };
+            if (dialogAudio.readyState >= 1) {
+                applyTime();
+            } else {
+                dialogAudio.addEventListener('loadedmetadata', applyTime, { once: true });
+            }
+        };
+        restoreAudioProgress();
 
         const resultAudioMap = {
             perfect: [
@@ -1928,6 +2068,24 @@
         let advanceTimeoutId = null;
         const retryDelayMs = 20000;
         let retryIntervalId = null;
+
+        const persistQuizState = (extra = {}) => {
+            if (!storageAvailable) return;
+            const percent = Math.round((score / totalQuestions) * 100);
+            const base = {
+                currentQuestionIndex,
+                currentQuestionNumber: currentQuestionIndex + 1,
+                totalQuestions,
+                score,
+                percent,
+                questionOrder: questions.map((q) => q.id),
+                retryRemainingMs: null,
+                retryExpiresAt: null,
+                lastUpdated: Date.now()
+            };
+            const payload = { ...base, ...extra };
+            updateStorageSection('quiz', payload);
+        };
 
         const setStatus = (msg) => {
             if (statusEl) statusEl.textContent = msg;
@@ -2068,6 +2226,7 @@
                 resultEl.hidden = true;
                 resultEl.innerHTML = '';
             }
+            persistQuizState({ status: 'in-progress', retryRemainingMs: null, retryExpiresAt: null });
             renderQuestion();
         };
 
@@ -2103,6 +2262,7 @@
             updateScore();
             updateMeter();
             setStatus('');
+            persistQuizState({ status: 'idle', retryRemainingMs: null, retryExpiresAt: null });
             // Restaurar la sección de texto (lección) si estaba oculta
             try {
                 const textPage = document.querySelector('.text-page');
@@ -2142,6 +2302,7 @@
                 incomplete: { start: '#fde68a', end: '#fcd34d' } // amarillo
             };
             const diagColors = resultColors[resultState] || resultColors.none;
+            const retryExpiresAt = Date.now() + retryDelayMs;
             if (quizBody) quizBody.style.display = 'none';
             if (resultEl) {
                 resultEl.hidden = false;
@@ -2171,6 +2332,7 @@
             }
             const countdownEl = resultEl ? resultEl.querySelector('[data-retry-text]') : null;
             let remaining = retryDelayMs;
+            persistQuizState({ status: 'cooldown', retryRemainingMs: remaining, retryExpiresAt });
             const updateRetryDisplays = () => {
                 if (countdownEl) {
                     const valueEl = countdownEl.querySelector('[data-stat-value]');
@@ -2192,9 +2354,15 @@
                     retryIntervalId = null;
                     // Cuando el temporizador llega a 0, volver a la pantalla de inicio
                     // con el botón "Empezar el quiz" y NO iniciar el quiz automáticamente.
+                    persistQuizState({ status: 'idle', retryRemainingMs: 0, retryExpiresAt: null });
                     showStartScreen();
                 } else {
                     updateRetryDisplays();
+                    persistQuizState({
+                        status: 'cooldown',
+                        retryRemainingMs: remaining,
+                        retryExpiresAt: Date.now() + remaining
+                    });
                 }
             }, 1000);
             setStatus(`Quiz finalizado. ${score}/${totalQuestions}.`);
@@ -2246,6 +2414,7 @@
                 updateMeter();
                 // reproducir el audio asociado a esta pregunta (usa audioUrl en el objeto pregunta)
                 try { playQuestionSegment(currentQuestionIndex); } catch (_) {}
+                persistQuizState({ status: 'in-progress' });
             };
 
             runQuestionTransition(applyQuestionContent);
@@ -2296,6 +2465,7 @@
                     failSound.play().catch(() => {});
                 }
             }
+            persistQuizState({ status: 'answered' });
 
             const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
             if (isLastQuestion) {

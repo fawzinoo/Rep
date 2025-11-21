@@ -1377,6 +1377,55 @@
 
         let questions = shuffle([...baseQuestions]);
 
+        // Claves que usará la página padre (grupo1plus) para mostrar porcentaje y timer
+        const ACTIVITY_ID = 'u1t1';
+        const PARENT_RESULT_KEY = `${ACTIVITY_ID}LastResult`;
+        const PARENT_LOCK_KEY = `${ACTIVITY_ID}QuizLockState`;
+
+        const persistParentLock = (expiresAt) => {
+            try {
+                if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+                    localStorage.removeItem(PARENT_LOCK_KEY);
+                    return;
+                }
+                localStorage.setItem(PARENT_LOCK_KEY, JSON.stringify({ status: 'active', expiresAt: Math.trunc(expiresAt) }));
+            } catch (_) {}
+        };
+
+        const clearParentLock = () => {
+            try { localStorage.removeItem(PARENT_LOCK_KEY); } catch (_) {}
+        };
+
+        const persistParentResult = (state, detail = {}) => {
+            if (!state) return;
+            try {
+                const payload = {
+                    state,
+                    title: '',
+                    percent: Number.isFinite(detail.percent) ? Math.max(0, Math.min(100, Math.round(detail.percent))) : null,
+                    correct: Number.isFinite(detail.correct) ? detail.correct : null,
+                    total: Number.isFinite(detail.total) ? detail.total : null,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(PARENT_RESULT_KEY, JSON.stringify(payload));
+            } catch (_) {}
+            if (Number.isFinite(detail.expiresAt)) {
+                persistParentLock(detail.expiresAt);
+            }
+        };
+
+        const cleanupExpiredParentLock = () => {
+            try {
+                const raw = localStorage.getItem(PARENT_LOCK_KEY);
+                if (!raw) return;
+                const data = JSON.parse(raw);
+                if (!data?.expiresAt || data.expiresAt < Date.now()) {
+                    localStorage.removeItem(PARENT_LOCK_KEY);
+                }
+            } catch (_) {}
+        };
+        cleanupExpiredParentLock();
+
         const STORAGE_KEY = 'texto1';
         const storageAvailable = (() => {
             try {
@@ -2579,6 +2628,7 @@
             setStatus('');
             randomizeQuestions();
             persistQuizState({ status: 'idle', retryRemainingMs: null, retryExpiresAt: null });
+            clearParentLock();
             // Restaurar la sección de texto (lección) si estaba oculta
             try {
                 const textPage = document.querySelector('.text-page');
@@ -2658,18 +2708,25 @@
                 updateRetryBannerValue(remaining);
             };
             const persistCooldown = () => {
+                const expiresAt = remaining <= 0 ? null : (retryExpiresAt || (Date.now() + remaining));
                 persistQuizState({
                     status: remaining <= 0 ? 'idle' : 'cooldown',
                     retryRemainingMs: remaining,
-                    retryExpiresAt: remaining <= 0 ? null : (retryExpiresAt || (Date.now() + remaining)),
+                    retryExpiresAt: expiresAt,
                     elapsedMs: elapsedMsVal
                 });
+                if (expiresAt) {
+                    persistParentLock(expiresAt);
+                } else {
+                    clearParentLock();
+                }
             };
 
             showRetryBanner();
             updateRetryDisplays();
             persistCooldown();
             if (remaining <= 0) {
+                clearParentLock();
                 showStartScreen();
                 return;
             }
@@ -2682,6 +2739,7 @@
                     clearInterval(retryIntervalId);
                     retryIntervalId = null;
                     persistCooldown();
+                    clearParentLock();
                     showStartScreen();
                 } else {
                     updateRetryDisplays();
@@ -2702,6 +2760,12 @@
             const percent = Math.round((score / totalQuestions) * 100);
             const resultState = computeResultState(score, totalQuestions);
             const retryExpiresAt = Date.now() + retryDelayMs;
+            persistParentResult(resultState, {
+                percent,
+                correct: score,
+                total: totalQuestions,
+                expiresAt: retryExpiresAt
+            });
             renderResultsUI({
                 scoreVal: score,
                 totalVal: totalQuestions,
@@ -2757,6 +2821,12 @@
                     ? saved.percent
                     : Math.round((score / totalQuestions) * 100);
                 const elapsedMsVal = Number.isFinite(saved.elapsedMs) ? saved.elapsedMs : 0;
+                persistParentResult(computeResultState(score, totalQuestions), {
+                    percent,
+                    correct: score,
+                    total: totalQuestions,
+                    expiresAt: saved.retryExpiresAt || (Date.now() + remaining)
+                });
                 renderResultsUI({
                     scoreVal: score,
                     totalVal: totalQuestions,

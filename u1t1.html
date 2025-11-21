@@ -185,6 +185,17 @@
             vertical-align: middle;
         }
 
+        /* Pulso continuo del icono de play (amarillo/blanco) cuando se ha pulsado pausar */
+        @keyframes playPulse {
+            0%, 100% { transform: scale(1); color: #ffffff; filter: drop-shadow(0 0 0 rgba(250,204,21,0)); }
+            45% { transform: scale(1.14); color: #facc15; filter: drop-shadow(0 0 10px rgba(250,204,21,0.75)); }
+            55% { transform: scale(1.14); color: #facc15; filter: drop-shadow(0 0 10px rgba(250,204,21,0.75)); }
+        }
+        .audio-toggle-btn.play-pulse:not([aria-pressed="true"]) .icon-play {
+            animation: playPulse 1.35s ease-in-out infinite;
+            transform-origin: center;
+        }
+
         /* Evitar sombreado/efecto azul y quitar sombra en pantallas táctiles */
         .audio-toggle-btn,
         .audio-stop-icon,
@@ -551,11 +562,32 @@
             box-shadow: 0 12px 24px rgba(59,130,246,0.45);
         }
 
-        .dialog-line--playing {
+        .dialog-line--playing-player {
             background: linear-gradient(110deg, #fde047, #facc15);
-            box-shadow: 0 12px 30px rgba(250, 204, 21, 0.55);
+            box-shadow:
+                0 12px 30px rgba(250, 204, 21, 0.55),
+                0 0 0 2px rgba(234, 179, 8, 0.9);
             border: 2px solid rgba(234, 179, 8, 0.9);
             transform: scale(1.02);
+        }
+
+        .dialog-line--playing-pill {
+            background: linear-gradient(110deg, #dbeafe, #bfdbfe);
+            box-shadow:
+                0 12px 30px rgba(59, 130, 246, 0.55),
+                0 0 0 2px rgba(59, 130, 246, 0.85);
+            border: 2px solid rgba(59, 130, 246, 0.85);
+            transform: scale(1.02);
+        }
+
+        .dialog-line--playing-player.dialog-line--playing-pill {
+            background: linear-gradient(110deg, #fef3c7, #bfdbfe);
+            box-shadow:
+                0 12px 30px rgba(250, 204, 21, 0.55),
+                0 0 0 2px rgba(234, 179, 8, 0.9),
+                0 12px 36px rgba(59, 130, 246, 0.35),
+                0 0 0 3px rgba(59, 130, 246, 0.5);
+            transform: scale(1.025);
         }
 
         .quiz-progress {
@@ -1272,7 +1304,7 @@
             .sort((a, b) => a.sort - b.sort)
             .map(({ value }) => value);
 
-        const questions = shuffle([
+        const baseQuestions = [
             {
                 id: 1,
                 question: '¿Dónde vive Ana López?',
@@ -1334,7 +1366,9 @@
                 ],
                 audioUrl: 'https://fawzinoo.github.io/audios/1p6.mp3'
             },
-        ]);
+        ];
+
+        let questions = shuffle([...baseQuestions]);
 
         const STORAGE_KEY = 'texto1';
         const storageAvailable = (() => {
@@ -1375,8 +1409,14 @@
             writeStorage({ [section]: { ...previous, ...payload } });
         };
 
-        const applyStoredQuestionOrder = () => {
-            const order = storageSnapshot?.quiz?.questionOrder;
+        const randomizeQuestions = () => {
+            questions = shuffle([...baseQuestions]);
+        };
+
+        const applyStoredQuestionOrder = (savedQuiz = storageSnapshot?.quiz) => {
+            const order = savedQuiz?.questionOrder;
+            const status = savedQuiz?.status || null;
+            if (status === 'idle') return;
             if (!Array.isArray(order) || order.length !== questions.length) return;
             const position = new Map(order.map((id, index) => [id, index]));
             questions.sort((a, b) => {
@@ -1414,12 +1454,17 @@
         const dialogAudioSpeedBtn = document.getElementById('dialog-audio-speed');
         const dialogAudioSpeedMenu = document.getElementById('dialog-audio-menu');
         const dialogAudioIcon = document.getElementById('dialog-audio-icon');
-        const dialogLines = Array.from(document.querySelectorAll('.dialog-line')).map((line) => ({
+        const dialogLines = Array.from(document.querySelectorAll('.dialog-line')).map((line, index) => ({
             el: line,
             start: Number(line.dataset.start) || 0,
-            end: Number(line.dataset.end) || 0
+            end: Number(line.dataset.end) || 0,
+            index
         }));
-        let currentDialogLine = null;
+        let currentMainLine = null;
+        let currentPillLine = null;
+        let lastPlayerHighlightState = storageSnapshot?.audio?.player?.highlight || storageSnapshot?.audio?.dialog?.highlight || null;
+        let lastPillHighlightState = storageSnapshot?.audio?.pill?.highlight || null;
+        let lastPillState = storageSnapshot?.audio?.pill?.pillState || storageSnapshot?.audio?.dialog?.pill || null;
 
         let hasRenderedQuestion = false;
         const SHARD_SCATTER_MS = 420;
@@ -1447,7 +1492,7 @@
             }, SHARD_SCATTER_MS);
         };
 
-        const totalQuestions = questions.length;
+        const totalQuestions = baseQuestions.length;
         if (totalEl) {
             totalEl.textContent = totalQuestions.toString();
         }
@@ -1458,10 +1503,16 @@
         failSound.preload = 'auto';
         const dialogAudio = new Audio('https://fawzinoo.github.io/audios/L1.mp3');
         dialogAudio.preload = 'auto';
+        // Reproductor independiente para las píldoras (segmentos)
+        const pillAudio = new Audio('https://fawzinoo.github.io/audios/L1.mp3');
+        pillAudio.preload = 'auto';
         // Reproductor para audios de cada pregunta (archivos individuales L1p1..L1p6)
         const questionAudio = new Audio();
         questionAudio.preload = 'auto';
         let isQuestionPlayback = false;
+        let isPillPlayback = false;
+        let pillSegmentEndTime = null;
+        let currentPillLineEl = null;
 
         const stopQuestionPlayback = () => {
             try {
@@ -1504,9 +1555,6 @@
         let lastVolumeLevel = 1;
         let volumeAutoHideTimeout = null;
         let speedAutoHideTimeout = null;
-        let isSegmentPlayback = false;
-        let segmentEndTime = null;
-        let currentSegmentLineEl = null;
 
         const getLineMeta = (lineEl) => {
             if (!lineEl) return null;
@@ -1515,7 +1563,8 @@
             return {
                 speaker,
                 start: match?.start ?? null,
-                end: match?.end ?? null
+                end: match?.end ?? null,
+                index: match?.index ?? null
             };
         };
 
@@ -1525,49 +1574,93 @@
             const now = Date.now();
             if (!options.force && now - lastAudioPersistTs < 700) return;
             lastAudioPersistTs = now;
-            const lineMeta = (isSegmentPlayback && currentSegmentLineEl) ? getLineMeta(currentSegmentLineEl) : null;
-            updateStorageSection('audio', {
-                dialog: {
-                    currentTime: Number(dialogAudio?.currentTime ?? 0),
-                    isPlaying: dialogAudio ? !dialogAudio.paused : false,
-                    playbackRate: dialogAudio?.playbackRate ?? 1,
-                    loop: !!dialogLoopEnabled,
-                    source,
-                    segment: lineMeta ? { ...lineMeta, state: dialogAudio.paused ? 'paused' : 'playing' } : null
-                },
+            const normalizedSource = source === 'pill' ? 'pill' : 'player';
+            const lineMeta = (isPillPlayback && currentPillLineEl) ? getLineMeta(currentPillLineEl) : null;
+            const playerData = {
+                currentTime: Number(dialogAudio?.currentTime ?? 0),
+                isPlaying: dialogAudio ? !dialogAudio.paused : false,
+                playbackRate: dialogAudio?.playbackRate ?? 1,
+                loop: !!dialogLoopEnabled,
+                volume: Number(dialogAudio?.volume ?? 1),
+                muted: !!dialogAudio?.muted,
+                lastVolumeLevel: Number.isFinite(lastVolumeLevel) ? lastVolumeLevel : 1,
+                playPulse: dialogAudioBtn ? dialogAudioBtn.classList.contains('play-pulse') : false,
+                highlight: lastPlayerHighlightState ? { ...lastPlayerHighlightState } : null,
                 lastAction: options.lastAction || source,
-                lastUpdated: now
-            });
+                updatedAt: now
+            };
+            const pillData = {
+                segment: lineMeta ? { ...lineMeta, state: pillAudio.paused ? 'paused' : 'playing' } : null,
+                currentTime: lineMeta ? Number(pillAudio?.currentTime ?? 0) : null,
+                isPlaying: lineMeta ? !pillAudio.paused : false,
+                highlight: lastPillHighlightState ? { ...lastPillHighlightState } : null,
+                pillState: lastPillState ? { ...lastPillState } : null,
+                lastAction: options.lastAction || source,
+                updatedAt: now
+            };
+            const prev = storageSnapshot?.audio || {};
+            const historyBase = Array.isArray(prev.history) ? prev.history.slice(-18) : [];
+            const nextHistory = options.lastAction
+                ? [...historyBase, { source: normalizedSource, action: options.lastAction, at: now }]
+                : historyBase;
+            const payload = { lastAction: options.lastAction || normalizedSource, lastSource: normalizedSource, history: nextHistory };
+            if (normalizedSource === 'pill') {
+                payload.pill = { ...(prev.pill || {}), ...pillData };
+            } else {
+                payload.player = { ...(prev.player || {}), ...playerData };
+            }
+            updateStorageSection('audio', payload);
         };
 
         const persistPillAction = (actionType, lineEl) => {
             if (!storageAvailable) return;
             const meta = getLineMeta(lineEl);
+            if (meta) {
+                lastPillState = { ...meta, state: actionType === 'pause' ? 'paused' : 'pressed' };
+            } else {
+                lastPillState = null;
+            }
             updateStorageSection('audio', {
                 lastPillAction: {
                     type: actionType,
                     speaker: meta?.speaker ?? null,
                     start: meta?.start ?? null,
                     end: meta?.end ?? null,
-                    currentTime: dialogAudio?.currentTime ?? 0,
+                    currentTime: pillAudio?.currentTime ?? 0,
                     at: Date.now()
-                }
+                },
+                lastAction: actionType
             });
             persistAudioState('pill', { force: true, lastAction: actionType });
         };
 
-        const clearDialogHighlights = () => {
-            dialogLines.forEach(({ el }) => el.classList.remove('dialog-line--playing'));
-            currentDialogLine = null;
+        const clearPlayerHighlights = () => {
+            dialogLines.forEach(({ el }) => el.classList.remove('dialog-line--playing-player'));
+            currentMainLine = null;
+            lastPlayerHighlightState = null;
+        };
+
+        const clearPillHighlights = () => {
+            dialogLines.forEach(({ el }) => el.classList.remove('dialog-line--playing-pill'));
+            currentPillLine = null;
+            lastPillHighlightState = null;
+        };
+
+        const clearDialogHighlights = (target = 'both') => {
+            if (target === 'player' || target === 'both') clearPlayerHighlights();
+            if (target === 'pill' || target === 'both') clearPillHighlights();
         };
 
         // Además de quitar la clase visual de reproducción, quitar el estado "pressed"
         const clearDialogHighlightsAndPressed = () => {
-            clearDialogHighlights();
+            clearDialogHighlights('both');
             document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
                 el.classList.remove('pressed');
                 el.classList.remove('paused');
             });
+            lastPillState = null;
+            lastPillHighlightState = null;
+            persistAudioState('pill', { force: true, lastAction: 'clear' });
         };
 
         const ensureLineVisible = (lineEl) => {
@@ -1579,41 +1672,138 @@
             }
         };
 
-        const highlightDialogLine = (time) => {
+        const highlightPlayerLine = (time) => {
             let found = false;
-            dialogLines.forEach(({ el, start, end }) => {
+            dialogLines.forEach(({ el, start, end, index }) => {
                 if (time >= start && time < end) {
-                    el.classList.add('dialog-line--playing');
-                     if (currentDialogLine !== el) {
-                        currentDialogLine = el;
+                    el.classList.add('dialog-line--playing-player');
+                    if (currentMainLine !== el) {
+                        currentMainLine = el;
                         ensureLineVisible(el);
                     }
+                    const clampedTime = Math.min(Math.max(time, start), end);
+                    lastPlayerHighlightState = { index, start, end, time: clampedTime };
                     found = true;
                 } else {
-                    el.classList.remove('dialog-line--playing');
+                    el.classList.remove('dialog-line--playing-player');
                 }
             });
             if (!found && time >= (dialogLines.at(-1)?.end ?? Infinity)) {
-                clearDialogHighlightsAndPressed();
+                clearPlayerHighlights();
             }
         };
 
-        const stopSegmentPlayback = () => {
-            isSegmentPlayback = false;
-            segmentEndTime = null;
-            currentSegmentLineEl = null;
+        const highlightPillLine = (time) => {
+            let found = false;
+            dialogLines.forEach(({ el, start, end, index }) => {
+                if (time >= start && time < end) {
+                    el.classList.add('dialog-line--playing-pill');
+                    if (currentPillLine !== el) {
+                        currentPillLine = el;
+                        ensureLineVisible(el);
+                    }
+                    const clampedTime = Math.min(Math.max(time, start), end);
+                    lastPillHighlightState = { index, start, end, time: clampedTime };
+                    found = true;
+                } else {
+                    el.classList.remove('dialog-line--playing-pill');
+                }
+            });
+            if (!found && time >= (dialogLines.at(-1)?.end ?? Infinity)) {
+                clearPillHighlights();
+            }
+        };
+
+        const applySavedPillState = () => {
+            if (!lastPillState) return;
+            const targetLine = Number.isInteger(lastPillState.index)
+                ? dialogLines[lastPillState.index]
+                : dialogLines.find(({ start, end }) => start === lastPillState.start && end === lastPillState.end);
+            const speakerEl = targetLine?.el?.querySelector('strong');
+            if (!speakerEl) return;
+            speakerEl.classList.remove('pressed', 'paused');
+            if (lastPillState.state === 'pressed') {
+                speakerEl.classList.add('pressed');
+            } else if (lastPillState.state === 'paused') {
+                speakerEl.classList.add('paused');
+            }
+        };
+
+        const stopPillPlayback = ({ keepTime = false, persist = true } = {}) => {
+            isPillPlayback = false;
+            pillSegmentEndTime = null;
+            const activeLine = currentPillLineEl;
+            currentPillLineEl = null;
+            try {
+                pillAudio.pause();
+                if (!keepTime) {
+                    pillAudio.currentTime = 0;
+                }
+            } catch (_) {}
+            clearPillHighlights();
+            document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
+                el.classList.remove('pressed');
+                el.classList.remove('paused');
+            });
+            lastPillState = null;
+            lastPillHighlightState = null;
+            if (persist) {
+                persistAudioState('pill', { force: true, lastAction: 'stop' });
+            }
+            return activeLine;
+        };
+
+        const markCurrentPillAsPaused = () => {
+            if (!isPillPlayback || !currentPillLineEl) return;
+            const speakerEl = currentPillLineEl.querySelector('strong');
+            if (speakerEl) {
+                speakerEl.classList.remove('pressed');
+                speakerEl.classList.add('paused');
+            }
+            persistPillAction('pause', currentPillLineEl);
+        };
+
+        const applySavedSegmentState = () => {
+            const segmented = savedPillState?.segment;
+            if (!segmented) return;
+            const targetLine = Number.isInteger(segmented.index)
+                ? dialogLines[segmented.index]
+                : dialogLines.find(({ start, end }) => start === segmented.start && end === segmented.end);
+            if (!targetLine) return;
+            currentPillLineEl = targetLine.el;
+            currentPillLine = targetLine.el;
+            isPillPlayback = true;
+            pillSegmentEndTime = Number.isFinite(segmented.end) ? segmented.end : null;
+            const savedTime = Number(savedPillState.currentTime ?? segmented.start);
+            if (Number.isFinite(savedTime) && savedTime >= 0) {
+                try { pillAudio.currentTime = savedTime; } catch (_) {}
+                try { highlightPillLine(savedTime); } catch (_) {}
+            }
+            if (savedPillState.pillState) {
+                lastPillState = { ...savedPillState.pillState };
+            }
+            const speakerEl = targetLine.el.querySelector('strong');
+            if (speakerEl) {
+                speakerEl.classList.remove('pressed');
+                if (segmented.state === 'playing') {
+                    speakerEl.classList.add('pressed');
+                } else {
+                    speakerEl.classList.add('paused');
+                }
+            }
         };
 
         const playDialogLineSegment = (start, end, lineEl) => {
-            segmentEndTime = end;
-            isSegmentPlayback = true;
-            currentSegmentLineEl = lineEl;
-            dialogAudio.currentTime = start;
-            const playPromise = dialogAudio.play();
+            pillSegmentEndTime = end;
+            isPillPlayback = true;
+            currentPillLineEl = lineEl;
+            currentPillLine = lineEl;
+            try { pillAudio.currentTime = start; } catch (_) {}
+            highlightPillLine(start);
+            const playPromise = pillAudio.play();
             if (playPromise?.catch) {
                 playPromise.catch(() => {});
             }
-            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
             persistPillAction('play', lineEl);
         };
 
@@ -1628,21 +1818,24 @@
             speaker.setAttribute('aria-label', `Reproducir frase de ${cleanLabel}`);
             const triggerSegment = () => {
                 if (navigator.vibrate) navigator.vibrate(100);
+                // Si el reproductor general está sonando, pausarlo pero mantener su sombra/resaltado.
+                if (dialogAudio && !dialogAudio.paused) {
+                    dialogAudio.pause();
+                }
                 // Si ya se está reproduciendo este segmento: pausar/reanudar
-                if (isSegmentPlayback && currentSegmentLineEl === el) {
-                    if (dialogAudio.paused) {
+                if (isPillPlayback && currentPillLineEl === el) {
+                    if (pillAudio.paused) {
                         // reanudar: quitar estado paused y poner pressed
-                        const resumePromise = dialogAudio.play();
+                        const resumePromise = pillAudio.play();
                         if (resumePromise?.catch) {
                             resumePromise.catch(() => {});
                         }
-                        if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
                         speaker.classList.remove('paused');
                         speaker.classList.add('pressed');
                         persistPillAction('play', el);
                     } else {
                         // pausar: quitar pressed y añadir paused (amarillo)
-                        dialogAudio.pause();
+                        pillAudio.pause();
                         speaker.classList.remove('pressed');
                         speaker.classList.add('paused');
                         persistPillAction('pause', el);
@@ -1650,8 +1843,7 @@
                     return;
                 }
                 // pausa cualquier reproducción anterior y quitar estados
-                dialogAudio.pause();
-                stopSegmentPlayback();
+                stopPillPlayback({ keepTime: false, persist: false });
                 // quitar cualquier estado visual previo (pressed/paused) y marcar la nueva píldora como presionada
                 document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
                     el.classList.remove('pressed');
@@ -1664,6 +1856,10 @@
                 event.stopPropagation();
                 triggerSegment();
             });
+            speaker.addEventListener('dblclick', (event) => {
+                event.stopPropagation();
+                stopPillPlayback();
+            });
             speaker.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -1673,14 +1869,12 @@
         });
 
         document.addEventListener('click', (event) => {
-            if (!isSegmentPlayback) return;
+            if (!isPillPlayback) return;
             if (event.target.closest('.dialog-line strong')) return;
-            const activeLine = currentSegmentLineEl;
-            dialogAudio.pause();
+            const activeLine = currentPillLineEl;
+            pillAudio.pause();
             if (activeLine) persistPillAction('pause', activeLine);
-            stopSegmentPlayback();
-            clearDialogHighlightsAndPressed();
-            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+            stopPillPlayback({ keepTime: true });
         });
 
         const toggleVolumeSlider = (forceVisible) => {
@@ -1718,20 +1912,30 @@
             dialogAudioBtn.setAttribute('aria-pressed', String(isPlaying));
         };
 
+        const setPlayPulse = (active) => {
+            if (!dialogAudioBtn) return;
+            dialogAudioBtn.classList.toggle('play-pulse', !!active);
+        };
+
+        const setStopIconVisible = (visible) => {
+            if (!dialogAudioStopIcon) return;
+            dialogAudioStopIcon.hidden = !visible;
+        };
+
         if (dialogAudioBtn) {
             dialogAudioBtn.addEventListener('click', () => {
                 if (navigator.vibrate) navigator.vibrate(100);
                 if (dialogAudio.paused) {
-                    stopSegmentPlayback();
                     const playPromise = dialogAudio.play();
                     if (playPromise?.catch) {
                         playPromise.catch(() => {});
                     }
-                    if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+                    setStopIconVisible(true);
                 } else {
                     dialogAudio.pause();
-                    if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+                    // Mantener visible el icono de stop al pausar; solo se oculta al finalizar o detener.
                 }
+                setPlayPulse(dialogAudio.paused);
                 persistAudioState('player', { force: true, lastAction: dialogAudio.paused ? 'pause' : 'play' });
             });
         }
@@ -1742,16 +1946,17 @@
         const revealStopIcon = () => {
             if (hasShownStopIcon) return;
             hasShownStopIcon = true;
-            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = false;
+            setStopIconVisible(true);
         };
 
         const stopDialogAudio = () => {
             dialogAudio.pause();
             dialogAudio.currentTime = 0;
             updateDialogAudioUI();
-            clearDialogHighlightsAndPressed();
-            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
-            stopSegmentPlayback();
+            clearPlayerHighlights();
+            lastPlayerHighlightState = null;
+            setStopIconVisible(false);
+            setPlayPulse(false);
             persistAudioState('player', { force: true, lastAction: 'stop' });
             // detener también el audio de preguntas si está en curso
             try { stopQuestionPlayback(); } catch (_) {}
@@ -1784,6 +1989,7 @@
                 if (navigator.vibrate) navigator.vibrate(100);
                 dialogLoopEnabled = !dialogLoopEnabled;
                 updateRepeatIconState();
+                persistAudioState('loop', { force: true, lastAction: 'loop' });
             });
             dialogAudioRepeatBtn.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -1791,19 +1997,23 @@
                     if (navigator.vibrate) navigator.vibrate(100);
                     dialogLoopEnabled = !dialogLoopEnabled;
                     updateRepeatIconState();
+                    persistAudioState('loop', { force: true, lastAction: 'loop' });
                 }
             });
             updateRepeatIconState();
         }
 
-        const savedAudioDialogState = storageSnapshot?.audio?.dialog;
-        if (savedAudioDialogState && typeof savedAudioDialogState.loop === 'boolean') {
-            dialogLoopEnabled = savedAudioDialogState.loop;
+        const savedAudioState = storageSnapshot?.audio;
+        const savedPlayerState = savedAudioState?.player || savedAudioState?.dialog || null; /* compat */
+        const savedPillState = savedAudioState?.pill || null;
+        const savedAudioLastAction = savedAudioState?.lastAction;
+        if (savedPlayerState && typeof savedPlayerState.loop === 'boolean') {
+            dialogLoopEnabled = savedPlayerState.loop;
             updateRepeatIconState();
         }
 
         if (dialogAudioVolumeContainer && dialogAudioVolumeBtn && dialogAudioVolumeSlider && volumeSliderInput) {
-            const applyVolume = (value) => {
+            const applyVolume = (value, { skipPersist } = {}) => {
                 const clamped = Math.min(1, Math.max(0, value));
                 dialogAudio.volume = clamped;
                 dialogAudio.muted = clamped === 0;
@@ -1811,6 +2021,9 @@
                     lastVolumeLevel = clamped;
                 }
                 updateVolumeUI();
+                if (!skipPersist) {
+                    persistAudioState('volume', { force: true, lastAction: 'volume' });
+                }
             };
 
             const toggleMuteState = () => {
@@ -1823,6 +2036,7 @@
                     dialogAudio.muted = true;
                 }
                 updateVolumeUI();
+                persistAudioState('volume', { force: true, lastAction: 'mute-toggle' });
             };
 
             dialogAudioVolumeBtn.addEventListener('click', (event) => {
@@ -1869,24 +2083,42 @@
                 }
             });
 
+            if (savedPlayerState) {
+                if (typeof savedPlayerState.lastVolumeLevel === 'number') {
+                    lastVolumeLevel = savedPlayerState.lastVolumeLevel;
+                }
+                if (typeof savedPlayerState.volume === 'number') {
+                    applyVolume(savedPlayerState.volume, { skipPersist: true });
+                }
+                if (typeof savedPlayerState.muted === 'boolean') {
+                    dialogAudio.muted = savedPlayerState.muted;
+                    if (savedPlayerState.muted && typeof savedPlayerState.volume === 'number') {
+                        dialogAudio.volume = savedPlayerState.volume;
+                    }
+                }
+            }
+
             updateVolumeUI();
         }
 
         dialogAudio.addEventListener('play', () => {
             revealStopIcon();
             updateDialogAudioUI();
+            setPlayPulse(false);
             persistAudioState('player', { lastAction: 'play' });
         });
         dialogAudio.addEventListener('pause', () => {
             updateDialogAudioUI();
+            setStopIconVisible(true);
+            setPlayPulse(true);
             persistAudioState('player', { lastAction: 'pause' });
         });
         dialogAudio.addEventListener('ended', () => {
             dialogAudio.currentTime = 0;
             updateDialogAudioUI();
-            clearDialogHighlightsAndPressed();
-            if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
-            stopSegmentPlayback();
+            clearPlayerHighlights();
+            setStopIconVisible(false);
+            setPlayPulse(false);
             persistAudioState('player', { force: true, lastAction: 'ended' });
             if (dialogLoopEnabled) {
                 const playPromise = dialogAudio.play();
@@ -1897,19 +2129,52 @@
         });
         dialogAudio.addEventListener('timeupdate', () => {
             if (!dialogAudio.paused) {
-                highlightDialogLine(dialogAudio.currentTime);
-                persistAudioState(isSegmentPlayback ? 'pill' : 'player');
-            }
-            if (isSegmentPlayback && segmentEndTime !== null && dialogAudio.currentTime >= segmentEndTime) {
-                dialogAudio.pause();
-                stopSegmentPlayback();
-                clearDialogHighlightsAndPressed();
-                if (dialogAudioStopIcon) dialogAudioStopIcon.hidden = true;
+                highlightPlayerLine(dialogAudio.currentTime);
+                persistAudioState('player');
             }
         });
         dialogAudio.addEventListener('volumechange', () => {
             updateVolumeUI();
+            persistAudioState('volume', { force: true, lastAction: 'volumechange' });
         });
+
+        pillAudio.addEventListener('play', () => {
+            persistAudioState('pill', { lastAction: 'play' });
+        });
+        pillAudio.addEventListener('pause', () => {
+            markCurrentPillAsPaused();
+            persistAudioState('pill', { lastAction: 'pause' });
+        });
+        pillAudio.addEventListener('ended', () => {
+            stopPillPlayback();
+            persistAudioState('pill', { force: true, lastAction: 'ended' });
+        });
+        pillAudio.addEventListener('timeupdate', () => {
+            if (!pillAudio.paused) {
+                highlightPillLine(pillAudio.currentTime);
+                if (pillSegmentEndTime !== null && pillAudio.currentTime >= pillSegmentEndTime) {
+                    pillAudio.pause();
+                    stopPillPlayback();
+                }
+                persistAudioState('pill');
+            }
+        });
+
+        // Si el usuario cierra o recarga con el audio en reproducción, actúa como si pulsara pausa
+        window.addEventListener('beforeunload', () => {
+            if (dialogAudio && !dialogAudio.paused) {
+                dialogAudio.pause();
+                setPlayPulse(true);
+                setStopIconVisible(true);
+                persistAudioState('player', { force: true, lastAction: 'pause' });
+            }
+            if (pillAudio && !pillAudio.paused) {
+                pillAudio.pause();
+                markCurrentPillAsPaused();
+                persistAudioState('pill', { force: true, lastAction: 'pause' });
+            }
+        });
+
         if (dialogAudioSpeedBtn && dialogAudioSpeedMenu) {
             const updateSpeedDisplay = () => {
                 dialogAudioSpeedBtn.textContent = `${dialogAudio.playbackRate.toFixed(2).replace(/\.00$/, '')}x`;
@@ -1971,21 +2236,50 @@
                 }
             });
 
-            if (savedAudioDialogState && typeof savedAudioDialogState.playbackRate === 'number') {
-                dialogAudio.playbackRate = savedAudioDialogState.playbackRate;
+            if (savedPlayerState && typeof savedPlayerState.playbackRate === 'number') {
+                dialogAudio.playbackRate = savedPlayerState.playbackRate;
             }
 
             updateSpeedDisplay();
         }
         updateDialogAudioUI();
+        const savedAudioLastSource = savedAudioState?.lastSource || (savedAudioLastAction === 'pill' ? 'pill' : null);
+        const shouldRestorePill = !!(savedPillState && (savedPillState.segment || savedPillState.highlight || savedPillState.pillState));
+        if (shouldRestorePill && savedPillState?.segment) {
+            applySavedSegmentState();
+        } else if (shouldRestorePill && savedPillState?.highlight) {
+            const hTime = Number(savedPillState.highlight.time ?? savedPillState.highlight.start ?? 0);
+            if (Number.isFinite(hTime) && hTime >= 0) {
+                highlightPillLine(hTime);
+            }
+            if (savedPillState.pillState) {
+                lastPillState = { ...savedPillState.pillState };
+                applySavedPillState();
+            }
+        }
+
+        setPlayPulse(savedPlayerState ? !!savedPlayerState.playPulse && !savedPlayerState.isPlaying : false);
+        const shouldShowStopOnRestore = savedPlayerState
+            ? (!savedPlayerState.isPlaying && (savedPlayerState.playPulse || savedAudioLastAction === 'pause' || savedAudioLastAction === 'page-exit'))
+            : false;
+        setStopIconVisible(shouldShowStopOnRestore);
 
         const restoreAudioProgress = () => {
-            if (!savedAudioDialogState) return;
-            const time = Number(savedAudioDialogState.currentTime);
+            if (!savedPlayerState) return;
+            let time = Number(savedPlayerState.currentTime);
+            if ((!Number.isFinite(time) || time <= 0) && savedPlayerState.highlight) {
+                const highlightTime = Number(savedPlayerState.highlight.time ?? savedPlayerState.highlight.start);
+                if (Number.isFinite(highlightTime) && highlightTime > 0) {
+                    time = highlightTime;
+                }
+            }
             if (!Number.isFinite(time) || time <= 0) return;
             const applyTime = () => {
                 try {
                     dialogAudio.currentTime = Math.max(0, time);
+                } catch (_) {}
+                try {
+                    highlightPlayerLine(time);
                 } catch (_) {}
             };
             if (dialogAudio.readyState >= 1) {
@@ -1995,6 +2289,15 @@
             }
         };
         restoreAudioProgress();
+        if (savedPillState?.highlight && (!savedPillState.segment || savedPillState.segment?.state === 'paused')) {
+            const hTime = Number(savedPillState.highlight.time ?? savedPillState.highlight.start ?? 0);
+            if (Number.isFinite(hTime) && hTime >= 0) {
+                highlightPillLine(hTime);
+            }
+            if (savedPillState.pillState) {
+                applySavedPillState();
+            }
+        }
 
         const resultAudioMap = {
             perfect: [
@@ -2072,6 +2375,9 @@
         const persistQuizState = (extra = {}) => {
             if (!storageAvailable) return;
             const percent = Math.round((score / totalQuestions) * 100);
+            const elapsedMs = quizStartTime
+                ? Date.now() - quizStartTime
+                : (storageSnapshot?.quiz?.elapsedMs ?? 0);
             const base = {
                 currentQuestionIndex,
                 currentQuestionNumber: currentQuestionIndex + 1,
@@ -2081,6 +2387,7 @@
                 questionOrder: questions.map((q) => q.id),
                 retryRemainingMs: null,
                 retryExpiresAt: null,
+                elapsedMs,
                 lastUpdated: Date.now()
             };
             const payload = { ...base, ...extra };
@@ -2215,6 +2522,7 @@
                 retryIntervalId = null;
             }
             hideRetryBanner();
+            randomizeQuestions();
             locked = false;
             currentQuestionIndex = 0;
             score = 0;
@@ -2262,6 +2570,7 @@
             updateScore();
             updateMeter();
             setStatus('');
+            randomizeQuestions();
             persistQuizState({ status: 'idle', retryRemainingMs: null, retryExpiresAt: null });
             // Restaurar la sección de texto (lección) si estaba oculta
             try {
@@ -2275,34 +2584,26 @@
             } catch (_) {}
         };
 
-        const showResults = () => {
-            resetCountdown();
-            // detener audio de pregunta si estaba en reproducción
-            try { stopQuestionPlayback(); } catch (_) {}
-            if (retryIntervalId) {
-                clearInterval(retryIntervalId);
-                retryIntervalId = null;
-            }
-            const elapsedMs = quizStartTime ? Date.now() - quizStartTime : 0;
-            const percent = Math.round((score / totalQuestions) * 100);
-            const incorrect = totalQuestions - score;
-            let resultState = 'strong';
-            if (score === totalQuestions) {
-                resultState = 'perfect';
-            } else if (score === 0) {
-                resultState = 'none';
-            } else if (incorrect > score) {
-                resultState = 'weak';
-            }
-            const resultColors = {
-                perfect: { start: '#86efac', end: '#4ade80' }, // verde
-                strong: { start: '#93c5fd', end: '#60a5fa' },  // azul
-                weak: { start: '#fca5a5', end: '#f87171' },    // rojo suave
-                none: { start: '#f87171', end: '#ef4444' },    // rojo intenso
-                incomplete: { start: '#fde68a', end: '#fcd34d' } // amarillo
-            };
-            const diagColors = resultColors[resultState] || resultColors.none;
-            const retryExpiresAt = Date.now() + retryDelayMs;
+        const resultColorMap = {
+            perfect: { start: '#86efac', end: '#4ade80' },
+            strong: { start: '#93c5fd', end: '#60a5fa' },
+            weak: { start: '#fca5a5', end: '#f87171' },
+            none: { start: '#f87171', end: '#ef4444' },
+            incomplete: { start: '#fde68a', end: '#fcd34d' }
+        };
+
+        const computeResultState = (scoreVal, totalVal) => {
+            const incorrect = totalVal - scoreVal;
+            if (scoreVal === totalVal) return 'perfect';
+            if (scoreVal === 0) return 'none';
+            if (incorrect > scoreVal) return 'weak';
+            return 'strong';
+        };
+
+        const renderResultsUI = ({ scoreVal, totalVal, percentVal, elapsedMsVal, stateVal }) => {
+            const percent = Number.isFinite(percentVal) ? percentVal : Math.round((scoreVal / totalVal) * 100);
+            const resultState = stateVal || computeResultState(scoreVal, totalVal);
+            const diagColors = resultColorMap[resultState] || resultColorMap.none;
             if (quizBody) quizBody.style.display = 'none';
             if (resultEl) {
                 resultEl.hidden = false;
@@ -2310,7 +2611,7 @@
                     <h3>Resultados del quiz</h3>
                     <p class="quiz-result__detail">
                         <span class="quiz-result__detail-label">Correctas</span>
-                        <span class="quiz-result__detail-value">${score} de ${totalQuestions}</span>
+                        <span class="quiz-result__detail-value">${scoreVal} de ${totalVal}</span>
                     </p>
                     <div class="quiz-result__diagram" data-state="${resultState}" style="--percent:${percent}; --diag-color-start:${diagColors.start}; --diag-color-end:${diagColors.end};" role="img" aria-label="Aciertos: ${percent}%">
                         <div class="quiz-result__diagram-inner">
@@ -2321,7 +2622,7 @@
                     <div class="quiz-result__stat-grid">
                         <div class="quiz-result__stat">
                             <span class="quiz-result__stat-label">Tiempo total</span>
-                            <strong class="quiz-result__stat-value">${formatDuration(elapsedMs)}</strong>
+                            <strong class="quiz-result__stat-value">${formatDuration(elapsedMsVal)}</strong>
                         </div>
                         <div class="quiz-result__stat" data-retry-text>
                             <span class="quiz-result__stat-label">Reintentar en</span>
@@ -2330,9 +2631,15 @@
                     </div>
                 `;
             }
+        };
+
+        const startRetryCountdown = (initialRemainingMs, retryExpiresAt, elapsedMsVal) => {
+            if (retryIntervalId) {
+                clearInterval(retryIntervalId);
+                retryIntervalId = null;
+            }
+            let remaining = Math.max(0, Math.round(initialRemainingMs ?? retryDelayMs));
             const countdownEl = resultEl ? resultEl.querySelector('[data-retry-text]') : null;
-            let remaining = retryDelayMs;
-            persistQuizState({ status: 'cooldown', retryRemainingMs: remaining, retryExpiresAt });
             const updateRetryDisplays = () => {
                 if (countdownEl) {
                     const valueEl = countdownEl.querySelector('[data-stat-value]');
@@ -2343,8 +2650,23 @@
                 }
                 updateRetryBannerValue(remaining);
             };
+            const persistCooldown = () => {
+                persistQuizState({
+                    status: remaining <= 0 ? 'idle' : 'cooldown',
+                    retryRemainingMs: remaining,
+                    retryExpiresAt: remaining <= 0 ? null : (retryExpiresAt || (Date.now() + remaining)),
+                    elapsedMs: elapsedMsVal
+                });
+            };
+
             showRetryBanner();
             updateRetryDisplays();
+            persistCooldown();
+            if (remaining <= 0) {
+                showStartScreen();
+                return;
+            }
+
             retryIntervalId = setInterval(() => {
                 remaining -= 1000;
                 if (remaining <= 0) {
@@ -2352,21 +2674,98 @@
                     updateRetryDisplays();
                     clearInterval(retryIntervalId);
                     retryIntervalId = null;
-                    // Cuando el temporizador llega a 0, volver a la pantalla de inicio
-                    // con el botón "Empezar el quiz" y NO iniciar el quiz automáticamente.
-                    persistQuizState({ status: 'idle', retryRemainingMs: 0, retryExpiresAt: null });
+                    persistCooldown();
                     showStartScreen();
                 } else {
                     updateRetryDisplays();
-                    persistQuizState({
-                        status: 'cooldown',
-                        retryRemainingMs: remaining,
-                        retryExpiresAt: Date.now() + remaining
-                    });
+                    persistCooldown();
                 }
             }, 1000);
+        };
+
+        const showResults = () => {
+            resetCountdown();
+            // detener audio de pregunta si estaba en reproducción
+            try { stopQuestionPlayback(); } catch (_) {}
+            if (retryIntervalId) {
+                clearInterval(retryIntervalId);
+                retryIntervalId = null;
+            }
+            const elapsedMs = quizStartTime ? Date.now() - quizStartTime : 0;
+            const percent = Math.round((score / totalQuestions) * 100);
+            const resultState = computeResultState(score, totalQuestions);
+            const retryExpiresAt = Date.now() + retryDelayMs;
+            renderResultsUI({
+                scoreVal: score,
+                totalVal: totalQuestions,
+                percentVal: percent,
+                elapsedMsVal: elapsedMs,
+                stateVal: resultState
+            });
+            startRetryCountdown(retryDelayMs, retryExpiresAt, elapsedMs);
             setStatus(`Quiz finalizado. ${score}/${totalQuestions}.`);
             playResultAudio(resultState);
+        };
+
+        const restoreQuizStateFromStorage = () => {
+            const saved = storageSnapshot?.quiz;
+            if (!saved || !saved.status || saved.status === 'idle') return false;
+
+            const savedIdx = Number(saved.currentQuestionIndex);
+            if (Number.isFinite(savedIdx)) {
+                currentQuestionIndex = Math.min(Math.max(savedIdx, 0), totalQuestions - 1);
+            }
+            const savedScore = Number(saved.score);
+            if (Number.isFinite(savedScore)) {
+                score = Math.min(Math.max(savedScore, 0), totalQuestions);
+            }
+            const savedElapsed = Number(saved.elapsedMs);
+            if (Number.isFinite(savedElapsed) && savedElapsed > 0) {
+                quizStartTime = Date.now() - savedElapsed;
+            }
+            updateScore();
+            updateMeter();
+            if (quizCard) quizCard.classList.remove('quiz-correct', 'quiz-incorrect');
+            if (resultEl) {
+                resultEl.hidden = true;
+                resultEl.innerHTML = '';
+            }
+            if (quizBody) quizBody.style.display = '';
+            if (quizStartDiv) quizStartDiv.style.display = 'none';
+            if (quizStartBtn) quizStartBtn.disabled = true;
+            const textPage = document.querySelector('.text-page');
+            if (textPage) textPage.style.display = 'none';
+            applyStoredQuestionOrder(saved);
+
+            if (saved.status === 'cooldown') {
+                const remaining = saved.retryExpiresAt
+                    ? Math.max(0, saved.retryExpiresAt - Date.now())
+                    : Math.max(0, saved.retryRemainingMs ?? 0);
+                if (remaining <= 0) {
+                    persistQuizState({ status: 'idle', retryRemainingMs: 0, retryExpiresAt: null });
+                    showStartScreen();
+                    return true;
+                }
+                const percent = Number.isFinite(saved.percent)
+                    ? saved.percent
+                    : Math.round((score / totalQuestions) * 100);
+                const elapsedMsVal = Number.isFinite(saved.elapsedMs) ? saved.elapsedMs : 0;
+                renderResultsUI({
+                    scoreVal: score,
+                    totalVal: totalQuestions,
+                    percentVal: percent,
+                    elapsedMsVal,
+                    stateVal: computeResultState(score, totalQuestions)
+                });
+                startRetryCountdown(remaining, saved.retryExpiresAt, elapsedMsVal);
+                setStatus(`Quiz finalizado. ${score}/${totalQuestions}.`);
+                return true;
+            }
+
+            // Estados: in-progress o answered (continúa mostrando la pregunta actual)
+            renderQuestion();
+            setStatus(`Pregunta ${Math.min(currentQuestionIndex + 1, totalQuestions)} de ${totalQuestions}.`);
+            return true;
         };
 
         const renderQuestion = () => {
@@ -2488,7 +2887,8 @@
         // Mostrar pantalla de inicio y esperar a que el usuario pulse para comenzar
         const quizStartDiv = document.getElementById('quiz-start');
         const quizStartBtn = document.getElementById('quiz-start-btn');
-        if (quizBody) {
+        const restoredFromStorage = restoreQuizStateFromStorage();
+        if (quizBody && !restoredFromStorage) {
             // ocultamos el cuerpo hasta que se pulse empezar
             quizBody.style.display = 'none';
         }

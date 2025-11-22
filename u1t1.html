@@ -1521,6 +1521,7 @@
         let lastPlayerHighlightState = storageSnapshot?.audio?.player?.highlight || storageSnapshot?.audio?.dialog?.highlight || null;
         let lastPillHighlightState = storageSnapshot?.audio?.pill?.highlight || null;
         let lastPillState = storageSnapshot?.audio?.pill?.pillState || storageSnapshot?.audio?.dialog?.pill || null;
+        let suppressDialogPauseHandler = false;
 
         let hasRenderedQuestion = false;
         const SHARD_SCATTER_MS = 420;
@@ -1979,7 +1980,35 @@
         };
 
         if (dialogAudioBtn) {
-            dialogAudioBtn.addEventListener('click', () => {
+            dialogAudioBtn.addEventListener('click', (event) => {
+                try {
+                    // Detectar si el clic ocurrió visualmente dentro del área del icono de stop.
+                    let clickedStop = false;
+                    if (dialogAudioStopIcon) {
+                        try {
+                            const rect = dialogAudioStopIcon.getBoundingClientRect();
+                            const x = Number(event.clientX ?? event.pageX ?? 0);
+                            const y = Number(event.clientY ?? event.pageY ?? 0);
+                            if (Number.isFinite(x) && Number.isFinite(y) && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                                clickedStop = true;
+                            }
+                        } catch (_) {}
+                        // fallback DOM-based: target directo o ancestor con id
+                        if (!clickedStop) {
+                            try {
+                                if (event.target === dialogAudioStopIcon || (event.target.closest && event.target.closest('#dialog-audio-stop'))) {
+                                    clickedStop = true;
+                                }
+                            } catch (_) {}
+                        }
+                    }
+                    if (clickedStop) {
+                        if (navigator.vibrate) navigator.vibrate(100);
+                        stopDialogAudio();
+                        return;
+                    }
+                } catch (_) {}
+
                 if (navigator.vibrate) navigator.vibrate(100);
                 if (dialogAudio.paused) {
                     const playPromise = dialogAudio.play();
@@ -2006,16 +2035,37 @@
         };
 
         const stopDialogAudio = () => {
-            dialogAudio.pause();
-            dialogAudio.currentTime = 0;
+            // Detener y reiniciar el audio principal
+            try { suppressDialogPauseHandler = true; } catch (_) {}
+            try { dialogAudio.pause(); } catch (_) {}
+            try { dialogAudio.currentTime = 0; } catch (_) {}
             updateDialogAudioUI();
             clearPlayerHighlights();
             lastPlayerHighlightState = null;
+
+            // Detener las "píldoras" (segmentos) y limpiar estado visual
+            try { pillAudio.pause(); } catch (_) {}
+            try { pillAudio.currentTime = 0; } catch (_) {}
+            clearPillHighlights();
+            document.querySelectorAll('.speaker-pill.pressed, .speaker-pill.paused').forEach((el) => {
+                el.classList.remove('pressed');
+                el.classList.remove('paused');
+            });
+            lastPillState = null;
+            lastPillHighlightState = null;
+
+            // Detener cualquier reproducción de preguntas individuales
+            try { stopQuestionPlayback(); } catch (_) {}
+
+            // Detener audios de resultado en cola
+            try { stopResultAudio(); } catch (_) {}
+
+            // Restaurar UI: ocultar icono stop y quitar pulso/play state
             setStopIconVisible(false);
             setPlayPulse(false);
             persistAudioState('player', { force: true, lastAction: 'stop' });
-            // detener también el audio de preguntas si está en curso
-            try { stopQuestionPlayback(); } catch (_) {}
+            // permitir que el manejador 'pause' vuelva a su comportamiento normal después
+            try { window.setTimeout(() => { suppressDialogPauseHandler = false; }, 40); } catch (_) {}
         };
 
         if (dialogAudioStopIcon) {
@@ -2164,6 +2214,15 @@
             persistAudioState('player', { lastAction: 'play' });
         });
         dialogAudio.addEventListener('pause', () => {
+            if (suppressDialogPauseHandler) {
+                // Si estamos suprimiendo el handler (porque stopDialogAudio() acaba de llamarse),
+                // evitar que la pausa muestre el icono de stop o active el pulso del play.
+                updateDialogAudioUI();
+                setStopIconVisible(false);
+                setPlayPulse(false);
+                persistAudioState('player', { lastAction: 'pause' });
+                return;
+            }
             updateDialogAudioUI();
             setStopIconVisible(true);
             setPlayPulse(true);

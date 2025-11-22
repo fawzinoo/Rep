@@ -3604,10 +3604,49 @@ Español A1
         // ========================================
         const videoIds = ['video1', 'video2', 'video3', 'video4', 'video5', 'video6'];
         const videoConfigs = videoIds.map((id) => ({ id, cardId: `${id}-video` }));
-        const dialogConfigs = [
-            { id: 'u1t1', cardId: 'lecturas1-d' }
-            // Añade más diálogos aquí cuando estén en la página padre, ej. { id: 'u1t2', cardId: 'u1t2-card-id' }
-        ];
+        // Dialog configs: construir automáticamente a partir de `URLS` y permitir registro dinámico.
+        // Helper: derivar cardId por convención a partir del id (p.ej. 'u1t3' -> 'lecturas1-d')
+        const deriveCardId = (id) => {
+            try {
+                const m = String(id).match(/u(\d+)t\d+/i);
+                if (m) return `lecturas${m[1]}-d`;
+            } catch (_) {}
+            return 'lecturas1-d';
+        };
+
+        // 1) Extraer ids tipo 'u1t3' desde las URLs ya definidas en `URLS`.
+        const dialogConfigsFromUrls = Object.values(URLS)
+            .map((url) => {
+                try {
+                    const m = String(url).match(/(u\d+t\d+)\.html/i);
+                    return m ? m[1] : null;
+                } catch (_) { return null; }
+            })
+            .filter(Boolean)
+            .map((id) => ({ id, cardId: deriveCardId(id) }));
+
+        // 2) Inicialmente usamos las entradas encontradas; el resto se puede registrar en tiempo de ejecución
+        const dialogConfigs = Array.from(new Map(dialogConfigsFromUrls.map(dc => [dc.id, dc])).values());
+
+        // 3) Función pública para registrar nuevos diálogos dinámicamente sin editar este archivo.
+        //    Llamar desde consola o desde otro script: `registerDialog('u1t7', 'lecturas1-d')`.
+        window.registerDialog = function registerDialog(id, cardId) {
+            if (!id) return null;
+            id = String(id).trim();
+            // evitar duplicados
+            if (dialogConfigs.some((d) => d.id === id)) return null;
+            const cfg = { id, cardId: cardId || deriveCardId(id) };
+            dialogConfigs.push(cfg);
+            // si activityRenderers ya existe, crear renderer de inmediato
+            try {
+                if (typeof activityRenderers === 'object' && activityRenderers !== null && typeof createVideoResultRenderer === 'function') {
+                    activityRenderers[id] = createVideoResultRenderer(id, cardId);
+                    // si la página ya cargó, renderizar badge ahora
+                    try { activityRenderers[id].renderBadge(); } catch (_) {}
+                }
+            } catch (_) {}
+            return cfg;
+        };
         const activityConfigs = [...videoConfigs, ...dialogConfigs];
         const activityRenderers = {};
         activityConfigs.forEach(({ id, cardId }) => {

@@ -1982,7 +1982,7 @@ Español A1
                             <i class="fas fa-lock lock-icon"></i>
                         </div>
                     </div>
-                    <h1 class="locked-title">árbol genealógico</h1>
+                    <h1 class="locked-title">árbol genealógico (A1)</h1>
                 </div>
 
                                 <div class="card locked-card" data-card-id="Descripción">
@@ -2280,7 +2280,19 @@ Español A1
         let globalLoadingHideTimeout = null;
 
         // Token de sesión corto para que las páginas hijas sepan que se abrieron desde esta página.
-        const PARENT_ID = 'grupo1';
+        // Se deriva automáticamente del nombre del archivo (sin .html) para reutilizar el mismo código en otras páginas padre.
+        const deriveParentId = () => {
+            try {
+                const path = (window.location.pathname || '').toLowerCase();
+                const match = path.match(/([^/]+?)(?:\.html?)?$/);
+                const raw = match ? match[1] : '';
+                const slug = raw.replace(/[^a-z0-9_-]/gi, '');
+                return slug || 'grupo1';
+            } catch (_) {
+                return 'grupo1';
+            }
+        };
+        const PARENT_ID = deriveParentId();
         const PARENT_SESSION_KEY = `${PARENT_ID}_session_v1`;
         const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
         const PARENT_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 horas
@@ -2455,12 +2467,12 @@ Español A1
             "Mis tiendas preferidas": false,
             
      // <!------------------------------unidad5------------------------------->
-                "árbol genealógico":false,
-                "Descripción física":false,
-                "El carácter":false,
+                "árbol genealógico":true,
+                "Descripción física":true,
+                "El carácter":true,
                 "Libro del alumno5": false,
                 "Cuaderno de ejercicios5": false,
-                "Unidad5(A1)": false,
+                "Unidad5(A1)": true,
                 "¿Qué dice de ti la música que escuchas?": true,
             
      // <!------------------------------unidad6------------------------------->
@@ -3744,14 +3756,15 @@ Español A1
             activityRenderers[id] = createVideoResultRenderer(id, cardId);
         });
 
+        // Renderizado completo de badges (por Safari / bfcache conviene forzar en focus/pageshow)
+        const renderAllBadges = () => {
+            cleanupOldActivityData();
+            activityConfigs.forEach(({ id }) => activityRenderers[id].renderBadge());
+        };
+
         // Event listeners globales
         document.addEventListener('DOMContentLoaded', () => {
-            // Limpiar datos antiguos al cargar la página
-            cleanupOldActivityData();
-            // Renderizar badges de resultados para todos los recursos configurados
-            activityConfigs.forEach(({ id }) => {
-                activityRenderers[id].renderBadge();
-            });
+            renderAllBadges();
         });
 
         window.addEventListener('storage', (event) => {
@@ -3762,6 +3775,11 @@ Español A1
                 }
             });
         });
+
+        // Safari no dispara storage al volver atrás desde otra pestaña/iframe y usa bfcache.
+        // Re-render al recuperar foco o al pageshow (incluye bfcache).
+        window.addEventListener('focus', renderAllBadges);
+        window.addEventListener('pageshow', renderAllBadges);
 
         // === FUNCIÓN PARA ABRIR ENLACES EN IFRAME ===
         function abrirEnIframe(url, nombreActividad) {

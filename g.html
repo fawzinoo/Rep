@@ -2279,6 +2279,63 @@ Español A1
         let globalLoadingOverlay = null;
         let globalLoadingHideTimeout = null;
 
+        // Token de sesión corto para que las páginas hijas sepan que se abrieron desde esta página.
+        const PARENT_SESSION_KEY = 'grupo1plus_session_v1';
+        const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
+        const PARENT_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 horas
+
+        const createSessionToken = () => {
+            if (window.crypto?.randomUUID) return crypto.randomUUID();
+            const rand = Math.random().toString(36).slice(2);
+            const time = Date.now().toString(36);
+            return `sess-${time}-${rand}`;
+        };
+
+        const readSessionMeta = () => {
+            try {
+                const raw = localStorage.getItem(PARENT_SESSION_META_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (parsed?.token && Number.isFinite(parsed.expiresAt)) return parsed;
+            } catch (_) {}
+            return null;
+        };
+
+        const ensureParentSession = () => {
+            const now = Date.now();
+            const meta = readSessionMeta();
+            if (meta && meta.token && meta.expiresAt > now) {
+                try { sessionStorage.setItem(PARENT_SESSION_KEY, meta.token); } catch (_) {}
+                return meta;
+            }
+            const token = createSessionToken();
+            const expiresAt = now + PARENT_SESSION_TTL_MS;
+            const payload = { token, expiresAt };
+            try { sessionStorage.setItem(PARENT_SESSION_KEY, token); } catch (_) {}
+            try { localStorage.setItem(PARENT_SESSION_META_KEY, JSON.stringify(payload)); } catch (_) {}
+            return payload;
+        };
+
+        const buildSessionUrl = (rawUrl, activityId = '') => {
+            if (!rawUrl) return rawUrl;
+            let sessionToken = null;
+            try {
+                const { token } = ensureParentSession();
+                sessionToken = token || null;
+            } catch (_) {}
+            try {
+                const url = new URL(rawUrl, window.location.href);
+                if (sessionToken) url.searchParams.set('session', sessionToken);
+                if (activityId) url.searchParams.set('activity', activityId);
+                return url.toString();
+            } catch (_) {
+                return rawUrl;
+            }
+        };
+
+        // inicializar/renovar la sesión al cargar
+        ensureParentSession();
+
         function showGlobalLoading() {
             if (globalLoadingOverlay) return;
             const overlay = document.createElement('div');
@@ -2411,12 +2468,27 @@ Español A1
             "¿Qué hora es?": true,      
             "Cuaderno de ejercicios6": true,
             "Unidad6(A1)": true,
-            "Una semana en la vida de un chico español": true,
+        "Una semana en la vida de un chico español": true,
             
 
 
             "Un día en Barcelona (lectura)": true
      // <!------------------------------fin------------------------------->
+        };
+
+        const ACTIVITY_IDS_BY_TITLE = {
+            "Conociendo amigos": "u1t1",
+            "Presentación formal": "u1t2",
+            "Hablamos de nuestros amigos": "u1t3",
+            "Nuestros padres": "u1t4",
+            "Conocemos a otra pareja": "u1t5",
+            "Ustedes y nostros": "u1t6",
+            "Una fiesta": "video1",
+            "Turistas en Madrid": "video2",
+            "Curiosidades de Venezuela": "video3",
+            "Mis tiendas preferidas": "video4",
+            "¿Qué dice de ti la música que escuchas?": "video5",
+            "Una semana en la vida de un chico español": "video6"
         };
 
 
@@ -3181,9 +3253,12 @@ Español A1
                     titleHtml += ` style="${titleStyle}"`;
                 }
                 titleHtml += `>${cardTitle}</h1>`;
+
+                const activityId = ACTIVITY_IDS_BY_TITLE[cardTitle] || '';
+                const sessionUrl = activityId ? buildSessionUrl(url, activityId) : url;
                 
                 card.innerHTML = `
-                    <a href="${url}">
+                    <a href="${sessionUrl}">
                         ${imgHtml}
                         ${titleHtml}
                     </a>
@@ -3265,7 +3340,9 @@ Español A1
                             timer: 2000
                         }).then(() => {
                             if (url && url !== '#') {
-                                window.location.href = url;
+                                const activityId = ACTIVITY_IDS_BY_TITLE[cardTitle] || '';
+                                const sessionUrl = activityId ? buildSessionUrl(url, activityId) : url;
+                                window.location.href = sessionUrl || url;
                             }
                         });
                     } else {

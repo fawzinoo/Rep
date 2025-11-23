@@ -1308,12 +1308,11 @@
     <script>
         // Bloqueo: solo se puede abrir esta página si viene desde el padre indicado con token de sesión válido.
         const params = new URLSearchParams(window.location.search || '');
-    const rawParentId = params.get('parent') || params.get('group') || 'h';
-const parentId = (rawParentId || 'h').trim().toLowerCase() || 'h';
-const parentSlug = parentId.replace(/[^a-z0-9_-]/gi, '') || 'h';
-
-        const PARENT_SESSION_KEY = `${parentSlug}_session_v1`;
-        const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
+        const rawParentId = params.get('parent') || params.get('group') || '';
+        const parentId = (rawParentId || '').trim().toLowerCase();
+        const parentSlug = parentId.replace(/[^a-z0-9_-]/gi, '');
+        const PARENT_SESSION_KEY = parentSlug ? `${parentSlug}_session_v1` : '';
+        const PARENT_SESSION_META_KEY = parentSlug ? `${PARENT_SESSION_KEY}_meta` : '';
         const REQUIRED_ACTIVITY_ID = 'u1t1';
 
         const readParentSession = () => {
@@ -1333,16 +1332,17 @@ const parentSlug = parentId.replace(/[^a-z0-9_-]/gi, '') || 'h';
             const tokenFromUrl = params.get('session');
             const activityFromUrl = params.get('activity');
             const { token: storedToken, expiresAt } = readParentSession();
+            const parentProvided = !!parentSlug;
             const ref = (document.referrer || '').toLowerCase();
             const selfReferrer = ref && ref.includes((window.location.pathname || '').toLowerCase().replace(/^\//, ''));
-            const referrerOk = [`${parentSlug}.html`, `${parentSlug}.`].some((frag) => ref.includes(frag)) || selfReferrer;
+            const referrerOk = parentProvided && ([`${parentSlug}.html`, `${parentSlug}.`].some((frag) => ref.includes(frag)) || selfReferrer);
             const notExpired = !expiresAt || expiresAt > Date.now();
             const activityOk = !activityFromUrl || activityFromUrl === REQUIRED_ACTIVITY_ID;
             const sessionMatch = tokenFromUrl && storedToken && tokenFromUrl === storedToken;
-            const sessionValid = Boolean(sessionMatch && notExpired && activityOk && referrerOk);
+            const sessionValid = Boolean(parentProvided && sessionMatch && notExpired && activityOk && referrerOk);
 
             if (!sessionValid) {
-                const backUrl = document.referrer || `${parentSlug}.html`;
+                const backUrl = document.referrer || (parentProvided ? `${parentSlug}.html` : 'index.html');
                 document.body.innerHTML = `
                     <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f6fb;padding:32px;">
                         <div style="background:#fff;border:1px solid #e2e8f0;box-shadow:0 14px 40px rgba(15,23,42,0.12);border-radius:16px;padding:28px;max-width:520px;text-align:center;font-family:'Poppins','Segoe UI',system-ui,sans-serif;">
@@ -3131,3 +3131,4 @@ const parentSlug = parentId.replace(/[^a-z0-9_-]/gi, '') || 'h';
     </script>
 </body>
 </html>
+

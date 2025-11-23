@@ -2447,7 +2447,7 @@ Español A1
             "Unidad1(A1)": "https://fawzinoo.github.io/Rep/unidad1.html",
 
              // <!----------Diálogos------------------->
-            "Conociendo amigos": "u1t1.html",
+            "Conociendo amigos": "https://fawzinoo.github.io/Rep/u1t1.html",
             "Presentación formal": "https://fawzinoo.github.io/Rep/u1t2.html",
             "Hablamos de nuestros amigos": "https://fawzinoo.github.io/Rep/u1t3.html",
             "Nuestros padres": "https://fawzinoo.github.io/Rep/u1t4.html",
@@ -2568,60 +2568,42 @@ Español A1
                 }
             }
 
-            // ---------- Serial dinámico del padre (sin asumir nombre fijo) ----------
-            const PARENT_ID_STORAGE_KEY = 'parent_id_for:' + encodeURIComponent(location.pathname || location.href);
-            const PARENT_KEY_PREFIX = 'parent_serial:'; // final key: parent_serial:<pid>
-
-            function generateId(len = 9) {
-                try {
-                    const arr = new Uint8Array(len);
-                    crypto.getRandomValues(arr);
-                    return Array.from(arr).map(b => (b % 36).toString(36)).join('');
-                } catch (e) {
-                    return Math.random().toString(36).slice(2, 2 + len);
-                }
-            }
-
+            // ---------- Serial del padre (para proteger accesos a páginas hijas) ----------
+            const PARENT_SERIAL_KEY = 'parent_serial_grupo1plus_v1';
             function generateSerial() {
                 try {
                     const arr = new Uint8Array(12);
                     crypto.getRandomValues(arr);
                     return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
                 } catch (e) {
+                    // Fallback
                     return 's_' + Math.random().toString(36).slice(2, 12);
                 }
             }
 
-            function ensureParentIdAndSerial() {
-                let pid = localStorage.getItem(PARENT_ID_STORAGE_KEY);
-                if (!pid) {
-                    pid = 'p_' + generateId(8);
-                    try { localStorage.setItem(PARENT_ID_STORAGE_KEY, pid); } catch (e) {}
-                }
-
-                const serialKey = PARENT_KEY_PREFIX + pid;
-                let serial = localStorage.getItem(serialKey);
-                if (!serial) {
-                    serial = generateSerial();
+            function ensureParentSerial() {
+                let s = localStorage.getItem(PARENT_SERIAL_KEY);
+                if (!s) {
+                    s = generateSerial();
                     try {
-                        localStorage.setItem(serialKey, serial);
-                        localStorage.setItem(serialKey + '_ts', String(Date.now()));
-                    } catch (e) {}
+                        localStorage.setItem(PARENT_SERIAL_KEY, s);
+                        localStorage.setItem(PARENT_SERIAL_KEY + '_ts', String(Date.now()));
+                    } catch (e) { /* ignore storage errors */ }
                 }
-
-                return { pid, serial, serialKey };
+                return s;
             }
 
-            const PARENT_INFO = ensureParentIdAndSerial();
+            const PARENT_SERIAL = ensureParentSerial();
 
             function urlWithParentSerial(url) {
                 try {
                     const u = new URL(url, location.href);
-                    u.searchParams.set('ps', PARENT_INFO.serial);
-                    u.searchParams.set('pid', PARENT_INFO.pid);
+                    u.searchParams.set('ps', PARENT_SERIAL);
+                    u.searchParams.set('pp', 'grupo1plus');
                     return u.toString();
                 } catch (e) {
-                    return url + (url.includes('?') ? '&' : '?') + 'ps=' + encodeURIComponent(PARENT_INFO.serial) + '&pid=' + encodeURIComponent(PARENT_INFO.pid);
+                    // Basic fallback
+                    return url + (url.includes('?') ? '&' : '?') + 'ps=' + encodeURIComponent(PARENT_SERIAL) + '&pp=grupo1plus';
                 }
             }
 
@@ -3245,32 +3227,7 @@ Español A1
                         ${titleHtml}
                     </a>
                 `;
-
-                // Asegurar que el enlace use el serial del padre y que la navegación ocurra
-                try {
-                    const a = card.querySelector('a');
-                    if (a) {
-                        // actualizar href con ps/pid si la función está disponible
-                        try {
-                            a.href = typeof urlWithParentSerial === 'function' ? urlWithParentSerial(url) : url;
-                        } catch (e) {
-                            a.href = url;
-                        }
-                        // añadir un listener defensivo que fuerce la navegación con serial
-                        a.addEventListener('click', function(ev) {
-                            // permitir que los modificadores (Ctrl/Cmd) abran en nueva pestaña
-                            if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
-                            ev.preventDefault();
-                            try {
-                                const dest = typeof urlWithParentSerial === 'function' ? urlWithParentSerial(url) : url;
-                                window.location.href = dest;
-                            } catch (e) {
-                                window.location.href = url;
-                            }
-                        });
-                    }
-                } catch (_) {}
-
+                
                 // Quitar estilos de candado
                 card.style.cursor = '';
             }
@@ -3847,9 +3804,21 @@ Español A1
                     const loadingDiv = popup.querySelector('#iframe-loading');
                     // Asegurar que el iframe recibe el serial del padre (si existe)
                     try {
-                        iframe.src = urlWithParentSerial(url);
+                        const serial = localStorage.getItem('parent_serial_grupo1plus_v1');
+                        if (serial) {
+                            try {
+                                const u = new URL(url, location.href);
+                                u.searchParams.set('ps', serial);
+                                u.searchParams.set('pp', 'grupo1plus');
+                                iframe.src = u.toString();
+                            } catch (err) {
+                                iframe.src = url + (url.includes('?') ? '&' : '?') + 'ps=' + encodeURIComponent(serial) + '&pp=grupo1plus';
+                            }
+                        } else {
+                            iframe.src = url;
+                        }
                     } catch (e) {
-                        try { iframe.src = url; } catch(_){ }
+                        try { iframe.src = url; } catch(_){}
                     }
                     
                     // Manejar cuando el iframe termina de cargar

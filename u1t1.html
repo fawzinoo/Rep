@@ -27,7 +27,44 @@
                         linear-gradient(135deg, #d0d8ff 0%, #f1f5f9 45%, #ffe1f0 100%);
             min-height: 100vh;
             padding: clamp(20px, 6vw, 48px) clamp(16px, 8vw, 64px);
-            /* script removed from here (moved after <\/style>) */
+            display: flex;
+            justify-content: center;
+        }
+
+        .page-shell {
+            width: min(920px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .page-header {
+            text-align: center;
+        }
+
+        .page-header .eyebrow {
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.3rem;
+            font-size: 0.95rem;
+            color: #64748b;
+        }
+
+        .page-header h1 {
+            margin: 6px 0 0;
+            font-size: clamp(1.8rem, 4vw, 2.6rem);
+            color: #c81d25;
+        }
+
+        .logo-corner {
+            position: absolute;
+            top: 10px;
+            left: 20px;
+            width: 60px;
+            height: 60px;
+            z-index: 1000;
+            cursor: pointer;
+            animation: splashEffect 13s infinite ease-in-out;
         }
 
         .logo-corner:hover {
@@ -1180,86 +1217,40 @@
     </div>
     <script>
     (function(){
+        const PARENT_KEY = 'parent_serial_grupo1plus_v1';
         try {
-                        const params = new URLSearchParams(location.search);
-                        let pid = params.get('pid') || params.get('pp');
-                        let ps = params.get('ps');
-
-            const legacyKey = 'parent_serial_g_v1';
-            let ok = false;
-
-            try {
-                // Si tenemos pid y ps, validar directamente
-                if (pid && ps) {
-                    const storageKey = 'parent_serial:' + pid;
-                    try {
-                        const stored = localStorage.getItem(storageKey);
-                        if (stored && stored === ps) ok = true;
-                    } catch (e) {
-                        console.warn('localStorage access error', e);
-                    }
-                }
-
-                // Si no validó, intentar compatibilidad: buscar legacy key o any parent_serial:* igual al ps
-                if (!ok && ps) {
-                    try {
-                        const storedLegacy = localStorage.getItem(legacyKey);
-                        if (storedLegacy && storedLegacy === ps) ok = true;
-                    } catch (e) { /* ignore */ }
-
-                    if (!ok) {
-                        try {
-                            for (let i = 0; i < localStorage.length; i++) {
-                                const k = localStorage.key(i);
-                                if (!k) continue;
-                                if (k.indexOf('parent_serial:') === 0) {
-                                    try {
-                                        const v = localStorage.getItem(k);
-                                        if (v && v === ps) {
-                                            ok = true;
-                                            // derive pid from key
-                                            pid = k.slice('parent_serial:'.length);
-                                            break;
-                                        }
-                                    } catch (e) {}
-                                }
-                            }
-                        } catch (e) { /* ignore iteration errors */ }
-                    }
-                }
-            } catch (e) {
-                console.warn('Parent validation error', e);
-            }
-
-            if (!ok) {
-                // No bloquear el hilo con throw; log detallado para depuración y redirigir suavemente
+            const params = new URLSearchParams(location.search);
+            const ps = params.get('ps');
+            const stored = localStorage.getItem(PARENT_KEY);
+            if (!ps || !stored || ps !== stored) {
+                const msg = 'Acceso inválido: abra esta página desde la página principal.';
                 try {
-                    const storageKey = pid ? ('parent_serial:' + pid) : '(no pid)';
-                    const storedVal = pid ? localStorage.getItem('parent_serial:' + pid) : null;
-                    console.warn('Acceso denegado: ps/pid ausentes o no coinciden', { pid, ps, storageKey, storedVal, legacyKey, referrer: document.referrer });
+                    if (window.Swal && typeof Swal.fire === 'function') {
+                        Swal.fire({ icon: 'error', title: 'Acceso denegado', text: msg, confirmButtonText: 'Volver' }).then(() => {
+                            window.location.href = document.referrer || '/';
+                        });
+                    } else {
+                        alert(msg);
+                        window.location.href = document.referrer || '/';
+                    }
                 } catch (e) {
-                    console.warn('Acceso denegado (no se pudo leer localStorage)', { pid, ps, legacyKey, referrer: document.referrer, error: String(e) });
+                    alert(msg);
+                    window.location.href = document.referrer || '/';
                 }
-                // Dar tiempo para inspección en consola antes de volver al padre
-                setTimeout(function(){ try { window.location.href = document.referrer || '/'; } catch(_){} }, 2000);
-                return;
+                // Stop further execution
+                throw new Error('Parent serial missing or invalid');
+            } else {
+                // Limpia los parámetros de la URL para que no queden visibles
+                try {
+                    const u = new URL(location.href);
+                    u.searchParams.delete('ps');
+                    u.searchParams.delete('pp');
+                    history.replaceState(null, '', u.pathname + u.search + u.hash);
+                } catch (e) {}
             }
-
-            // Si llegó aquí, todo OK — limpiar parámetros de la URL (no crítico)
-            try {
-                const u = new URL(location.href);
-                u.searchParams.delete('ps');
-                u.searchParams.delete('pid');
-                u.searchParams.delete('pp');
-                history.replaceState(null, '', u.pathname + u.search + u.hash);
-            } catch (e) {
-                console.warn('Could not clean URL params', e);
-            }
-
         } catch (err) {
-            console.warn('Unexpected error in parent-check', err);
-            try { setTimeout(function(){ try { window.location.href = document.referrer || '/'; } catch(_){} }, 200); } catch(_){}
-            return;
+            // En caso de cualquier error, redirigir al referente o al inicio
+            try { window.location.href = document.referrer || '/'; } catch(_){}
         }
     })();
     </script>
@@ -2084,6 +2075,7 @@
 
         const stopDialogAudio = () => {
             // Detener y reiniciar el audio principal
+            try { suppressDialogPauseHandler = true; } catch (_) {}
             try { dialogAudio.pause(); } catch (_) {}
             try { dialogAudio.currentTime = 0; } catch (_) {}
             updateDialogAudioUI();
@@ -2111,6 +2103,8 @@
             setStopIconVisible(false);
             setPlayPulse(false);
             persistAudioState('player', { force: true, lastAction: 'stop' });
+            // permitir que el manejador 'pause' vuelva a su comportamiento normal después
+            try { window.setTimeout(() => { suppressDialogPauseHandler = false; }, 40); } catch (_) {}
         };
 
         if (dialogAudioStopIcon) {

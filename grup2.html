@@ -2501,9 +2501,9 @@ Español A1
                 const match = path.match(/([^/]+?)(?:\.html?)?$/);
                 const raw = match ? match[1] : '';
                 const slug = raw.replace(/[^a-z0-9_-]/gi, '');
-                return slug || 'grupo2';
+                return slug || 'grupo1';
             } catch (_) {
-                return 'grup2';
+                return 'grupo1';
             }
         };
         const PARENT_ID = deriveParentId();
@@ -4124,6 +4124,8 @@ Español A1
             firstRunDone: 'access_first_run_done'
         };
 
+        let gatePromptOpen = false;
+
         function isStoredAccessValid() {
             const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
             const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
@@ -4142,10 +4144,18 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'true');
         }
 
+        function clearStoredNames() {
+            localStorage.removeItem(STORAGE_KEYS.first);
+            localStorage.removeItem(STORAGE_KEYS.last);
+        }
+
         function askForName() {
+            if (gatePromptOpen) return;
+            gatePromptOpen = true;
             if (!window.Swal || typeof Swal.fire !== 'function') {
                 // Si SweetAlert2 no cargó, bloqueamos el acceso
                 document.body.innerHTML = '<div style="padding:24px;font-family:Arial,sans-serif;">Acceso bloqueado.</div>';
+                gatePromptOpen = false;
                 return;
             }
 
@@ -4179,9 +4189,17 @@ Español A1
                     const code = normalizeCode(document.getElementById('swal-code')?.value || '');
                     const full = normalizeName(`${first} ${last}`.trim());
                     const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
+                    const hasZ = /z/i.test(code);
 
                     if (!first || !last || !code) {
                         Swal.showValidationMessage('Completa nombre, apellido y código.');
+                        return false;
+                    }
+
+                    // Si el código incluye la letra Z, limpiamos nombre y apellido guardados
+                    if (hasZ) {
+                        clearStoredNames();
+                        Swal.showValidationMessage('Código incorrecto.');
                         return false;
                     }
 
@@ -4206,6 +4224,11 @@ Español A1
                 },
                 didOpen: () => {
                     const firstInput = document.getElementById('swal-first-name');
+                    const lastInput = document.getElementById('swal-last-name');
+                    const storedFirstRaw = localStorage.getItem(STORAGE_KEYS.first) || '';
+                    const storedLastRaw = localStorage.getItem(STORAGE_KEYS.last) || '';
+                    if (storedFirstRaw && firstInput) firstInput.value = storedFirstRaw;
+                    if (storedLastRaw && lastInput) lastInput.value = storedLastRaw;
                     if (firstInput) firstInput.focus();
                 }
             }).then((result) => {
@@ -4213,12 +4236,26 @@ Español A1
                     // Si por alguna razón no confirma, volvemos a pedir
                     askForName();
                 }
+                gatePromptOpen = false;
             });
         }
 
+        const checkCodeChangeAndPrompt = () => {
+            if (gatePromptOpen) return;
+            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+            if (storedCode && storedCode !== REQUIRED_CODE) {
+                localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+                askForName();
+            }
+        };
+
         document.addEventListener('DOMContentLoaded', () => {
-            if (isStoredAccessValid()) return;
-            askForName();
+            if (!isStoredAccessValid()) {
+                askForName();
+            }
+            ['click', 'keydown', 'touchstart'].forEach(evt => {
+                document.addEventListener(evt, checkCodeChangeAndPrompt, { capture: true });
+            });
         });
     })();
 </script>
@@ -4285,6 +4322,16 @@ Español A1
                 closeModal();
             });
         });
+    })();
+</script>
+<script>
+    // Forzar una recarga inicial en cada sesión para verificar protocolos actualizados
+    (function enforceInitialRefresh() {
+        const KEY = 'protocol_refresh_done';
+        if (!sessionStorage.getItem(KEY)) {
+            sessionStorage.setItem(KEY, 'true');
+            location.reload();
+        }
     })();
 </script>
 </body>

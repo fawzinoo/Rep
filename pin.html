@@ -2511,6 +2511,17 @@ Español A1
         const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
         const PARENT_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 horas
 
+        // Chequeo ligero para disparar la validación de acceso si está disponible
+        const triggerAccessCheck = () => {
+            try {
+                if (typeof window.__forceAccessGateCheck === 'function') {
+                    window.__forceAccessGateCheck();
+                }
+            } catch (_) {
+                /* ignore */
+            }
+        };
+
         const createSessionToken = () => {
             if (window.crypto?.randomUUID) return crypto.randomUUID();
             const rand = Math.random().toString(36).slice(2);
@@ -3067,6 +3078,14 @@ Español A1
                 // vibration if supported (80ms)
                 try { if (navigator.vibrate) navigator.vibrate(80); } catch(e) {}
             }
+            const runGateCheck = () => {
+                try {
+                    if (typeof window.__forceAccessGateCheck === 'function') {
+                        window.__forceAccessGateCheck();
+                    }
+                } catch (_) {}
+            };
+
             const unitToggles = document.querySelectorAll('.unit-toggle');
             unitToggles.forEach(function(toggle) {
                 const targetId = toggle.getAttribute('data-target');
@@ -3075,6 +3094,11 @@ Español A1
                 if (!content) {
                     return;
                 }
+
+                // Disparar validación en el momento de presionar la cinta (click o táctil)
+                ['pointerdown', 'touchstart', 'mousedown'].forEach(evt => {
+                    toggle.addEventListener(evt, runGateCheck, { capture: true, passive: true });
+                });
 
                 const isActive = toggle.classList.contains('active');
                 toggle.setAttribute('aria-expanded', isActive ? 'true' : 'false');
@@ -3087,6 +3111,7 @@ Español A1
                         localStorage.setItem('activeUnitToggle', targetId);
                     }
                     playClick();
+                    triggerAccessCheck();
                     // Hacer scroll para que la cinta quede en la cabecera
                     setTimeout(function() {
                         toggle.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3152,6 +3177,7 @@ Español A1
 
                 button.addEventListener('click', function() {
                     playClick();
+                    triggerAccessCheck();
                     const unitContent = button.closest('.unit-content');
                     if (!unitContent) {
                         return;
@@ -3198,6 +3224,7 @@ Español A1
                 elem.addEventListener('click', function(e) {
                     // play sound but don't block navigation
                     playClick();
+                    triggerAccessCheck();
                 });
             });
         });
@@ -3207,100 +3234,137 @@ Español A1
         // true = CON candado | false = SIN candado (normal)
         
 
-        
- function verifyPassword(element) {
-    const redirectUrl = element.getAttribute('data-url');
+        const STUDENT_IDENTITY_KEY = `${PARENT_ID}_student_identity_v1`;
 
-    Swal.fire({
-        title: 'Reservado para A2.1',
-        input: 'password',
-        inputLabel: 'Introduzca la contraseña:',
-        inputPlaceholder: 'Escribe tu contraseña aquí',
-        showCancelButton: true,
-        confirmButtonText: '<i class="fas fa-check"></i> Acceder',
-        cancelButtonText: '<i class="fas fa-arrow-left"></i> Regresar',
-        customClass: {
-            confirmButton: 'btn btn-success',
-            cancelButton: 'btn btn-secondary'
-        },
-        buttonsStyling: true
-    }).then((result) => {
-        
-        const encodedPassword = "MDAwMw==";  
-        const decodedPassword = atob(encodedPassword);  
+        const normalizeInput = (value) => (value || '').toString().trim().toLowerCase();
 
-        if (result.isConfirmed) {
-            if (result.value === decodedPassword) {
-                
-                sessionStorage.setItem('authenticated', 'true');
-
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Acceso concedido!',
-                    text: 'Redirigiendo...',
-                    showConfirmButton: false,
-                    timer: 1500
-                }).then(() => {
-                    window.location.href = redirectUrl;
-                });
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Contraseña incorrecta',
-                    text: 'Inténtalo de nuevo.',
-                    confirmButtonText: 'Cerrar'
-                });
+        const readStoredIdentity = () => {
+            try {
+                const raw = localStorage.getItem(STUDENT_IDENTITY_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (_) {
+                return null;
             }
-        }
-    });
-}
+        };
 
-         function verifyPassword1(element) {
-    const redirectUrl = element.getAttribute('data-url');
+        const saveIdentityOnce = (firstName, lastName) => {
+            const payload = {
+                firstName: normalizeInput(firstName),
+                lastName: normalizeInput(lastName),
+                savedAt: Date.now()
+            };
+            try { localStorage.setItem(STUDENT_IDENTITY_KEY, JSON.stringify(payload)); } catch (_) {}
+        };
 
-    Swal.fire({
-        title: 'Reservado para A2.1',
-        input: 'password',
-        inputLabel: 'Introduzca la contraseña:',
-        inputPlaceholder: 'Escribe tu contraseña aquí',
-        showCancelButton: true,
-        confirmButtonText: '<i class="fas fa-check"></i> Acceder',
-        cancelButtonText: '<i class="fas fa-arrow-left"></i> Regresar',
-        customClass: {
-            confirmButton: 'btn btn-success',
-            cancelButton: 'btn btn-secondary'
-        },
-        buttonsStyling: true
-    }).then((result) => {
-        
-        const encodedPassword = "MTFhMjI=";  
-        const decodedPassword = atob(encodedPassword);  
+        async function promptIdentityAndPassword({ title, description, expectedPassword }) {
+            const storedIdentity = readStoredIdentity();
+            const { value, isConfirmed } = await Swal.fire({
+                title: title || 'Acceso restringido',
+                html: `
+                    <p style="margin-bottom:10px;color:#4b5563;">${description || 'Introduce tus datos tal como se registraron y la contraseña entregada por el profesor.'}</p>
+                    <input id="swal-first-name" class="swal2-input" placeholder="Nombre">
+                    <input id="swal-last-name" class="swal2-input" placeholder="Apellido">
+                    <input id="swal-password" type="password" class="swal2-input" placeholder="Contraseña">
+                `,
+                focusConfirm: false,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                confirmButtonText: '<i class="fas fa-check"></i> Continuar',
+                showCancelButton: false,
+                preConfirm: () => {
+                    const firstName = document.getElementById('swal-first-name').value;
+                    const lastName = document.getElementById('swal-last-name').value;
+                    const password = document.getElementById('swal-password').value;
 
-        if (result.isConfirmed) {
-            if (result.value === decodedPassword) {
-                
-                sessionStorage.setItem('authenticated', 'true');
+                    const normalizedFirst = normalizeInput(firstName);
+                    const normalizedLast = normalizeInput(lastName);
+                    const normalizedPassword = normalizeInput(password);
+                    const normalizedExpected = normalizeInput(expectedPassword);
 
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Acceso concedido!',
-                    text: 'Redirigiendo...',
-                    showConfirmButton: false,
-                    timer: 1500
-                }).then(() => {
-                    window.location.href = redirectUrl;
-                });
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Contraseña incorrecta',
-                    text: 'Inténtalo de nuevo.',
-                    confirmButtonText: 'Cerrar'
-                });
+                    if (!normalizedFirst || !normalizedLast || !normalizedPassword) {
+                        Swal.showValidationMessage('Completa nombre, apellido y contraseña.');
+                        return false;
+                    }
+
+                    if (storedIdentity) {
+                        if (normalizedFirst !== storedIdentity.firstName || normalizedLast !== storedIdentity.lastName) {
+                            Swal.showValidationMessage('Debes usar el mismo nombre y apellido que registraste la primera vez.');
+                            return false;
+                        }
+                    }
+
+                    if (normalizedPassword !== normalizedExpected) {
+                        Swal.showValidationMessage('Contraseña incorrecta.');
+                        return false;
+                    }
+
+                    return {
+                        firstName,
+                        lastName
+                    };
+                }
+            });
+
+            if (!isConfirmed) {
+                return false;
             }
+
+            if (!storedIdentity && value) {
+                saveIdentityOnce(value.firstName, value.lastName);
+            }
+
+            return true;
         }
-    });
-}
+
+        async function verifyPassword(element) {
+            const redirectUrl = element.getAttribute('data-url');
+            const allowed = await promptIdentityAndPassword({
+                title: 'Reservado para A2.1',
+                description: 'Escribe tu nombre, apellido y la contraseña que te dio el profesor (no importan las mayúsculas).',
+                expectedPassword: atob("MDAwMw==")
+            });
+
+            if (!allowed) {
+                return;
+            }
+
+            sessionStorage.setItem('authenticated', 'true');
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Acceso concedido!',
+                text: 'Redirigiendo...',
+                showConfirmButton: false,
+                timer: 1500
+            }).then(() => {
+                window.location.href = redirectUrl;
+            });
+        }
+
+        async function verifyPassword1(element) {
+            const redirectUrl = element.getAttribute('data-url');
+            const allowed = await promptIdentityAndPassword({
+                title: 'Reservado para A2.1',
+                description: 'Usa el mismo nombre y apellido que registraste y la contraseña vigente.',
+                expectedPassword: ACCESS_PASSWORD
+            });
+
+            if (!allowed) {
+                return;
+            }
+
+            sessionStorage.setItem('authenticated', 'true');
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Acceso concedido!',
+                text: 'Redirigiendo...',
+                showConfirmButton: false,
+                timer: 1500
+            }).then(() => {
+                window.location.href = redirectUrl;
+            });
+        }
 
         // Event listener para manejar los candados dinámicamente
         document.addEventListener('DOMContentLoaded', function() {
@@ -3503,84 +3567,63 @@ Español A1
         }
 
         // Función universal para desbloquear cualquier tarjeta
-        function unlockCard(cardTitle, url, cardElement) {
+        async function unlockCard(cardTitle, url, cardElement) {
             // Si es la tarjeta de países del mundo, mostrar el menú especial
             if (cardTitle === 'Países del mundo') {
                 mostrarMenuPaises();
                 return;
             }
             
-            Swal.fire({
-                title: 'Contenido Privado',
-                html: `<i class="fas fa-lock" style="font-size: 2rem; color: #ffd700; margin-bottom: 10px;"></i><br>
-                       <strong>${cardTitle}</strong><br>
-                       <small style="color: #666;">Este contenido requiere autorización</small>`,
-                input: 'password',
-                inputLabel: 'Introduzca la contraseña:',
-                inputPlaceholder: 'Escribe tu contraseña aquí',
-                showCancelButton: true,
-                confirmButtonText: '<i class="fas fa-unlock"></i> Desbloquear',
-                cancelButtonText: '<i class="fas fa-times"></i> Cancelar',
-                customClass: {
-                    confirmButton: 'btn btn-success',
-                    cancelButton: 'btn btn-secondary'
-                },
-                buttonsStyling: true
-            }).then((result) => {
-                
-                const encodedPassword = "MDAwMw==";  // "0003" en base64
-                const decodedPassword = atob(encodedPassword);  
+            const encodedPassword = "MDAwMw==";  // "0003" en base64
+            const decodedPassword = atob(encodedPassword);
 
-                if (result.isConfirmed) {
-                    if (result.value === decodedPassword) {
-                        
-                        // Desbloquear dinámicamente la tarjeta
-                        const lockOverlay = cardElement.querySelector('.lock-overlay');
-                        const title = cardElement.querySelector('.locked-title');
-                        
-                        // Animación de desbloqueo
-                        if (lockOverlay) {
-                            lockOverlay.style.transition = 'opacity 0.8s ease-out';
-                            lockOverlay.style.opacity = '0';
-                            
-                            setTimeout(() => {
-                                lockOverlay.remove();
-                            }, 800);
-                        }
-                        
-                        // Restaurar título a colores normales
-                        if (title) {
-                            title.classList.remove('locked-title');
-                            title.style.color = 'white';
-                            title.style.background = 'linear-gradient(to right, #7f8183, #044264)';
-                            title.style.opacity = '1';
-                        }
-                        
-                        // Remover filtros de la tarjeta
-                        cardElement.style.opacity = '1';
-                        cardElement.style.filter = 'none';
-                        
-                        Swal.fire({
-                            icon: 'success',
-                            title: '¡Acceso concedido!',
-                            text: 'Contenido desbloqueado. Redirigiendo...',
-                            showConfirmButton: false,
-                            timer: 2000
-                        }).then(() => {
-                            if (url && url !== '#') {
-                                const activityId = ACTIVITY_IDS_BY_TITLE[cardTitle] || '';
-                                const sessionUrl = activityId ? buildSessionUrl(url, activityId) : url;
-                                window.location.href = sessionUrl || url;
-                            }
-                        });
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Contraseña incorrecta',
-                            html: '<i class="fas fa-exclamation-triangle"></i><br>Acceso denegado. Inténtalo de nuevo.',
-                            confirmButtonText: 'Reintentar'
-                        });
-                    }
+            const allowed = await promptIdentityAndPassword({
+                title: 'Contenido Privado',
+                description: `<i class="fas fa-lock" style="color:#ffd700;"></i> <strong>${cardTitle}</strong><br><small style="color: #666;">Este contenido requiere autorización</small>`,
+                expectedPassword: decodedPassword
+            });
+
+            if (!allowed) {
+                return;
+            }
+            
+            // Desbloquear dinámicamente la tarjeta
+            const lockOverlay = cardElement.querySelector('.lock-overlay');
+            const title = cardElement.querySelector('.locked-title');
+            
+            // Animación de desbloqueo
+            if (lockOverlay) {
+                lockOverlay.style.transition = 'opacity 0.8s ease-out';
+                lockOverlay.style.opacity = '0';
+                
+                setTimeout(() => {
+                    lockOverlay.remove();
+                }, 800);
+            }
+            
+            // Restaurar título a colores normales
+            if (title) {
+                title.classList.remove('locked-title');
+                title.style.color = 'white';
+                title.style.background = 'linear-gradient(to right, #7f8183, #044264)';
+                title.style.opacity = '1';
+            }
+            
+            // Remover filtros de la tarjeta
+            cardElement.style.opacity = '1';
+            cardElement.style.filter = 'none';
+            
+            Swal.fire({
+                icon: 'success',
+                title: '¡Acceso concedido!',
+                text: 'Contenido desbloqueado. Redirigiendo...',
+                showConfirmButton: false,
+                timer: 2000
+            }).then(() => {
+                if (url && url !== '#') {
+                    const activityId = ACTIVITY_IDS_BY_TITLE[cardTitle] || '';
+                    const sessionUrl = activityId ? buildSessionUrl(url, activityId) : url;
+                    window.location.href = sessionUrl || url;
                 }
             });
         }
@@ -4106,16 +4149,22 @@ Español A1
 <script>
     // Solicita nombre y apellido; solo los de la lista pueden avanzar.
     (function enforceAccessGate() {
-        const ALLOWED_USERS = [
-            'faouzi elhilali',
-            'juan pérez',
-            'maria lopez'
-            // Añade más nombres completos en minúsculas
-        ];
-        const REQUIRED_CODE = '4';
+        // Lista opcional de usuarios permitidos; si está vacía, se aceptan todos los nombres.
+        const ALLOWED_USERS = [];
+        const DEFAULT_REQUIRED_CODE = '15';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
+        const REQUIRED_CODE_KEY = 'access_required_code';
+        const getRequiredCode = () => normalizeCode(localStorage.getItem(REQUIRED_CODE_KEY) || DEFAULT_REQUIRED_CODE);
+        const setRequiredCodeIfMissing = () => {
+            try {
+                const current = localStorage.getItem(REQUIRED_CODE_KEY);
+                if (!current) {
+                    localStorage.setItem(REQUIRED_CODE_KEY, DEFAULT_REQUIRED_CODE);
+                }
+            } catch (_) {}
+        };
 
         const STORAGE_KEYS = {
             first: 'access_first_name',
@@ -4123,6 +4172,9 @@ Español A1
             code: 'access_code',
             firstRunDone: 'access_first_run_done'
         };
+        const SESSION_OK_KEY = 'access_gate_ok';
+        const LAST_CODE_KEY = 'access_gate_last_seen_code';
+        const LAST_REQUIRED_CODE_KEY = 'access_gate_last_required_code';
 
         let gatePromptOpen = false;
         let codeChangedFlag = false;
@@ -4134,8 +4186,8 @@ Español A1
             const full = normalizeName(`${storedFirst} ${storedLast}`.trim());
             const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
             if (!firstRunDone) return false;
-            // Si los datos guardados coinciden (especialmente el código), dejamos pasar sin pedirlos de nuevo.
-            return !!storedFirst && !!storedLast && storedCode === REQUIRED_CODE && !!full;
+            // Solo validamos que exista código/nombres y coincida el código requerido
+            return !!storedFirst && !!storedLast && storedCode === getRequiredCode() && !!full;
         }
 
         function saveAccess(first, last, code) {
@@ -4143,6 +4195,7 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.last, last);
             localStorage.setItem(STORAGE_KEYS.code, code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'true');
+            try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
         }
 
         function clearStoredNames() {
@@ -4150,37 +4203,41 @@ Español A1
             localStorage.removeItem(STORAGE_KEYS.last);
         }
 
+        function clearSessionFlag() {
+            try { sessionStorage.removeItem(SESSION_OK_KEY); } catch (_) {}
+            try { sessionStorage.removeItem(LAST_CODE_KEY); } catch (_) {}
+        }
+
         function resetStoredAccess() {
             clearStoredNames();
             localStorage.removeItem(STORAGE_KEYS.code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+            clearSessionFlag();
         }
 
         function handleStoredCodeMismatch({ showInfo = false, prompt = true } = {}) {
             localStorage.removeItem(STORAGE_KEYS.code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+            clearSessionFlag();
             codeChangedFlag = true;
-
             if (prompt && !gatePromptOpen) {
-                if (showInfo && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
+                askForName();
             }
         }
 
-        function handleCodeChangeIfNeeded() {
+        // Chequeo manual para validar si el código cambió y disparar el prompt sin recargar toda la página.
+        function checkAccessAndPrompt() {
+            if (gatePromptOpen) return;
+            const requiredCode = getRequiredCode();
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-            if (storedCode && storedCode !== REQUIRED_CODE) {
-                // Mantener nombre/apellido pero forzar revalidación del código
-                handleStoredCodeMismatch({ prompt: false });
+            const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+            const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+            const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
+            const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
+
+            // Si faltan datos básicos o el código cambió, forzar revalidación.
+            if (!storedCode || !firstRunDone || !storedFull || storedCode !== requiredCode) {
+                handleStoredCodeMismatch({ prompt: true });
             }
         }
 
@@ -4224,12 +4281,19 @@ Español A1
                     const codeRaw = document.getElementById('swal-code')?.value || '';
                     const code = normalizeCode(codeRaw);
                     const codeWithoutZ = code.replace(/Z/gi, '');
+                    const requiredCode = getRequiredCode();
                     const full = normalizeName(`${first} ${last}`.trim());
+                    const storedCodeNormalized = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
                     const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
                     const hasZ = /z/i.test(codeRaw);
                     const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                     const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                     const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
+
+                    // Si el código guardado es distinto al requerido, reiniciamos registro para permitir nuevo acceso
+                    if (storedCodeNormalized && storedCodeNormalized !== requiredCode) {
+                        resetStoredAccess();
+                    }
 
                     if (!first || !last || !code) {
                         Swal.showValidationMessage('Completa nombre, apellido y código.');
@@ -4245,7 +4309,7 @@ Español A1
                         if (fi) fi.value = '';
                         if (li) li.value = '';
                         if (ci) ci.value = '';
-                        if (codeWithoutZ !== REQUIRED_CODE) {
+                        if (codeWithoutZ !== requiredCode) {
                             Swal.showValidationMessage('Código incorrecto.');
                             return false;
                         }
@@ -4254,28 +4318,24 @@ Español A1
                     }
 
                     // El código debe coincidir (ignorando z si el admin la usa)
-                    if (codeWithoutZ !== REQUIRED_CODE) {
+                    if (codeWithoutZ !== requiredCode) {
                         Swal.showValidationMessage('Código incorrecto.');
                         return false;
                     }
 
                     // Primera vez: solo importa el código, guardamos los datos
                     if (!firstRunDone) {
-                        saveAccess(first, last, REQUIRED_CODE);
+                        saveAccess(first, last, requiredCode);
                         return full;
                     }
 
-                    // Desde la segunda vez sin Z: nombre y apellido deben coincidir con los guardados y estar autorizados
+                    // Desde la segunda vez sin Z: nombre y apellido deben coincidir con los guardados
                     if (full !== storedFull) {
                         Swal.showValidationMessage('Nombre y apellido no coinciden con los registrados.');
                         return false;
                     }
-                    if (!ALLOWED_USERS.includes(full)) {
-                        Swal.showValidationMessage('Acceso denegado. Datos no autorizados.');
-                        return false;
-                    }
 
-                    saveAccess(first, last, REQUIRED_CODE);
+                    saveAccess(first, last, requiredCode);
                     return full;
                 },
                 didOpen: () => {
@@ -4296,43 +4356,13 @@ Español A1
             });
         }
 
-        const checkCodeChangeAndPrompt = () => {
-            if (gatePromptOpen) return;
-            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-            if (storedCode && storedCode !== REQUIRED_CODE) {
-                handleStoredCodeMismatch({ showInfo: true, prompt: true });
-            }
-        };
-
         document.addEventListener('DOMContentLoaded', () => {
-            handleCodeChangeIfNeeded();
+            setRequiredCodeIfMissing();
             if (!isStoredAccessValid()) {
-                if (codeChangedFlag && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
+                askForName();
             }
-            ['click', 'keydown', 'touchstart'].forEach(evt => {
-                document.addEventListener(evt, checkCodeChangeAndPrompt, { capture: true });
-            });
-            // Vigilar cambios en el código sin necesidad de interacción ni recarga
-            setInterval(checkCodeChangeAndPrompt, 2500);
-            // Detect cambios externos del código en localStorage (otras pestañas)
-            window.addEventListener('storage', (event) => {
-                if (event.key === STORAGE_KEYS.code) {
-                    const newCode = normalizeCode(event.newValue || '');
-                    if (!newCode || newCode !== REQUIRED_CODE) {
-                        handleStoredCodeMismatch({ showInfo: true, prompt: true });
-                    }
-                }
-            });
+            // Permitir que otros scripts disparen la comprobación manual (usada al hacer clic en cintas/pestañas).
+            window.__forceAccessGateCheck = checkAccessAndPrompt;
         });
     })();
 </script>

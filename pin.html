@@ -4158,8 +4158,7 @@ Español A1
         function handleCodeChangeIfNeeded() {
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             if (storedCode && storedCode !== REQUIRED_CODE) {
-                // Marcar como primera vez, mantener nombre/apellido para prellenar
-                localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+                // Mantener nombre/apellido pero forzar revalidación del código
                 localStorage.removeItem(STORAGE_KEYS.code);
             }
         }
@@ -4216,6 +4215,23 @@ Español A1
                         return false;
                     }
 
+                    // Si el admin incluye Z: limpiar todo lo guardado y forzar nuevo ingreso
+                    if (hasZ) {
+                        resetStoredAccess();
+                        const fi = document.getElementById('swal-first-name');
+                        const li = document.getElementById('swal-last-name');
+                        const ci = document.getElementById('swal-code');
+                        if (fi) fi.value = '';
+                        if (li) li.value = '';
+                        if (ci) ci.value = '';
+                        if (codeWithoutZ !== REQUIRED_CODE) {
+                            Swal.showValidationMessage('Código incorrecto.');
+                            return false;
+                        }
+                        Swal.showValidationMessage('Datos reiniciados. Ingresa de nuevo sin la Z.');
+                        return false;
+                    }
+
                     // El código debe coincidir (ignorando z si el admin la usa)
                     if (codeWithoutZ !== REQUIRED_CODE) {
                         Swal.showValidationMessage('Código incorrecto.');
@@ -4224,12 +4240,6 @@ Español A1
 
                     // Primera vez: solo importa el código, guardamos los datos
                     if (!firstRunDone) {
-                        saveAccess(first, last, REQUIRED_CODE);
-                        return full;
-                    }
-
-                    // Si el admin incluye Z en el código, permite actualizar nombre/apellido y guardar de nuevo
-                    if (hasZ) {
                         saveAccess(first, last, REQUIRED_CODE);
                         return full;
                     }
@@ -4269,7 +4279,6 @@ Español A1
             if (gatePromptOpen) return;
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             if (storedCode && storedCode !== REQUIRED_CODE) {
-                localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
                 localStorage.removeItem(STORAGE_KEYS.code);
                 askForName();
             }

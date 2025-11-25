@@ -1,4 +1,4 @@
-"<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -4112,7 +4112,7 @@ Español A1
             'maria lopez'
             // Añade más nombres completos en minúsculas
         ];
-        const REQUIRED_CODE = '2';
+        const REQUIRED_CODE = '12';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -4147,6 +4147,20 @@ Español A1
         function clearStoredNames() {
             localStorage.removeItem(STORAGE_KEYS.first);
             localStorage.removeItem(STORAGE_KEYS.last);
+        }
+
+        function resetStoredAccess() {
+            clearStoredNames();
+            localStorage.removeItem(STORAGE_KEYS.code);
+            localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+        }
+
+        function handleCodeChangeIfNeeded() {
+            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+            if (storedCode && storedCode !== REQUIRED_CODE) {
+                // Mantener nombre/apellido pero forzar revalidación del código
+                localStorage.removeItem(STORAGE_KEYS.code);
+            }
         }
 
         function askForName() {
@@ -4186,40 +4200,61 @@ Español A1
                 preConfirm: () => {
                     const first = normalizeName(document.getElementById('swal-first-name')?.value || '');
                     const last = normalizeName(document.getElementById('swal-last-name')?.value || '');
-                    const code = normalizeCode(document.getElementById('swal-code')?.value || '');
+                    const codeRaw = document.getElementById('swal-code')?.value || '';
+                    const code = normalizeCode(codeRaw);
+                    const codeWithoutZ = code.replace(/Z/gi, '');
                     const full = normalizeName(`${first} ${last}`.trim());
                     const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
-                    const hasZ = /z/i.test(code);
+                    const hasZ = /z/i.test(codeRaw);
+                    const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                    const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                    const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
 
                     if (!first || !last || !code) {
                         Swal.showValidationMessage('Completa nombre, apellido y código.');
                         return false;
                     }
 
-                    // Si el código incluye la letra Z, limpiamos nombre y apellido guardados
+                    // Si el admin incluye Z: limpiar todo lo guardado y forzar nuevo ingreso
                     if (hasZ) {
-                        clearStoredNames();
+                        resetStoredAccess();
+                        const fi = document.getElementById('swal-first-name');
+                        const li = document.getElementById('swal-last-name');
+                        const ci = document.getElementById('swal-code');
+                        if (fi) fi.value = '';
+                        if (li) li.value = '';
+                        if (ci) ci.value = '';
+                        if (codeWithoutZ !== REQUIRED_CODE) {
+                            Swal.showValidationMessage('Código incorrecto.');
+                            return false;
+                        }
+                        Swal.showValidationMessage('Datos reiniciados. Ingresa de nuevo sin la Z.');
+                        return false;
+                    }
+
+                    // El código debe coincidir (ignorando z si el admin la usa)
+                    if (codeWithoutZ !== REQUIRED_CODE) {
                         Swal.showValidationMessage('Código incorrecto.');
                         return false;
                     }
 
-                    // Primera vez: solo importa el código
+                    // Primera vez: solo importa el código, guardamos los datos
                     if (!firstRunDone) {
-                        if (code !== REQUIRED_CODE) {
-                            Swal.showValidationMessage('Código incorrecto.');
-                            return false;
-                        }
-                        saveAccess(first, last, code);
+                        saveAccess(first, last, REQUIRED_CODE);
                         return full;
                     }
 
-                    // Desde la segunda vez: nombre+apellido deben estar en la lista y código correcto
-                    if (code !== REQUIRED_CODE || !ALLOWED_USERS.includes(full)) {
+                    // Desde la segunda vez sin Z: nombre y apellido deben coincidir con los guardados y estar autorizados
+                    if (full !== storedFull) {
+                        Swal.showValidationMessage('Nombre y apellido no coinciden con los registrados.');
+                        return false;
+                    }
+                    if (!ALLOWED_USERS.includes(full)) {
                         Swal.showValidationMessage('Acceso denegado. Datos no autorizados.');
                         return false;
                     }
 
-                    saveAccess(first, last, code);
+                    saveAccess(first, last, REQUIRED_CODE);
                     return full;
                 },
                 didOpen: () => {
@@ -4244,12 +4279,13 @@ Español A1
             if (gatePromptOpen) return;
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             if (storedCode && storedCode !== REQUIRED_CODE) {
-                localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+                localStorage.removeItem(STORAGE_KEYS.code);
                 askForName();
             }
         };
 
         document.addEventListener('DOMContentLoaded', () => {
+            handleCodeChangeIfNeeded();
             if (!isStoredAccessValid()) {
                 askForName();
             }

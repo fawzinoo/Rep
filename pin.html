@@ -4204,28 +4204,8 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
             clearSessionFlag();
             codeChangedFlag = true;
-
             if (prompt && !gatePromptOpen) {
-                if (showInfo && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
-            }
-        }
-
-        function handleCodeChangeIfNeeded() {
-            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-            const requiredCode = getRequiredCode();
-            if (storedCode && storedCode !== requiredCode) {
-                // Mantener nombre/apellido pero forzar revalidación del código
-                handleStoredCodeMismatch({ prompt: false });
+                askForName();
             }
         }
 
@@ -4338,108 +4318,11 @@ Español A1
             });
         }
 
-        const checkCodeChangeAndPrompt = () => {
-            if (gatePromptOpen) return;
-
-            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-            const requiredCode = getRequiredCode();
-            const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
-            const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
-            const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
-            const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
-            const sessionOk = (() => {
-                try { return sessionStorage.getItem(SESSION_OK_KEY) === 'true'; } catch (_) { return false; }
-            })();
-            const lastSeenCode = (() => {
-                try { return sessionStorage.getItem(LAST_CODE_KEY) || ''; } catch (_) { return ''; }
-            })();
-            const lastSeenRequiredCode = (() => {
-                try { return sessionStorage.getItem(LAST_REQUIRED_CODE_KEY) || ''; } catch (_) { return ''; }
-            })();
-
-            // Si el código cambió desde la última interacción en esta pestaña, reiniciar la marca de sesión
-            if (storedCode !== lastSeenCode) {
-                clearSessionFlag();
-            }
-            // Si el código requerido (configurado) cambió, reiniciar igualmente
-            if (requiredCode !== lastSeenRequiredCode) {
-                clearSessionFlag();
-            }
-
-            // Guardar el último código visto en esta sesión
-            try { sessionStorage.setItem(LAST_CODE_KEY, storedCode || ''); } catch (_) {}
-            try { sessionStorage.setItem(LAST_REQUIRED_CODE_KEY, requiredCode || ''); } catch (_) {}
-
-            // Si todo está bien, marcamos la sesión y salimos
-            if (storedCode === requiredCode && firstRunDone && storedFull) {
-                try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
-                return;
-            }
-
-            // Falta de datos básicos: obligar a pedirlos de nuevo
-            if (!storedCode || !firstRunDone || !storedFull) {
-                handleStoredCodeMismatch({ showInfo: false, prompt: true });
-                return;
-            }
-
-            // Código cambiado o inválido
-            if (storedCode !== requiredCode) {
-                handleStoredCodeMismatch({ showInfo: true, prompt: true });
-                return;
-            }
-        };
-
-        // Expone la comprobación para que otros manejadores puedan invocarla
-        window.__forceAccessGateCheck = checkCodeChangeAndPrompt;
-
         document.addEventListener('DOMContentLoaded', () => {
             setRequiredCodeIfMissing();
-            handleCodeChangeIfNeeded();
             if (!isStoredAccessValid()) {
-                if (codeChangedFlag && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
+                askForName();
             }
-            ['click', 'keydown', 'touchstart'].forEach(evt => {
-                document.addEventListener(evt, checkCodeChangeAndPrompt, { capture: true });
-            });
-            window.addEventListener('focus', checkCodeChangeAndPrompt);
-            document.addEventListener('visibilitychange', checkCodeChangeAndPrompt);
-            // Disparar validación con scroll/rueda/touchmove (tanto PC como táctil)
-            let scrollCheckScheduled = false;
-            const scheduleScrollCheck = () => {
-                if (scrollCheckScheduled) return;
-                scrollCheckScheduled = true;
-                requestAnimationFrame(() => {
-                    scrollCheckScheduled = false;
-                    checkCodeChangeAndPrompt();
-                });
-            };
-            ['scroll', 'wheel', 'touchmove'].forEach(evt => {
-                window.addEventListener(evt, scheduleScrollCheck, { capture: true, passive: true });
-            });
-            // Vigilar cambios en el código sin necesidad de interacción ni recarga
-            setInterval(checkCodeChangeAndPrompt, 2500);
-            // Detect cambios externos del código en localStorage (otras pestañas)
-            window.addEventListener('storage', (event) => {
-                if (event.key === STORAGE_KEYS.code) {
-                    const newCode = normalizeCode(event.newValue || '');
-                    if (!newCode || newCode !== getRequiredCode()) {
-                        handleStoredCodeMismatch({ showInfo: true, prompt: true });
-                    }
-                }
-                if (event.key === REQUIRED_CODE_KEY) {
-                    handleStoredCodeMismatch({ showInfo: true, prompt: true });
-                }
-            });
         });
     })();
 </script>

@@ -2511,6 +2511,17 @@ Español A1
         const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
         const PARENT_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 horas
 
+        // Chequeo ligero para disparar la validación de acceso si está disponible
+        const triggerAccessCheck = () => {
+            try {
+                if (typeof window.__forceAccessGateCheck === 'function') {
+                    window.__forceAccessGateCheck();
+                }
+            } catch (_) {
+                /* ignore */
+            }
+        };
+
         const createSessionToken = () => {
             if (window.crypto?.randomUUID) return crypto.randomUUID();
             const rand = Math.random().toString(36).slice(2);
@@ -3087,6 +3098,7 @@ Español A1
                         localStorage.setItem('activeUnitToggle', targetId);
                     }
                     playClick();
+                    triggerAccessCheck();
                     // Hacer scroll para que la cinta quede en la cabecera
                     setTimeout(function() {
                         toggle.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3152,6 +3164,7 @@ Español A1
 
                 button.addEventListener('click', function() {
                     playClick();
+                    triggerAccessCheck();
                     const unitContent = button.closest('.unit-content');
                     if (!unitContent) {
                         return;
@@ -3198,6 +3211,7 @@ Español A1
                 elem.addEventListener('click', function(e) {
                     // play sound but don't block navigation
                     playClick();
+                    triggerAccessCheck();
                 });
             });
         });
@@ -4304,6 +4318,9 @@ Español A1
             }
         };
 
+        // Expone la comprobación para que otros manejadores puedan invocarla
+        window.__forceAccessGateCheck = checkCodeChangeAndPrompt;
+
         document.addEventListener('DOMContentLoaded', () => {
             handleCodeChangeIfNeeded();
             if (!isStoredAccessValid()) {
@@ -4322,6 +4339,8 @@ Español A1
             ['click', 'keydown', 'touchstart'].forEach(evt => {
                 document.addEventListener(evt, checkCodeChangeAndPrompt, { capture: true });
             });
+            window.addEventListener('focus', checkCodeChangeAndPrompt);
+            document.addEventListener('visibilitychange', checkCodeChangeAndPrompt);
             // Vigilar cambios en el código sin necesidad de interacción ni recarga
             setInterval(checkCodeChangeAndPrompt, 2500);
             // Detect cambios externos del código en localStorage (otras pestañas)

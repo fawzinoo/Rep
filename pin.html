@@ -4361,6 +4361,34 @@ Español A1
     })();
 </script>
 <script>
+    // Recarga solo los scripts externos cada minuto para forzar la actualización de JS sin recrear el DOM
+    (function autoRefreshExternalScripts() {
+        const INTERVAL_MS = 10_000;
+
+        const tagScriptsAsRefreshable = () => {
+            document.querySelectorAll('script[src]').forEach((script) => {
+                script.dataset.refreshableJs = 'true';
+            });
+        };
+
+        const reloadScripts = () => {
+            document.querySelectorAll('script[data-refreshable-js][src]').forEach((oldScript) => {
+                const fresh = document.createElement('script');
+                const baseSrc = oldScript.getAttribute('src').split('?')[0];
+                const cacheBuster = `js-refresh=${Date.now()}`;
+                fresh.src = `${baseSrc}${baseSrc.includes('?') ? '&' : '?'}${cacheBuster}`;
+                fresh.async = oldScript.async;
+                fresh.defer = oldScript.defer;
+                fresh.dataset.refreshableJs = 'true';
+                oldScript.replaceWith(fresh);
+            });
+        };
+
+        tagScriptsAsRefreshable();
+        setInterval(reloadScripts, INTERVAL_MS);
+    })();
+</script>
+<script>
     // Forzar una recarga inicial en cada sesión para verificar protocolos actualizados
     (function enforceInitialRefresh() {
         const KEY = 'protocol_refresh_done';

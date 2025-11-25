@@ -4209,6 +4209,22 @@ Español A1
             }
         }
 
+        // Chequeo manual para validar si el código cambió y disparar el prompt sin recargar toda la página.
+        function checkAccessAndPrompt() {
+            if (gatePromptOpen) return;
+            const requiredCode = getRequiredCode();
+            const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+            const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+            const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+            const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
+            const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
+
+            // Si faltan datos básicos o el código cambió, forzar revalidación.
+            if (!storedCode || !firstRunDone || !storedFull || storedCode !== requiredCode) {
+                handleStoredCodeMismatch({ prompt: true });
+            }
+        }
+
         function askForName() {
             if (gatePromptOpen) return;
             gatePromptOpen = true;
@@ -4329,6 +4345,8 @@ Español A1
             if (!isStoredAccessValid()) {
                 askForName();
             }
+            // Permitir que otros scripts disparen la comprobación manual (usada al hacer clic en cintas/pestañas).
+            window.__forceAccessGateCheck = checkAccessAndPrompt;
         });
     })();
 </script>

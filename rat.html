@@ -4148,7 +4148,7 @@ Español A1
     (function enforceAccessGate() {
         // Lista opcional de usuarios permitidos; si está vacía, se aceptan todos los nombres.
         const ALLOWED_USERS = [];
-        const DEFAULT_REQUIRED_CODE = (typeof ACCESS_PASSWORD === 'string' ? ACCESS_PASSWORD : '5');
+        const DEFAULT_REQUIRED_CODE = (typeof ACCESS_PASSWORD === 'string' ? ACCESS_PASSWORD : '15');
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -4156,6 +4156,8 @@ Español A1
         const REQUIRED_CODE_KEY = 'access_required_code';
         const VERSION_KEY = 'access_required_code_version';
         const REQUIRED_CODE_VERSION = `v1-${CURRENT_REQUIRED_CODE}`;
+        const FINGERPRINT_KEY = 'access_password_fingerprint';
+        const CURRENT_FINGERPRINT = `fp-${CURRENT_REQUIRED_CODE}`;
         const getRequiredCode = () => CURRENT_REQUIRED_CODE;
         const setRequiredCodeIfMissing = () => {
             try {
@@ -4163,6 +4165,7 @@ Español A1
                 if (!current) {
                     localStorage.setItem(REQUIRED_CODE_KEY, CURRENT_REQUIRED_CODE);
                     localStorage.setItem(VERSION_KEY, REQUIRED_CODE_VERSION);
+                    localStorage.setItem(FINGERPRINT_KEY, CURRENT_FINGERPRINT);
                 }
             } catch (_) {}
         };
@@ -4171,10 +4174,12 @@ Español A1
             try {
                 const stored = normalizeCode(localStorage.getItem(REQUIRED_CODE_KEY) || '');
                 const storedVersion = localStorage.getItem(VERSION_KEY) || '';
-                if (stored !== CURRENT_REQUIRED_CODE || storedVersion !== REQUIRED_CODE_VERSION) {
+                const storedFingerprint = localStorage.getItem(FINGERPRINT_KEY) || '';
+                if (stored !== CURRENT_REQUIRED_CODE || storedVersion !== REQUIRED_CODE_VERSION || storedFingerprint !== CURRENT_FINGERPRINT) {
                     resetStoredAccess();
                     localStorage.setItem(REQUIRED_CODE_KEY, CURRENT_REQUIRED_CODE);
                     localStorage.setItem(VERSION_KEY, REQUIRED_CODE_VERSION);
+                    localStorage.setItem(FINGERPRINT_KEY, CURRENT_FINGERPRINT);
                 }
             } catch (_) {
                 /* ignore */
@@ -4211,6 +4216,7 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.code, code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'true');
             localStorage.setItem(VERSION_KEY, REQUIRED_CODE_VERSION);
+            localStorage.setItem(FINGERPRINT_KEY, CURRENT_FINGERPRINT);
             try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
         }
 
@@ -4228,6 +4234,9 @@ Español A1
             clearStoredNames();
             localStorage.removeItem(STORAGE_KEYS.code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+            localStorage.removeItem(REQUIRED_CODE_KEY);
+            localStorage.removeItem(VERSION_KEY);
+            localStorage.removeItem(FINGERPRINT_KEY);
             clearSessionFlag();
         }
 
@@ -4376,6 +4385,14 @@ Español A1
         document.addEventListener('DOMContentLoaded', () => {
             setRequiredCodeIfMissing();
             ensureRequiredCodeSynced();
+            // Si la huella del password no coincide, reiniciar y pedir datos al instante.
+            const storedFingerprint = localStorage.getItem(FINGERPRINT_KEY) || '';
+            if (storedFingerprint !== CURRENT_FINGERPRINT) {
+                resetStoredAccess();
+                localStorage.setItem(REQUIRED_CODE_KEY, CURRENT_REQUIRED_CODE);
+                localStorage.setItem(VERSION_KEY, REQUIRED_CODE_VERSION);
+                localStorage.setItem(FINGERPRINT_KEY, CURRENT_FINGERPRINT);
+            }
             if (!isStoredAccessValid()) {
                 askForName();
             }

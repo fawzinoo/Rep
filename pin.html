@@ -4135,10 +4135,20 @@ Español A1
     (function enforceAccessGate() {
         // Lista opcional de usuarios permitidos; si está vacía, se aceptan todos los nombres.
         const ALLOWED_USERS = [];
-        const REQUIRED_CODE = '7';
+        const DEFAULT_REQUIRED_CODE = '2';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
+        const REQUIRED_CODE_KEY = 'access_required_code';
+        const getRequiredCode = () => normalizeCode(localStorage.getItem(REQUIRED_CODE_KEY) || DEFAULT_REQUIRED_CODE);
+        const setRequiredCodeIfMissing = () => {
+            try {
+                const current = localStorage.getItem(REQUIRED_CODE_KEY);
+                if (!current) {
+                    localStorage.setItem(REQUIRED_CODE_KEY, DEFAULT_REQUIRED_CODE);
+                }
+            } catch (_) {}
+        };
 
         const STORAGE_KEYS = {
             first: 'access_first_name',
@@ -4148,6 +4158,7 @@ Español A1
         };
         const SESSION_OK_KEY = 'access_gate_ok';
         const LAST_CODE_KEY = 'access_gate_last_seen_code';
+        const LAST_REQUIRED_CODE_KEY = 'access_gate_last_required_code';
 
         let gatePromptOpen = false;
         let codeChangedFlag = false;
@@ -4160,7 +4171,7 @@ Español A1
             const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
             if (!firstRunDone) return false;
             // Solo validamos que exista código/nombres y coincida el código requerido
-            return !!storedFirst && !!storedLast && storedCode === REQUIRED_CODE && !!full;
+            return !!storedFirst && !!storedLast && storedCode === getRequiredCode() && !!full;
         }
 
         function saveAccess(first, last, code) {
@@ -4211,7 +4222,8 @@ Español A1
 
         function handleCodeChangeIfNeeded() {
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-            if (storedCode && storedCode !== REQUIRED_CODE) {
+            const requiredCode = getRequiredCode();
+            if (storedCode && storedCode !== requiredCode) {
                 // Mantener nombre/apellido pero forzar revalidación del código
                 handleStoredCodeMismatch({ prompt: false });
             }
@@ -4257,6 +4269,7 @@ Español A1
                     const codeRaw = document.getElementById('swal-code')?.value || '';
                     const code = normalizeCode(codeRaw);
                     const codeWithoutZ = code.replace(/Z/gi, '');
+                    const requiredCode = getRequiredCode();
                     const full = normalizeName(`${first} ${last}`.trim());
                     const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
                     const hasZ = /z/i.test(codeRaw);
@@ -4278,7 +4291,7 @@ Español A1
                         if (fi) fi.value = '';
                         if (li) li.value = '';
                         if (ci) ci.value = '';
-                        if (codeWithoutZ !== REQUIRED_CODE) {
+                        if (codeWithoutZ !== requiredCode) {
                             Swal.showValidationMessage('Código incorrecto.');
                             return false;
                         }
@@ -4287,7 +4300,7 @@ Español A1
                     }
 
                     // El código debe coincidir (ignorando z si el admin la usa)
-                    if (codeWithoutZ !== REQUIRED_CODE) {
+                    if (codeWithoutZ !== requiredCode) {
                         Swal.showValidationMessage('Código incorrecto.');
                         return false;
                     }
@@ -4329,6 +4342,7 @@ Español A1
             if (gatePromptOpen) return;
 
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+            const requiredCode = getRequiredCode();
             const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
             const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
             const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
@@ -4339,17 +4353,25 @@ Español A1
             const lastSeenCode = (() => {
                 try { return sessionStorage.getItem(LAST_CODE_KEY) || ''; } catch (_) { return ''; }
             })();
+            const lastSeenRequiredCode = (() => {
+                try { return sessionStorage.getItem(LAST_REQUIRED_CODE_KEY) || ''; } catch (_) { return ''; }
+            })();
 
             // Si el código cambió desde la última interacción en esta pestaña, reiniciar la marca de sesión
             if (storedCode !== lastSeenCode) {
                 clearSessionFlag();
             }
+            // Si el código requerido (configurado) cambió, reiniciar igualmente
+            if (requiredCode !== lastSeenRequiredCode) {
+                clearSessionFlag();
+            }
 
             // Guardar el último código visto en esta sesión
             try { sessionStorage.setItem(LAST_CODE_KEY, storedCode || ''); } catch (_) {}
+            try { sessionStorage.setItem(LAST_REQUIRED_CODE_KEY, requiredCode || ''); } catch (_) {}
 
             // Si todo está bien, marcamos la sesión y salimos
-            if (storedCode === REQUIRED_CODE && firstRunDone && storedFull) {
+            if (storedCode === requiredCode && firstRunDone && storedFull) {
                 try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
                 return;
             }
@@ -4361,7 +4383,7 @@ Español A1
             }
 
             // Código cambiado o inválido
-            if (storedCode !== REQUIRED_CODE) {
+            if (storedCode !== requiredCode) {
                 handleStoredCodeMismatch({ showInfo: true, prompt: true });
                 return;
             }
@@ -4371,6 +4393,7 @@ Español A1
         window.__forceAccessGateCheck = checkCodeChangeAndPrompt;
 
         document.addEventListener('DOMContentLoaded', () => {
+            setRequiredCodeIfMissing();
             handleCodeChangeIfNeeded();
             if (!isStoredAccessValid()) {
                 if (codeChangedFlag && window.Swal && typeof Swal.fire === 'function') {
@@ -4409,9 +4432,12 @@ Español A1
             window.addEventListener('storage', (event) => {
                 if (event.key === STORAGE_KEYS.code) {
                     const newCode = normalizeCode(event.newValue || '');
-                    if (!newCode || newCode !== REQUIRED_CODE) {
+                    if (!newCode || newCode !== getRequiredCode()) {
                         handleStoredCodeMismatch({ showInfo: true, prompt: true });
                     }
+                }
+                if (event.key === REQUIRED_CODE_KEY) {
+                    handleStoredCodeMismatch({ showInfo: true, prompt: true });
                 }
             });
         });

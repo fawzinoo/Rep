@@ -4126,7 +4126,7 @@ Español A1
             'maria lopez'
             // Añade más nombres completos en minúsculas
         ];
-        const REQUIRED_CODE = '99';
+        const REQUIRED_CODE = '9';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -4148,7 +4148,7 @@ Español A1
             const full = normalizeName(`${storedFirst} ${storedLast}`.trim());
             const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
             if (!firstRunDone) return false;
-            // Si los datos guardados coinciden (especialmente el código), dejamos pasar sin pedirlos de nuevo.
+            // Solo validamos que exista código/nombres y coincida el código requerido
             return !!storedFirst && !!storedLast && storedCode === REQUIRED_CODE && !!full;
         }
 
@@ -4157,6 +4157,7 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.last, last);
             localStorage.setItem(STORAGE_KEYS.code, code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'true');
+            try { sessionStorage.setItem('access_gate_ok', 'true'); } catch (_) {}
         }
 
         function clearStoredNames() {
@@ -4311,12 +4312,21 @@ Español A1
         }
 
         const checkCodeChangeAndPrompt = () => {
+            try {
+                if (sessionStorage.getItem('access_gate_ok') === 'true') return;
+            } catch (_) {}
             if (gatePromptOpen) return;
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
             const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
             const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
             const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
+
+            // Si todo es válido, no hacer nada y marcar la sesión como correcta
+            if (storedCode === REQUIRED_CODE && firstRunDone && storedFull && ALLOWED_USERS.includes(storedFull)) {
+                try { sessionStorage.setItem('access_gate_ok', 'true'); } catch (_) {}
+                return;
+            }
 
             // Falta de datos básicos: obligar a pedirlos de nuevo
             if (!storedCode || !firstRunDone || !storedFull) {

@@ -4126,7 +4126,7 @@ Español A1
             'maria lopez'
             // Añade más nombres completos en minúsculas
         ];
-        const REQUIRED_CODE = '9';
+        const REQUIRED_CODE = '2';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -4137,6 +4137,7 @@ Español A1
             code: 'access_code',
             firstRunDone: 'access_first_run_done'
         };
+        const SESSION_OK_KEY = 'access_gate_ok';
 
         let gatePromptOpen = false;
         let codeChangedFlag = false;
@@ -4157,7 +4158,7 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.last, last);
             localStorage.setItem(STORAGE_KEYS.code, code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'true');
-            try { sessionStorage.setItem('access_gate_ok', 'true'); } catch (_) {}
+            try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
         }
 
         function clearStoredNames() {
@@ -4165,15 +4166,21 @@ Español A1
             localStorage.removeItem(STORAGE_KEYS.last);
         }
 
+        function clearSessionFlag() {
+            try { sessionStorage.removeItem(SESSION_OK_KEY); } catch (_) {}
+        }
+
         function resetStoredAccess() {
             clearStoredNames();
             localStorage.removeItem(STORAGE_KEYS.code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+            clearSessionFlag();
         }
 
         function handleStoredCodeMismatch({ showInfo = false, prompt = true } = {}) {
             localStorage.removeItem(STORAGE_KEYS.code);
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
+            clearSessionFlag();
             codeChangedFlag = true;
 
             if (prompt && !gatePromptOpen) {
@@ -4312,20 +4319,26 @@ Español A1
         }
 
         const checkCodeChangeAndPrompt = () => {
-            try {
-                if (sessionStorage.getItem('access_gate_ok') === 'true') return;
-            } catch (_) {}
             if (gatePromptOpen) return;
+
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
             const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
             const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
             const firstRunDone = localStorage.getItem(STORAGE_KEYS.firstRunDone) === 'true';
+            const sessionOk = (() => {
+                try { return sessionStorage.getItem(SESSION_OK_KEY) === 'true'; } catch (_) { return false; }
+            })();
 
-            // Si todo es válido, no hacer nada y marcar la sesión como correcta
+            // Si todo está bien, marcamos la sesión y salimos; se revalida cada interacción
             if (storedCode === REQUIRED_CODE && firstRunDone && storedFull && ALLOWED_USERS.includes(storedFull)) {
-                try { sessionStorage.setItem('access_gate_ok', 'true'); } catch (_) {}
+                try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) {}
                 return;
+            }
+
+            // Si algo cambió respecto a la sesión previa, limpiamos el flag de sesión para forzar revalidación inmediata
+            if (sessionOk) {
+                clearSessionFlag();
             }
 
             // Falta de datos básicos: obligar a pedirlos de nuevo

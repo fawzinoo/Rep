@@ -2511,17 +2511,6 @@ Español A1
         const PARENT_SESSION_META_KEY = `${PARENT_SESSION_KEY}_meta`;
         const PARENT_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 horas
 
-        // Chequeo ligero para disparar la validación de acceso si está disponible
-        const triggerAccessCheck = () => {
-            try {
-                if (typeof window.__forceAccessGateCheck === 'function') {
-                    window.__forceAccessGateCheck();
-                }
-            } catch (_) {
-                /* ignore */
-            }
-        };
-
         const createSessionToken = () => {
             if (window.crypto?.randomUUID) return crypto.randomUUID();
             const rand = Math.random().toString(36).slice(2);
@@ -3098,7 +3087,6 @@ Español A1
                         localStorage.setItem('activeUnitToggle', targetId);
                     }
                     playClick();
-                    triggerAccessCheck();
                     // Hacer scroll para que la cinta quede en la cabecera
                     setTimeout(function() {
                         toggle.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3164,7 +3152,6 @@ Español A1
 
                 button.addEventListener('click', function() {
                     playClick();
-                    triggerAccessCheck();
                     const unitContent = button.closest('.unit-content');
                     if (!unitContent) {
                         return;
@@ -3211,7 +3198,6 @@ Español A1
                 elem.addEventListener('click', function(e) {
                     // play sound but don't block navigation
                     playClick();
-                    triggerAccessCheck();
                 });
             });
         });
@@ -4126,7 +4112,7 @@ Español A1
             'maria lopez'
             // Añade más nombres completos en minúsculas
         ];
-        const REQUIRED_CODE = '8';
+        const REQUIRED_CODE = '11';
 
         const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -4139,7 +4125,6 @@ Español A1
         };
 
         let gatePromptOpen = false;
-        let codeChangedFlag = false;
 
         function isStoredAccessValid() {
             const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
@@ -4170,31 +4155,11 @@ Español A1
             localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
         }
 
-        function handleStoredCodeMismatch({ showInfo = false, prompt = true } = {}) {
-            localStorage.removeItem(STORAGE_KEYS.code);
-            localStorage.setItem(STORAGE_KEYS.firstRunDone, 'false');
-            codeChangedFlag = true;
-
-            if (prompt && !gatePromptOpen) {
-                if (showInfo && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
-            }
-        }
-
         function handleCodeChangeIfNeeded() {
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             if (storedCode && storedCode !== REQUIRED_CODE) {
                 // Mantener nombre/apellido pero forzar revalidación del código
-                handleStoredCodeMismatch({ prompt: false });
+                localStorage.removeItem(STORAGE_KEYS.code);
             }
         }
 
@@ -4250,23 +4215,6 @@ Español A1
                         return false;
                     }
 
-                    // Si el admin incluye Z: limpiar todo lo guardado y forzar nuevo ingreso
-                    if (hasZ) {
-                        resetStoredAccess();
-                        const fi = document.getElementById('swal-first-name');
-                        const li = document.getElementById('swal-last-name');
-                        const ci = document.getElementById('swal-code');
-                        if (fi) fi.value = '';
-                        if (li) li.value = '';
-                        if (ci) ci.value = '';
-                        if (codeWithoutZ !== REQUIRED_CODE) {
-                            Swal.showValidationMessage('Código incorrecto.');
-                            return false;
-                        }
-                        Swal.showValidationMessage('Datos reiniciados. Ingresa de nuevo sin la Z.');
-                        return false;
-                    }
-
                     // El código debe coincidir (ignorando z si el admin la usa)
                     if (codeWithoutZ !== REQUIRED_CODE) {
                         Swal.showValidationMessage('Código incorrecto.');
@@ -4275,6 +4223,12 @@ Español A1
 
                     // Primera vez: solo importa el código, guardamos los datos
                     if (!firstRunDone) {
+                        saveAccess(first, last, REQUIRED_CODE);
+                        return full;
+                    }
+
+                    // Si el admin incluye Z en el código, permite actualizar nombre/apellido y guardar de nuevo
+                    if (hasZ) {
                         saveAccess(first, last, REQUIRED_CODE);
                         return full;
                     }
@@ -4314,43 +4268,18 @@ Español A1
             if (gatePromptOpen) return;
             const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
             if (storedCode && storedCode !== REQUIRED_CODE) {
-                handleStoredCodeMismatch({ showInfo: true, prompt: true });
+                localStorage.removeItem(STORAGE_KEYS.code);
+                askForName();
             }
         };
-
-        // Expone la comprobación para que otros manejadores puedan invocarla
-        window.__forceAccessGateCheck = checkCodeChangeAndPrompt;
 
         document.addEventListener('DOMContentLoaded', () => {
             handleCodeChangeIfNeeded();
             if (!isStoredAccessValid()) {
-                if (codeChangedFlag && window.Swal && typeof Swal.fire === 'function') {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Contraseña actualizada',
-                        text: 'Ingresa de nuevo tu código y tus datos.',
-                        showConfirmButton: false,
-                        timer: 1400
-                    }).then(() => askForName());
-                } else {
-                    askForName();
-                }
+                askForName();
             }
             ['click', 'keydown', 'touchstart'].forEach(evt => {
                 document.addEventListener(evt, checkCodeChangeAndPrompt, { capture: true });
-            });
-            window.addEventListener('focus', checkCodeChangeAndPrompt);
-            document.addEventListener('visibilitychange', checkCodeChangeAndPrompt);
-            // Vigilar cambios en el código sin necesidad de interacción ni recarga
-            setInterval(checkCodeChangeAndPrompt, 2500);
-            // Detect cambios externos del código en localStorage (otras pestañas)
-            window.addEventListener('storage', (event) => {
-                if (event.key === STORAGE_KEYS.code) {
-                    const newCode = normalizeCode(event.newValue || '');
-                    if (!newCode || newCode !== REQUIRED_CODE) {
-                        handleStoredCodeMismatch({ showInfo: true, prompt: true });
-                    }
-                }
             });
         });
     })();

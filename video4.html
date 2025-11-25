@@ -4205,37 +4205,71 @@ const togglePlay = () => {
 			event.preventDefault();
 			togglePlay();
 		}
-	});		// Mostrar spinner cuando el video está esperando datos
-		player.addEventListener("waiting", () => {
+		});
+
+		let overlayFailSafe;
+
+		const hideLoadingOverlay = () => {
+			if (overlayFailSafe) {
+				clearTimeout(overlayFailSafe);
+				overlayFailSafe = null;
+			}
+			if (loadingOverlay) {
+				loadingOverlay.classList.remove("active");
+				loadingOverlay.style.pointerEvents = "none";
+			}
+		};
+
+		const showLoadingOverlay = (fallbackMs = 4000) => {
+			if (overlayFailSafe) {
+				clearTimeout(overlayFailSafe);
+				overlayFailSafe = null;
+			}
 			if (loadingOverlay) {
 				loadingOverlay.classList.add("active");
+				loadingOverlay.style.pointerEvents = "none";
 			}
-		});
+			if (fallbackMs > 0) {
+				overlayFailSafe = window.setTimeout(() => {
+					hideLoadingOverlay();
+				}, fallbackMs);
+			}
+		};
+
+		// Mostrar spinner cuando el video está esperando datos
+		player.addEventListener("waiting", showLoadingOverlay);
 
 		// Ocultar spinner cuando el video puede reproducirse
-		player.addEventListener("canplay", () => {
-			if (loadingOverlay) {
-				loadingOverlay.classList.remove("active");
-			}
-		});
+		player.addEventListener("canplay", hideLoadingOverlay);
 
 		// Ocultar spinner cuando el video empieza a reproducirse
-		player.addEventListener("playing", () => {
-			if (loadingOverlay) {
-				loadingOverlay.classList.remove("active");
-			}
-		});
+		player.addEventListener("playing", hideLoadingOverlay);
 
-		// Mostrar spinner durante la carga inicial
+		// Ocultar spinner en cuanto haya datos básicos (evita bloqueo en iOS)
+		player.addEventListener("loadedmetadata", hideLoadingOverlay);
+		player.addEventListener("loadeddata", hideLoadingOverlay);
+		player.addEventListener("pause", hideLoadingOverlay);
+		player.addEventListener("suspend", hideLoadingOverlay);
+		player.addEventListener("stalled", hideLoadingOverlay);
+
+		// Mostrar spinner durante la carga inicial con apagado de seguridad
 		player.addEventListener("loadstart", () => {
-			if (loadingOverlay) {
-				loadingOverlay.classList.add("active");
-			}
+			showLoadingOverlay();
+			window.setTimeout(() => {
+				if (player && player.readyState >= 1) {
+					hideLoadingOverlay();
+				}
+			}, 1200);
 		});
 
-		const quizForm = document.getElementById("lesson-quiz");
-		const quizSubmit = document.getElementById("quiz-submit");
-		const quizSection = document.querySelector('.quiz-section');
+		// Apagar overlay en el primer toque/click del usuario (iOS bloquea eventos de reproducción)
+		const dismissOverlayOnInteract = () => hideLoadingOverlay();
+		document.addEventListener("pointerdown", dismissOverlayOnInteract, { once: true, capture: true });
+		document.addEventListener("touchstart", dismissOverlayOnInteract, { once: true, capture: true });
+
+			const quizForm = document.getElementById("lesson-quiz");
+			const quizSubmit = document.getElementById("quiz-submit");
+			const quizSection = document.querySelector('.quiz-section');
 		const quizOptionSound = document.getElementById('quiz-option-sound');
 
 		const pageTimer = document.getElementById('quiz-lock-timer');

@@ -153,7 +153,8 @@
             width: 100%;
             max-width: 370px;
             display: flex;
-            justify-content: space-evenly;
+            justify-content: center;
+            gap: 12px;
             align-items: center;
             padding: 10px 0px;
             background-color: #ffffff;
@@ -174,7 +175,7 @@
 
         /* Botones individuales */
         .button {
-            padding: 10px 15px;
+            padding: 10px 18px;
             font-size: 16px;
             cursor: pointer;
             border: none;
@@ -190,12 +191,22 @@
 
         .button.yes {
             background-color: #27ae60;
-            margin-right: 25px;
+            margin-right: 18px;
         }
 
         .button.no {
             background-color: #e74c3c;
-            margin-right: 10px;
+        }
+
+        /* Ajuste para el botón de reinicio: mismo tamaño que mute */
+        #reset-button {
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .button.disabled {
@@ -205,6 +216,18 @@
 
         .button:hover:not(.disabled) {
             transform: translateY(-3px);
+        }
+
+        .button.yes.pressed {
+            background: linear-gradient(135deg, #2ecc71 0%, #1e9f55 100%);
+            box-shadow: 0 0 12px rgba(46, 204, 113, 0.6);
+            transform: scale(0.98);
+        }
+
+        .button.no.pressed {
+            background: linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%);
+            box-shadow: 0 0 12px rgba(255, 107, 107, 0.6);
+            transform: scale(0.98);
         }
 
         .counter {
@@ -595,9 +618,11 @@
 
 
         #start-exposure-button {
-            border-radius: 50px;
-            padding: 11px 16px;
-            margin-left: 15px;
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
+            margin: 0;
             background: linear-gradient(135deg, rgb(161, 117, 4) 0%, rgb(140, 100, 3) 100%);
             border: none;
             box-shadow: 0 4px 10px rgba(161, 117, 4, 0.3);
@@ -699,13 +724,45 @@
             justify-content: center;
             z-index: 12000;
             backdrop-filter: blur(3px);
-            pointer-events: none;
-            /* no bloquear taps */
+            pointer-events: all;
+            /* bloquear interacción debajo */
+            cursor: wait;
         }
 
         #warmup-overlay dotlottie-wc {
             width: 300px;
             height: 200px;
+        }
+
+        /* Botón de volumen en la fila de botones, a la derecha de Reiniciar */
+        .volume-toggle {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .volume-toggle:hover {
+            transform: scale(1.05);
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .volume-toggle:active {
+            transform: scale(0.98);
+        }
+
+        .volume-toggle.muted {
+            background: #f1c40f;
+            color: #000;
+            box-shadow: 0 4px 10px rgba(241, 196, 15, 0.4);
         }
 
         /* Quitar resalte y sombras en taps móviles */
@@ -1326,10 +1383,15 @@
     <div class="button-container">
         <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
         <button class="button no">No<span class="counter" id="no-counter">0</span></button>
-        <button class="button" id="start-exposure-button">
+        <button style="margin-left:16px" class="button" id="start-exposure-button">
             <i class="fas fa-play"></i>
         </button>
-        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+        <button class="button" id="reset-button" title="Reiniciar" onclick="location.reload()">
+            <i class="fas fa-rotate-right"></i>
+        </button>
+        <button class="volume-toggle" id="volume-toggle-btn" title="Silenciar/activar audio">
+            <i class="fas fa-volume-up"></i>
+        </button>
     </div>
 
 
@@ -1367,6 +1429,7 @@
         startButton.addEventListener('click', () => {
             vibrateFeedback();
             // Mostrar lottie mientras se prepara, sin bloquear el click
+            stopAllAudios();
             showWarmupOverlay();
             setTimeout(async () => {
                 const minDelay = new Promise(res => setTimeout(res, 3000));
@@ -1386,11 +1449,14 @@
             const warmAudioAsync = (audio) => new Promise((resolve) => {
                 if (!audio) return resolve();
                 const originalVolume = audio.volume;
+                const originalMuted = audio.muted;
                 audio.volume = 0;
+                audio.muted = true;
                 const finish = () => {
                     audio.pause();
                     audio.currentTime = 0;
                     audio.volume = originalVolume;
+                    audio.muted = originalMuted;
                     resolve();
                 };
                 const playPromise = audio.play();
@@ -1499,6 +1565,41 @@
                 });
             }
             removeSignalBars();
+        }
+
+        // Control global de mute
+        let isMuted = false;
+        const volumeButtons = [];
+        function applyMuteState() {
+            Flashcards.forEach(card => {
+                if (card.audio) {
+                    card.audio.muted = isMuted;
+                    card.audio.volume = isMuted ? 0 : 1;
+                }
+            });
+            if (Array.isArray(audios)) {
+                audios.forEach(audio => {
+                    audio.muted = isMuted;
+                    audio.volume = isMuted ? 0 : 1;
+                });
+            }
+            // Audios embebidos (sí, no, exposición, reinicio, final, etc.)
+            document.querySelectorAll('audio').forEach(el => {
+                el.muted = isMuted;
+                el.volume = isMuted ? 0 : 1;
+            });
+            volumeButtons.forEach(btn => {
+                const icon = btn.querySelector('i');
+                if (!icon) return;
+                icon.classList.toggle('fa-volume-xmark', isMuted);
+                icon.classList.toggle('fa-volume-up', !isMuted);
+                btn.classList.toggle('muted', isMuted);
+            });
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            applyMuteState();
         }
 
 
@@ -1726,11 +1827,14 @@
             const warmAudioAsync = (audio) => new Promise((resolve) => {
                 if (!audio) return resolve();
                 const originalVolume = audio.volume;
+                const originalMuted = audio.muted;
                 audio.volume = 0;
+                audio.muted = true;
                 const finish = () => {
                     audio.pause();
                     audio.currentTime = 0;
                     audio.volume = originalVolume;
+                    audio.muted = originalMuted;
                     resolve();
                 };
                 const playPromise = audio.play();
@@ -1802,7 +1906,16 @@
         const yesButton = document.querySelector('.button.yes');
         const noButton = document.querySelector('.button.no');
 
-        // (Redundant click listener removed)
+        // Botón de volumen global (junto a Reiniciar)
+        const volumeToggleBtn = document.getElementById('volume-toggle-btn');
+        if (volumeToggleBtn) {
+            volumeToggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleMute();
+            });
+            volumeButtons.push(volumeToggleBtn);
+        }
+        applyMuteState();
 
 
 
@@ -1911,6 +2024,8 @@
             const frontAudioSrc = currentCard.getAttribute('data-audio');
             if (frontAudioSrc) {
                 const frontAudio = new Audio(frontAudioSrc);
+                frontAudio.muted = isMuted;
+                frontAudio.volume = isMuted ? 0 : 1;
                 frontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
                 frontAudio.onended = () => {
                     console.log('Audio de la cara frontal terminado.');
@@ -2176,6 +2291,8 @@
 
         noButton.addEventListener('click', () => {
             vibrateFeedback();
+            noButton.classList.add('pressed');
+            setTimeout(() => noButton.classList.remove('pressed'), 180);
             const soundNoButton = document.getElementById('soundNoButton');
 
             // Detener y reiniciar el audio para evitar fallos o tardanzas
@@ -2212,6 +2329,8 @@
 
         yesButton.addEventListener('click', () => {
             vibrateFeedback();
+            yesButton.classList.add('pressed');
+            setTimeout(() => yesButton.classList.remove('pressed'), 180);
             const soundYesButton = document.getElementById('soundYesButton');
 
             // Detener y reiniciar el audio para evitar fallos o tardanzas

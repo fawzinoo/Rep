@@ -798,8 +798,17 @@
 
             100% {
                 opacity: 0;
-                transform: translate(0, -240px) scale(3.5) rotate(360deg);
+                transform: translate(12px, -240px) scale(4) rotate(360deg);
             }
+        }
+
+        /* Remove shadows on active state */
+        .button:active,
+        #start-exposure-button:active,
+        .welcome-card .start-button:active,
+        .flashcard:active,
+        .flashcard:active .back {
+            box-shadow: none !important;
         }
 
         .smoke {
@@ -1337,6 +1346,28 @@
                 }).catch(e => console.log("Exposition audio prewarm failed", e));
             }
 
+            // 3. Precalentar audios de botones
+            const buttonAudioIds = [
+                'soundYesButton',
+                'soundNoButton',
+                'startExposureSound',
+                'soundResetButton',
+                'finalMessageSound',
+                'buttonSound'
+            ];
+
+            buttonAudioIds.forEach(id => {
+                const audio = document.getElementById(id);
+                if (audio) {
+                    audio.volume = 0;
+                    audio.play().then(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.volume = 1;
+                    }).catch(e => console.log(`Audio prewarm failed for ${id}`, e));
+                }
+            });
+
             // 3. Crear y animar una burbuja invisible para "calentar" la animación
             const dummyButton = document.createElement('div');
             dummyButton.style.position = 'fixed';
@@ -1387,15 +1418,23 @@
         // Seleccionar todas las tarjetas
         const Flashcards = Array.from(document.querySelectorAll('.flashcard'));
 
-        // Función para detener todos los audios
+        // Función para detener todos los audios (tarjetas individuales y lista global)
         function stopAllAudios() {
+            // Audios asociados a cada tarjeta (card.audio)
             Flashcards.forEach(card => {
-                const audio = card.audio; // Usar el objeto de audio asociado
+                const audio = card.audio;
                 if (audio) {
                     audio.pause();
                     audio.currentTime = 0;
                 }
             });
+            // Audios globales (array audios)
+            if (Array.isArray(audios)) {
+                audios.forEach(audio => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                });
+            }
             removeSignalBars();
         }
 
@@ -1408,27 +1447,36 @@
                 card.audio.preload = 'metadata';
             }
 
-            let isFlipped = false; // Bandera para verificar si la tarjeta ya fue volteada
+            // Ajustar estado inicial según la clase actual para evitar dobles pulsaciones
+            let isFlipped = card.classList.contains('flipped');
             let isTransitioning = false; // Controlar si la tarjeta está en transición
+            let transitionTimeout = null; // Guardar timeout de transición para poder cancelarlo
 
 
 
             card.addEventListener('click', () => {
                 if (isTransitioning) {
-                    console.log('Transición en curso, espere...');
-                    return;
+                    // Permitir interacción inmediata cancelando la transición en curso
+                    clearTimeout(transitionTimeout);
+                    transitionTimeout = null;
+                    isTransitioning = false;
                 }
+
+                // Sincronizar el estado por si la tarjeta se volteó vía script
+                isFlipped = card.classList.contains('flipped');
 
                 isTransitioning = true;
 
                 if (!isFlipped) {
+                    // Cortar cualquier audio en curso inmediatamente al empezar a voltear
+                    stopAllAudios();
+                    removeSignalBars();
+
                     // Voltear a la cara "back"
                     card.classList.add('flipped');
                     console.log('Volteando a la cara "back".');
 
-                    setTimeout(() => {
-                        stopAllAudios();
-
+                    transitionTimeout = setTimeout(() => {
                         if (card.audio) {
                             card.audio.currentTime = 0; // Reiniciar el audio
                             card.audio.play().catch(error => console.log('Error al reproducir el audio:', error));
@@ -1437,6 +1485,7 @@
                         }
                         console.log('Audio reproducido para la cara "back".');
                         isTransitioning = false;
+                        transitionTimeout = null;
                     }, 1000);
                 } else {
                     // Voltear a la cara "front"
@@ -1448,9 +1497,10 @@
 
                     stopAllAudios();
 
-                    setTimeout(() => {
+                    transitionTimeout = setTimeout(() => {
                         console.log('Cara "front" lista.');
                         isTransitioning = false;
+                        transitionTimeout = null;
                     }, 1000);
                 }
 
@@ -1605,6 +1655,77 @@
             return audio;
         });
 
+        // Precalentamiento de audios/sonidos/animaciones para evitar la lentitud inicial
+        let exposureAssetsWarmed = false;
+        function warmUpExposureAssets() {
+            if (exposureAssetsWarmed) return;
+
+            const warmAudio = (audio) => {
+                if (!audio) return;
+                const originalVolume = audio.volume;
+                audio.volume = 0;
+                const playPromise = audio.play();
+                if (playPromise && playPromise.then) {
+                    playPromise.then(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.volume = originalVolume;
+                    }).catch(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.volume = originalVolume;
+                    });
+                } else {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = originalVolume;
+                }
+            };
+
+            // Sonidos de botones y final
+            ['startExposureSound', 'soundResetButton', 'finalMessageSound', 'flipCardSound'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) warmAudio(el);
+            });
+
+            // Audios globales de la lista
+            audios.forEach(warmAudio);
+
+            // Audios por tarjeta
+            Flashcards.forEach(card => warmAudio(card.audio));
+
+            // Trigger rápido de animaciones de ondas para evitar retrasos visibles
+            const dummyCard = document.createElement('div');
+            dummyCard.style.position = 'fixed';
+            dummyCard.style.top = '-1000px';
+            dummyCard.style.opacity = '0';
+            dummyCard.style.pointerEvents = 'none';
+            const dummyBack = document.createElement('div');
+            dummyBack.className = 'back';
+            dummyCard.appendChild(dummyBack);
+            const dummyBars = document.createElement('div');
+            dummyBars.className = 'signal-bars-container';
+            for (let i = 1; i <= 3; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'signal-bar';
+                dummyBars.appendChild(bar);
+            }
+            dummyBack.appendChild(dummyBars);
+            document.body.appendChild(dummyCard);
+            setTimeout(() => dummyCard.remove(), 80);
+
+            exposureAssetsWarmed = true;
+        }
+
+        // Precalentar al primer gesto del usuario (fuera de exposición) para que el primer flip/botón sea fluido
+        const warmOnFirstInteraction = () => {
+            warmUpExposureAssets();
+            window.removeEventListener('click', warmOnFirstInteraction, true);
+            window.removeEventListener('touchstart', warmOnFirstInteraction, true);
+        };
+        window.addEventListener('click', warmOnFirstInteraction, true);
+        window.addEventListener('touchstart', warmOnFirstInteraction, true);
+
 
         // Seleccionar solo las tarjetas de imágenes
         const flashcards = Array.from(document.querySelectorAll('.flashcard'));
@@ -1630,6 +1751,7 @@
 
         // Función para iniciar/pausar la exposición de las tarjetas
         document.getElementById('start-exposure-button').addEventListener('click', () => {
+            warmUpExposureAssets();
             const icon = document.querySelector('#start-exposure-button i');
             const startButton = document.getElementById('start-exposure-button');
 
@@ -1848,14 +1970,6 @@
                 stopAllAudios(); // Detener cualquier audio previamente reproducido
                 audios[index].play();
             }
-        }
-
-        // Función para detener todos los audios
-        function stopAllAudios() {
-            audios.forEach(audio => {
-                audio.pause();
-                audio.currentTime = 0; // Reiniciar al inicio
-            });
         }
 
         // Función para reproducir audio final

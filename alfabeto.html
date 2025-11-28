@@ -731,12 +731,36 @@
             justify-content: center;
             z-index: 12000;
             backdrop-filter: blur(3px);
-            pointer-events: none; /* no bloquear interacción; solo visual */
+            pointer-events: none;
+            /* no bloquear interacción; solo visual */
         }
 
         #warmup-overlay dotlottie-wc {
             width: 300px;
             height: 200px;
+        }
+
+        /* Toast de conexión */
+        #connection-toast {
+            position: fixed;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%);
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 12px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 13000;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        #connection-toast i {
+            font-size: 1rem;
         }
 
         /* Botón de volumen en la fila de botones, a la derecha de Reiniciar */
@@ -1372,6 +1396,7 @@
         <dotlottie-wc src="https://lottie.host/f61eb3c2-9d0d-4498-9fc0-66ed722b0c1f/sIr3RiirZm.lottie" autoplay
             loop></dotlottie-wc>
     </div>
+    <div id="connection-toast"><i class="fas fa-wifi"></i><span>Problemas de conexión, reintenta</span></div>
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="startExposureSound" src="https://fawzinoo.github.io/audios/start.mp3" preload="auto"></audio>
 
@@ -1412,6 +1437,8 @@
         const startButton = document.getElementById('start-button');
         const progressText = document.getElementById('progress-text');
         const warmupOverlay = document.getElementById('warmup-overlay');
+        const connectionToast = document.getElementById('connection-toast');
+        let connectionToastTimer = null;
         const vibrateFeedback = () => {
             if (navigator.vibrate) navigator.vibrate(80);
         };
@@ -1422,6 +1449,15 @@
 
         const hideWarmupOverlay = () => {
             if (warmupOverlay) warmupOverlay.style.display = 'none';
+        };
+
+        const showConnectionToast = () => {
+            if (!connectionToast) return;
+            connectionToast.style.display = 'flex';
+            clearTimeout(connectionToastTimer);
+            connectionToastTimer = setTimeout(() => {
+                connectionToast.style.display = 'none';
+            }, 2800);
         };
 
         // Check for previous progress
@@ -1436,10 +1472,13 @@
             // Mostrar lottie mientras se prepara, sin bloquear el click
             stopAllAudios();
             showWarmupOverlay();
-            setTimeout(async () => {
-                await prewarmAnimationsAsync();
+            // Precargar en segundo plano y cerrar overlay rápido para que la UI no se sienta pesada
+            setTimeout(() => {
+                prewarmAnimationsAsync().catch(() => { });
+            }, 0);
+            setTimeout(() => {
                 hideWarmupOverlay();
-            }, 2000); // iniciar precarga tras 2s
+            }, 400); // overlay breve para feedback visual
 
             welcomeModal.classList.add('hidden');
             // Remove from DOM after animation
@@ -1450,7 +1489,7 @@
 
         // Función para precalentar animaciones y audios
         async function prewarmAnimationsAsync() {
-            const warmAudioAsync = (audio) => new Promise((resolve) => {
+            const warmAudioAsync = (audio, indexHint) => new Promise((resolve) => {
                 if (!audio) return resolve();
                 const originalVolume = audio.volume;
                 const originalMuted = audio.muted;
@@ -1465,7 +1504,10 @@
                 };
                 const playPromise = audio.play();
                 if (playPromise && playPromise.then) {
-                    playPromise.then(finish).catch(finish);
+                    playPromise.then(finish).catch(() => {
+                        maybeShowConnectionToast(indexHint);
+                        finish();
+                    });
                 } else {
                     finish();
                 }
@@ -1474,10 +1516,12 @@
             // 1. Precalentar el audio de la primera tarjeta (Click mode)
             const firstCard = document.querySelector('.flashcard');
             const tasks = [];
-            if (firstCard && firstCard.audio) tasks.push(warmAudioAsync(firstCard.audio));
+            if (firstCard && firstCard.audio) tasks.push(warmAudioAsync(firstCard.audio, 0));
 
-            // 2. Precalentar el primer audio del array (Exposition mode)
-            if (audios && audios[0]) tasks.push(warmAudioAsync(audios[0]));
+            // 2. Precalentar solo los 6 primeros audios del alfabeto (A-F)
+            for (let i = 0; i < Math.min(6, audioFiles.length); i++) {
+                tasks.push(warmAudioAsync(ensureAudio(i), i));
+            }
 
             // 3. Precalentar audios de botones
             const buttonAudioIds = [
@@ -1491,7 +1535,7 @@
 
             buttonAudioIds.forEach(id => {
                 const audio = document.getElementById(id);
-                if (audio) tasks.push(warmAudioAsync(audio));
+                if (audio) tasks.push(warmAudioAsync(audio, null));
             });
 
             // 3. Crear y animar una burbuja invisible para "calentar" la animación
@@ -1562,18 +1606,13 @@
                 }
             });
             // Audios globales (array audios)
-            if (Array.isArray(audios)) {
-                audios.forEach(audio => {
-                    audio.pause();
-                    audio.currentTime = 0;
-                });
-            }
+            forEachLoadedAudio(audio => {
+                audio.pause();
+                audio.currentTime = 0;
+            });
             removeSignalBars();
         }
 
-        // Control global de mute
-        let isMuted = false;
-        const volumeButtons = [];
         function applyMuteState() {
             Flashcards.forEach(card => {
                 if (card.audio) {
@@ -1581,12 +1620,10 @@
                     card.audio.volume = isMuted ? 0 : 1;
                 }
             });
-            if (Array.isArray(audios)) {
-                audios.forEach(audio => {
-                    audio.muted = isMuted;
-                    audio.volume = isMuted ? 0 : 1;
-                });
-            }
+            forEachLoadedAudio(audio => {
+                audio.muted = isMuted;
+                audio.volume = isMuted ? 0 : 1;
+            });
             // Audios embebidos (sí, no, exposición, reinicio, final, etc.)
             document.querySelectorAll('audio').forEach(el => {
                 el.muted = isMuted;
@@ -1645,9 +1682,15 @@
                     console.log('Volteando a la cara "back".');
 
                     transitionTimeout = setTimeout(() => {
+                        if (!card.audio) {
+                            card.audio = ensureAudio(index);
+                        }
                         if (card.audio) {
                             card.audio.currentTime = 0; // Reiniciar el audio
-                            card.audio.play().catch(error => console.log('Error al reproducir el audio:', error));
+                            card.audio.play().catch(error => {
+                                console.log('Error al reproducir el audio:', error);
+                                maybeShowConnectionToast(index);
+                            });
                             // Añadir las ondas tipo Wi-Fi
                             addSignalBars(card, card.audio);
                         }
@@ -1786,7 +1829,7 @@
 
 
         const baseUrl = 'https://fawzinoo.github.io/audios/';
-        const audios = [
+        const audioFiles = [
             'A.mp3',
             'B.mp3',
             'C.mp3',
@@ -1817,18 +1860,43 @@
             'X.mp3',
             'Y.mp3',
             'Z.mp3'
-        ].map(file => {
-            const audio = new Audio(baseUrl + file);
-            audio.preload = 'metadata'; // Preload metadata for faster first play
-            return audio;
-        });
+        ];
+        const audios = new Array(audioFiles.length).fill(null); // carga diferida
 
-        // Precalentamiento de audios/sonidos/animaciones para evitar la lentitud inicial
+        // Control global de mute
+        let isMuted = false;
+        const volumeButtons = [];
+
+        // Creador diferido de audios
+        function ensureAudio(index) {
+            if (audios[index]) return audios[index];
+            const audio = new Audio(baseUrl + audioFiles[index]);
+            audio.preload = 'metadata';
+            audio.muted = isMuted;
+            audio.volume = isMuted ? 0 : 1;
+            audios[index] = audio;
+            return audio;
+        }
+
+        function forEachLoadedAudio(cb) {
+            audios.forEach(audio => {
+                if (audio) cb(audio);
+            });
+        }
+
+        function maybeShowConnectionToast(index) {
+            if (typeof index === 'number' && index < 6) return;
+            if (navigator.onLine === false || typeof navigator.onLine === 'undefined') {
+                showConnectionToast();
+            }
+        }
+
+        // Precalentamiento de audios/sonidos/animaciones (solo primeros 5 audios del alfabeto)
         let exposureAssetsWarmed = false;
         async function warmUpExposureAssets() {
             if (exposureAssetsWarmed) return;
 
-            const warmAudioAsync = (audio) => new Promise((resolve) => {
+            const warmAudioAsync = (audio, indexHint) => new Promise((resolve) => {
                 if (!audio) return resolve();
                 const originalVolume = audio.volume;
                 const originalMuted = audio.muted;
@@ -1843,7 +1911,10 @@
                 };
                 const playPromise = audio.play();
                 if (playPromise && playPromise.then) {
-                    playPromise.then(finish).catch(finish);
+                    playPromise.then(finish).catch(() => {
+                        maybeShowConnectionToast(indexHint);
+                        finish();
+                    });
                 } else {
                     finish();
                 }
@@ -1854,14 +1925,13 @@
             // Sonidos de botones y final
             ['startExposureSound', 'soundResetButton', 'finalMessageSound', 'flipCardSound'].forEach(id => {
                 const el = document.getElementById(id);
-                if (el) tasks.push(warmAudioAsync(el));
+                if (el) tasks.push(warmAudioAsync(el, null));
             });
 
-            // Audios globales de la lista
-            audios.forEach(audio => tasks.push(warmAudioAsync(audio)));
-
-            // Audios por tarjeta
-            Flashcards.forEach(card => tasks.push(warmAudioAsync(card.audio)));
+            // Solo los primeros 5 audios del alfabeto
+            for (let i = 0; i < Math.min(5, audioFiles.length); i++) {
+                tasks.push(warmAudioAsync(ensureAudio(i), i));
+            }
 
             // Trigger rápido de animaciones de ondas para evitar retrasos visibles
             tasks.push(new Promise(resolve => {
@@ -2025,12 +2095,15 @@
 
             // Reproducir audio de la cara frontal antes de voltear la tarjeta
             const currentCard = flashcards[currentExposureIndex];
-            const frontAudioSrc = currentCard.getAttribute('data-audio');
-            if (frontAudioSrc) {
-                const frontAudio = new Audio(frontAudioSrc);
+            const frontAudio = ensureAudio(currentExposureIndex);
+            if (frontAudio) {
+                frontAudio.currentTime = 0;
                 frontAudio.muted = isMuted;
                 frontAudio.volume = isMuted ? 0 : 1;
-                frontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
+                frontAudio.play().catch((err) => {
+                    console.log('Error al reproducir audio de la cara frontal:', err);
+                    maybeShowConnectionToast(currentExposureIndex);
+                });
                 frontAudio.onended = () => {
                     console.log('Audio de la cara frontal terminado.');
                     proceedToBackAudio(); // Continuar con el audio de la parte trasera
@@ -2057,8 +2130,13 @@
                             const audioDuration = durationSec * 1000;
 
                             // Reproducción (Solo una vez)
-                            audios[currentExposureIndex].currentTime = 0;
-                            audios[currentExposureIndex].play().catch(e => console.error(e));
+                            if (audioObj) {
+                                audioObj.currentTime = 0;
+                                audioObj.play().catch(e => {
+                                    console.error(e);
+                                    maybeShowConnectionToast(currentExposureIndex);
+                                });
+                            }
 
                             // Siguiente tarjeta (Después de duración + postAudioDelay)
                             // postAudioDelay es el tiempo de espera DESPUÉS de terminar el audio
@@ -2156,9 +2234,11 @@
 
         // Función para reproducir el audio correspondiente a la tarjeta
         function playAudio(index) {
-            if (audios[index]) {
+            const audioObj = ensureAudio(index);
+            if (audioObj) {
                 stopAllAudios(); // Detener cualquier audio previamente reproducido
-                audios[index].play();
+                audioObj.currentTime = 0;
+                audioObj.play().catch(() => maybeShowConnectionToast(index));
             }
         }
 
@@ -2529,12 +2609,14 @@
 
         // Función para reproducir el audio correspondiente a la tarjeta
         function playAudio(index) {
-            if (audios[index]) {
+            const audioObj = ensureAudio(index);
+            if (audioObj) {
                 stopAllAudios(); // Detener cualquier audio previamente reproducido
-                audios[index].play();
+                audioObj.currentTime = 0;
+                audioObj.play().catch(() => maybeShowConnectionToast(index));
 
                 // Si es el último audio, mostrar el mensaje de repaso finalizado
-                audios[index].onended = function () {
+                audioObj.onended = function () {
                     if (index === flashcards.length - 1) { // Si es la última tarjeta
                         showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
                         resetFlashcards(); // Regresar a la primera tarjeta

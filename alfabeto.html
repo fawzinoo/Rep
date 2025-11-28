@@ -731,8 +731,60 @@
             justify-content: center;
             z-index: 12000;
             backdrop-filter: blur(3px);
-            pointer-events: none;
-            /* no bloquear interacción; solo visual */
+            pointer-events: all;
+        }
+
+        /* Overlay sin conexión */
+        #offline-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 14000;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(2px);
+        }
+
+        #offline-overlay .offline-card {
+            background: linear-gradient(135deg, #1f3658 0%, #3558e3 100%);
+            color: #fff;
+            padding: 22px 24px;
+            border-radius: 18px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            max-width: 360px;
+            width: 100%;
+        }
+
+        #offline-overlay h3 {
+            margin: 10px 0 8px 0;
+            font-size: 1.5rem;
+        }
+
+        #offline-overlay p {
+            margin: 0 0 16px 0;
+            font-size: 1rem;
+            line-height: 1.4;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        #offline-overlay button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 999px;
+            background: #ffd700;
+            color: #1f2c4d;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        #offline-overlay button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
         }
 
         #warmup-overlay dotlottie-wc {
@@ -1396,6 +1448,14 @@
         <dotlottie-wc src="https://lottie.host/f61eb3c2-9d0d-4498-9fc0-66ed722b0c1f/sIr3RiirZm.lottie" autoplay
             loop></dotlottie-wc>
     </div>
+    <div id="offline-overlay">
+        <div class="offline-card">
+            <div style="font-size: 36px; margin-bottom: 8px;"><i class="fas fa-wifi-slash"></i></div>
+            <h3>Sin conexión</h3>
+            <p>Sin wifi no hay fiesta: conecta internet para seguir jugando con las tarjetas.</p>
+            <button id="offline-close">Entendido</button>
+        </div>
+    </div>
     <div id="connection-toast"><i class="fas fa-wifi"></i><span>Problemas de conexión, reintenta</span></div>
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="startExposureSound" src="https://fawzinoo.github.io/audios/start.mp3" preload="auto"></audio>
@@ -1438,7 +1498,10 @@
         const progressText = document.getElementById('progress-text');
         const warmupOverlay = document.getElementById('warmup-overlay');
         const connectionToast = document.getElementById('connection-toast');
+        const offlineOverlay = document.getElementById('offline-overlay');
+        const offlineClose = document.getElementById('offline-close');
         let connectionToastTimer = null;
+        let awaitingOnline = false;
         const vibrateFeedback = () => {
             if (navigator.vibrate) navigator.vibrate(80);
         };
@@ -1451,14 +1514,68 @@
             if (warmupOverlay) warmupOverlay.style.display = 'none';
         };
 
-        const showConnectionToast = () => {
-            if (!connectionToast) return;
-            connectionToast.style.display = 'flex';
-            clearTimeout(connectionToastTimer);
-            connectionToastTimer = setTimeout(() => {
-                connectionToast.style.display = 'none';
-            }, 2800);
+        // Desactivado: el toast rojo interfería con el overlay azul
+        const showConnectionToast = () => { };
+
+        const showOfflineOverlay = () => {
+            if (!offlineOverlay) return;
+            offlineOverlay.style.display = 'flex';
         };
+
+        const hideOfflineOverlay = () => {
+            if (!offlineOverlay) return;
+            offlineOverlay.style.display = 'none';
+        };
+
+        if (offlineClose) {
+            offlineClose.addEventListener('click', () => {
+                vibrateFeedback();
+                if (!navigator.onLine) {
+                    awaitingOnline = true;
+                    hideOfflineOverlay();
+                    showWarmupOverlay(); // Espera reconexión
+                    if (welcomeModal) welcomeModal.style.display = 'none';
+                    return;
+                }
+                hideOfflineOverlay();
+            });
+        }
+
+        window.addEventListener('offline', () => {
+            // Si se cae la conexión en cualquier momento, mostramos el overlay y ocultamos el modal inicial
+            awaitingOnline = true;
+            showOfflineOverlay();
+            if (welcomeModal) welcomeModal.style.display = 'none';
+            hideWarmupOverlay();
+            stopAllAudios();
+            awaitingOnline = true;
+        });
+
+        window.addEventListener('online', () => {
+            hideOfflineOverlay();
+            if (awaitingOnline) {
+                // Mostrar espera mientras precargamos la tarjeta actual
+                showWarmupOverlay();
+                Promise.all([
+                    prewarmCardAudioAsync(currentCardIndex),
+                    prewarmCardAudioAsync(currentExposureIndex)
+                ]).finally(() => {
+                    hideWarmupOverlay();
+                    if (welcomeModal) {
+                        welcomeModal.style.display = 'flex';
+                        welcomeModal.classList.remove('hidden');
+                    }
+                    awaitingOnline = false;
+                });
+            }
+        });
+
+        if (navigator.onLine === false) {
+            // Usuario carga la página sin conexión: mostrar overlay de inmediato
+            awaitingOnline = true;
+            if (welcomeModal) welcomeModal.style.display = 'none';
+            showOfflineOverlay();
+        }
 
         // Check for previous progress
         const previousProgress = localStorage.getItem('alfabeto');
@@ -1500,12 +1617,12 @@
             });
 
             // 1. Precalentar el audio de la primera tarjeta (Click mode)
-            const firstCard = document.querySelector('.flashcard');
             const tasks = [];
-            if (firstCard && firstCard.audio) tasks.push(warmAudioAsync(firstCard.audio, 0));
+            const firstAudio = ensureAudio(0);
+            if (firstAudio) tasks.push(warmAudioAsync(firstAudio, 0));
 
-            // 2. Precalentar solo los 6 primeros audios del alfabeto (A-F)
-            for (let i = 0; i < Math.min(6, audioFiles.length); i++) {
+            // 2. Precalentar solo los 3 primeros audios del alfabeto (A-C)
+            for (let i = 0; i < Math.min(3, audioFiles.length); i++) {
                 tasks.push(warmAudioAsync(ensureAudio(i), i));
             }
 
@@ -1630,13 +1747,10 @@
         }
 
 
-        Flashcards.forEach(card => {
+        Flashcards.forEach((card, index) => {
             // Obtener el audio correspondiente de la tarjeta
-            const audioSrc = card.getAttribute('data-audio');
-            if (audioSrc) {
-                card.audio = new Audio(audioSrc); // Asociar el objeto de audio a la tarjeta
-                card.audio.preload = 'metadata';
-            }
+            card.audioSrc = card.getAttribute('data-audio');
+            card.audio = null; // carga diferida
 
             // Ajustar estado inicial según la clase actual para evitar dobles pulsaciones
             let isFlipped = card.classList.contains('flipped');
@@ -1646,6 +1760,7 @@
 
 
             card.addEventListener('click', () => {
+                if (awaitingOnline) return;
                 if (isTransitioning) {
                     // Permitir interacción inmediata cancelando la transición en curso
                     clearTimeout(transitionTimeout);
@@ -1668,9 +1783,9 @@
                     console.log('Volteando a la cara "back".');
 
                     transitionTimeout = setTimeout(() => {
-                        if (!card.audio) {
-                            card.audio = ensureAudio(index);
-                        }
+                    if (!card.audio) {
+                        card.audio = ensureAudio(index);
+                    }
                         if (card.audio) {
                             card.audio.currentTime = 0; // Reiniciar el audio
                             card.audio.play().catch(error => {
@@ -1847,6 +1962,7 @@
             'Y.mp3',
             'Z.mp3'
         ];
+        const cacheBuster = Date.now(); // limpia caché previa en cada recarga
         const audios = new Array(audioFiles.length).fill(null); // carga diferida
 
         // Control global de mute
@@ -1856,8 +1972,8 @@
         // Creador diferido de audios
         function ensureAudio(index) {
             if (audios[index]) return audios[index];
-            const audio = new Audio(baseUrl + audioFiles[index]);
-            audio.preload = 'metadata';
+            const audio = new Audio(`${baseUrl}${audioFiles[index]}?cb=${cacheBuster}`);
+            audio.preload = 'none';
             audio.muted = isMuted;
             audio.volume = isMuted ? 0 : 1;
             audios[index] = audio;
@@ -1870,10 +1986,61 @@
             });
         }
 
+        // Precalienta la tarjeta actual cuando vuelve la conexión
+        function prewarmCardAudio(index) {
+            if (typeof index !== 'number') return;
+            const audio = ensureAudio(index);
+            if (!audio) return;
+            audio.preload = 'auto';
+            try {
+                if (audio.readyState < 2) audio.load();
+            } catch (e) {
+                // ignore
+            }
+            // Vincular el audio precargado a la tarjeta para evitar latencia al voltear
+            if (Flashcards[index]) {
+                Flashcards[index].audio = audio;
+            }
+        }
+
+        // Precalienta y espera a que el audio esté listo (o timeout)
+        function prewarmCardAudioAsync(index, timeoutMs = 1200) {
+            return new Promise(resolve => {
+                if (typeof index !== 'number') return resolve();
+                const audio = ensureAudio(index);
+                if (!audio) return resolve();
+                audio.preload = 'auto';
+                let settled = false;
+                const done = () => {
+                    if (settled) return;
+                    settled = true;
+                    if (Flashcards[index]) Flashcards[index].audio = audio;
+                    resolve();
+                };
+                const t = setTimeout(done, timeoutMs);
+                audio.oncanplaythrough = () => {
+                    clearTimeout(t);
+                    done();
+                };
+                try {
+                    if (audio.readyState < 2) audio.load();
+                    else done();
+                } catch (e) {
+                    clearTimeout(t);
+                    done();
+                }
+            });
+        }
+
+        function maybeShowOfflineOverlay(index) {
+            if (navigator.onLine === false && typeof index === 'number' && index >= 3) {
+                showOfflineOverlay();
+            }
+        }
+
         function maybeShowConnectionToast(index) {
-            if (typeof index === 'number' && index < 6) return;
             if (navigator.onLine === false || typeof navigator.onLine === 'undefined') {
-                showConnectionToast();
+                maybeShowOfflineOverlay(index);
             }
         }
 
@@ -1901,8 +2068,8 @@
                 if (el) tasks.push(warmAudioAsync(el, null));
             });
 
-            // Solo los primeros 5 audios del alfabeto
-            for (let i = 0; i < Math.min(5, audioFiles.length); i++) {
+            // Solo los primeros 3 audios del alfabeto
+            for (let i = 0; i < Math.min(3, audioFiles.length); i++) {
                 tasks.push(warmAudioAsync(ensureAudio(i), i));
             }
 
@@ -1981,6 +2148,7 @@
 
         // Función para iniciar/pausar la exposición de las tarjetas
         document.getElementById('start-exposure-button').addEventListener('click', () => {
+            if (awaitingOnline) return;
             vibrateFeedback();
             warmUpExposureAssets();
             const icon = document.querySelector('#start-exposure-button i');
@@ -2310,22 +2478,25 @@
             completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
         }
 
-        function moveToNextCard() {
-            do {
-                currentCardIndex++;
-                if (currentCardIndex >= flashcards.length) {
-                    currentCardIndex = 0;
-                }
-            } while (completedCards.has(currentCardIndex) && completedCards.size < Flashcards.length);
+            function moveToNextCard() {
+                do {
+                    currentCardIndex++;
+                    if (currentCardIndex >= flashcards.length) {
+                        currentCardIndex = 0;
+                    }
+                } while (completedCards.has(currentCardIndex) && completedCards.size < Flashcards.length);
 
-            if (completedCards.size === flashcards.length) {
-                showCompletionMessage();
-                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
-                disableButtons();
-            } else {
-                showCard(currentCardIndex);
+                if (completedCards.size === flashcards.length) {
+                    showCompletionMessage();
+                    setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                    disableButtons();
+                } else {
+                    showCard(currentCardIndex);
+                }
+
+                // Si estamos offline y ya pasamos la tercera tarjeta, avisar
+                maybeShowOfflineOverlay(currentCardIndex);
             }
-        }
 
         function updatePorcentajeDiv() {
             const div = document.getElementById('porcentaje-guardado');
@@ -2347,6 +2518,7 @@
         });
 
         noButton.addEventListener('click', () => {
+            if (awaitingOnline) return;
             vibrateFeedback();
             noButton.classList.add('pressed');
             setTimeout(() => noButton.classList.remove('pressed'), 180);
@@ -2385,6 +2557,7 @@
 
 
         yesButton.addEventListener('click', () => {
+            if (awaitingOnline) return;
             vibrateFeedback();
             yesButton.classList.add('pressed');
             setTimeout(() => yesButton.classList.remove('pressed'), 180);

@@ -689,6 +689,25 @@
             opacity: 0.5;
         }
 
+        /* Overlay de espera con Lottie */
+        #warmup-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 12000;
+            backdrop-filter: blur(3px);
+            pointer-events: none;
+            /* no bloquear taps */
+        }
+
+        #warmup-overlay dotlottie-wc {
+            width: 300px;
+            height: 200px;
+        }
+
         /* Quitar resalte y sombras en taps móviles */
         .button,
         #start-exposure-button,
@@ -1287,6 +1306,10 @@
     </div>
 
     <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <div id="warmup-overlay">
+        <dotlottie-wc src="https://lottie.host/f61eb3c2-9d0d-4498-9fc0-66ed722b0c1f/sIr3RiirZm.lottie" autoplay
+            loop></dotlottie-wc>
+    </div>
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="startExposureSound" src="https://fawzinoo.github.io/audios/start.mp3" preload="auto"></audio>
 
@@ -1312,6 +1335,7 @@
 
     <!-- Agregar la librería de confeti -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.8.5/dist/dotlottie-wc.js" type="module"></script>
 
     <script>
 
@@ -1320,8 +1344,17 @@
         const welcomeModal = document.getElementById('welcome-modal');
         const startButton = document.getElementById('start-button');
         const progressText = document.getElementById('progress-text');
+        const warmupOverlay = document.getElementById('warmup-overlay');
         const vibrateFeedback = () => {
             if (navigator.vibrate) navigator.vibrate(80);
+        };
+
+        const showWarmupOverlay = () => {
+            if (warmupOverlay) warmupOverlay.style.display = 'flex';
+        };
+
+        const hideWarmupOverlay = () => {
+            if (warmupOverlay) warmupOverlay.style.display = 'none';
         };
 
         // Check for previous progress
@@ -1333,8 +1366,13 @@
 
         startButton.addEventListener('click', () => {
             vibrateFeedback();
-            // Precalentar animaciones y audios
-            prewarmAnimations();
+            // Mostrar lottie mientras se prepara, sin bloquear el click
+            showWarmupOverlay();
+            setTimeout(async () => {
+                const minDelay = new Promise(res => setTimeout(res, 3000));
+                await Promise.all([prewarmAnimationsAsync(), minDelay]);
+                hideWarmupOverlay();
+            }, 0);
 
             welcomeModal.classList.add('hidden');
             // Remove from DOM after animation
@@ -1344,27 +1382,32 @@
         });
 
         // Función para precalentar animaciones y audios
-        function prewarmAnimations() {
+        async function prewarmAnimationsAsync() {
+            const warmAudioAsync = (audio) => new Promise((resolve) => {
+                if (!audio) return resolve();
+                const originalVolume = audio.volume;
+                audio.volume = 0;
+                const finish = () => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = originalVolume;
+                    resolve();
+                };
+                const playPromise = audio.play();
+                if (playPromise && playPromise.then) {
+                    playPromise.then(finish).catch(finish);
+                } else {
+                    finish();
+                }
+            });
+
             // 1. Precalentar el audio de la primera tarjeta (Click mode)
             const firstCard = document.querySelector('.flashcard');
-            if (firstCard && firstCard.audio) {
-                firstCard.audio.volume = 0;
-                firstCard.audio.play().then(() => {
-                    firstCard.audio.pause();
-                    firstCard.audio.currentTime = 0;
-                    firstCard.audio.volume = 1;
-                }).catch(e => console.log("Audio prewarm failed", e));
-            }
+            const tasks = [];
+            if (firstCard && firstCard.audio) tasks.push(warmAudioAsync(firstCard.audio));
 
             // 2. Precalentar el primer audio del array (Exposition mode)
-            if (audios && audios[0]) {
-                audios[0].volume = 0;
-                audios[0].play().then(() => {
-                    audios[0].pause();
-                    audios[0].currentTime = 0;
-                    audios[0].volume = 1;
-                }).catch(e => console.log("Exposition audio prewarm failed", e));
-            }
+            if (audios && audios[0]) tasks.push(warmAudioAsync(audios[0]));
 
             // 3. Precalentar audios de botones
             const buttonAudioIds = [
@@ -1378,14 +1421,7 @@
 
             buttonAudioIds.forEach(id => {
                 const audio = document.getElementById(id);
-                if (audio) {
-                    audio.volume = 0;
-                    audio.play().then(() => {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        audio.volume = 1;
-                    }).catch(e => console.log(`Audio prewarm failed for ${id}`, e));
-                }
+                if (audio) tasks.push(warmAudioAsync(audio));
             });
 
             // 3. Crear y animar una burbuja invisible para "calentar" la animación
@@ -1401,9 +1437,10 @@
             dummySmoke.className = 'smoke';
             dummyButton.appendChild(dummySmoke);
 
-            setTimeout(() => {
+            tasks.push(new Promise(resolve => setTimeout(() => {
                 dummyButton.remove();
-            }, 100);
+                resolve();
+            }, 120)));
 
             // 3. Precalentar las barras de señal
             const dummyCard = document.createElement('div');
@@ -1425,9 +1462,15 @@
             }
             dummyBack.appendChild(container);
 
-            setTimeout(() => {
+            tasks.push(new Promise(resolve => setTimeout(() => {
                 dummyCard.remove();
-            }, 100);
+                resolve();
+            }, 120)));
+
+            // Espera mínima total para que el overlay se note elegante
+            tasks.push(new Promise(resolve => setTimeout(resolve, 450)));
+
+            await Promise.allSettled(tasks);
         }
 
         // Función para volver atrás
@@ -1677,63 +1720,70 @@
 
         // Precalentamiento de audios/sonidos/animaciones para evitar la lentitud inicial
         let exposureAssetsWarmed = false;
-        function warmUpExposureAssets() {
+        async function warmUpExposureAssets() {
             if (exposureAssetsWarmed) return;
 
-            const warmAudio = (audio) => {
-                if (!audio) return;
+            const warmAudioAsync = (audio) => new Promise((resolve) => {
+                if (!audio) return resolve();
                 const originalVolume = audio.volume;
                 audio.volume = 0;
-                const playPromise = audio.play();
-                if (playPromise && playPromise.then) {
-                    playPromise.then(() => {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        audio.volume = originalVolume;
-                    }).catch(() => {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        audio.volume = originalVolume;
-                    });
-                } else {
+                const finish = () => {
                     audio.pause();
                     audio.currentTime = 0;
                     audio.volume = originalVolume;
+                    resolve();
+                };
+                const playPromise = audio.play();
+                if (playPromise && playPromise.then) {
+                    playPromise.then(finish).catch(finish);
+                } else {
+                    finish();
                 }
-            };
+            });
+
+            const tasks = [];
 
             // Sonidos de botones y final
             ['startExposureSound', 'soundResetButton', 'finalMessageSound', 'flipCardSound'].forEach(id => {
                 const el = document.getElementById(id);
-                if (el) warmAudio(el);
+                if (el) tasks.push(warmAudioAsync(el));
             });
 
             // Audios globales de la lista
-            audios.forEach(warmAudio);
+            audios.forEach(audio => tasks.push(warmAudioAsync(audio)));
 
             // Audios por tarjeta
-            Flashcards.forEach(card => warmAudio(card.audio));
+            Flashcards.forEach(card => tasks.push(warmAudioAsync(card.audio)));
 
             // Trigger rápido de animaciones de ondas para evitar retrasos visibles
-            const dummyCard = document.createElement('div');
-            dummyCard.style.position = 'fixed';
-            dummyCard.style.top = '-1000px';
-            dummyCard.style.opacity = '0';
-            dummyCard.style.pointerEvents = 'none';
-            const dummyBack = document.createElement('div');
-            dummyBack.className = 'back';
-            dummyCard.appendChild(dummyBack);
-            const dummyBars = document.createElement('div');
-            dummyBars.className = 'signal-bars-container';
-            for (let i = 1; i <= 3; i++) {
-                const bar = document.createElement('div');
-                bar.className = 'signal-bar';
-                dummyBars.appendChild(bar);
-            }
-            dummyBack.appendChild(dummyBars);
-            document.body.appendChild(dummyCard);
-            setTimeout(() => dummyCard.remove(), 80);
+            tasks.push(new Promise(resolve => {
+                const dummyCard = document.createElement('div');
+                dummyCard.style.position = 'fixed';
+                dummyCard.style.top = '-1000px';
+                dummyCard.style.opacity = '0';
+                dummyCard.style.pointerEvents = 'none';
+                const dummyBack = document.createElement('div');
+                dummyBack.className = 'back';
+                dummyCard.appendChild(dummyBack);
+                const dummyBars = document.createElement('div');
+                dummyBars.className = 'signal-bars-container';
+                for (let i = 1; i <= 3; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'signal-bar';
+                    dummyBars.appendChild(bar);
+                }
+                dummyBack.appendChild(dummyBars);
+                document.body.appendChild(dummyCard);
+                setTimeout(() => {
+                    dummyCard.remove();
+                    resolve();
+                }, 120);
+            }));
 
+            // Espera mínima para suavizar
+            tasks.push(new Promise(resolve => setTimeout(resolve, 450)));
+
+            await Promise.allSettled(tasks);
             exposureAssetsWarmed = true;
         }
 

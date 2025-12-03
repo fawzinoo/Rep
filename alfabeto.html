@@ -393,6 +393,8 @@
             filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
             transition: filter 0.3s ease;
             pointer-events: none;
+            animation: splashEffect 13s infinite ease-in-out;
+            transform-origin: center;
         }
 
         .logo-corner:hover img {
@@ -426,15 +428,7 @@
             }
         }
 
-        @media (min-width: 625px) {
-            .logo-corner {
-                position: fixed;
-                top: 30px;
-                left: 350px;
-                width: 46px;
-                height: 46px;
-            }
-        }
+
 
         /* Footer firma (de envases) */
         .editor-name {
@@ -2146,6 +2140,7 @@
         const PROGRESS_STATE_KEY = 'alfabeto-progress';
         const EXPOSURE_STATE_KEY = 'alfabeto-exposure-state';
         const wrapper = document.getElementById('flashcard-container-wrapper');
+        let restoreWelcomeOnClose = true;
         if (wrapper && !wrapper.querySelector('.editor-name')) {
             const sig = document.createElement('div');
             sig.className = 'editor-name';
@@ -2158,6 +2153,7 @@
         let connectionToastTimer = null;
         let awaitingOnline = false;
         let wasExposingBeforeOffline = false;
+        let lastExposureSide = 'front';
         const vibrateFeedback = () => {
             if (navigator.vibrate) navigator.vibrate(80);
         };
@@ -2193,6 +2189,7 @@
                     if (welcomeModal) welcomeModal.style.display = 'none';
                     return;
                 }
+                awaitingOnline = false;
                 hideOfflineOverlay();
             });
         }
@@ -2204,6 +2201,9 @@
             snapshotProgressState(); // guardar estado de tarjetas antes de mostrar overlay
             stopAllAudios();
             removeSignalBars();
+            if (wasExposingBeforeOffline) {
+                currentCardIndex = currentExposureIndex; // mostrar la tarjeta de la exposición
+            }
             showCard(currentCardIndex, true);
             flipCard(currentCardIndex, false);
             // Solo pausar/guardar exposición si realmente estaba en curso
@@ -2231,18 +2231,23 @@
                         currentCardIndex = 0;
                     }
                     // Reaplicar estado de tarjetas y asegurar cara frontal visible
-                    const applied = applySavedProgressState();
-                    showCard(currentCardIndex, true);
-                    flipCard(currentCardIndex, false);
-                    if (savedExposure && savedExposure.reason === 'offline' && typeof savedExposure.index === 'number') {
-                        currentExposureIndex = savedExposure.index;
-                        if (wasExposingBeforeOffline) {
-                            currentCardIndex = savedExposure.index;
+                    applySavedProgressState();
+
+                    // Si veníamos de exposición, mostrar siempre la tarjeta de exposición (lado frontal)
+                    const showExposureCard = (savedExposure && savedExposure.reason === 'offline' && typeof savedExposure.index === 'number') || (wasExposingBeforeOffline && typeof currentExposureIndex === 'number');
+                    let indexToShow = currentCardIndex;
+                    if (showExposureCard) {
+                        indexToShow = savedExposure && typeof savedExposure.index === 'number' ? savedExposure.index : currentExposureIndex;
+                        currentExposureIndex = indexToShow;
+                        currentCardIndex = indexToShow;
+                        if (savedExposure && savedExposure.side) {
+                            lastExposureSide = savedExposure.side;
                         }
-                        showCard(currentCardIndex, true);
-                        flipCard(currentCardIndex, false);
-                        updateTotalCardsCounter();
                     }
+
+                    showCard(indexToShow, true);
+                    flipCard(indexToShow, false); // siempre front al volver
+                    updateTotalCardsCounter();
                     if (welcomeModal) {
                         welcomeModal.style.display = 'flex';
                         welcomeModal.classList.remove('hidden');
@@ -2792,8 +2797,10 @@
             syncContinueUI();
         };
 
-        const saveExposureState = (index, status, reason) => {
+        const saveExposureState = (index, status, reason, sideParam) => {
             const payload = { index, status, reason: reason || status };
+            const side = sideParam || lastExposureSide;
+            if (side) payload.side = side;
             savedExposure = payload;
             try {
                 localStorage.removeItem(EXPOSURE_STATE_KEY);
@@ -2847,18 +2854,29 @@
 
         const openContinueModal = () => {
             const { hasCardsProgress, hasExposureProgress } = syncContinueUI();
-            // Si solo hay progreso de tarjetas, ir directo sin modal
-            if (hasCardsProgress && !hasExposureProgress) {
+            if (!hasCardsProgress && !hasExposureProgress) {
                 handleWelcomeAction('continue');
                 return;
             }
-            // Si no hay ningún progreso, no abrir el modal
-            if (!hasCardsProgress && !hasExposureProgress) return;
-            if (continueModal) continueModal.style.display = 'flex';
+            if (continueModal) {
+                restoreWelcomeOnClose = true;
+                if (welcomeModal) {
+                    welcomeModal.classList.add('hidden');
+                    welcomeModal.style.display = 'none';
+                }
+                continueModal.style.display = 'flex';
+                // Enfocar el primer botón disponible para teclado
+                const firstBtn = hasCardsProgress ? continueCardsBtn : continueExposureBtn;
+                setTimeout(() => firstBtn && firstBtn.focus(), 0);
+            }
         };
 
         const closeContinueModal = () => {
             if (continueModal) continueModal.style.display = 'none';
+            if (welcomeModal && restoreWelcomeOnClose) {
+                welcomeModal.classList.remove('hidden');
+                welcomeModal.style.display = 'flex';
+            }
         };
 
         if (closeContinueModalBtn) {
@@ -2900,12 +2918,15 @@
                 if (savedExposure && typeof savedExposure.index === 'number') {
                     currentExposureIndex = savedExposure.index;
                     currentCardIndex = savedExposure.index;
+                    if (savedExposure.side) {
+                        lastExposureSide = savedExposure.side;
+                    }
                 }
                 exposureSelectionMade = true;
                 closeExposureModal();
                 const startExposureSound = document.getElementById('startExposureSound');
                 startExposureSound.play().catch(() => { });
-                startExposure();
+                startExposure(savedExposure ? savedExposure.side : null);
             });
         }
 
@@ -2915,6 +2936,7 @@
                 clearExposureState();
                 savedExposure = null;
                 updateResumeButtonVisibility();
+                restoreWelcomeOnClose = false;
                 closeContinueModal();
                 handleWelcomeAction('continue');
             });
@@ -2925,6 +2947,7 @@
                 vibrateFeedback();
                 if (!savedExposure || typeof savedExposure.index !== 'number') return;
                 exposureSelectionMade = true;
+                restoreWelcomeOnClose = false;
                 closeContinueModal();
                 if (welcomeModal) {
                     welcomeModal.classList.add('hidden');
@@ -3102,6 +3125,111 @@
         }
         applyMuteState();
 
+        let focusIndex = 0;
+
+        // Atajos de teclado
+        document.addEventListener('keydown', (event) => {
+            if (event.repeat) return;
+            const key = event.key.toLowerCase();
+            const tag = (event.target && event.target.tagName) ? event.target.tagName.toLowerCase() : '';
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target.isContentEditable) return;
+
+            const isModalVisible = (el) => el && el.style.display === 'flex';
+            const getActiveButtons = () => {
+                if (isModalVisible(exposureConfirmModal)) {
+                    return [startBeginningBtn, startCurrentBtn, startResumeBtn]
+                        .filter(btn => btn && btn.style.display !== 'none' && !btn.disabled);
+                }
+                if (isModalVisible(continueModal)) {
+                    return [continueCardsBtn, continueExposureBtn].filter(btn => btn && !btn.disabled);
+                }
+                if (welcomeModal && !welcomeModal.classList.contains('hidden')) {
+                    return [
+                        startButton,
+                        (continueButton && continueButton.style.display !== 'none') ? continueButton : null
+                    ].filter(Boolean);
+                }
+                return [];
+            };
+
+            // Flechas arriba/abajo para recorrer botones activos
+            if (key === 'arrowup' || key === 'arrowdown') {
+                const buttons = getActiveButtons();
+                if (buttons.length > 0) {
+                    event.preventDefault();
+                    focusIndex = (focusIndex + (key === 'arrowdown' ? 1 : -1) + buttons.length) % buttons.length;
+                    buttons[focusIndex].focus();
+                    return;
+                }
+            }
+
+            // Enter activa el botón enfocado (o el primero)
+            if (key === 'enter') {
+                const buttons = getActiveButtons();
+                if (buttons.length > 0) {
+                    event.preventDefault();
+                    const target = buttons.includes(document.activeElement)
+                        ? document.activeElement
+                        : buttons[focusIndex % buttons.length];
+                    if (target) target.click();
+                    return;
+                }
+            }
+
+            // Borrar/Backspace cierra modales
+            if (key === 'delete' || key === 'backspace') {
+                if (isModalVisible(continueModal) && closeContinueModalBtn) {
+                    event.preventDefault();
+                    closeContinueModalBtn.click();
+                    return;
+                }
+                if (isModalVisible(exposureConfirmModal) && closeExposureBtn) {
+                    event.preventDefault();
+                    closeExposureBtn.click();
+                    return;
+                }
+            }
+
+            if (key === ' ' || key === 'spacebar') {
+                event.preventDefault();
+                if (awaitingOnline || isExposing) return;
+                const card = flashcards[currentCardIndex];
+                if (card) card.click();
+                return;
+            }
+
+            if (key === 'q') {
+                event.preventDefault();
+                if (yesButton && !yesButton.disabled) yesButton.click();
+                return;
+            }
+
+            if (key === 'w') {
+                event.preventDefault();
+                if (noButton && !noButton.disabled) noButton.click();
+                return;
+            }
+
+            if (key === 'e') {
+                event.preventDefault();
+                const startBtn = document.getElementById('start-exposure-button');
+                if (startBtn) startBtn.click();
+                return;
+            }
+
+            if (key === 'r') {
+                event.preventDefault();
+                const resetBtn = document.getElementById('reset-button');
+                if (resetBtn) resetBtn.click();
+                return;
+            }
+
+            if (key === 't') {
+                event.preventDefault();
+                if (volumeToggleBtn) volumeToggleBtn.click();
+                return;
+            }
+        });
 
 
         // Detener todos los audios al presionar los botones "Sí" o "No"
@@ -3119,11 +3247,17 @@
 
         // Función para iniciar/pausar la exposición de las tarjetas
         document.getElementById('start-exposure-button').addEventListener('click', () => {
+            if (awaitingOnline && navigator.onLine) {
+                awaitingOnline = false;
+                hideOfflineOverlay();
+                hideWarmupOverlay();
+            }
             if (awaitingOnline) return;
             vibrateFeedback();
             warmUpExposureAssets();
             const icon = document.querySelector('#start-exposure-button i');
             const startButton = document.getElementById('start-exposure-button');
+            const resumeSide = (savedExposure && savedExposure.reason === 'offline' && savedExposure.side) ? savedExposure.side : null;
 
             // Si la exposición está pausada (botones Sí/No desactivados), reanudar directamente
             if (isPaused) {
@@ -3145,18 +3279,19 @@
 
             // Si no hay exposición activa aún, ofrecer opciones solo cuando Sí/No estén habilitados
             if (!isExposing && !isPaused) {
+                currentCardIndex = currentExposureIndex; // al iniciar exposición, sincronizar índice global
                 if (currentCardIndex === 0) {
                     const startExposureSound = document.getElementById('startExposureSound');
                     startExposureSound.play().catch(() => { });
                     clearExposureState();
-                    startExposure();
+                    startExposure(resumeSide);
                     return;
                 }
                 // Si ya eligió cómo empezar antes, reanudar directo sin mostrar opciones
                 if (exposureSelectionMade) {
                     const startExposureSound = document.getElementById('startExposureSound');
                     startExposureSound.play().catch(() => { });
-                    startExposure();
+                    startExposure(resumeSide);
                 } else {
                     openExposureModal();
                 }
@@ -3184,7 +3319,7 @@
 
 
         // Función para iniciar la exposición
-        function startExposure() {
+        function startExposure(resumeSide) {
             console.log("Iniciando exposición...");
             const startButton = document.getElementById('start-exposure-button');
             const icon = document.querySelector('#start-exposure-button i');
@@ -3198,8 +3333,10 @@
             // Persistir el índice actual como progreso en curso
             saveExposureState(currentExposureIndex, 'running', 'auto');
 
+            currentCardIndex = currentExposureIndex; // mantener ambos índices alineados en exposición
             showCard(currentExposureIndex);
             flipCard(currentExposureIndex, false);
+            lastExposureSide = 'front';
 
             yesButton.disabled = true;
             noButton.disabled = true;
@@ -3216,6 +3353,7 @@
 
             const goNext = () => {
                 currentExposureIndex++;
+                currentCardIndex = currentExposureIndex;
                 // Guardar progreso al avanzar
                 saveExposureState(currentExposureIndex, 'running', 'auto');
                 if (currentExposureIndex >= audios.length) {
@@ -3243,7 +3381,8 @@
                 updateTotalCardsCounter();
             };
 
-            const frontTimeout = setTimeout(() => {
+            const playBackSide = () => {
+                lastExposureSide = 'back';
                 flipCard(currentExposureIndex, true);
                 const backAudio = ensureAudio(currentExposureIndex);
                 if (backAudio) {
@@ -3288,8 +3427,16 @@
                     }, 2000 + tailDelay);
                     timeouts.push(fallbackTimer);
                 }
-            }, frontDelay);
-            timeouts.push(frontTimeout);
+            };
+
+            if (resumeSide === 'back' || lastExposureSide === 'back') {
+                playBackSide();
+            } else {
+                const frontTimeout = setTimeout(() => {
+                    playBackSide();
+                }, frontDelay);
+                timeouts.push(frontTimeout);
+            }
         }
 
 
@@ -3307,9 +3454,10 @@
         function pauseExposure(reason) {
             isPaused = true;
             isExposing = false;
+            currentCardIndex = currentExposureIndex; // asegurar que los índices coincidan al pausar
             stopExposure();
             // Siempre guardamos el índice actual al pausar para poder reanudar tras refrescar
-            saveExposureState(currentExposureIndex, 'paused', reason || 'paused');
+            saveExposureState(currentExposureIndex, 'paused', reason || 'paused', lastExposureSide);
             const startButton = document.getElementById('start-exposure-button');
             const icon = document.querySelector('#start-exposure-button i');
             if (icon) {
@@ -3471,6 +3619,8 @@
             const percentage = flashcards.length ? Math.round((yesCounter / flashcards.length) * 100) : 0;
             payload.percentage = percentage;
             try {
+                localStorage.removeItem(PROGRESS_STATE_KEY);
+                localStorage.removeItem('alfabeto');
                 localStorage.setItem(PROGRESS_STATE_KEY, JSON.stringify(payload));
                 localStorage.setItem('alfabeto', percentage);
             } catch (e) { }
@@ -3852,8 +4002,8 @@
                     console.log('Error al reproducir el sonido del botón Reiniciar:', error);
                 }
             }
-            // Limpiar SOLO el estado de exposición y luego recargar
-            clearExposureState();
+            // Guardar el estado de exposición como pausado para poder reanudar tras la recarga
+            saveExposureState(currentExposureIndex, 'paused', 'manual-reset');
             setTimeout(() => location.reload(), 120);
         });
 

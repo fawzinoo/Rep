@@ -2138,6 +2138,8 @@
         const continueExposureBtn = document.getElementById('continue-exposure-btn');
         const closeContinueModalBtn = document.getElementById('close-continue-modal');
         const PROGRESS_STATE_KEY = 'alfabeto-progress';
+        const PROGRESS_SESSION_KEY = 'alfabeto-progress-session';
+        let currentProgressSession = Date.now();
         const EXPOSURE_STATE_KEY = 'alfabeto-exposure-state';
         const wrapper = document.getElementById('flashcard-container-wrapper');
         let restoreWelcomeOnClose = true;
@@ -2177,6 +2179,20 @@
         const hideOfflineOverlay = () => {
             if (!offlineOverlay) return;
             offlineOverlay.style.display = 'none';
+        };
+
+        // Recupera la interacción si ya volvió la conexión pero awaitingOnline sigue activo
+        const recoverFromOfflineIfBack = () => {
+            if (awaitingOnline && navigator.onLine) {
+                awaitingOnline = false;
+                hideOfflineOverlay();
+                hideWarmupOverlay();
+                stopAllAudios();
+                removeSignalBars();
+                showCard(currentCardIndex, true);
+                flipCard(currentCardIndex, false);
+                enableButtons();
+            }
         };
 
         if (offlineClose) {
@@ -2230,8 +2246,12 @@
                     if (typeof currentCardIndex !== 'number' || Number.isNaN(currentCardIndex)) {
                         currentCardIndex = 0;
                     }
-                    // Reaplicar estado de tarjetas y asegurar cara frontal visible
-                    applySavedProgressState();
+                    // Si veníamos de una exposición, evitar que el progreso de tarjetas sobrescriba el índice de exposición
+                    const preferExposureState = (savedExposure && savedExposure.reason === 'offline') || wasExposingBeforeOffline;
+                    if (!preferExposureState) {
+                        // Reaplicar estado de tarjetas y asegurar cara frontal visible
+                        applySavedProgressState();
+                    }
 
                     // Si veníamos de exposición, mostrar siempre la tarjeta de exposición (lado frontal)
                     const showExposureCard = (savedExposure && savedExposure.reason === 'offline' && typeof savedExposure.index === 'number') || (wasExposingBeforeOffline && typeof currentExposureIndex === 'number');
@@ -2291,7 +2311,12 @@
             try {
                 const raw = localStorage.getItem(PROGRESS_STATE_KEY);
                 if (!raw) return null;
-                return JSON.parse(raw);
+                const parsed = JSON.parse(raw);
+                const storedSession = localStorage.getItem(PROGRESS_SESSION_KEY);
+                if (parsed && parsed.sessionId && storedSession && String(parsed.sessionId) !== String(storedSession)) {
+                    return null; // Ignorar estados de sesiones antiguas
+                }
+                return parsed;
             } catch (e) {
                 return null;
             }
@@ -2307,7 +2332,7 @@
 
         const getProgressFlags = () => {
             const cardsState = loadProgressState();
-            const hasCardsProgress = cardsState && hasMeaningfulProgress(cardsState) && !isProgressComplete(cardsState, totalCardsCount);
+            const hasCardsProgress = cardsState && hasMeaningfulProgress(cardsState);
 
             let exposureState = null;
             try {
@@ -2325,7 +2350,16 @@
 
         const syncContinueUI = () => {
             const { hasCardsProgress, hasExposureProgress } = getProgressFlags();
-            if (continueButton) continueButton.style.display = (hasCardsProgress || hasExposureProgress) ? 'inline-block' : 'none';
+            if (continueButton) {
+                continueButton.style.display = (hasCardsProgress || hasExposureProgress) ? 'inline-block' : 'none';
+                if (hasCardsProgress && !hasExposureProgress) {
+                    continueButton.textContent = 'Continuar';
+                } else if (!hasCardsProgress && hasExposureProgress) {
+                    continueButton.textContent = 'Continuar la exposición';
+                } else {
+                    continueButton.textContent = 'Continuar';
+                }
+            }
             if (continueCardsBtn) {
                 continueCardsBtn.disabled = !hasCardsProgress;
                 continueCardsBtn.classList.toggle('disabled', !hasCardsProgress);
@@ -2337,8 +2371,35 @@
             return { hasCardsProgress, hasExposureProgress };
         };
 
+        const startExposureFromSaved = () => {
+            vibrateFeedback();
+            clearSavedProgressState(); // si elige exposición, limpiar progreso de tarjetas
+            refreshSavedExposureState();
+            if (!savedExposure || typeof savedExposure.index !== 'number') return false;
+            exposureSelectionMade = true;
+            restoreWelcomeOnClose = false;
+            closeContinueModal();
+            if (welcomeModal) {
+                welcomeModal.classList.add('hidden');
+                setTimeout(() => {
+                    try { welcomeModal.remove(); } catch (e) { }
+                }, 300);
+            }
+            currentExposureIndex = savedExposure.index;
+            currentCardIndex = savedExposure.index;
+            showCard(currentExposureIndex);
+            flipCard(currentExposureIndex, false);
+            const startExposureSound = document.getElementById('startExposureSound');
+            if (startExposureSound && typeof startExposureSound.play === 'function') {
+                startExposureSound.play().catch(() => { });
+            }
+            startExposure();
+            return true;
+        };
+
         // Escucha cambios en localStorage (por ejemplo, si se guarda nuevo progreso en otra pestaña)
         window.addEventListener('storage', () => {
+            refreshSavedExposureState();
             syncContinueUI();
         });
 
@@ -2347,14 +2408,17 @@
             // Mostrar lottie mientras se prepara, sin bloquear el click
             setTimeout(stopAllAudios, 0);
             showWarmupOverlay();
+
             // Lanzar precarga 2s después del click para no frenar la fluidez inicial
             setTimeout(() => {
                 prewarmAnimationsAsync().catch(() => { });
             }, 2000);
+
             // Mantener overlay visible 3s sin verse afectado por la precarga
             setTimeout(hideWarmupOverlay, 3000);
 
             if (mode === 'start') {
+                resetProgressSession();
                 clearSavedProgressState();
                 clearExposureState();
                 savedExposure = null;
@@ -2368,24 +2432,44 @@
             }
 
             if (mode === 'continue') {
-                const applied = applySavedProgressState();
-                if (!applied) {
-                    resetProgressState();
+                try {
+                    applySavedProgressState();
+                    showCard(currentCardIndex, true);
+                } catch (e) {
+                    console.error("Error applying progress:", e);
+                    showCard(currentCardIndex, true);
                 }
             }
 
-            welcomeModal.classList.add('hidden');
-            // Remove from DOM after animation
-            setTimeout(() => {
-                welcomeModal.remove();
-            }, 300);
+            if (welcomeModal) {
+                welcomeModal.classList.add('hidden');
+                // Remove from DOM after animation
+                setTimeout(() => {
+                    try { welcomeModal.remove(); } catch (e) { }
+                }, 300);
+            }
         }
 
         startButton.addEventListener('click', () => handleWelcomeAction('start'));
         if (continueButton) {
             continueButton.addEventListener('click', () => {
-                vibrateFeedback();
-                openContinueModal();
+                try {
+                    vibrateFeedback();
+                    refreshSavedExposureState();
+                    const { hasCardsProgress, hasExposureProgress } = syncContinueUI();
+
+                    if (hasCardsProgress && !hasExposureProgress) {
+                        handleWelcomeAction('continue');
+                    } else if (!hasCardsProgress && hasExposureProgress) {
+                        startExposureFromSaved();
+                    } else {
+                        openContinueModal();
+                    }
+                } catch (error) {
+                    console.error('Error in continue button:', error);
+                    // Fallback: try to continue normally if something fails
+                    try { handleWelcomeAction('continue'); } catch (e) { }
+                }
             });
         }
 
@@ -2798,12 +2882,12 @@
         };
 
         const saveExposureState = (index, status, reason, sideParam) => {
+            if (typeof index !== 'number') return;
             const payload = { index, status, reason: reason || status };
             const side = sideParam || lastExposureSide;
             if (side) payload.side = side;
             savedExposure = payload;
             try {
-                localStorage.removeItem(EXPOSURE_STATE_KEY);
                 localStorage.setItem(EXPOSURE_STATE_KEY, JSON.stringify(payload));
             } catch (e) { }
             updateResumeButtonVisibility();
@@ -2819,6 +2903,12 @@
                 return null;
             }
         }
+
+        const refreshSavedExposureState = () => {
+            savedExposure = loadExposureState();
+            updateResumeButtonVisibility();
+            return savedExposure;
+        };
 
         const updateResumeButtonVisibility = () => {
             const showResume = savedExposure && typeof savedExposure.index === 'number';
@@ -2853,6 +2943,7 @@
         }
 
         const openContinueModal = () => {
+            refreshSavedExposureState();
             const { hasCardsProgress, hasExposureProgress } = syncContinueUI();
             if (!hasCardsProgress && !hasExposureProgress) {
                 handleWelcomeAction('continue');
@@ -2889,12 +2980,12 @@
         if (startBeginningBtn) {
             startBeginningBtn.addEventListener('click', () => {
                 vibrateFeedback();
+                clearSavedProgressState(); // si elige exposición, limpiar progreso de tarjetas
                 currentExposureIndex = 0;
                 exposureSelectionMade = true;
                 closeExposureModal();
                 const startExposureSound = document.getElementById('startExposureSound');
                 startExposureSound.play().catch(() => { });
-                clearExposureState();
                 startExposure();
             });
         }
@@ -2902,12 +2993,12 @@
         if (startCurrentBtn) {
             startCurrentBtn.addEventListener('click', () => {
                 vibrateFeedback();
+                clearSavedProgressState(); // si elige exposición, limpiar progreso de tarjetas
                 currentExposureIndex = currentCardIndex;
                 exposureSelectionMade = true;
                 closeExposureModal();
                 const startExposureSound = document.getElementById('startExposureSound');
                 startExposureSound.play().catch(() => { });
-                clearExposureState();
                 startExposure();
             });
         }
@@ -2915,6 +3006,8 @@
         if (startResumeBtn) {
             startResumeBtn.addEventListener('click', () => {
                 vibrateFeedback();
+                clearSavedProgressState(); // si elige exposición, limpiar progreso de tarjetas
+                refreshSavedExposureState();
                 if (savedExposure && typeof savedExposure.index === 'number') {
                     currentExposureIndex = savedExposure.index;
                     currentCardIndex = savedExposure.index;
@@ -2933,6 +3026,16 @@
         if (continueCardsBtn) {
             continueCardsBtn.addEventListener('click', () => {
                 vibrateFeedback();
+                // Detener la reproducción, pero conservar el estado de exposición guardado
+                if (isExposing || isPaused) {
+                    pauseExposure('switch-to-cards');
+                } else {
+                    stopExposure();
+                }
+                isExposing = false;
+                isPaused = false;
+                exposureSelectionMade = false;
+                // Si elige tarjetas, limpiar el estado de exposición guardado
                 clearExposureState();
                 savedExposure = null;
                 updateResumeButtonVisibility();
@@ -2945,6 +3048,8 @@
         if (continueExposureBtn) {
             continueExposureBtn.addEventListener('click', () => {
                 vibrateFeedback();
+                clearSavedProgressState(); // si elige exposición, limpiar progreso de tarjetas
+                refreshSavedExposureState();
                 if (!savedExposure || typeof savedExposure.index !== 'number') return;
                 exposureSelectionMade = true;
                 restoreWelcomeOnClose = false;
@@ -3244,14 +3349,12 @@
         let isPaused = false;
         let currentExposureIndex = 0;
         let timeouts = []; // Array para guardar los IDs de los setTimeout
+        let lastCardsIndexBeforeExposure = 0; // índice de tarjetas (modo tarjetas) previo a entrar a exposición
 
         // Función para iniciar/pausar la exposición de las tarjetas
         document.getElementById('start-exposure-button').addEventListener('click', () => {
-            if (awaitingOnline && navigator.onLine) {
-                awaitingOnline = false;
-                hideOfflineOverlay();
-                hideWarmupOverlay();
-            }
+            recoverFromOfflineIfBack();
+            refreshSavedExposureState();
             if (awaitingOnline) return;
             vibrateFeedback();
             warmUpExposureAssets();
@@ -3279,22 +3382,18 @@
 
             // Si no hay exposición activa aún, ofrecer opciones solo cuando Sí/No estén habilitados
             if (!isExposing && !isPaused) {
-                currentCardIndex = currentExposureIndex; // al iniciar exposición, sincronizar índice global
-                if (currentCardIndex === 0) {
+                // Sincronizar exposición con la tarjeta actual al iniciar desde tarjetas
+                currentCardIndex = typeof currentCardIndex === 'number' ? currentCardIndex : 0;
+                currentExposureIndex = currentCardIndex;
+                const decisionIndex = currentCardIndex;
+                // Tarjeta 0: iniciar directo; desde la 2ª tarjeta en adelante mostrar opciones
+                if (decisionIndex <= 0) {
                     const startExposureSound = document.getElementById('startExposureSound');
                     startExposureSound.play().catch(() => { });
-                    clearExposureState();
                     startExposure(resumeSide);
                     return;
                 }
-                // Si ya eligió cómo empezar antes, reanudar directo sin mostrar opciones
-                if (exposureSelectionMade) {
-                    const startExposureSound = document.getElementById('startExposureSound');
-                    startExposureSound.play().catch(() => { });
-                    startExposure(resumeSide);
-                } else {
-                    openExposureModal();
-                }
+                openExposureModal();
                 return;
             }
 
@@ -3323,6 +3422,11 @@
             console.log("Iniciando exposición...");
             const startButton = document.getElementById('start-exposure-button');
             const icon = document.querySelector('#start-exposure-button i');
+
+            if (!isExposing && !isPaused) {
+                // Guardar dónde estaba el usuario en modo tarjetas antes de saltar a exposición
+                lastCardsIndexBeforeExposure = currentCardIndex;
+            }
 
             isExposing = true;
             isPaused = false;
@@ -3466,6 +3570,11 @@
                 icon.classList.add('playing');
             }
             if (startButton) startButton.style.backgroundColor = "";
+            // Si venimos de "Ir a tarjetas", mostrar la última tarjeta de tarjetas; si no, mantener la tarjeta actual de exposición
+            const goingToCards = reason === 'switch-to-cards';
+            currentCardIndex = goingToCards ? lastCardsIndexBeforeExposure : currentExposureIndex;
+            showCard(currentCardIndex, true);
+            flipCard(currentCardIndex, false);
         }
 
         // Función para reanudar la exposición
@@ -3484,8 +3593,6 @@
             timeouts = [];
             showCard(currentExposureIndex);
             flipCard(currentExposureIndex, false);
-            // Limpiar solo el progreso de exposición, no el de tarjetas
-            clearExposureState();
             noIndicatorShown = false;
 
         }
@@ -3567,6 +3674,12 @@
             } catch (e) { }
             syncContinueUI();
         }
+        const resetProgressSession = () => {
+            currentProgressSession = Date.now();
+            try {
+                localStorage.setItem(PROGRESS_SESSION_KEY, String(currentProgressSession));
+            } catch (e) { }
+        };
 
         function resetProgressState() {
             yesCounter = 0;
@@ -3578,12 +3691,24 @@
             yesCounterSpan.textContent = '0';
             noCounterSpan.textContent = '0';
             currentCardIndex = 0;
+            lastCardsIndexBeforeExposure = 0;
             progressDirty = false;
             showCard(currentCardIndex);
             updateTotalCardsCounter();
         }
 
         function saveProgressState() {
+            // Si estamos en exposición, no contaminar el progreso de tarjetas con su índice
+            if (isExposing || isPaused) {
+                currentCardIndex = lastCardsIndexBeforeExposure;
+            }
+            const hasProgress =
+                (yesCounter > 0) ||
+                (noCounter > 0) ||
+                postponedCards.size > 0 ||
+                completedCards.size > 0;
+
+            if (!hasProgress) return;
             if (!progressDirty) return;
             const payload = {
                 currentCardIndex,
@@ -3591,12 +3716,15 @@
                 noCounter,
                 completedCards: Array.from(completedCards),
                 postponedCards: Array.from(postponedCards),
-                lastPostponedCard
+                lastPostponedCard,
+                sessionId: currentProgressSession
             };
 
             const percentage = flashcards.length ? Math.round((yesCounter / flashcards.length) * 100) : 0;
             payload.percentage = percentage;
             try {
+                localStorage.setItem(PROGRESS_SESSION_KEY, String(currentProgressSession));
+                // Borrar siempre el estado previo antes de persistir el nuevo
                 localStorage.removeItem(PROGRESS_STATE_KEY);
                 localStorage.removeItem('alfabeto');
                 localStorage.setItem(PROGRESS_STATE_KEY, JSON.stringify(payload));
@@ -3608,17 +3736,30 @@
 
         // Guardado inmediato sin depender de progressDirty (para cortes de conexión o cierres bruscos)
         function snapshotProgressState() {
+            // Si estamos en exposición, no contaminar el progreso de tarjetas con su índice
+            if (isExposing || isPaused) {
+                currentCardIndex = lastCardsIndexBeforeExposure;
+            }
+            const hasProgress =
+                (yesCounter > 0) ||
+                (noCounter > 0) ||
+                postponedCards.size > 0 ||
+                completedCards.size > 0;
+            if (!hasProgress) return;
             const payload = {
                 currentCardIndex,
                 yesCounter,
                 noCounter,
                 completedCards: Array.from(completedCards),
                 postponedCards: Array.from(postponedCards),
-                lastPostponedCard
+                lastPostponedCard,
+                sessionId: currentProgressSession
             };
             const percentage = flashcards.length ? Math.round((yesCounter / flashcards.length) * 100) : 0;
             payload.percentage = percentage;
             try {
+                localStorage.setItem(PROGRESS_SESSION_KEY, String(currentProgressSession));
+                // Borrar siempre el estado previo antes de persistir el nuevo
                 localStorage.removeItem(PROGRESS_STATE_KEY);
                 localStorage.removeItem('alfabeto');
                 localStorage.setItem(PROGRESS_STATE_KEY, JSON.stringify(payload));
@@ -3651,10 +3792,14 @@
             showCard(currentCardIndex);
         }
 
-        function applySavedProgressState() {
+        function applySavedProgressState(options = {}) {
+            const { allowCompleted = true } = options;
             const state = loadProgressState();
             const totalCardsCount = flashcards.length || document.querySelectorAll('.flashcard').length;
-            if (!state || !hasMeaningfulProgress(state) || isProgressComplete(state, totalCardsCount)) return false;
+            if (!state || !hasMeaningfulProgress(state)) return false;
+
+            const progressIsComplete = isProgressComplete(state, totalCardsCount);
+            if (progressIsComplete && !allowCompleted) return false;
 
             yesCounter = state.yesCounter || 0;
             noCounter = state.noCounter || 0;
@@ -3667,7 +3812,9 @@
 
             yesCounterSpan.textContent = yesCounter;
             noCounterSpan.textContent = noCounter;
-            ensureVisibleCard();
+            // IMPORTANTE: Al restaurar, mostrar EXACTAMENTE la carta guardada, aunque esté completada.
+            // ensureVisibleCard() saltaría las completadas, lo cual no queremos al dar "Continuar".
+            showCard(currentCardIndex);
             updateTotalCardsCounter();
             updatePorcentajeDiv();
             updatePendingCard();
@@ -3736,8 +3883,12 @@
         function showCard(index, forceVisible = false) {
             flashcards.forEach((card, i) => {
                 card.classList.remove('is-visible');
-                const canShow = forceVisible || isExposing || !completedCards.has(i);
-                if (i === index && canShow) {
+                // Mostrar si es la carta actual (index), o si estamos exponiendo, o si forzamos visibilidad
+                // IMPORTANTE: Si es la carta actual (i === index), SIEMPRE debe mostrarse, incluso si está completada.
+                const isCurrent = i === index;
+                const canShow = forceVisible || isExposing || !completedCards.has(i) || isCurrent;
+
+                if (isCurrent && canShow) {
                     card.classList.add('is-visible');
                     card.classList.remove('flipped'); // asegurar cara frontal
                 }
@@ -3791,9 +3942,7 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            const restored = loadExposureState();
-            savedExposure = restored;
-            updateResumeButtonVisibility();
+            const restored = refreshSavedExposureState();
             if (savedExposure && (savedExposure.reason === 'refresh' || !savedExposure.reason)) {
                 const startButton = document.getElementById('start-exposure-button');
                 const icon = document.querySelector('#start-exposure-button i');
@@ -3811,6 +3960,7 @@
         });
 
         noButton.addEventListener('click', () => {
+            recoverFromOfflineIfBack();
             if (awaitingOnline) return;
             vibrateFeedback();
             progressDirty = true;
@@ -3852,6 +4002,7 @@
 
 
         yesButton.addEventListener('click', () => {
+            recoverFromOfflineIfBack();
             if (awaitingOnline) return;
             vibrateFeedback();
             progressDirty = true;
@@ -4002,8 +4153,13 @@
                     console.log('Error al reproducir el sonido del botón Reiniciar:', error);
                 }
             }
-            // Guardar el estado de exposición como pausado para poder reanudar tras la recarga
-            saveExposureState(currentExposureIndex, 'paused', 'manual-reset');
+            // Guardar el estado de exposición como pausado solo si realmente hay exposición en progreso
+            const hasExposureProgress = (isExposing || isPaused || (savedExposure && typeof savedExposure.index === 'number') || (typeof currentExposureIndex === 'number' && currentExposureIndex > 0));
+            if (hasExposureProgress) {
+                saveExposureState(currentExposureIndex, 'paused', 'manual-reset');
+            } else {
+                clearExposureState();
+            }
             setTimeout(() => location.reload(), 120);
         });
 

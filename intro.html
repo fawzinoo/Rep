@@ -4852,57 +4852,52 @@
                 if (introAlreadyPlayed) return;
                 introAlreadyPlayed = true;
 
-                // NO mostrar nada aún - cargar el video en segundo plano completamente invisible
-                // La página permanece visible mientras tanto
+                // Cargar el video completamente invisible en segundo plano
+                // La página permanece visible y funcional
 
-                // Función para mostrar el overlay y ocultar el contenido cuando el video esté listo
-                function showOverlayAndPlay() {
+                let readyToPlay = false;
+
+                // Función para mostrar el overlay SOLO cuando el video esté reproduciéndose
+                function showOverlayWhenPlaying() {
                     // Ocultar el contenido de la página
                     document.body.classList.add('loading-intro');
 
                     // Mostrar el overlay
                     overlay.style.display = 'flex';
                     overlay.classList.remove('hidden');
-
-                    // Reproducir el video inmediatamente
-                    attemptPlay();
                 }
 
-                // Intentar cargar el video en segundo plano (invisible)
+                // Intentar cargar el video en segundo plano
                 video.load();
 
-                // Cuando el video tenga metadata
-                video.addEventListener('loadedmetadata', function onLoadedMeta() {
-                    console.log('Video metadata cargada');
-                    video.removeEventListener('loadedmetadata', onLoadedMeta);
-                });
-
-                // Esperar a que el video tenga datos suficientes para reproducir SIN INTERRUPCIONES
+                // Cuando el video tenga datos suficientes para reproducir SIN INTERRUPCIONES
                 video.addEventListener('canplaythrough', function onCanPlayThrough() {
-                    console.log('Video completamente listo para reproducir');
-                    if (!hasStartedPlaying) {
-                        // AHORA SÍ, mostrar overlay y reproducir
-                        showOverlayAndPlay();
-                    }
+                    console.log('Video completamente listo');
+                    readyToPlay = true;
+                    // NO mostrar el overlay aún, solo intentar reproducir
+                    attemptPlay();
                     video.removeEventListener('canplaythrough', onCanPlayThrough);
                 });
 
-                // Fallback con canplay (por si canplaythrough no se dispara en algunos navegadores)
+                // Fallback con canplay
                 video.addEventListener('canplay', function onCanPlay() {
                     console.log('Video puede reproducirse');
-                    // Esperar un poco más para canplaythrough, sino usar este
                     setTimeout(() => {
-                        if (!hasStartedPlaying && overlay.style.display === 'none') {
-                            showOverlayAndPlay();
+                        if (!readyToPlay) {
+                            readyToPlay = true;
+                            attemptPlay();
                         }
-                    }, 500);
+                    }, 300);
                     video.removeEventListener('canplay', onCanPlay);
                 });
 
-                // Cuando el video finalmente comience a reproducirse
+                // SOLO cuando el video REALMENTE esté reproduciéndose, mostrar el overlay
                 video.addEventListener('playing', function onPlaying() {
-                    console.log('Video está reproduciéndose');
+                    console.log('Video reproduciéndose - mostrando overlay');
                     hasStartedPlaying = true;
+
+                    // AHORA SÍ mostrar el overlay (el video ya está en movimiento)
+                    showOverlayWhenPlaying();
                 }, { once: true });
 
                 // Ocultar el overlay cuando el video termine
@@ -4921,14 +4916,13 @@
                 // Manejar errores del video
                 video.addEventListener('error', function (e) {
                     console.log('Error en el video:', e);
-                    // Si hay error, no mostrar nada, solo continuar con la página
                     hideIntroVideo();
                 });
 
-                // Timeout de seguridad: si el video no está listo en 6 segundos, saltar
+                // Timeout de seguridad: si el video no se reproduce en 6 segundos, saltar
                 const safetyTimeout = setTimeout(() => {
                     if (!hasStartedPlaying) {
-                        console.log('Timeout: el video tardó mucho, saltando intro');
+                        console.log('Timeout: el video no se reprodujo, continuando sin intro');
                         hideIntroVideo();
                     }
                 }, 6000);

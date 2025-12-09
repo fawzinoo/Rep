@@ -4851,27 +4851,39 @@
                 if (introAlreadyPlayed) return;
                 introAlreadyPlayed = true;
 
-                // Mostrar el overlay si estaba oculto
-                overlay.style.display = 'flex';
-                overlay.classList.remove('hidden');
+                // NO mostrar el overlay todavía - esperar a que el video esté listo
+                // Esto evita la pantalla negra inicial
+                overlay.style.display = 'none';
 
-                // Intentar reproducir inmediatamente
-                attemptPlay();
+                // Remover temporalmente la clase loading-intro para mostrar contenido
+                document.body.classList.remove('loading-intro');
 
-                // Listener para cuando el video esté listo
+                // Función para mostrar el overlay cuando el video esté listo
+                function showOverlayAndPlay() {
+                    // Ahora sí, ocultar el contenido y mostrar el overlay
+                    document.body.classList.add('loading-intro');
+                    overlay.style.display = 'flex';
+                    overlay.classList.remove('hidden');
+
+                    // Reproducir el video
+                    attemptPlay();
+                }
+
+                // Intentar cargar el video en segundo plano
+                video.load();
+
+                // Cuando el video tenga metadata (dimensiones, duración, etc.)
                 video.addEventListener('loadedmetadata', function onLoadedMeta() {
                     console.log('Video metadata cargada');
-                    if (!hasStartedPlaying) {
-                        attemptPlay();
-                    }
                     video.removeEventListener('loadedmetadata', onLoadedMeta);
                 });
 
-                // Esperar a que el video tenga datos suficientes
+                // Esperar a que el video tenga datos suficientes para reproducir
                 video.addEventListener('canplay', function onCanPlay() {
-                    console.log('Video puede reproducirse');
+                    console.log('Video listo para reproducir');
                     if (!hasStartedPlaying) {
-                        attemptPlay();
+                        // Mostrar overlay y reproducir
+                        showOverlayAndPlay();
                     }
                     video.removeEventListener('canplay', onCanPlay);
                 });
@@ -4880,6 +4892,10 @@
                 video.addEventListener('playing', function onPlaying() {
                     console.log('Video está reproduciéndose');
                     hasStartedPlaying = true;
+                    // Asegurar que el overlay esté visible
+                    if (overlay.style.display === 'none') {
+                        showOverlayAndPlay();
+                    }
                 }, { once: true });
 
                 // Ocultar el overlay cuando el video termine
@@ -4898,16 +4914,17 @@
                 // Manejar errores del video
                 video.addEventListener('error', function (e) {
                     console.log('Error en el video:', e);
-                    setTimeout(hideIntroVideo, 1000);
+                    // Si hay error, no mostrar el overlay, solo saltar
+                    setTimeout(hideIntroVideo, 500);
                 });
 
-                // Timeout de seguridad más corto para móviles
+                // Timeout de seguridad: si el video no está listo en 5 segundos, saltar
                 const safetyTimeout = setTimeout(() => {
                     if (!hasStartedPlaying) {
-                        console.log('Timeout: el video no se reprodujo, saltando intro');
+                        console.log('Timeout: el video no se cargó, saltando intro sin mostrar');
                         hideIntroVideo();
                     }
-                }, 5000); // 5 segundos en lugar de 8
+                }, 5000);
 
                 // Limpiar timeout si el video comienza a reproducirse
                 video.addEventListener('playing', function () {

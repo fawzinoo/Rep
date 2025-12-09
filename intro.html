@@ -1573,7 +1573,7 @@
 <body class="loading-intro">
     <!-- Overlay de video de introducción -->
     <div id="introVideoOverlay" class="intro-video-overlay">
-        <video id="introVideo" autoplay muted playsinline preload="auto">
+        <video id="introVideo" autoplay muted playsinline webkit-playsinline x5-playsinline preload="auto">
             <source src="https://fawzinoo.github.io/Rep/intro.mp4" type="video/mp4">
             Tu navegador no soporta el elemento de video.
         </video>
@@ -4772,7 +4772,7 @@
         })();
     </script>
     <script>
-        // Control del video de introducción - Optimizado para carga fluida
+        // Control del video de introducción - Optimizado para carga fluida y móviles
         (function setupIntroVideo() {
             const overlay = document.getElementById('introVideoOverlay');
             const video = document.getElementById('introVideo');
@@ -4785,6 +4785,8 @@
 
             let hasStartedPlaying = false;
             let introAlreadyPlayed = false;
+            let playAttempts = 0;
+            const MAX_PLAY_ATTEMPTS = 5;
 
             // Función para verificar si el usuario está logueado
             function isUserLoggedIn() {
@@ -4814,6 +4816,36 @@
                 }, 500);
             }
 
+            // Función para intentar reproducir el video
+            function attemptPlay() {
+                if (hasStartedPlaying || playAttempts >= MAX_PLAY_ATTEMPTS) {
+                    return;
+                }
+
+                playAttempts++;
+                console.log('Intento de reproducción:', playAttempts);
+
+                const playPromise = video.play();
+
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('Video reproduciéndose correctamente');
+                        hasStartedPlaying = true;
+                    }).catch(error => {
+                        console.log('Error al reproducir (intento ' + playAttempts + '):', error);
+
+                        // Si ya agotamos los intentos, saltar el intro
+                        if (playAttempts >= MAX_PLAY_ATTEMPTS) {
+                            console.log('Máximo de intentos alcanzado, saltando intro');
+                            setTimeout(hideIntroVideo, 500);
+                        } else {
+                            // Reintentar después de un breve delay
+                            setTimeout(attemptPlay, 300);
+                        }
+                    });
+                }
+            }
+
             // Función para iniciar la reproducción del video
             function startIntroVideo() {
                 if (introAlreadyPlayed) return;
@@ -4823,31 +4855,32 @@
                 overlay.style.display = 'flex';
                 overlay.classList.remove('hidden');
 
-                // Esperar a que el video esté listo para reproducir
-                video.addEventListener('canplay', function onCanPlay() {
+                // Intentar reproducir inmediatamente
+                attemptPlay();
+
+                // Listener para cuando el video esté listo
+                video.addEventListener('loadedmetadata', function onLoadedMeta() {
+                    console.log('Video metadata cargada');
                     if (!hasStartedPlaying) {
-                        hasStartedPlaying = true;
-                        // Intentar reproducir cuando haya suficientes datos cargados
-                        video.play().catch(error => {
-                            console.log('Error al reproducir el video:', error);
-                            // Si falla, mostrar la página después de 1.5 segundos
-                            setTimeout(hideIntroVideo, 1500);
-                        });
+                        attemptPlay();
+                    }
+                    video.removeEventListener('loadedmetadata', onLoadedMeta);
+                });
+
+                // Esperar a que el video tenga datos suficientes
+                video.addEventListener('canplay', function onCanPlay() {
+                    console.log('Video puede reproducirse');
+                    if (!hasStartedPlaying) {
+                        attemptPlay();
                     }
                     video.removeEventListener('canplay', onCanPlay);
                 });
 
-                // Manejar cuando el video esté completamente cargado
-                video.addEventListener('loadeddata', function onLoadedData() {
-                    // Video listo, asegurar que se reproduce
-                    if (!hasStartedPlaying) {
-                        video.play().catch(error => {
-                            console.log('Error al iniciar reproducción:', error);
-                            setTimeout(hideIntroVideo, 1500);
-                        });
-                    }
-                    video.removeEventListener('loadeddata', onLoadedData);
-                });
+                // Cuando el video finalmente comience a reproducirse
+                video.addEventListener('playing', function onPlaying() {
+                    console.log('Video está reproduciéndose');
+                    hasStartedPlaying = true;
+                }, { once: true });
 
                 // Ocultar el overlay cuando el video termine
                 video.addEventListener('ended', hideIntroVideo);
@@ -4862,18 +4895,24 @@
                     }
                 });
 
-                // Timeout de seguridad: si el video no se carga en 8 segundos, mostrar la página
+                // Manejar errores del video
+                video.addEventListener('error', function (e) {
+                    console.log('Error en el video:', e);
+                    setTimeout(hideIntroVideo, 1000);
+                });
+
+                // Timeout de seguridad más corto para móviles
                 const safetyTimeout = setTimeout(() => {
                     if (!hasStartedPlaying) {
-                        console.log('Timeout: mostrando página sin video');
+                        console.log('Timeout: el video no se reprodujo, saltando intro');
                         hideIntroVideo();
                     }
-                }, 8000);
+                }, 5000); // 5 segundos en lugar de 8
 
                 // Limpiar timeout si el video comienza a reproducirse
                 video.addEventListener('playing', function () {
                     clearTimeout(safetyTimeout);
-                });
+                }, { once: true });
             }
 
             // Verificar el estado de login al cargar
@@ -4886,7 +4925,6 @@
                 document.body.classList.remove('loading-intro');
 
                 // Escuchar cuando se complete el login exitosamente
-                // Esto se disparará desde el script del access gate
                 window.addEventListener('userLoggedIn', function () {
                     startIntroVideo();
                 });

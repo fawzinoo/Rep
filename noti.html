@@ -2088,9 +2088,9 @@
             if (!('Notification' in window)) {
                 return false;
             }
-            if (Notification.permission === 'granted') return true;
             try {
                 const permission = await Notification.requestPermission();
+                // Si ya estaba denied, el navegador suele devolver denied sin mostrar prompt.
                 return permission === 'granted';
             } catch (e) {
                 console.warn('No se pudo solicitar permiso de notificaciones', e);
@@ -2141,6 +2141,17 @@
                 // Si ya hay permiso concedido, lanza notificaciones sin esperar al clic
                 if (window.Notification && Notification.permission === 'granted') {
                     dispatchMsgNotifications();
+                } else if (window.Notification && Notification.permission !== 'granted') {
+                    // En cada refresco de página, registramos el primer clic/tap para reintentar el prompt
+                    const onceAsk = () => {
+                        document.removeEventListener('click', onceAsk);
+                        document.removeEventListener('touchstart', onceAsk);
+                        ensureNotificationPermission().then(granted => {
+                            if (granted) dispatchMsgNotifications();
+                        });
+                    };
+                    document.addEventListener('click', onceAsk, { once: true });
+                    document.addEventListener('touchstart', onceAsk, { once: true });
                 }
 
                 // SHOW PRIORITY MESSAGE POPUP (Highest Priority Enabled)
@@ -5304,11 +5315,11 @@
                         Swal.fire({
                             icon: 'info',
                             title: 'Activa las notificaciones',
-                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel.',
+                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel. Si el navegador no muestra el aviso, habilítalo manualmente en Ajustes del sitio.',
                             confirmButtonText: 'Entendido'
                         });
                     } else {
-                        alert('Activa las notificaciones en tu navegador para ver los avisos.');
+                        alert('Activa las notificaciones en tu navegador para ver los avisos. Si no aparece el aviso, habilítalo en Ajustes del sitio.');
                     }
                     return;
                 }

@@ -5336,22 +5336,47 @@
 
             const openModal = async (event) => {
                 event.preventDefault();
-                // Forzar que la petición de permiso sea lo primero en el clic
-                const granted = await ensureNotificationPermission();
-                if (!granted) {
-                    if (window.Swal && typeof Swal.fire === 'function') {
-                        Swal.fire({
-                            icon: 'info',
-                            title: 'Activa las notificaciones',
-                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel. Si el navegador no muestra el cuadro, abre Ajustes del sitio > Notificaciones y permite esta página.',
-                            confirmButtonText: 'Entendido'
-                        });
+
+                let granted = false;
+                let warning = '';
+
+                // Pedimos permiso si hay soporte y es contexto seguro
+                if ('Notification' in window) {
+                    if (!window.isSecureContext) {
+                        warning = 'Abre esta página en HTTPS para que Chrome permita las notificaciones.';
                     } else {
-                        alert('Activa las notificaciones en tu navegador para ver los avisos. Si no aparece el cuadro, habilítalo en Ajustes del sitio > Notificaciones.');
+                        try {
+                            // Si tarda más de 1.2s, seguimos con el estado actual para no “bloquear” la UI
+                            granted = await Promise.race([
+                                ensureNotificationPermission(),
+                                new Promise(resolve => setTimeout(() => resolve(Notification.permission === 'granted'), 1200))
+                            ]);
+                            if (!granted && Notification.permission === 'denied') {
+                                warning = 'Has bloqueado las notificaciones. Actívalas en Ajustes del sitio > Notificaciones.';
+                            }
+                        } catch (e) {
+                            console.warn('No se pudo pedir permiso de notificaciones', e);
+                        }
                     }
-                    return;
+                } else {
+                    warning = 'Tu navegador no soporta notificaciones web.';
                 }
-                dispatchMsgNotifications();
+
+                if (warning && window.Swal && typeof Swal.fire === 'function') {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Notificaciones',
+                        text: warning,
+                        confirmButtonText: 'Continuar'
+                    });
+                } else if (warning) {
+                    alert(warning);
+                }
+
+                if (granted) {
+                    dispatchMsgNotifications();
+                }
+
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
             };

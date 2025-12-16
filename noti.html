@@ -2067,7 +2067,7 @@
     <script>
         // Toggle para mostrar/ocultar el botón "Resultado del examen" en el modal de contacto
         const SHOW_EXAM_BUTTON = true; // pon en false para ocultarlo
-        const MSG1_ENABLED = true;
+        const MSG1_ENABLED = false;
         const MSG2_ENABLED = false;
         const MSG3_ENABLED = false;
         const MSG1_SERIES = '2'; // Cambiar si el contenido se actualiza
@@ -2076,137 +2076,51 @@
         const MSG1_TEXT = 'Hola';
         const MSG2_TEXT = 'Buenos';
         const MSG3_TEXT = 'Días';
-        const NOTIF_ICON_URL = 'https://fawzinoo.github.io/Fotos/f.png';
 
-        function getActiveMessages() {
-            const messages = [];
-            if (MSG3_ENABLED) messages.push({ type: 'msg3', series: MSG3_SERIES, text: MSG3_TEXT });
-            if (MSG2_ENABLED) messages.push({ type: 'msg2', series: MSG2_SERIES, text: MSG2_TEXT });
-            if (MSG1_ENABLED) messages.push({ type: 'msg1', series: MSG1_SERIES, text: MSG1_TEXT });
-            return messages;
-        }
+        // Helpers de notificaciones web (Android/iOS soportados en navegadores con Web Push)
+        const notifyKeys = {
+            msg1: `notified_msg1_series_${MSG1_SERIES}`,
+            msg2: `notified_msg2_series_${MSG2_SERIES}`,
+            msg3: `notified_msg3_series_${MSG3_SERIES}`
+        };
 
-        function markMessagesAsSeen(activeMessages) {
-            activeMessages.forEach(msg => {
-                const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
-                localStorage.setItem(seenKey, 'true');
-            });
-        }
-
-        function clearNotificationBadge(userIcon) {
-            const existingBadge = userIcon ? userIcon.querySelector('.notification-badge') : null;
-            if (existingBadge) {
-                existingBadge.remove();
-            }
-        }
-
-        async function showSystemNotification(bodyText) {
-            const options = {
-                body: bodyText,
-                icon: NOTIF_ICON_URL,
-                badge: NOTIF_ICON_URL,
-                vibrate: [100, 50, 100],
-                data: { url: location.href }
-            };
-            const title = 'Nuevo aviso de Español A1';
-            try {
-                if ('serviceWorker' in navigator) {
-                    const reg = await navigator.serviceWorker.getRegistration();
-                    if (reg && reg.showNotification) {
-                        await reg.showNotification(title, options);
-                        return;
-                    }
-                }
-                // Fallback mientras la pestaña está abierta
-                new Notification(title, options);
-            } catch (err) {
-                console.warn('No se pudo mostrar la notificación', err);
-            }
-        }
-
-        async function sendNotificationsIfGranted() {
-            if (!('Notification' in window) || Notification.permission !== 'granted') return;
-            const activeMessages = getActiveMessages();
-            for (const msg of activeMessages) {
-                const sentKey = `notif_sent_${msg.type}_series_${msg.series}`;
-                // Limpiar series antiguas del mismo tipo
-                Object.keys(localStorage).forEach(key => {
-                    if (key.startsWith(`notif_sent_${msg.type}_series_`) && key !== sentKey) {
-                        localStorage.removeItem(key);
-                    }
-                });
-                if (localStorage.getItem(sentKey) === 'true') continue;
-                await showSystemNotification(msg.text);
-                localStorage.setItem(sentKey, 'true');
-            }
-        }
-
-        async function requestBrowserNotifications() {
+        const ensureNotificationPermission = async () => {
             if (!('Notification' in window)) {
-                if (window.Swal) {
-                    await Swal.fire({
-                        icon: 'warning',
-                        title: 'Tu navegador no soporta notificaciones',
-                        text: 'Usa un navegador actualizado para recibir avisos.'
-                    });
-                } else {
-                    alert('Tu navegador no soporta notificaciones.');
-                }
                 return false;
             }
-
-            if (Notification.permission === 'granted') {
-                await sendNotificationsIfGranted();
-                return true;
-            }
-
-            if (Notification.permission === 'denied') {
-                if (window.Swal) {
-                    await Swal.fire({
-                        icon: 'info',
-                        title: 'Activa las notificaciones',
-                        text: 'Debes permitir las notificaciones desde los ajustes del navegador para ver los avisos en tu teléfono.'
-                    });
-                } else {
-                    alert('Activa las notificaciones desde los ajustes del navegador.');
-                }
+            if (Notification.permission === 'granted') return true;
+            try {
+                const permission = await Notification.requestPermission();
+                return permission === 'granted';
+            } catch (e) {
+                console.warn('No se pudo solicitar permiso de notificaciones', e);
                 return false;
             }
+        };
 
-            let wantsPermission = true;
-            if (window.Swal) {
-                const result = await Swal.fire({
-                    title: 'Activa las notificaciones',
-                    text: 'Necesitamos permiso para enviarte avisos (llegan al panel de notificaciones de tu móvil).',
-                    confirmButtonText: 'Activar',
-                    cancelButtonText: 'Ahora no',
-                    showCancelButton: true,
-                    allowOutsideClick: false
-                });
-                wantsPermission = result.isConfirmed;
-            } else {
-                wantsPermission = confirm('Activa las notificaciones para recibir los avisos.');
-            }
+        const dispatchMsgNotifications = () => {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
-            if (!wantsPermission) return false;
+            const entries = [];
+            if (MSG1_ENABLED) entries.push({ key: notifyKeys.msg1, text: MSG1_TEXT, title: 'Aviso MSG1' });
+            if (MSG2_ENABLED) entries.push({ key: notifyKeys.msg2, text: MSG2_TEXT, title: 'Aviso MSG2' });
+            if (MSG3_ENABLED) entries.push({ key: notifyKeys.msg3, text: MSG3_TEXT, title: 'Aviso MSG3' });
 
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                await sendNotificationsIfGranted();
-                return true;
-            }
+            entries.forEach(entry => {
+                if (localStorage.getItem(entry.key) === 'sent') return;
+                try {
+                    new Notification(entry.title, {
+                        body: entry.text,
+                        icon: 'https://fawzinoo.github.io/Fotos/f.png',
+                        badge: 'https://fawzinoo.github.io/Fotos/f.png'
+                    });
+                    localStorage.setItem(entry.key, 'sent');
+                } catch (e) {
+                    console.warn('No se pudo mostrar la notificación', e);
+                }
+            });
+        };
 
-            if (window.Swal) {
-                await Swal.fire({
-                    icon: 'info',
-                    title: 'Permiso necesario',
-                    text: 'Acepta las notificaciones en el navegador para ver los avisos del curso.'
-                });
-            } else {
-                alert('Acepta las notificaciones en el navegador para ver los avisos del curso.');
-            }
-            return false;
-        }
         document.addEventListener('DOMContentLoaded', () => {
             const examBtnWrap = document.querySelector('.voltage-button');
             const examSeparator = document.querySelector('.exam-separator');
@@ -2223,6 +2137,11 @@
                 if (MSG3_ENABLED) notes.push({ text: MSG3_TEXT, type: 'msg3' });
                 if (MSG2_ENABLED) notes.push({ text: MSG2_TEXT, type: 'msg2' });
                 if (MSG1_ENABLED) notes.push({ text: MSG1_TEXT, type: 'msg1' });
+
+                // Si ya hay permiso concedido, lanza notificaciones sin esperar al clic
+                if (window.Notification && Notification.permission === 'granted') {
+                    dispatchMsgNotifications();
+                }
 
                 // SHOW PRIORITY MESSAGE POPUP (Highest Priority Enabled)
                 // Order: Msg3 > Msg2 > Msg1
@@ -2279,44 +2198,36 @@
                     const shouldShow = !isHidden && (!lastSnooze || (now - parseInt(lastSnooze) > fifteenMinutes));
 
                     if (shouldShow) {
-                        (async () => {
-                            const granted = await requestBrowserNotifications();
-                            if (granted) {
-                                await sendNotificationsIfGranted();
-                                // Marcar como visto para que no vuelva a aparecer badge si ya se notificó
-                                const thisMsg = { type: priorityType, series: prioritySeries };
-                                markMessagesAsSeen([thisMsg]);
-                                clearNotificationBadge(document.querySelector('.header-whatsapp'));
-                            } else {
-                                // Si el usuario no concede permiso, mantener la lógica de ocultar/snooze para no molestar
-                                const hideResult = await Swal.fire({
-                                    title: '<span class="animated-gradient-text">Aviso</span>',
-                                    text: priorityMsg,
-                                    confirmButtonText: 'Entendido (sin notificación del navegador)',
-                                    showDenyButton: true,
-                                    denyButtonText: 'No volver a mostrar',
-                                    denyButtonColor: '#6b7280',
-                                    width: 'min(400px, 90vw)',
-                                    backdrop: true,
-                                    allowOutsideClick: false,
-                                    customClass: {
-                                        title: 'swal-aviso-title',
-                                        actions: 'swal-aviso-actions'
+                        Swal.fire({
+                            title: '<span class="animated-gradient-text">Aviso</span>',
+                            text: priorityMsg,
+                            confirmButtonText: 'Entendido',
+                            showDenyButton: true,
+                            denyButtonText: 'No volver a mostrar',
+                            denyButtonColor: '#6b7280', // Gray for secondary action
+                            width: 'min(400px, 90vw)',
+                            backdrop: true,
+                            allowOutsideClick: false,
+                            customClass: {
+                                title: 'swal-aviso-title',
+                                actions: 'swal-aviso-actions'
+                            }
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                // Clear ALL other snooze keys to reset timers for other messages
+                                Object.keys(localStorage).forEach(k => {
+                                    if (k.startsWith('snooze_') && k !== snoozeKey) {
+                                        localStorage.removeItem(k);
                                     }
                                 });
-                                if (hideResult.isConfirmed) {
-                                    Object.keys(localStorage).forEach(k => {
-                                        if (k.startsWith('snooze_') && k !== snoozeKey) {
-                                            localStorage.removeItem(k);
-                                        }
-                                    });
-                                    localStorage.setItem(snoozeKey, Date.now().toString());
-                                } else if (hideResult.isDenied) {
-                                    localStorage.setItem(storageKey, 'true');
-                                    localStorage.removeItem(snoozeKey);
-                                }
+                                // Snooze current message for 15 minutes
+                                localStorage.setItem(snoozeKey, Date.now().toString());
+                            } else if (result.isDenied) {
+                                localStorage.setItem(storageKey, 'true');
+                                localStorage.removeItem(snoozeKey); // Clean up snooze if permanently hidden
+                                // Swal.fire('Guardado', 'No volveremos a mostrar este mensaje.', 'success');
                             }
-                        })();
+                        });
                     }
                 }
                 if (notes.length === 0) {
@@ -2338,9 +2249,14 @@
 
                 // NOTIFICATION BADGE LOGIC
                 const userIcon = document.querySelector('.header-whatsapp');
-                const activeMessages = getActiveMessages();
-                if (userIcon && activeMessages.length > 0) {
+                if (userIcon) {
                     let unreadCount = 0;
+                    const activeMessages = [];
+
+                    // Collect active messages to check
+                    if (MSG3_ENABLED) activeMessages.push({ type: 'msg3', series: MSG3_SERIES });
+                    if (MSG2_ENABLED) activeMessages.push({ type: 'msg2', series: MSG2_SERIES });
+                    if (MSG1_ENABLED) activeMessages.push({ type: 'msg1', series: MSG1_SERIES });
 
                     activeMessages.forEach(msg => {
                         const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
@@ -2365,13 +2281,19 @@
                     }
 
                     userIcon.addEventListener('click', () => {
-                        if (!('Notification' in window) || Notification.permission !== 'granted') return;
-                        markMessagesAsSeen(activeMessages);
-                        clearNotificationBadge(userIcon);
+                        // Mark all current as seen (Persistir el estado "Visto")
+                        // Esto evita que reaparezca al recargar, hasta que cambie la serie o se active un nuevo mensaje.
+                        activeMessages.forEach(msg => {
+                            const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
+                            localStorage.setItem(seenKey, 'true');
+                        });
+                        // Remove badge
+                        const existingBadge = userIcon.querySelector('.notification-badge');
+                        if (existingBadge) {
+                            existingBadge.remove();
+                        }
                     });
                 }
-                // Si ya existe permiso, dispara el aviso al panel del dispositivo
-                sendNotificationsIfGranted();
             }
         });
     </script>
@@ -5376,15 +5298,21 @@
 
             const openModal = async (event) => {
                 event.preventDefault();
-                const allowed = await requestBrowserNotifications();
-                if (!allowed) return;
-
-                const activeMessages = typeof getActiveMessages === 'function' ? getActiveMessages() : [];
-                if (activeMessages.length > 0) {
-                    markMessagesAsSeen(activeMessages);
-                    clearNotificationBadge(trigger);
+                const granted = await ensureNotificationPermission();
+                if (!granted) {
+                    if (window.Swal && typeof Swal.fire === 'function') {
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Activa las notificaciones',
+                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel.',
+                            confirmButtonText: 'Entendido'
+                        });
+                    } else {
+                        alert('Activa las notificaciones en tu navegador para ver los avisos.');
+                    }
+                    return;
                 }
-
+                dispatchMsgNotifications();
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
             };

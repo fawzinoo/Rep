@@ -2088,14 +2088,26 @@
             if (!('Notification' in window)) {
                 return false;
             }
-            try {
-                const permission = await Notification.requestPermission();
-                // Si ya estaba denied, el navegador suele devolver denied sin mostrar prompt.
-                return permission === 'granted';
-            } catch (e) {
-                console.warn('No se pudo solicitar permiso de notificaciones', e);
-                return false;
-            }
+            // Híbrido: primero intentamos la promesa moderna; si no, callback clásico.
+            const request = () => new Promise((resolve) => {
+                try {
+                    if (Notification.requestPermission.length === 0) {
+                        // API moderna con promesa
+                        Notification.requestPermission()
+                            .then(p => resolve(p === 'granted'))
+                            .catch(() => resolve(Notification.permission === 'granted'));
+                    } else {
+                        // API antigua basada en callback
+                        Notification.requestPermission((p) => resolve(p === 'granted'));
+                    }
+                } catch (e) {
+                    console.warn('Error al pedir permiso de notificaciones', e);
+                    resolve(false);
+                }
+            });
+
+            const granted = await request();
+            return granted;
         };
 
         const dispatchMsgNotifications = () => {
@@ -5309,6 +5321,7 @@
 
             const openModal = async (event) => {
                 event.preventDefault();
+                // Forzar que la petición de permiso sea lo primero en el clic
                 const granted = await ensureNotificationPermission();
                 if (!granted) {
                     if (window.Swal && typeof Swal.fire === 'function') {

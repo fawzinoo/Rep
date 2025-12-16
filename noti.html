@@ -2088,6 +2088,9 @@
             if (!('Notification' in window)) {
                 return false;
             }
+            // Salida rápida en función del estado actual
+            if (Notification.permission === 'granted') return true;
+            if (Notification.permission === 'denied') return false;
             // Híbrido: primero intentamos la promesa moderna; si no, callback clásico.
             const request = () => new Promise((resolve) => {
                 try {
@@ -5319,6 +5322,18 @@
 
             if (!modal || !trigger) return;
 
+            // En móviles algunos navegadores requieren que la petición se dispare en el primer gesto táctil.
+            const primeNotificationPrompt = () => {
+                if (!('Notification' in window)) return;
+                if (Notification.permission === 'default') {
+                    try {
+                        Notification.requestPermission();
+                    } catch (e) {
+                        console.warn('No se pudo lanzar el prompt de notificaciones de forma anticipada', e);
+                    }
+                }
+            };
+
             const openModal = async (event) => {
                 event.preventDefault();
                 // Forzar que la petición de permiso sea lo primero en el clic
@@ -5328,11 +5343,11 @@
                         Swal.fire({
                             icon: 'info',
                             title: 'Activa las notificaciones',
-                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel. Si el navegador no muestra el aviso, habilítalo manualmente en Ajustes del sitio.',
+                            text: 'Necesitamos permiso para mostrarte los avisos en tu panel. Si el navegador no muestra el cuadro, abre Ajustes del sitio > Notificaciones y permite esta página.',
                             confirmButtonText: 'Entendido'
                         });
                     } else {
-                        alert('Activa las notificaciones en tu navegador para ver los avisos. Si no aparece el aviso, habilítalo en Ajustes del sitio.');
+                        alert('Activa las notificaciones en tu navegador para ver los avisos. Si no aparece el cuadro, habilítalo en Ajustes del sitio > Notificaciones.');
                     }
                     return;
                 }
@@ -5346,6 +5361,9 @@
                 modal.setAttribute('aria-hidden', 'true');
             };
 
+            // Calienta el prompt en el primer gesto para navegadores móviles
+            trigger.addEventListener('pointerdown', primeNotificationPrompt, { once: true });
+            trigger.addEventListener('touchstart', primeNotificationPrompt, { once: true });
             trigger.addEventListener('click', openModal);
             closeBtn && closeBtn.addEventListener('click', closeModal);
 

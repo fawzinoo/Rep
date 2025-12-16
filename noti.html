@@ -5268,13 +5268,14 @@
             if (!modal || !trigger) return;
 
             const openModal = (event) => {
-                if (event) event.preventDefault();
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
 
                 // Permission Gate: Require Notifications
                 if (!("Notification" in window)) {
-                    // Browser doesn't support notifications, open anyway? Or block?
-                    // User asked to block if not enabled, but if not supported, we should probably allow or show error.
-                    // Let's allow for compatibility, but assume modern mobile/desktop has it.
+                    // Fallback for browsers without support
                     modal.classList.add('show');
                     modal.setAttribute('aria-hidden', 'false');
                     return;
@@ -5284,21 +5285,27 @@
                     modal.classList.add('show');
                     modal.setAttribute('aria-hidden', 'false');
                 } else if (Notification.permission !== "denied") {
-                    Notification.requestPermission().then((permission) => {
+                    // Request permission (Support both Promise and Callback for older Safari/Chrome versions)
+                    const handlePermission = (permission) => {
                         if (permission === "granted") {
                             modal.classList.add('show');
                             modal.setAttribute('aria-hidden', 'false');
-                            // Reload to trigger any pending notifications immediately? 
-                            // Or just let the next auto-reload handle it. 
-                            // For immediate feedback, we could check active messages here, but auto-reload is safer.
-                        } else {
-                            // User denied or dismissed: Do NOTHING (do not open modal)
                         }
-                    });
+                    };
+
+                    try {
+                        const promise = Notification.requestPermission();
+                        if (promise) {
+                            promise.then(handlePermission).catch(e => console.error(e));
+                        } else {
+                            Notification.requestPermission(handlePermission);
+                        }
+                    } catch (error) {
+                        // Fallback if requestPermission fails (e.g. denied implicitly)
+                        console.error('Notification request failed', error);
+                    }
                 } else {
-                    // Denied previously. Show alert logic? 
-                    // User said: "el icono de usuario no mostrara el contenido ... se le preguntara lo mismo"
-                    // If denied, we can't ask again programmatically. We must tell user to unblock.
+                    // Denied previously
                     if (window.Swal) {
                         Swal.fire({
                             icon: 'info',

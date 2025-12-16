@@ -2076,6 +2076,137 @@
         const MSG1_TEXT = 'Hola';
         const MSG2_TEXT = 'Buenos';
         const MSG3_TEXT = 'Días';
+        const NOTIF_ICON_URL = 'https://fawzinoo.github.io/Fotos/f.png';
+
+        function getActiveMessages() {
+            const messages = [];
+            if (MSG3_ENABLED) messages.push({ type: 'msg3', series: MSG3_SERIES, text: MSG3_TEXT });
+            if (MSG2_ENABLED) messages.push({ type: 'msg2', series: MSG2_SERIES, text: MSG2_TEXT });
+            if (MSG1_ENABLED) messages.push({ type: 'msg1', series: MSG1_SERIES, text: MSG1_TEXT });
+            return messages;
+        }
+
+        function markMessagesAsSeen(activeMessages) {
+            activeMessages.forEach(msg => {
+                const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
+                localStorage.setItem(seenKey, 'true');
+            });
+        }
+
+        function clearNotificationBadge(userIcon) {
+            const existingBadge = userIcon ? userIcon.querySelector('.notification-badge') : null;
+            if (existingBadge) {
+                existingBadge.remove();
+            }
+        }
+
+        async function showSystemNotification(bodyText) {
+            const options = {
+                body: bodyText,
+                icon: NOTIF_ICON_URL,
+                badge: NOTIF_ICON_URL,
+                vibrate: [100, 50, 100],
+                data: { url: location.href }
+            };
+            const title = 'Nuevo aviso de Español A1';
+            try {
+                if ('serviceWorker' in navigator) {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    if (reg && reg.showNotification) {
+                        await reg.showNotification(title, options);
+                        return;
+                    }
+                }
+                // Fallback mientras la pestaña está abierta
+                new Notification(title, options);
+            } catch (err) {
+                console.warn('No se pudo mostrar la notificación', err);
+            }
+        }
+
+        async function sendNotificationsIfGranted() {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            const activeMessages = getActiveMessages();
+            for (const msg of activeMessages) {
+                const sentKey = `notif_sent_${msg.type}_series_${msg.series}`;
+                // Limpiar series antiguas del mismo tipo
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith(`notif_sent_${msg.type}_series_`) && key !== sentKey) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                if (localStorage.getItem(sentKey) === 'true') continue;
+                await showSystemNotification(msg.text);
+                localStorage.setItem(sentKey, 'true');
+            }
+        }
+
+        async function requestBrowserNotifications() {
+            if (!('Notification' in window)) {
+                if (window.Swal) {
+                    await Swal.fire({
+                        icon: 'warning',
+                        title: 'Tu navegador no soporta notificaciones',
+                        text: 'Usa un navegador actualizado para recibir avisos.'
+                    });
+                } else {
+                    alert('Tu navegador no soporta notificaciones.');
+                }
+                return false;
+            }
+
+            if (Notification.permission === 'granted') {
+                await sendNotificationsIfGranted();
+                return true;
+            }
+
+            if (Notification.permission === 'denied') {
+                if (window.Swal) {
+                    await Swal.fire({
+                        icon: 'info',
+                        title: 'Activa las notificaciones',
+                        text: 'Debes permitir las notificaciones desde los ajustes del navegador para ver los avisos en tu teléfono.'
+                    });
+                } else {
+                    alert('Activa las notificaciones desde los ajustes del navegador.');
+                }
+                return false;
+            }
+
+            let wantsPermission = true;
+            if (window.Swal) {
+                const result = await Swal.fire({
+                    title: 'Activa las notificaciones',
+                    text: 'Necesitamos permiso para enviarte avisos (llegan al panel de notificaciones de tu móvil).',
+                    confirmButtonText: 'Activar',
+                    cancelButtonText: 'Ahora no',
+                    showCancelButton: true,
+                    allowOutsideClick: false
+                });
+                wantsPermission = result.isConfirmed;
+            } else {
+                wantsPermission = confirm('Activa las notificaciones para recibir los avisos.');
+            }
+
+            if (!wantsPermission) return false;
+
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                await sendNotificationsIfGranted();
+                return true;
+            }
+
+            if (window.Swal) {
+                await Swal.fire({
+                    icon: 'info',
+                    title: 'Permiso necesario',
+                    text: 'Acepta las notificaciones en el navegador para ver los avisos del curso.'
+                });
+            } else {
+                alert('Acepta las notificaciones en el navegador para ver los avisos del curso.');
+            }
+            return false;
+        }
         document.addEventListener('DOMContentLoaded', () => {
             const examBtnWrap = document.querySelector('.voltage-button');
             const examSeparator = document.querySelector('.exam-separator');
@@ -2133,8 +2264,7 @@
                         if (isTargetType) {
                             // If it matches the type but NOT the exact current keys (different series)
                             // AND it is not a badge_seen key (which is handled separately)
-                            // AND it is not a system notification key
-                            if (key !== storageKey && key !== snoozeKey && !key.startsWith('badge_seen') && !key.startsWith(`sys_notify_sent_${priorityType}_series_${prioritySeries}`)) {
+                            if (key !== storageKey && key !== snoozeKey && !key.startsWith('badge_seen')) {
                                 localStorage.removeItem(key);
                             }
                         }
@@ -2198,36 +2328,11 @@
                     });
                 }
 
-                // SYSTEM NOTIFICATION LOGIC
-                // Check if we need to send a system notification for the priority message
-                if (shouldShow && priorityMsg && "Notification" in window && Notification.permission === "granted") {
-                    const notifyKey = `sys_notify_sent_${priorityType}_series_${prioritySeries}`;
-                    const alreadySent = localStorage.getItem(notifyKey) === 'true';
-
-                    if (!alreadySent) {
-                        try {
-                            new Notification("Aviso Importante", {
-                                body: priorityMsg,
-                                icon: 'https://fawzinoo.github.io/Fotos/f.png', // Icono de la web
-                                tag: notifyKey // Unique tag to prevent duplicates
-                            });
-                            localStorage.setItem(notifyKey, 'true');
-                        } catch (e) {
-                            console.warn('Notification failed', e);
-                        }
-                    }
-                }
-
                 // NOTIFICATION BADGE LOGIC
                 const userIcon = document.querySelector('.header-whatsapp');
-                if (userIcon) {
+                const activeMessages = getActiveMessages();
+                if (userIcon && activeMessages.length > 0) {
                     let unreadCount = 0;
-                    const activeMessages = [];
-
-                    // Collect active messages to check
-                    if (MSG3_ENABLED) activeMessages.push({ type: 'msg3', series: MSG3_SERIES });
-                    if (MSG2_ENABLED) activeMessages.push({ type: 'msg2', series: MSG2_SERIES });
-                    if (MSG1_ENABLED) activeMessages.push({ type: 'msg1', series: MSG1_SERIES });
 
                     activeMessages.forEach(msg => {
                         const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
@@ -2252,19 +2357,13 @@
                     }
 
                     userIcon.addEventListener('click', () => {
-                        // Mark all current as seen (Persistir el estado "Visto")
-                        // Esto evita que reaparezca al recargar, hasta que cambie la serie o se active un nuevo mensaje.
-                        activeMessages.forEach(msg => {
-                            const seenKey = `badge_seen_${msg.type}_series_${msg.series}`;
-                            localStorage.setItem(seenKey, 'true');
-                        });
-                        // Remove badge
-                        const existingBadge = userIcon.querySelector('.notification-badge');
-                        if (existingBadge) {
-                            existingBadge.remove();
-                        }
+                        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+                        markMessagesAsSeen(activeMessages);
+                        clearNotificationBadge(userIcon);
                     });
                 }
+                // Si ya existe permiso, dispara el aviso al panel del dispositivo
+                sendNotificationsIfGranted();
             }
         });
     </script>
@@ -5267,69 +5366,19 @@
 
             if (!modal || !trigger) return;
 
-            const openModal = (event) => {
-                if (event) {
-                    event.preventDefault();
-                    event.stopPropagation();
+            const openModal = async (event) => {
+                event.preventDefault();
+                const allowed = await requestBrowserNotifications();
+                if (!allowed) return;
+
+                const activeMessages = typeof getActiveMessages === 'function' ? getActiveMessages() : [];
+                if (activeMessages.length > 0) {
+                    markMessagesAsSeen(activeMessages);
+                    clearNotificationBadge(trigger);
                 }
 
-                const showModal = () => {
-                    modal.classList.add('show');
-                    modal.setAttribute('aria-hidden', 'false');
-                };
-
-                // Si el navegador no soporta Notifications, abre directamente
-                if (!("Notification" in window)) {
-                    showModal();
-                    return;
-                }
-
-                const showEnableMsg = () => {
-                    if (window.Swal && typeof Swal.fire === 'function') {
-                        Swal.fire({
-                            icon: 'info',
-                            title: 'Activa las notificaciones',
-                            text: 'Permite las notificaciones del navegador para continuar.',
-                            confirmButtonText: 'Entendido'
-                        });
-                    } else {
-                        alert('Permite las notificaciones del navegador para continuar.');
-                    }
-                };
-
-                const handlePermission = (permission) => {
-                    if (permission === 'granted') {
-                        showModal();
-                    } else {
-                        showEnableMsg();
-                    }
-                };
-
-                // Si ya está concedido, abre. Si está denegado, muestra aviso. Si no, solicita primero.
-                if (Notification.permission === 'granted') {
-                    showModal();
-                    return;
-                }
-
-                if (Notification.permission === 'denied') {
-                    showEnableMsg();
-                    return;
-                }
-
-                try {
-                    const promise = Notification.requestPermission();
-                    if (promise && typeof promise.then === 'function') {
-                        promise.then(handlePermission).catch((e) => {
-                            console.error(e);
-                            showEnableMsg();
-                        });
-                    } else {
-                        Notification.requestPermission((perm) => handlePermission(perm));
-                    }
-                } catch (error) {
-                    console.error('Notification request failed', error);
-                    showEnableMsg();
-                }
+                modal.classList.add('show');
+                modal.setAttribute('aria-hidden', 'false');
             };
 
             const closeModal = () => {

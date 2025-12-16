@@ -5278,27 +5278,57 @@
                     modal.setAttribute('aria-hidden', 'false');
                 };
 
-                // Solicita permisos en cada click; si falla, igual mostramos el modal
+                // Si el navegador no soporta Notifications, abre directamente
                 if (!("Notification" in window)) {
                     showModal();
                     return;
                 }
 
-                const handlePermission = () => showModal();
+                const showEnableMsg = () => {
+                    if (window.Swal && typeof Swal.fire === 'function') {
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Activa las notificaciones',
+                            text: 'Permite las notificaciones del navegador para continuar.',
+                            confirmButtonText: 'Entendido'
+                        });
+                    } else {
+                        alert('Permite las notificaciones del navegador para continuar.');
+                    }
+                };
+
+                const handlePermission = (permission) => {
+                    if (permission === 'granted') {
+                        showModal();
+                    } else {
+                        showEnableMsg();
+                    }
+                };
+
+                // Si ya está concedido, abre. Si está denegado, muestra aviso. Si no, solicita primero.
+                if (Notification.permission === 'granted') {
+                    showModal();
+                    return;
+                }
+
+                if (Notification.permission === 'denied') {
+                    showEnableMsg();
+                    return;
+                }
 
                 try {
                     const promise = Notification.requestPermission();
                     if (promise && typeof promise.then === 'function') {
                         promise.then(handlePermission).catch((e) => {
                             console.error(e);
-                            showModal();
+                            showEnableMsg();
                         });
                     } else {
-                        Notification.requestPermission(() => handlePermission());
+                        Notification.requestPermission((perm) => handlePermission(perm));
                     }
                 } catch (error) {
                     console.error('Notification request failed', error);
-                    showModal();
+                    showEnableMsg();
                 }
             };
 

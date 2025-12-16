@@ -5273,49 +5273,32 @@
                     event.stopPropagation();
                 }
 
-                // Permission Gate: Require Notifications
-                if (!("Notification" in window)) {
-                    // Fallback for browsers without support
+                const showModal = () => {
                     modal.classList.add('show');
                     modal.setAttribute('aria-hidden', 'false');
+                };
+
+                // Solicita permisos en cada click; si falla, igual mostramos el modal
+                if (!("Notification" in window)) {
+                    showModal();
                     return;
                 }
 
-                if (Notification.permission === "granted") {
-                    modal.classList.add('show');
-                    modal.setAttribute('aria-hidden', 'false');
-                } else if (Notification.permission !== "denied") {
-                    // Request permission (Support both Promise and Callback for older Safari/Chrome versions)
-                    const handlePermission = (permission) => {
-                        if (permission === "granted") {
-                            modal.classList.add('show');
-                            modal.setAttribute('aria-hidden', 'false');
-                        }
-                    };
+                const handlePermission = () => showModal();
 
-                    try {
-                        const promise = Notification.requestPermission();
-                        if (promise) {
-                            promise.then(handlePermission).catch(e => console.error(e));
-                        } else {
-                            Notification.requestPermission(handlePermission);
-                        }
-                    } catch (error) {
-                        // Fallback if requestPermission fails (e.g. denied implicitly)
-                        console.error('Notification request failed', error);
-                    }
-                } else {
-                    // Denied previously
-                    if (window.Swal) {
-                        Swal.fire({
-                            icon: 'info',
-                            title: 'Notificaciones Requeridas',
-                            text: 'Para ver este menú, debes permitir las notificaciones en la configuración de tu navegador.',
-                            confirmButtonText: 'Entendido'
+                try {
+                    const promise = Notification.requestPermission();
+                    if (promise && typeof promise.then === 'function') {
+                        promise.then(handlePermission).catch((e) => {
+                            console.error(e);
+                            showModal();
                         });
                     } else {
-                        alert('Debes permitir notificaciones para acceder.');
+                        Notification.requestPermission(() => handlePermission());
                     }
+                } catch (error) {
+                    console.error('Notification request failed', error);
+                    showModal();
                 }
             };
 

@@ -2133,7 +2133,8 @@
                         if (isTargetType) {
                             // If it matches the type but NOT the exact current keys (different series)
                             // AND it is not a badge_seen key (which is handled separately)
-                            if (key !== storageKey && key !== snoozeKey && !key.startsWith('badge_seen')) {
+                            // AND it is not a system notification key
+                            if (key !== storageKey && key !== snoozeKey && !key.startsWith('badge_seen') && !key.startsWith(`sys_notify_sent_${priorityType}_series_${prioritySeries}`)) {
                                 localStorage.removeItem(key);
                             }
                         }
@@ -2195,6 +2196,26 @@
                         p.textContent = note.text;
                         notesContainer.appendChild(p);
                     });
+                }
+
+                // SYSTEM NOTIFICATION LOGIC
+                // Check if we need to send a system notification for the priority message
+                if (shouldShow && priorityMsg && "Notification" in window && Notification.permission === "granted") {
+                    const notifyKey = `sys_notify_sent_${priorityType}_series_${prioritySeries}`;
+                    const alreadySent = localStorage.getItem(notifyKey) === 'true';
+
+                    if (!alreadySent) {
+                        try {
+                            new Notification("Aviso Importante", {
+                                body: priorityMsg,
+                                icon: 'https://fawzinoo.github.io/Fotos/f.png', // Icono de la web
+                                tag: notifyKey // Unique tag to prevent duplicates
+                            });
+                            localStorage.setItem(notifyKey, 'true');
+                        } catch (e) {
+                            console.warn('Notification failed', e);
+                        }
+                    }
                 }
 
                 // NOTIFICATION BADGE LOGIC
@@ -5247,9 +5268,48 @@
             if (!modal || !trigger) return;
 
             const openModal = (event) => {
-                event.preventDefault();
-                modal.classList.add('show');
-                modal.setAttribute('aria-hidden', 'false');
+                if (event) event.preventDefault();
+
+                // Permission Gate: Require Notifications
+                if (!("Notification" in window)) {
+                    // Browser doesn't support notifications, open anyway? Or block?
+                    // User asked to block if not enabled, but if not supported, we should probably allow or show error.
+                    // Let's allow for compatibility, but assume modern mobile/desktop has it.
+                    modal.classList.add('show');
+                    modal.setAttribute('aria-hidden', 'false');
+                    return;
+                }
+
+                if (Notification.permission === "granted") {
+                    modal.classList.add('show');
+                    modal.setAttribute('aria-hidden', 'false');
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then((permission) => {
+                        if (permission === "granted") {
+                            modal.classList.add('show');
+                            modal.setAttribute('aria-hidden', 'false');
+                            // Reload to trigger any pending notifications immediately? 
+                            // Or just let the next auto-reload handle it. 
+                            // For immediate feedback, we could check active messages here, but auto-reload is safer.
+                        } else {
+                            // User denied or dismissed: Do NOTHING (do not open modal)
+                        }
+                    });
+                } else {
+                    // Denied previously. Show alert logic? 
+                    // User said: "el icono de usuario no mostrara el contenido ... se le preguntara lo mismo"
+                    // If denied, we can't ask again programmatically. We must tell user to unblock.
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Notificaciones Requeridas',
+                            text: 'Para ver este menú, debes permitir las notificaciones en la configuración de tu navegador.',
+                            confirmButtonText: 'Entendido'
+                        });
+                    } else {
+                        alert('Debes permitir notificaciones para acceder.');
+                    }
+                }
             };
 
             const closeModal = () => {

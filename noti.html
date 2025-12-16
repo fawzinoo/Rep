@@ -5284,33 +5284,8 @@
                 if (Notification.permission === "granted") {
                     modal.classList.add('show');
                     modal.setAttribute('aria-hidden', 'false');
-                } else if (Notification.permission === "denied") {
-                    // Browser blocked it. Offer manual fix or bypass.
-                    if (window.Swal) {
-                        Swal.fire({
-                            icon: 'warning',
-                            title: 'Notificaciones Bloqueadas',
-                            html: 'El navegador ha bloqueado los permisos.<br>1. Pulsa el candado 🔒 en la barra de dirección.<br>2. Dale a "Restablecer permisos".<br>3. Refresca la página.',
-                            showCancelButton: true,
-                            confirmButtonText: 'Entrar de todas formas',
-                            cancelButtonText: 'Cerrar',
-                            confirmButtonColor: '#d33',
-                            reverseButtons: true
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                modal.classList.add('show');
-                                modal.setAttribute('aria-hidden', 'false');
-                            }
-                        });
-                    } else {
-                        // Fallback
-                        if (confirm('Notificaciones bloqueadas. ¿Entrar de todas formas?')) {
-                            modal.classList.add('show');
-                            modal.setAttribute('aria-hidden', 'false');
-                        }
-                    }
-                } else {
-                    // Permission is 'default' (askable)
+                } else if (Notification.permission !== "denied") {
+                    // Request permission (Support both Promise and Callback for older Safari/Chrome versions)
                     const handlePermission = (permission) => {
                         if (permission === "granted") {
                             modal.classList.add('show');
@@ -5326,73 +5301,68 @@
                             Notification.requestPermission(handlePermission);
                         }
                     } catch (error) {
+                        // Fallback if requestPermission fails (e.g. denied implicitly)
                         console.error('Notification request failed', error);
                     }
-                }
-                const handlePermission = (permission) => {
-                    if (permission === "granted") {
-                        modal.classList.add('show');
-                        modal.setAttribute('aria-hidden', 'false');
-                    }
-                };
-
-                try {
-                    const promise = Notification.requestPermission();
-                    if (promise) {
-                        promise.then(handlePermission).catch(e => console.error(e));
-                    } else {
-                        Notification.requestPermission(handlePermission);
-                    }
-                } catch (error) {
-                    console.error('Notification request failed', error);
-                }
-            }
-        };
-
-        const closeModal = () => {
-            modal.classList.remove('show');
-            modal.setAttribute('aria-hidden', 'true');
-        };
-
-        trigger.addEventListener('click', openModal);
-        closeBtn && closeBtn.addEventListener('click', closeModal);
-
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.classList.contains('show')) {
-                closeModal();
-            }
-        });
-
-        choices.forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const type = btn.getAttribute('data-contact-type');
-                if (type === 'facebook') {
-                    closeModal();
-                    if (window.Swal && typeof Swal.fire === 'function') {
+                } else {
+                    // Denied previously
+                    if (window.Swal) {
                         Swal.fire({
                             icon: 'info',
-                            title: 'Próximamente',
-                            text: 'La opción de Facebook estará disponible pronto.',
+                            title: 'Notificaciones Requeridas',
+                            text: 'Para ver este menú, debes permitir las notificaciones en la configuración de tu navegador.',
                             confirmButtonText: 'Entendido'
                         });
                     } else {
-                        alert('La opción de Facebook estará disponible pronto.');
+                        alert('Debes permitir notificaciones para acceder.');
                     }
-                    return;
                 }
+            };
 
-                const url = contactLinks[type];
-                if (url) {
-                    window.open(url, '_blank', 'noopener');
-                }
-                closeModal();
+            const closeModal = () => {
+                modal.classList.remove('show');
+                modal.setAttribute('aria-hidden', 'true');
+            };
+
+            trigger.addEventListener('click', openModal);
+            closeBtn && closeBtn.addEventListener('click', closeModal);
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
             });
-        });
-        }) ();
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal.classList.contains('show')) {
+                    closeModal();
+                }
+            });
+
+            choices.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const type = btn.getAttribute('data-contact-type');
+                    if (type === 'facebook') {
+                        closeModal();
+                        if (window.Swal && typeof Swal.fire === 'function') {
+                            Swal.fire({
+                                icon: 'info',
+                                title: 'Próximamente',
+                                text: 'La opción de Facebook estará disponible pronto.',
+                                confirmButtonText: 'Entendido'
+                            });
+                        } else {
+                            alert('La opción de Facebook estará disponible pronto.');
+                        }
+                        return;
+                    }
+
+                    const url = contactLinks[type];
+                    if (url) {
+                        window.open(url, '_blank', 'noopener');
+                    }
+                    closeModal();
+                });
+            });
+        })();
     </script>
     <script>
         (function setupExamResultModal() {

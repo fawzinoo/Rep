@@ -2067,8 +2067,8 @@
     <script>
         // Toggle para mostrar/ocultar el botón "Resultado del examen" en el modal de contacto
         const SHOW_EXAM_BUTTON = true; // pon en false para ocultarlo
-        const MSG1_ENABLED = true;
-        const MSG2_ENABLED = true;
+        const MSG1_ENABLED = false;
+        const MSG2_ENABLED = false;
         const MSG3_ENABLED = false;
         const MSG1_SERIES = '2'; // Cambiar si el contenido se actualiza
         const MSG2_SERIES = '2'; // Cambiar si el contenido se actualiza
@@ -2279,36 +2279,44 @@
                     const shouldShow = !isHidden && (!lastSnooze || (now - parseInt(lastSnooze) > fifteenMinutes));
 
                     if (shouldShow) {
-                        Swal.fire({
-                            title: '<span class="animated-gradient-text">Aviso</span>',
-                            text: priorityMsg,
-                            confirmButtonText: 'Entendido',
-                            showDenyButton: true,
-                            denyButtonText: 'No volver a mostrar',
-                            denyButtonColor: '#6b7280', // Gray for secondary action
-                            width: 'min(400px, 90vw)',
-                            backdrop: true,
-                            allowOutsideClick: false,
-                            customClass: {
-                                title: 'swal-aviso-title',
-                                actions: 'swal-aviso-actions'
-                            }
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                // Clear ALL other snooze keys to reset timers for other messages
-                                Object.keys(localStorage).forEach(k => {
-                                    if (k.startsWith('snooze_') && k !== snoozeKey) {
-                                        localStorage.removeItem(k);
+                        (async () => {
+                            const granted = await requestBrowserNotifications();
+                            if (granted) {
+                                await sendNotificationsIfGranted();
+                                // Marcar como visto para que no vuelva a aparecer badge si ya se notificó
+                                const thisMsg = { type: priorityType, series: prioritySeries };
+                                markMessagesAsSeen([thisMsg]);
+                                clearNotificationBadge(document.querySelector('.header-whatsapp'));
+                            } else {
+                                // Si el usuario no concede permiso, mantener la lógica de ocultar/snooze para no molestar
+                                const hideResult = await Swal.fire({
+                                    title: '<span class="animated-gradient-text">Aviso</span>',
+                                    text: priorityMsg,
+                                    confirmButtonText: 'Entendido (sin notificación del navegador)',
+                                    showDenyButton: true,
+                                    denyButtonText: 'No volver a mostrar',
+                                    denyButtonColor: '#6b7280',
+                                    width: 'min(400px, 90vw)',
+                                    backdrop: true,
+                                    allowOutsideClick: false,
+                                    customClass: {
+                                        title: 'swal-aviso-title',
+                                        actions: 'swal-aviso-actions'
                                     }
                                 });
-                                // Snooze current message for 15 minutes
-                                localStorage.setItem(snoozeKey, Date.now().toString());
-                            } else if (result.isDenied) {
-                                localStorage.setItem(storageKey, 'true');
-                                localStorage.removeItem(snoozeKey); // Clean up snooze if permanently hidden
-                                // Swal.fire('Guardado', 'No volveremos a mostrar este mensaje.', 'success');
+                                if (hideResult.isConfirmed) {
+                                    Object.keys(localStorage).forEach(k => {
+                                        if (k.startsWith('snooze_') && k !== snoozeKey) {
+                                            localStorage.removeItem(k);
+                                        }
+                                    });
+                                    localStorage.setItem(snoozeKey, Date.now().toString());
+                                } else if (hideResult.isDenied) {
+                                    localStorage.setItem(storageKey, 'true');
+                                    localStorage.removeItem(snoozeKey);
+                                }
                             }
-                        });
+                        })();
                     }
                 }
                 if (notes.length === 0) {

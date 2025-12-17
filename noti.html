@@ -372,8 +372,18 @@
             white-space: nowrap;
         }
 
+        .notification-helper button.secondary {
+            background: #6b7280;
+        }
+
         .notification-helper button:active {
             transform: translateY(1px);
+        }
+
+        .notification-helper button.secondary {
+            background: #e5e7eb;
+            color: #111827;
+            border: 1px solid #d1d5db;
         }
 
         /* Estilos específicos para cada mensaje (sombra/color) */
@@ -2372,7 +2382,10 @@
             <div class="contact-notes" aria-live="polite"></div>
             <div class="notification-helper" role="status" aria-live="polite">
                 <div class="notification-helper-text" style="flex:1;">Activa las notificaciones para ver los avisos.</div>
-                <button type="button" data-retry-notify>Permitir</button>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" data-retry-notify>Permitir</button>
+                    <button type="button" class="secondary" data-open-settings>Ir a ajustes</button>
+                </div>
             </div>
             <div class="modal-separator exam-separator" aria-hidden="true"></div>
             <div style="display:flex; justify-content:center; margin-bottom:4px;">
@@ -5354,6 +5367,7 @@
             const helperBox = modal ? modal.querySelector('.notification-helper') : null;
             const helperText = helperBox ? helperBox.querySelector('.notification-helper-text') : null;
             const helperBtn = helperBox ? helperBox.querySelector('[data-retry-notify]') : null;
+            const settingsBtn = helperBox ? helperBox.querySelector('[data-open-settings]') : null;
 
             if (!modal || !trigger) return;
 
@@ -5374,31 +5388,39 @@
                 const btn = helperBtn;
                 const label = helperText;
                 if (!label) return;
+                const showSettings = (visible) => {
+                    if (settingsBtn) settingsBtn.style.display = visible ? 'inline-flex' : 'none';
+                };
                 if (!('Notification' in window)) {
                     helperBox.style.display = 'flex';
                     label.textContent = 'Tu navegador no soporta notificaciones web.';
                     btn && (btn.style.display = 'none');
+                    showSettings(false);
                     return;
                 }
                 if (!window.isSecureContext) {
                     helperBox.style.display = 'flex';
                     label.textContent = 'Abre esta página en HTTPS para que Chrome permita las notificaciones.';
                     btn && (btn.style.display = 'none');
+                    showSettings(false);
                     return;
                 }
                 if (Notification.permission === 'granted') {
                     helperBox.style.display = 'none';
+                    showSettings(false);
                     return;
                 }
                 if (Notification.permission === 'denied') {
                     helperBox.style.display = 'flex';
                     label.textContent = 'Has bloqueado las notificaciones. Actívalas en Ajustes del sitio > Notificaciones.';
                     btn && (btn.style.display = 'none');
+                    showSettings(true);
                     return;
                 }
                 helperBox.style.display = 'flex';
                 btn && (btn.style.display = 'inline-flex');
                 label.textContent = 'Pulsa "Permitir" en el aviso que aparecerá.';
+                showSettings(false);
             };
 
             const retryPermission = async () => {
@@ -5430,6 +5452,36 @@
                     console.warn('Reintento de permiso fallido', e);
                 }
                 helperBtn && (helperBtn.style.display = 'inline-flex');
+                if (settingsBtn && Notification.permission === 'denied') {
+                    settingsBtn.style.display = 'inline-flex';
+                }
+            };
+
+            const openSettingsGuide = () => {
+                const ua = navigator.userAgent || '';
+                let steps = '';
+                if (/iPhone|iPad|iPod/i.test(ua)) {
+                    steps = 'iOS Safari: Ajustes > Safari > Notificaciones > Permitir.';
+                } else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) {
+                    steps = 'macOS Safari: Safari > Preferencias > Sitios web > Notificaciones > Permitir este sitio.';
+                } else if (/Edg/i.test(ua)) {
+                    steps = 'Edge: Menú (⋯) > Configuración > Cookies y permisos de sitio > Notificaciones > Permitir este sitio.';
+                } else if (/Firefox/i.test(ua)) {
+                    steps = 'Firefox: Menú (≡) > Ajustes > Privacidad & Seguridad > Permisos > Notificaciones > Ajustar este sitio.';
+                } else {
+                    steps = 'Chrome: Menú (⋮) > Ajustes > Privacidad y seguridad > Notificaciones > Añade este sitio en Permitir.';
+                }
+
+                if (window.Swal && typeof Swal.fire === 'function') {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Activa las notificaciones',
+                        text: steps,
+                        confirmButtonText: 'Entendido'
+                    });
+                } else {
+                    alert(steps);
+                }
             };
 
             const openModal = async (event) => {
@@ -5498,6 +5550,11 @@
             helperBtn && helperBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 retryPermission();
+            });
+
+            settingsBtn && settingsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openSettingsGuide();
             });
 
             modal.addEventListener('click', (e) => {

@@ -5406,16 +5406,30 @@
                 if (helperText) helperText.textContent = 'Pidiendo permiso...';
                 helperBtn && (helperBtn.style.display = 'none');
                 try {
-                    const ok = await ensureNotificationPermission();
+                    const ok = await Promise.race([
+                        ensureNotificationPermission(),
+                        new Promise(resolve => setTimeout(() => resolve(Notification.permission === 'granted'), 1200))
+                    ]);
                     if (ok) {
                         helperBox.style.display = 'none';
                         dispatchMsgNotifications();
                         return;
                     }
+                    // Si sigue en default/denied tras el intento, informar y mostrar el botón de nuevo
+                    if (helperText) {
+                        const state = Notification.permission;
+                        if (!window.isSecureContext) {
+                            helperText.textContent = 'Activa HTTPS para que el navegador muestre el permiso.';
+                        } else if (state === 'denied') {
+                            helperText.textContent = 'Tienes bloqueadas las notificaciones. Actívalas en Ajustes del sitio.';
+                        } else {
+                            helperText.textContent = 'No se pudo mostrar el aviso. Intenta de nuevo.';
+                        }
+                    }
                 } catch (e) {
                     console.warn('Reintento de permiso fallido', e);
                 }
-                refreshHelper();
+                helperBtn && (helperBtn.style.display = 'inline-flex');
             };
 
             const openModal = async (event) => {

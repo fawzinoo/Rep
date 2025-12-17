@@ -5368,6 +5368,12 @@
             const helperText = helperBox ? helperBox.querySelector('.notification-helper-text') : null;
             const helperBtn = helperBox ? helperBox.querySelector('[data-retry-notify]') : null;
             const settingsBtn = helperBox ? helperBox.querySelector('[data-open-settings]') : null;
+            const ua = navigator.userAgent || '';
+            const isIOS = /iP(hone|od|ad)/i.test(ua);
+            const isMobileSafari = isIOS && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            // Safari iOS solo deja Web Push si se instala como app en pantalla de inicio (iOS 16.4+)
+            const mobileSafariBlocked = isMobileSafari && !isStandalone;
 
             if (!modal || !trigger) return;
 
@@ -5405,6 +5411,13 @@
                     showSettings(false);
                     return;
                 }
+                if (mobileSafariBlocked) {
+                    helperBox.style.display = 'flex';
+                    label.textContent = 'Safari en iPhone solo permite notificaciones si instalas la web en la pantalla de inicio (iOS 16.4+).';
+                    btn && (btn.style.display = 'none');
+                    showSettings(false);
+                    return;
+                }
                 if (Notification.permission === 'granted') {
                     helperBox.style.display = 'none';
                     showSettings(false);
@@ -5425,6 +5438,13 @@
 
             const retryPermission = async () => {
                 if (!('Notification' in window) || !helperBox) return;
+                if (mobileSafariBlocked) {
+                    if (helperText) {
+                        helperText.textContent = 'En Safari móvil no se puede mostrar el aviso. Instala la web en pantalla de inicio para habilitarlo.';
+                    }
+                    helperBtn && (helperBtn.style.display = 'none');
+                    return;
+                }
                 if (helperText) helperText.textContent = 'Pidiendo permiso...';
                 helperBtn && (helperBtn.style.display = 'none');
                 try {

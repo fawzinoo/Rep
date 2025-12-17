@@ -348,6 +348,34 @@
             box-sizing: border-box;
         }
 
+        .notification-helper {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: #f3f4f6;
+            color: #111827;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            margin: 10px 0 4px 0;
+            text-align: left;
+        }
+
+        .notification-helper button {
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .notification-helper button:active {
+            transform: translateY(1px);
+        }
+
         /* Estilos específicos para cada mensaje (sombra/color) */
         .note-msg3 {
             background-color: #f0fdfa;
@@ -2342,6 +2370,10 @@
                 <span class="animated-gradient-text">Avisos</span>
             </div>
             <div class="contact-notes" aria-live="polite"></div>
+            <div class="notification-helper" role="status" aria-live="polite">
+                <div class="notification-helper-text" style="flex:1;">Activa las notificaciones para ver los avisos.</div>
+                <button type="button" data-retry-notify>Permitir</button>
+            </div>
             <div class="modal-separator exam-separator" aria-hidden="true"></div>
             <div style="display:flex; justify-content:center; margin-bottom:4px;">
                 <div class="voltage-button">
@@ -5319,6 +5351,9 @@
             const trigger = document.querySelector('.header-whatsapp');
             const closeBtn = modal ? modal.querySelector('[data-close-contact-modal]') : null;
             const choices = modal ? modal.querySelectorAll('.contact-choice') : [];
+            const helperBox = modal ? modal.querySelector('.notification-helper') : null;
+            const helperText = helperBox ? helperBox.querySelector('.notification-helper-text') : null;
+            const helperBtn = helperBox ? helperBox.querySelector('[data-retry-notify]') : null;
 
             if (!modal || !trigger) return;
 
@@ -5332,6 +5367,55 @@
                         console.warn('No se pudo lanzar el prompt de notificaciones de forma anticipada', e);
                     }
                 }
+            };
+
+            const refreshHelper = () => {
+                if (!helperBox) return;
+                const btn = helperBtn;
+                const label = helperText;
+                if (!label) return;
+                if (!('Notification' in window)) {
+                    helperBox.style.display = 'flex';
+                    label.textContent = 'Tu navegador no soporta notificaciones web.';
+                    btn && (btn.style.display = 'none');
+                    return;
+                }
+                if (!window.isSecureContext) {
+                    helperBox.style.display = 'flex';
+                    label.textContent = 'Abre esta página en HTTPS para que Chrome permita las notificaciones.';
+                    btn && (btn.style.display = 'none');
+                    return;
+                }
+                if (Notification.permission === 'granted') {
+                    helperBox.style.display = 'none';
+                    return;
+                }
+                if (Notification.permission === 'denied') {
+                    helperBox.style.display = 'flex';
+                    label.textContent = 'Has bloqueado las notificaciones. Actívalas en Ajustes del sitio > Notificaciones.';
+                    btn && (btn.style.display = 'none');
+                    return;
+                }
+                helperBox.style.display = 'flex';
+                btn && (btn.style.display = 'inline-flex');
+                label.textContent = 'Pulsa "Permitir" en el aviso que aparecerá.';
+            };
+
+            const retryPermission = async () => {
+                if (!('Notification' in window) || !helperBox) return;
+                if (helperText) helperText.textContent = 'Pidiendo permiso...';
+                helperBtn && (helperBtn.style.display = 'none');
+                try {
+                    const ok = await ensureNotificationPermission();
+                    if (ok) {
+                        helperBox.style.display = 'none';
+                        dispatchMsgNotifications();
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Reintento de permiso fallido', e);
+                }
+                refreshHelper();
             };
 
             const openModal = async (event) => {
@@ -5379,6 +5463,11 @@
 
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
+                refreshHelper();
+                if (!granted && window.isSecureContext && 'Notification' in window && Notification.permission === 'default') {
+                    // Segundo intento ya dentro del modal y aún dentro de un flujo iniciado por gesto
+                    retryPermission();
+                }
             };
 
             const closeModal = () => {
@@ -5391,6 +5480,11 @@
             trigger.addEventListener('touchstart', primeNotificationPrompt, { once: true });
             trigger.addEventListener('click', openModal);
             closeBtn && closeBtn.addEventListener('click', closeModal);
+
+            helperBtn && helperBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                retryPermission();
+            });
 
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) closeModal();

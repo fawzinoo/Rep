@@ -212,28 +212,6 @@
             position: relative;
         }
 
-        .btn-share-whatsapp {
-            background-color: #25D366;
-            color: #fff;
-            border: none;
-            border-radius: 50%;
-            width: 42px;
-            height: 42px;
-            cursor: pointer;
-            font-size: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn-share-whatsapp:hover {
-            background-color: #1ebc57;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
-        }
-
         .button.yes,
         .button.no {
             min-width: 44px;
@@ -2407,8 +2385,6 @@
                         <option value="en">Inglés</option>
                     </select>
                     <button class="btn-download" id="download-pdf-btn">Descargar PDF</button>
-                    <button class="btn-share-whatsapp" id="share-whatsapp-btn" aria-label="Compartir en WhatsApp"><i
-                            class="fab fa-whatsapp"></i></button>
                 </div>
             </div>
         </div>
@@ -3707,7 +3683,7 @@
             return iconDataUrl;
         }
 
-        async function generatePdfDoc(lang) {
+        async function downloadPdfList(lang) {
             const rows = buildDownloadRows(lang);
             const { jsPDF } = window.jspdf || {};
             if (!jsPDF || !rows.length) return;
@@ -3831,47 +3807,8 @@
                     doc.text(row.translated, col2X, y, { align: 'center' });
                 }
                 y += 8;
-                y += 8;
             }
-            return doc;
-        }
-
-        async function downloadPdfList(lang) {
-            const doc = await generatePdfDoc(lang);
-            if (doc) doc.save(`paises-traducciones-${lang}.pdf`);
-        }
-
-        async function handleShareWhatsapp(lang) {
-            try {
-                const doc = await generatePdfDoc(lang);
-                if (!doc) return;
-                const blob = doc.output('blob');
-                const file = new File([blob], `paises-traducciones-${lang}.pdf`, { type: 'application/pdf' });
-
-                if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({
-                        files: [file],
-                        title: 'Paises y Traducciones',
-                        text: 'Aquí tienes la lista de paises y sus traducciones.'
-                    });
-                } else {
-                    throw new Error('Sharing not supported');
-                }
-            } catch (err) {
-                // Fallback: Descargar y guiar
-                const doc = await generatePdfDoc(lang);
-                if (doc) doc.save(`paises-traducciones-${lang}.pdf`);
-
-                setTimeout(() => {
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    // En desktop, abrir web.whatsapp.com. En mobile, intentar esquema
-                    const waUrl = isMobile ? 'whatsapp://send?text=Aquí tienes el archivo PDF (adjúntalo manualmente)' : 'https://web.whatsapp.com/';
-
-                    if (confirm('No se pudo compartir directamente (quizás no soportado en este dispositivo). El PDF se ha descargado.\n\n¿Quieres abrir WhatsApp ahora para enviarlo manualmente?')) {
-                        window.open(waUrl, '_blank');
-                    }
-                }, 500);
-            }
+            doc.save(`paises-traducciones-${lang}.pdf`);
         }
 
         function downloadList(lang) {
@@ -4253,28 +4190,6 @@
             downloadPdfBtn.addEventListener('pointerdown', () => {
                 playModalButtonSound();
             });
-            const shareWhatsappBtn = document.getElementById('share-whatsapp-btn');
-
-            downloadPdfBtn.addEventListener('click', async () => {
-                playModalButtonSound();
-                vibrateFeedback();
-                const lang = downloadPdfLangSelect.value || 'es';
-                await downloadPdfList(lang);
-                // Mantener modal abierto o cerrarlo, usuario decidira
-                // closeDownloadPdfModal();
-            });
-            downloadPdfBtn.addEventListener('pointerdown', () => {
-                playModalButtonSound();
-            });
-
-            if (shareWhatsappBtn) {
-                shareWhatsappBtn.addEventListener('click', async () => {
-                    playModalButtonSound();
-                    vibrateFeedback();
-                    const lang = downloadPdfLangSelect.value || 'es';
-                    await handleShareWhatsapp(lang);
-                });
-            }
         }
 
         function maybeShowOfflineOverlay(index) {

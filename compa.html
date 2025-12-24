@@ -1114,6 +1114,99 @@
             box-shadow: 0 10px 20px rgba(12, 74, 110, 0.18);
         }
 
+        .playing-table {
+            width: min(780px, 95%);
+            margin: 6px auto 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            box-shadow:
+                0 14px 32px rgba(15, 23, 42, 0.12),
+                0 2px 8px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.15);
+        }
+
+        .playing-table[hidden] {
+            display: none !important;
+        }
+
+        .playing-table__header {
+            padding: 12px 18px;
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            color: #fff;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            text-align: center;
+        }
+
+        .playing-table__columns {
+            display: grid;
+            grid-template-columns: 2fr 0.9fr 0.9fr;
+            gap: 12px;
+            padding: 10px 16px 8px;
+            background: rgba(99, 102, 241, 0.06);
+            color: #475569;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .playing-table__rows {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .playing-table__row {
+            display: grid;
+            grid-template-columns: 2fr 0.9fr 0.9fr;
+            gap: 12px;
+            align-items: center;
+            padding: 12px 16px;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+            text-align: center;
+        }
+
+        .playing-table__row:nth-child(odd) {
+            background: rgba(99, 102, 241, 0.04);
+        }
+
+        .playing-table__name {
+            font-weight: 600;
+            color: #0f172a;
+            justify-self: center;
+        }
+
+        .playing-table__points,
+        .playing-table__percent {
+            font-weight: 700;
+            color: #334155;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .playing-table__columns > span + span {
+            border-left: 1px solid rgba(148, 163, 184, 0.35);
+            padding-left: 12px;
+        }
+
+        .playing-table__row > div + div {
+            border-left: 1px solid rgba(148, 163, 184, 0.2);
+            padding-left: 12px;
+        }
+
+        @media (max-width: 620px) {
+            .playing-table__row {
+                grid-template-columns: 1.4fr 0.8fr 0.8fr;
+                row-gap: 8px;
+            }
+
+            .playing-table__columns {
+                grid-template-columns: 1.4fr 0.8fr 0.8fr;
+            }
+        }
+
         .quiz-lock-timer {
             position: absolute;
             left: 0;
@@ -2221,6 +2314,15 @@
                 <span id="playing-count">--</span> en juego
             </div>
         </div>
+        <div class="playing-table" id="playing-table" hidden>
+            <div class="playing-table__header">Jugadores en juego</div>
+            <div class="playing-table__columns">
+                <span>Nombre y apellido</span>
+                <span>Puntos</span>
+                <span>Porcentaje</span>
+            </div>
+            <div class="playing-table__rows" id="playing-table-rows"></div>
+        </div>
     </main>
     <script>
         // Bloqueo: solo se puede abrir esta página si viene desde el padre indicado con token de sesión válido.
@@ -2280,7 +2382,7 @@
         })();
 
         // Registro de nombre y apellido en Google Sheets (vía Apps Script doPost)
-        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzMRLNRibzYWeWVS327XrBoVdI970g9wERDN6PKG-QT34fIxwoXMoHIKT46DUk3ryn4aw/exec'; // Reemplaza con tu URL publicada
+        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzy2P0eMd1m1dg2JZTG85vgijl9RFoKSdXSzRZB-fakQ2HKQwh6tkfdRCcPKESPlYtmSw/exec'; // Reemplaza con tu URL publicada
         const IDENTITY_STORAGE_KEY = 'quizA1_identity_v1';
         let lastScoreSent = 0;
         let lastPercentSent = null;
@@ -2439,6 +2541,41 @@
             countEl.textContent = safe;
         };
 
+        const renderPlayingTable = (players) => {
+            if (!playingTableEl || !playingTableRowsEl) return;
+            if (!Array.isArray(players) || players.length === 0) {
+                playingTableRowsEl.innerHTML = '';
+                playingTableEl.hidden = true;
+                return;
+            }
+            playingTableRowsEl.innerHTML = '';
+            players.forEach((p, idx) => {
+                const row = document.createElement('div');
+                row.className = 'playing-table__row';
+                const name = document.createElement('div');
+                name.className = 'playing-table__name';
+                name.textContent = `${idx + 1}. ${p.nombre || ''} ${p.apellido || ''}`.trim();
+                const pts = document.createElement('div');
+                pts.className = 'playing-table__points';
+                pts.textContent = `${Number.isFinite(p.puntos) ? Math.round(p.puntos) : 0} pts`;
+                const perc = document.createElement('div');
+                perc.className = 'playing-table__percent';
+                perc.textContent = Number.isFinite(p.porcentaje) ? `${Math.round(p.porcentaje)}%` : '--';
+                row.appendChild(name);
+                row.appendChild(pts);
+                row.appendChild(perc);
+                playingTableRowsEl.appendChild(row);
+            });
+            playingTableEl.hidden = false;
+        };
+
+        const hidePlayingTable = () => {
+            if (playingTableEl) playingTableEl.hidden = true;
+            if (playingTableRowsEl) playingTableRowsEl.innerHTML = '';
+        };
+
+        let lastPlayersList = [];
+
         const fetchOnlineCount = async () => {
             if (!SHEET_WEB_APP_URL || SHEET_WEB_APP_URL.includes('REEMPLAZA_AQUI_TU_WEB_APP')) return;
             try {
@@ -2446,6 +2583,13 @@
                 const data = await res.json();
                 updateOnlineDisplay(Number(data?.online));
                 updatePlayingDisplay(Number(data?.playing));
+                lastPlayersList = Array.isArray(data?.players) ? data.players : [];
+                const playingVisible = playingPill && playingPill.style.display !== 'none';
+                if (playingVisible) {
+                    renderPlayingTable(lastPlayersList);
+                } else {
+                    hidePlayingTable();
+                }
             } catch (err) {
                 console.error('No se pudo obtener usuarios en línea:', err);
             }
@@ -2456,12 +2600,14 @@
             if (presenceStrip) presenceStrip.style.display = 'flex';
             if (onlinePill) onlinePill.style.display = 'none';
             if (playingPill) playingPill.style.display = 'inline-flex';
+            renderPlayingTable(lastPlayersList);
         };
 
         const showOnlinePill = () => {
             if (presenceStrip) presenceStrip.style.display = 'flex';
             if (onlinePill) onlinePill.style.display = 'inline-flex';
-            if (playingPill) playingPill.style.display = 'inline-flex';
+            if (playingPill) playingPill.style.display = 'none';
+            hidePlayingTable();
         };
 
         const sendPresence = async (estado) => {
@@ -17688,6 +17834,8 @@
         const onlineCountEl = document.getElementById('online-count');
         const playingPill = document.getElementById('playing-pill');
         const playingCountEl = document.getElementById('playing-count');
+        const playingTableEl = document.getElementById('playing-table');
+        const playingTableRowsEl = document.getElementById('playing-table-rows');
         const meterFillEl = document.getElementById('quiz-meter-fill');
         const meterLabelEl = document.getElementById('quiz-meter-label');
         const lockTimerEl = document.getElementById('quiz-lock-timer');

@@ -1187,12 +1187,12 @@
             text-align: center;
         }
 
-        .playing-table__columns > span + span {
+        .playing-table__columns>span+span {
             border-left: 1px solid rgba(148, 163, 184, 0.35);
             padding-left: 12px;
         }
 
-        .playing-table__row > div + div {
+        .playing-table__row>div+div {
             border-left: 1px solid rgba(148, 163, 184, 0.2);
             padding-left: 12px;
         }
@@ -2383,7 +2383,7 @@
         })();
 
         // Registro de nombre y apellido en Google Sheets (vía Apps Script doPost)
-        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzy2P0eMd1m1dg2JZTG85vgijl9RFoKSdXSzRZB-fakQ2HKQwh6tkfdRCcPKESPlYtmSw/exec'; // Reemplaza con tu URL publicada
+        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxKDHDEXZvKqvFpGzL1p0H_pWpN58UwSUNuCdeUIuqI1DHFUdzx2seWuVxKQiHuBcOf/exec'; // Reemplaza con tu URL publicada
         const IDENTITY_STORAGE_KEY = 'quizA1_identity_v1';
         let lastScoreSent = 0;
         let lastPercentSent = null;
@@ -2479,7 +2479,7 @@
             return { nombre, apellido };
         };
 
-        const sendProgress = async (puntos, percentVal, timerText = null, presencia = null) => {
+        const sendProgress = async (puntos, percentVal, timerText = null, presencia = null, juego = null) => {
             if (!Number.isFinite(puntos)) return;
             if (!Number.isFinite(percentVal)) return;
             const identity = getCurrentIdentity();
@@ -2499,6 +2499,7 @@
                 bloqueado: lockedFlag,
                 timer: timerText,
                 estado: presencia || lastPresenceSent || null,
+                juego: juego || null,
                 actividad: REQUIRED_ACTIVITY_ID,
                 tipo: 'progreso'
             };
@@ -2507,6 +2508,14 @@
             } catch (err) {
                 console.error('No se pudo actualizar progreso en la hoja:', err);
             }
+        };
+
+        let gameFinishedSent = false;
+        const sendGameFinished = async () => {
+            if (gameFinishedSent) return;
+            const percentVal = (score / totalQuestions) * 100;
+            await sendProgress(score, percentVal, 'final', 'Terminado', 'Terminado');
+            gameFinishedSent = true;
         };
 
         const notifyScoreUpdate = async (puntos) => {
@@ -2578,11 +2587,48 @@
 
         let lastPlayersList = [];
 
+        function clearLocalLockFromReset(resets) {
+            if (!Array.isArray(resets)) return;
+            const identity = getCurrentIdentity();
+            if (!identity) return;
+            const key = `${identity.nombre}|${identity.apellido}`.trim().toLowerCase();
+            const found = resets.some((r) => String(r || '').trim().toLowerCase() === key);
+            if (!found) return;
+
+            const quizStatus = storageSnapshot?.quiz?.status;
+            const hasParentLock = (() => {
+                try { return !!localStorage.getItem(PARENT_LOCK_KEY); } catch (_) { return false; }
+            })();
+            const hasParentResult = (() => {
+                try { return !!localStorage.getItem(PARENT_RESULT_KEY); } catch (_) { return false; }
+            })();
+            const shouldReset =
+                quizStatus === 'completed' ||
+                quizStatus === 'cooldown' ||
+                quizStatus === 'strike-lock' ||
+                hasParentLock ||
+                hasParentResult;
+            // Si está en progreso no lo tocamos para evitar “sacarlo” del quiz
+            if (!shouldReset) return;
+
+            try { localStorage.removeItem('QuizA1-GraVoc'); } catch (_) { }
+            try { localStorage.removeItem('QuizA1-GraVocQuizLockState'); } catch (_) { }
+            try { localStorage.removeItem('QuizA1-GraVocLastResult'); } catch (_) { }
+            try { localStorage.removeItem(PARENT_RESULT_KEY); } catch (_) { }
+            try { localStorage.removeItem(PARENT_LOCK_KEY); } catch (_) { }
+            // Refrescar snapshot local para evitar lecturas obsoletas
+            storageSnapshot = readStorage();
+            if (typeof showStartScreen === 'function') {
+                showStartScreen();
+            }
+        }
+
         const fetchOnlineCount = async () => {
             if (!SHEET_WEB_APP_URL || SHEET_WEB_APP_URL.includes('REEMPLAZA_AQUI_TU_WEB_APP')) return;
             try {
                 const res = await fetch(`${SHEET_WEB_APP_URL}?mode=online`);
                 const data = await res.json();
+                clearLocalLockFromReset(data?.resets);
                 updateOnlineDisplay(Number(data?.online));
                 updatePlayingDisplay(Number(data?.playing));
                 lastPlayersList = Array.isArray(data?.players) ? data.players : [];
@@ -19199,6 +19245,7 @@
             lastPercentSent = null;
             lastLockSent = null;
             quizStartTime = null;
+            gameFinishedSent = false;
             updateScore();
             quizCard.classList.remove('quiz-correct', 'quiz-incorrect');
             if (quizBody) quizBody.style.display = '';
@@ -19334,6 +19381,7 @@
                 total: totalQuestions,
                 expiresAt: null
             });
+            sendGameFinished();
             renderResultsUI({
                 scoreVal: score,
                 totalVal: totalQuestions,

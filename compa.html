@@ -1163,10 +1163,9 @@
             display: grid;
             grid-template-columns: 2fr 0.9fr 0.9fr;
             gap: 12px;
-            align-items: center;
+            align-items: start;
             padding: 12px 16px;
             border-top: 1px solid rgba(148, 163, 184, 0.16);
-            text-align: center;
         }
 
         .playing-table__row:nth-child(odd) {
@@ -1176,7 +1175,9 @@
         .playing-table__name {
             font-weight: 600;
             color: #0f172a;
-            justify-self: center;
+            text-align: left;
+            word-break: break-word;
+            white-space: normal;
         }
 
         .playing-table__points,
@@ -1185,6 +1186,8 @@
             color: #334155;
             min-width: 70px;
             text-align: center;
+            word-break: break-word;
+            white-space: normal;
         }
 
         .playing-table__columns>span+span {
@@ -2175,6 +2178,21 @@
                 font-size: 1.05rem;
             }
         }
+
+        /* Destacar fila con timer pendiente en la tabla de jugadores */
+        .playing-table__row--pending {
+            background: rgba(248, 113, 113, 0.12);
+        }
+
+        .playing-table__name {
+            text-align: left;
+            word-break: break-word;
+        }
+
+        .playing-table__points,
+        .playing-table__percent {
+            word-break: break-word;
+        }
     </style>
 </head>
 
@@ -2383,7 +2401,7 @@
         })();
 
         // Registro de nombre y apellido en Google Sheets (vía Apps Script doPost)
-        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxgL54lKQSfD5a9XihkKSlQt6nNFpy8KXUAEbGoeuFkOLOjuHBNEtuDP_gCb9lpW1ZfUQ/exec'; // Reemplaza con tu URL publicada
+        const SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx3C8Y13dsXkLMU2D-xCc5H4eu5HtA37q8YLbObobjz0BUR-ae94TKxvjEcsu3uBdPgFw/exec'; // Reemplaza con tu URL publicada
         const IDENTITY_STORAGE_KEY = 'quizA1_identity_v1';
         let lastScoreSent = 0;
         let lastPercentSent = null;
@@ -2505,6 +2523,8 @@
             };
             try {
                 await postToSheet(payload);
+                // Tras cualquier cambio (puntos, timer, estado) recarga la info del doGet
+                fetchOnlineCount();
             } catch (err) {
                 console.error('No se pudo actualizar progreso en la hoja:', err);
             }
@@ -2536,6 +2556,23 @@
             return 'En juego';
         };
 
+        let presenceHeartbeatId = null;
+
+        const startPresenceHeartbeat = () => {
+            if (presenceHeartbeatId) clearInterval(presenceHeartbeatId);
+            // Mantiene el estado "En linea/En juego" vivo para evitar quedarse en "Off"
+            presenceHeartbeatId = setInterval(() => {
+                sendPresence(getPresenceStatus());
+            }, 30000); // cada 30s
+        };
+
+        const stopPresenceHeartbeat = () => {
+            if (presenceHeartbeatId) {
+                clearInterval(presenceHeartbeatId);
+                presenceHeartbeatId = null;
+            }
+        };
+
         const updateOnlineDisplay = (count) => {
             const pill = onlinePill;
             const countEl = onlineCountEl;
@@ -2563,6 +2600,10 @@
             players.forEach((p, idx) => {
                 const row = document.createElement('div');
                 row.className = 'playing-table__row';
+                const hasPendingTimer = typeof p?.timer === 'string' && p.timer.trim() !== '' && !p.timer.toLowerCase().includes('quiz');
+                if (hasPendingTimer) {
+                    row.classList.add('playing-table__row--pending');
+                }
                 const name = document.createElement('div');
                 name.className = 'playing-table__name';
                 name.textContent = `${idx + 1}. ${p.nombre || ''} ${p.apellido || ''}`.trim();
@@ -2666,7 +2707,7 @@
             // Segundo disparo rápido para cubrir latencia inicial
             setTimeout(fetchOnlineCount, 1500);
             if (onlineRefreshId) clearInterval(onlineRefreshId);
-            onlineRefreshId = setInterval(fetchOnlineCount, 10000);
+            onlineRefreshId = setInterval(fetchOnlineCount, 15000);
         };
 
         const sendPresence = async (estado) => {
@@ -2698,9 +2739,11 @@
         });
         window.addEventListener('pagehide', () => {
             sendPresence('Off');
+            stopPresenceHeartbeat();
         });
         window.addEventListener('beforeunload', () => {
             sendPresence('Off');
+            stopPresenceHeartbeat();
         });
 
         if (identityForm) {
@@ -2727,6 +2770,7 @@
                     lastScoreSent = 0;
                     hideIdentityWait();
                     setIdentityStatus('');
+                    startPresenceHeartbeat();
                     setTimeout(() => hideIdentityModal(), 80);
                     setTimeout(() => {
                         try { document.getElementById('quiz-start-btn')?.focus(); } catch (_) { }
@@ -2748,6 +2792,7 @@
             hideIdentityModal();
             setIdentityStatus('');
             sendPresence(getPresenceStatus());
+            startPresenceHeartbeat();
         } else {
             showIdentityModal();
             setIdentityStatus('');

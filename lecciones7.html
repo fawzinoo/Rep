@@ -1,0 +1,3777 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Libro del alumno7 A2.1</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+	<!-- jsPDF para generar un PDF de una sola página desde canvas -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		body {
+			font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			background: #ffffff;
+			/* Fondo unificado para evitar salto visual */
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			position: relative;
+			touch-action: pan-x pan-y pinch-zoom;
+			/* Permitir zoom y paneo */
+			user-select: none;
+		}
+
+		.pdf-viewer-container {
+			width: 100vw;
+			height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: relative;
+			overflow: hidden;
+			background: #ffffff;
+			/* Igual que body y canvas */
+			perspective: 1600px;
+		}
+
+		.side-arrow {
+			position: absolute;
+			top: 50%;
+			transform: translateY(-50%);
+			z-index: 5000;
+			/* elevado para estar encima de la imagen de ejercicio (2400) y debajo del menú (4000) -> ahora encima de ambos */
+			width: 60px;
+			height: 60px;
+			border-radius: 50%;
+			background: rgba(0, 0, 0, 0.5);
+			color: #fff;
+			border: none;
+			font-size: 2.5rem;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: background 0.2s, transform 0.2s;
+			box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+			opacity: 0.8;
+		}
+
+		/* En desktop, usar position fixed para que no se muevan con zoom/paneo */
+		@media (min-width: 769px) {
+			.side-arrow {
+				position: fixed;
+			}
+		}
+
+		/* Variante más clara para flecha izquierda en modo ejercicio (pedida) */
+		.side-arrow.exercise-left-active {
+			/* Fondo sólido (no transparente) en tono más claro que el botón negro base */
+			background: linear-gradient(135deg, #646464 0%, #4a4a4a 100%);
+			color: #fff;
+			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+		}
+
+		.side-arrow.exercise-left-active:hover {
+			background: linear-gradient(135deg, #6f6f6f 0%, #535353 100%);
+		}
+
+		/* Variante clara para flecha derecha en modo ejercicio (simetría solicitada) */
+		.side-arrow.exercise-right-active {
+			background: linear-gradient(135deg, #646464 0%, #4a4a4a 100%);
+			color: #fff;
+			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+		}
+
+		.side-arrow.exercise-right-active:hover {
+			background: linear-gradient(135deg, #6f6f6f 0%, #535353 100%);
+		}
+
+		.side-arrow:hover {
+			background: rgba(0, 0, 0, 0.8);
+			transform: translateY(-50%) scale(1.1);
+			opacity: 1;
+		}
+
+		.left-arrow {
+			left: 10px;
+		}
+
+		.right-arrow {
+			right: 10px;
+		}
+
+		/* Solo PC (>=769px): permitir paneo y que el canvas se centre por margen cuando quepa */
+		@media (min-width: 769px) {
+			.pdf-viewer-container {
+				display: block;
+				align-items: initial;
+				justify-content: initial;
+				overflow: auto;
+				perspective: none;
+			}
+
+			#pdf-canvas {
+				position: relative;
+				left: 0 !important;
+				transform: none !important;
+				margin: 0 auto;
+				width: auto !important;
+				/* tamaño lo define JS */
+				max-width: none;
+				object-fit: contain;
+			}
+		}
+
+		.page-counter {
+			position: absolute;
+			bottom: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			background: rgba(0, 0, 0, 0.6);
+			color: white;
+			padding: 8px 16px;
+			border-radius: 20px;
+			font-size: 14px;
+			font-weight: 500;
+			z-index: 1000;
+			backdrop-filter: blur(10px);
+			transition: all 0.3s ease;
+		}
+
+		/* En desktop, usar position fixed para que no se mueva con zoom/paneo */
+		@media (min-width: 769px) {
+			.page-counter {
+				position: fixed;
+			}
+		}
+
+		/* Top bar compacta y moderna */
+		.top-bar {
+			background: linear-gradient(135deg, #434343 0%, #000000 100%);
+			padding: 10px 14px;
+			border-radius: 0 0 20px 20px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
+			box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+			width: min(940px, calc(100% - 12px));
+			margin: 0 auto;
+		}
+
+		/* Botón flotante para mostrar/ocultar menú (hamburguesa morada) */
+		.menu-toggle-btn {
+			position: fixed;
+			top: calc(env(safe-area-inset-top, 0px) + 10px);
+			left: 0;
+			width: clamp(28px, 6vw, 38px);
+			height: clamp(44px, 10vw, 54px);
+			border-radius: 8px;
+			/* bordes más reducidos */
+			background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+			color: #fff;
+			border: none;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			z-index: 4000;
+			cursor: pointer;
+			box-shadow: 0 10px 26px rgba(109, 40, 217, 0.5);
+			transition: transform 160ms ease, box-shadow 200ms ease, filter 160ms ease;
+		}
+
+		.menu-toggle-btn:hover {
+			transform: translateY(-1px);
+			box-shadow: 0 14px 30px rgba(109, 40, 217, 0.6);
+		}
+
+		.menu-toggle-btn:active {
+			transform: translateY(0);
+			box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45), 0 6px 14px rgba(0, 0, 0, 0.3);
+		}
+
+		.menu-toggle-btn svg {
+			width: 62%;
+			height: 62%;
+		}
+
+		.bar-group {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.label-chip {
+			color: #fff;
+			font-weight: 700;
+			font-size: 16px;
+			margin: 0 6px 0 2px;
+		}
+
+		/* Botones compactos con estilo moderno (SVG, neumorfismo ligero) */
+		.round-icon-btn {
+			width: 40px;
+			height: 40px;
+			border: 1px solid rgba(255, 255, 255, 0.08);
+			border-radius: 14px;
+			background: linear-gradient(180deg, #505050 0%, #3a3a3a 100%);
+			color: #fff;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 0 0 rgba(255, 255, 255, 0);
+			transition: transform 120ms ease, box-shadow 180ms ease, filter 120ms ease;
+		}
+
+		.round-icon-btn svg {
+			width: 60%;
+			height: 60%;
+			color: #fff;
+		}
+
+		.round-icon-btn:hover {
+			transform: translateY(-1px);
+			box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+		}
+
+		.round-icon-btn:active {
+			transform: translateY(0);
+			box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.3);
+		}
+
+		/* Variante primaria (descargar) en azul moderno */
+		#download-page-btn.round-icon-btn {
+			background: linear-gradient(180deg, #4c8bf5 0%, #1a73e8 100%);
+			box-shadow: 0 8px 22px rgba(26, 115, 232, 0.55), inset 0 0 0 rgba(255, 255, 255, 0);
+		}
+
+		#download-page-btn.round-icon-btn:hover {
+			box-shadow: 0 12px 28px rgba(26, 115, 232, 0.6);
+		}
+
+
+		#pdf-canvas {
+			width: 100vw !important;
+			border: none;
+			/* Mantener espacio desde el principio para evitar reflow y usar fade */
+			opacity: 0;
+			background: #ffffff;
+			object-fit: contain;
+			position: absolute;
+			top: 0;
+			left: 50%;
+			transform: translateX(-50%);
+			transition: opacity 70ms ease-out;
+			touch-action: pan-x pan-y pinch-zoom;
+			/* Permitir zoom y paneo */
+		}
+
+		/* (Nombre removido visualmente; watermark solo al exportar) */
+
+		/* Imagen del ejercicio: cubrir completamente la ventana sin barras negras */
+		#exercise-img {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			width: 100vw;
+			/* ajustar siempre al ancho */
+			height: auto;
+			/* altura se ajusta proporcionalmente */
+			max-height: 100vh;
+			/* evitar desbordes verticales */
+			display: none;
+			z-index: 2400;
+			opacity: 0;
+			background: transparent;
+			touch-action: pan-x pan-y pinch-zoom;
+			/* Permitir zoom y paneo */
+		}
+
+		.loading {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: white;
+			font-size: 18px;
+			font-weight: 500;
+			display: none;
+			/* Oculto por defecto para evitar parpadeo inicial */
+		}
+
+		/* En móviles: la imagen debe ocupar todo el alto y ajustar el ancho proporcionalmente */
+		@media (max-width: 768px) {
+			#exercise-img {
+				top: 0;
+				left: 50%;
+				transform: translateX(-50%);
+				width: auto;
+				/* el ancho depende de la pantalla */
+				height: 100vh;
+				/* ocupa todo el alto */
+				max-width: 100vw;
+				/* evitar desbordes horizontales */
+				max-height: none;
+				/* ya fijamos altura */
+			}
+
+			/* Eliminadas reglas que ocultaban el canvas para reducir parpadeo */
+		}
+
+		/* Estilos para los botones del menú superior */
+		/* Botón 'Ir' de ejercicio en azul marino y sin animación */
+		#show-exercise-btn {
+			transition: none !important;
+			background: linear-gradient(135deg, #0b3d91 0%, #062a6e 100%) !important;
+			color: #fff !important;
+		}
+
+		#show-exercise-btn:hover {
+			background: linear-gradient(135deg, #0b3d91 0%, #062a6e 100%) !important;
+			/* mismo aspecto en hover */
+			transform: none !important;
+			/* sin desplazamiento al hacer hover */
+			box-shadow: none !important;
+			filter: none !important;
+		}
+
+		/* Botón 'Ir' de página en rojo vivo */
+		#goto-page-btn {
+			background: linear-gradient(135deg, #ff4d4d 0%, #ff1a1a 100%) !important;
+			color: #fff !important;
+		}
+
+		#goto-page-btn:hover {
+			background: linear-gradient(135deg, #ff4d4d 0%, #ff1a1a 100%) !important;
+			box-shadow: none !important;
+			filter: none !important;
+		}
+
+		/* Botón PDF - Color morado distintivo */
+		#show-all-btn {
+			background: rgba(147, 51, 234, 0.9) !important;
+			border-color: rgba(147, 51, 234, 0.7) !important;
+			color: white !important;
+		}
+
+		#show-all-btn:hover {
+			background: rgba(147, 51, 234, 1) !important;
+			border-color: rgba(147, 51, 234, 0.9) !important;
+			transform: translateY(-1px) scale(1.05);
+			box-shadow: 0 4px 12px rgba(147, 51, 234, 0.5) !important;
+		}
+
+		#show-all-btn:active {
+			transform: translateY(0) scale(0.98);
+			background: rgba(147, 51, 234, 1) !important;
+		}
+
+		@media (max-width: 480px) {
+			.side-arrow {
+				display: none;
+				/* Ocultar flechas en móvil - usar gestos */
+			}
+		}
+
+		/* Indicadores visuales para gestos de swipe en móvil */
+		.swipe-indicator {
+			position: fixed;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 6px;
+			height: 120px;
+			background: rgba(255, 255, 255, 0.4);
+			border-radius: 3px;
+			opacity: 0;
+			transition: opacity 0.2s ease;
+			z-index: 1000;
+			pointer-events: none;
+		}
+
+		.swipe-indicator.left {
+			left: 3px;
+		}
+
+		.swipe-indicator.right {
+			right: 3px;
+		}
+
+		.swipe-indicator.active {
+			opacity: 0.8;
+		}
+
+		/* Desktop: acercar la cinta al botón y compactar espacios */
+		@media (min-width: 769px) {
+			.top-menu-wrapper {
+				left: 56px;
+				/* despeja el ancho del botón + pequeño margen */
+				right: auto;
+				/* no ocupar todo el ancho */
+				width: auto;
+				/* que se ajuste al contenido */
+				padding: 8px 12px;
+				/* menos padding externo */
+			}
+
+			.top-menu {
+				width: -moz-fit-content;
+				/* no expandir a 940px ni centrado */
+				width: fit-content;
+				max-width: none;
+				margin: 0;
+				/* sin centrar */
+				justify-content: flex-start;
+				/* alineado a la izquierda */
+				gap: 8px;
+				/* espacios internos más compactos */
+				padding: 8px 5px;
+				/* menos padding lateral */
+			}
+		}
+
+		/* Inputs: el contenedor se convierte en la “caja” blanca */
+		.input-with-icon {
+			position: relative;
+			display: inline-flex;
+			align-items: center;
+			background: #fff;
+			/* la caja blanca ahora es el wrapper */
+			border-radius: 12px;
+			padding: 0 1px 0 0;
+			/* 0 a la izquierda para permitir 1px exacto del prefijo */
+			box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+		}
+
+		/* Mantener el prefijo E/P igual que antes */
+		.input-with-icon.with-prefix::before {
+			content: attr(data-prefix);
+			position: absolute;
+			left: 10px;
+			/* reducido de 4px a 2px */
+			top: 50%;
+			transform: translateY(-50%);
+			font-weight: 800;
+			font-size: clamp(12px, 3.4vw, 14px);
+			color: #222;
+			pointer-events: none;
+			opacity: 0.9;
+			letter-spacing: 0;
+		}
+
+		.input-with-icon.with-prefix[data-prefix="P"]::before {
+			color: #e53935;
+		}
+
+		/* Letra del ejercicio (E) en azul marino */
+		.prefix-e::before {
+			color: #0b3d91 !important;
+		}
+
+		/* El input ahora es transparente dentro de la caja blanca */
+		.control-input {
+			width: clamp(48px, 16vw, 80px);
+			height: clamp(26px, 4.8vh, 36px);
+			padding: 1px 0px;
+			/* menos espacio: número ↔ flechas y arriba/abajo */
+			border-radius: 10px;
+			/* solo por compatibilidad visual */
+			border: none;
+			outline: none;
+			font-size: clamp(11.5px, 3.4vw, 13.5px);
+			font-weight: 700;
+			text-align: center;
+			background: transparent;
+			/* antes era #fff */
+			box-shadow: none;
+			/* quitamos el inset del input */
+		}
+
+		/* Mantener centrado el valor con prefijo E/P */
+
+		.input-with-icon.with-prefix .control-input {
+			padding-left: 10px !important;
+			/* comportamiento original móvil */
+			text-align: center;
+		}
+
+		/* Botón “Ir” embebido dentro de la misma caja blanca, a la derecha del spinner */
+		.input-with-icon .icon-btn {
+			position: relative;
+			/* que fluya al lado del input (después del spinner) */
+			height: clamp(22px, 4.8vw, 28px);
+			min-width: clamp(28px, 7vw, 36px);
+			margin: 0 1px;
+			/* separación lateral mínima */
+			padding: 0 6px !important;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			font-size: clamp(10.5px, 3vw, 12px);
+			border: none;
+			border-radius: 8px;
+			cursor: pointer;
+			background: linear-gradient(135deg, #666 0%, #444 100%);
+			color: #fff;
+		}
+
+		.top-menu .round-icon-btn {
+			margin: 0 1px;
+		}
+
+		.top-menu #download-page-btn.round-icon-btn {
+			margin-right: 0;
+		}
+
+		/* Hover suave (evita cambios bruscos de posición) */
+		.input-with-icon .icon-btn:hover {
+			filter: brightness(1.1);
+			transform: none;
+			/* sin “salto” visual dentro de la caja */
+		}
+
+		/* Asegurar visibilidad de las flechas (spinners) en WebKit y que no queden tapadas */
+		/* Compactar spinner en WebKit (más cerca del número y un pelín más bajo) */
+		input[type="number"]::-webkit-inner-spin-button {
+			-webkit-appearance: inner-spin-button;
+			opacity: 1;
+			height: auto;
+			/* conservar visibilidad */
+			margin-left: -4px;
+			/* acercar aún más al número */
+			transform: translateX(-5px) translateY(-1px) scale(0.9);
+			/* más cerca, ligeramente más bajo y 10% más compacto */
+			transition: none;
+		}
+
+		input[type="number"]::-webkit-outer-spin-button {
+			-webkit-appearance: inner-spin-button;
+			opacity: 1;
+			height: auto;
+			transform: scale(0.9);
+			transition: none;
+		}
+
+		/* La regla previa ya no es necesaria, pero no afecta si queda: 
+   .input-with-icon .has-icon { padding-right: 8px !important; } */
+
+		/* Mantén los colores de números */
+		#exercise-input {
+			color: #0b3d91;
+			font-weight: 800;
+			caret-color: #0b3d91;
+		}
+
+		#page-input {
+			color: #e53935;
+			font-weight: 800;
+			caret-color: #e53935;
+		}
+
+		/* Modo guiones para input de ejercicios cuando estamos en vista PDF explícita */
+		#exercise-input.dashes-mode {
+			color: #fff !important;
+			letter-spacing: 2px;
+			font-weight: 800;
+			caret-color: transparent;
+			/* no cursor sobre los guiones */
+		}
+
+		/* Estilo especial para mostrar el guión de placeholder */
+		#exercise-input.dash-placeholder {
+			color: #0b3d91 !important;
+			font-weight: 900;
+			font-size: clamp(14px, 3.8vw, 16px);
+			text-align: center;
+			letter-spacing: 0;
+		}
+
+		/* Estilo especial para mostrar el placeholder de ejercicio - MUY VISIBLE */
+		#exercise-input.dash-placeholder {
+			color: #ffffff !important;
+			background-color: #ff4d4d !important;
+			font-weight: 900;
+			font-size: clamp(18px, 4.5vw, 22px);
+			text-align: center;
+			letter-spacing: 2px;
+			border-radius: 8px;
+			animation: pulse 2s infinite;
+			caret-color: #ffffff !important;
+			/* cursor blanco visible */
+		}
+
+		@keyframes pulse {
+			0% {
+				background-color: #ff4d4d;
+			}
+
+			50% {
+				background-color: #ff1a1a;
+			}
+
+			100% {
+				background-color: #ff4d4d;
+			}
+		}
+
+		/* ===== Menú superior responsivo (sin desbordes en móviles) ===== */
+		.top-menu-wrapper {
+			position: fixed;
+			/* más estable que absolute en móviles */
+			top: env(safe-area-inset-top, 0);
+			left: 0;
+			right: 0;
+			z-index: 3000;
+			display: flex;
+			justify-content: flex-start;
+			padding: max(6px, env(safe-area-inset-top)) 0;
+			/* Oculta fuera de pantalla y que entre como una cinta de izq→der */
+			transform: translateX(-110%);
+			transition: transform 520ms cubic-bezier(.2, .8, .2, 1);
+			will-change: transform;
+			pointer-events: none;
+			/* no bloquear clics cuando esté oculta */
+		}
+
+		/* Mostrar cuando el body tenga la clase menu-open */
+		body.menu-open .top-menu-wrapper {
+			transform: translateX(0);
+			pointer-events: auto;
+		}
+
+		.top-menu {
+			background: linear-gradient(135deg, #434343 0%, #000000 100%);
+			border-radius: 0 10px 10px 0;
+			/* izquierda 0, derecha 10px */
+			box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+			display: flex;
+			align-items: center;
+			justify-content: flex-start;
+			gap: clamp(2px, 1vw, 6px);
+			flex-wrap: wrap;
+			/* permite varias filas en pantallas pequeñas */
+			padding: 10px 5px;
+			margin: 0;
+			width: -moz-fit-content;
+			width: fit-content;
+			max-width: calc(100% - 10px);
+		}
+
+		.top-menu .with-prefix.prefix-p {
+			margin-left: 40px;
+		}
+
+		/* Ocultar controles de ejercicios y ajustes para dejar visible solo páginas + descarga */
+		.top-menu .with-prefix.prefix-e,
+		#width-controls-group {
+			display: none !important;
+		}
+
+		.label-chip {
+			font-size: clamp(12px, 3.6vw, 16px);
+			margin: 0 4px;
+			white-space: nowrap;
+		}
+
+		/* Versión compacta final del input, sobrescribe la previa */
+		.control-input {
+			width: clamp(46px, 14vw, 68px);
+			height: clamp(24px, 4.4vh, 32px);
+			padding: 2px 1px;
+			/* menos espacio a la derecha (número ↔ flechas) */
+			border-radius: 10px;
+			border: none;
+			outline: none;
+			font-size: clamp(11.5px, 3.2vw, 13px);
+			font-weight: 700;
+			text-align: center;
+			background: transparent;
+			/* sin “doble caja” */
+			box-shadow: none;
+			/* limpio dentro del wrapper */
+		}
+
+		.round-icon-btn {
+			width: clamp(32px, 9vw, 32px);
+			height: clamp(32px, 9vw, 32px);
+			font-size: clamp(18px, 5vw, 20px);
+		}
+
+		@media (max-width: 420px) {
+			.label-chip {
+				display: none;
+			}
+		}
+
+		@media (max-width: 360px) {
+			.top-menu {
+				gap: 6px;
+				padding: 8px 5px;
+			}
+
+			.control-input {
+				width: clamp(64px, 26vw, 96px);
+			}
+		}
+
+		/* Modal elegante para errores */
+		.error-modal {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100vw;
+			height: 100vh;
+			background: rgba(0, 0, 0, 0.8);
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 10000;
+			backdrop-filter: blur(10px);
+			animation: fadeIn 0.3s ease;
+		}
+
+		.error-modal-content {
+			background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+			border-radius: 20px;
+			padding: 30px;
+			max-width: 400px;
+			width: 90%;
+			text-align: center;
+			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+		}
+
+		.error-icon {
+			font-size: 60px;
+			margin-bottom: 20px;
+			opacity: 0.8;
+		}
+
+		.error-title {
+			color: #fff;
+			font-size: 24px;
+			font-weight: 700;
+			margin-bottom: 15px;
+		}
+
+		.error-message {
+			color: #ccc;
+			font-size: 16px;
+			line-height: 1.5;
+			margin-bottom: 25px;
+		}
+
+		.error-button {
+			background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%);
+			color: white;
+			border: none;
+			padding: 12px 30px;
+			border-radius: 12px;
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.3s ease;
+			box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+		}
+
+		.error-button:hover {
+			background: linear-gradient(135deg, #ff5252 0%, #e53935 100%);
+			transform: translateY(-2px);
+			box-shadow: 0 8px 25px rgba(255, 107, 107, 0.6);
+		}
+
+		/* Modal selección exportación */
+		.export-modal-overlay {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0, 0, 0, 0.55);
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 12000;
+			backdrop-filter: blur(4px);
+		}
+
+		.export-modal {
+			background: #ffffff;
+			border-radius: 18px;
+			padding: 26px 28px 24px;
+			max-width: 380px;
+			width: 92%;
+			box-shadow: 0 18px 44px -8px rgba(0, 0, 0, 0.35);
+			font-family: 'Inter', system-ui, sans-serif;
+			position: relative;
+		}
+
+		.export-modal h3 {
+			margin: 0 0 12px;
+			font-size: 20px;
+			font-weight: 600;
+			color: #111;
+		}
+
+		.export-modal p.desc {
+			font-size: 14px;
+			line-height: 1.45;
+			margin: 0 0 18px;
+			color: #333;
+		}
+
+		.export-actions {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
+
+		.export-actions button {
+			cursor: pointer;
+			font-weight: 600;
+			font-size: 14px;
+			letter-spacing: .2px;
+			border-radius: 12px;
+			padding: 14px 16px;
+			border: 1px solid transparent;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.btn-export-page {
+			background: linear-gradient(135deg, #4c8bf5, #1a73e8);
+			color: #fff;
+			box-shadow: 0 6px 16px rgba(26, 115, 232, 0.4);
+		}
+
+		.btn-export-page:hover {
+			filter: brightness(1.06);
+		}
+
+		.btn-export-full {
+			background: linear-gradient(135deg, #111, #2d2d2d);
+			color: #fff;
+			box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+		}
+
+		.btn-export-full:hover {
+			filter: brightness(1.06);
+		}
+
+		.btn-cancel-export {
+			background: #f2f2f2;
+			color: #333;
+			border: 1px solid #e0e0e0;
+			font-weight: 500;
+		}
+
+		.btn-cancel-export:hover {
+			background: #e9e9e9;
+		}
+
+		.export-progress {
+			margin-top: 14px;
+			font-size: 12px;
+			font-weight: 500;
+			color: #555;
+			display: none;
+		}
+
+		.export-close-x {
+			position: absolute;
+			top: 8px;
+			right: 10px;
+			background: transparent;
+			border: none;
+			font-size: 40px;
+			cursor: pointer;
+			color: red;
+		}
+
+		.export-close-x:hover {
+			color: #000;
+		}
+
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+			}
+
+			to {
+				opacity: 1;
+			}
+		}
+
+		@keyframes slideUp {
+			from {
+				transform: translateY(30px);
+				opacity: 0;
+			}
+
+			to {
+				transform: translateY(0);
+				opacity: 1;
+			}
+		}
+
+		/* Transiciones suaves para zoom */
+		#pdf-canvas,
+		#exercise-img {
+			will-change: transform;
+			transition: transform 0.1s ease-out;
+		}
+
+		/* Desactivar transición durante gestos activos */
+		#pdf-canvas.zooming,
+		#exercise-img.zooming {
+			transition: none;
+		}
+
+		/* Botones de control de ancho de ejercicios */
+		/* Controles de ancho elegantes en la cinta */
+		.width-controls-group {
+			display: none;
+			flex-direction: row;
+			align-items: center;
+			gap: 6px;
+			margin-left: 16px;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+		}
+
+		.width-controls-group.visible {
+			display: flex;
+			opacity: 1;
+		}
+
+		.menu-width-btn {
+			width: 28px;
+			height: 28px;
+			border-radius: 6px;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			color: white;
+			font-size: 16px;
+			font-weight: 600;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: all 0.2s ease;
+			backdrop-filter: blur(5px);
+			line-height: 1;
+		}
+
+		/* Botón de aumentar - Verde */
+		#width-increase-btn-menu {
+			background: rgba(34, 197, 94, 0.8);
+			border-color: rgba(34, 197, 94, 0.6);
+		}
+
+		#width-increase-btn-menu:hover {
+			background: rgba(34, 197, 94, 1);
+			border-color: rgba(34, 197, 94, 0.8);
+			transform: scale(1.1);
+			box-shadow: 0 2px 8px rgba(34, 197, 94, 0.4);
+		}
+
+		#width-increase-btn-menu:active {
+			transform: scale(0.95);
+			background: rgba(34, 197, 94, 1);
+		}
+
+		/* Botón de reducir - Rojo */
+		#width-decrease-btn-menu {
+			background: rgba(239, 68, 68, 0.8);
+			border-color: rgba(239, 68, 68, 0.6);
+		}
+
+		#width-decrease-btn-menu:hover {
+			background: rgba(239, 68, 68, 1);
+			border-color: rgba(239, 68, 68, 0.8);
+			transform: scale(1.1);
+			box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+		}
+
+		#width-decrease-btn-menu:active {
+			transform: scale(0.95);
+			background: rgba(239, 68, 68, 1);
+		}
+
+		/* Overrides FINALES solo escritorio: cinta pegada al botón y espacios compactos */
+		@media (min-width: 769px) {
+			.top-menu-wrapper {
+				left: -15px !important;
+				/* más a la izquierda para que se meta detrás del botón */
+				right: auto;
+				width: auto;
+				padding: 6px 8px;
+				/* menos padding externo */
+				padding-left: 0px;
+				/* sin hueco visual entre botón y cinta */
+			}
+
+			.top-menu {
+				width: -moz-fit-content;
+				/* que no se expanda */
+				width: fit-content;
+				max-width: none;
+				margin: 0;
+				/* no centrar */
+				justify-content: flex-start;
+				gap: 4px;
+				/* espacio más compacto entre controles en PC */
+				padding: 6px 5px;
+				/* padding interno reducido */
+			}
+
+			/* PC: Hacer los controles más anchos y espaciosos */
+			.control-input {
+				width: clamp(54px, 8vw, 70px);
+				/* más compacto: reduce espacio sobrante */
+				min-width: 54px;
+				height: clamp(30px, 4.6vh, 38px);
+				font-size: clamp(14px, 2.2vw, 15px);
+				padding: 2px 0 !important;
+				/* sin padding lateral: número pegado */
+			}
+
+			.input-with-icon {
+				padding: 1px 2px;
+				/* contenedor más compacto */
+			}
+
+			.round-icon-btn {
+				width: clamp(42px, 10vw, 48px);
+				/* botones más grandes */
+				height: clamp(42px, 10vw, 48px);
+				font-size: clamp(20px, 5vw, 24px);
+			}
+
+			/* Reducir tamaño del botón de descarga específicamente en PC */
+			#download-page-btn.round-icon-btn {
+				width: 38px;
+				height: 38px;
+			}
+
+			/* PC: el grupo de ejercicio se “mete” ligeramente bajo el botón → espacio oculto, no visible */
+			.top-menu>.prefix-e {
+				margin-left: 50px;
+			}
+
+			/* PC: mantener un pequeño hueco visible entre E y el resto (muy compacto) */
+			.top-menu .prefix-e {
+				margin-right: 8px;
+			}
+
+			/* Etiquetas opcionalmente más cerca si están visibles en desktop */
+			.label-chip {
+				margin: 0 2px;
+			}
+
+			/* Espaciado compacto entre prefijo E/P y número solo en PC */
+			.input-with-icon.with-prefix .control-input {
+				padding: 1px 0 1px 30px !important;
+				/* prefijo → número muy cercano */
+				text-align: left;
+				/* alinear inicio para que el número arranque inmediato tras prefijo */
+				letter-spacing: -0.5px;
+				/* micro compresión visual */
+			}
+
+			/* Spinner aún más cerca del número en WebKit (Chrome/Safari) */
+			.input-with-icon.with-prefix .control-input::-webkit-inner-spin-button {
+				transform: translateX(-8px) translateY(-1px) scale(0.88);
+				/* acercar + compactar */
+				margin-left: -8px;
+				/* elimina hueco interno */
+			}
+
+			/* Firefox controla los spinners de forma distinta: ocultamos y podríamos implementar propios si hiciera falta */
+			@-moz-document url-prefix() {
+				.input-with-icon.with-prefix .control-input {
+					appearance: textfield;
+					-moz-appearance: textfield;
+				}
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<!-- Botón para mostrar/ocultar el menú -->
+	<button id="menu-toggle-btn" class="menu-toggle-btn" aria-label="Mostrar u ocultar menú" aria-controls="top-menu"
+		aria-expanded="false" title="Menú">
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+			stroke-linejoin="round" aria-hidden="true">
+			<path d="M4 7h16" />
+			<path d="M4 12h16" />
+			<path d="M4 17h16" />
+		</svg>
+	</button>
+	<div class="pdf-viewer-container">
+		<button class="side-arrow left-arrow" id="prev-page" title="Página anterior" aria-label="Página anterior">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<!-- Arco/cayado (báculo) hacia la izquierda -->
+				<path d="M18 4C10 4 10 20 18 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+				<!-- Punta en forma de chevrón curvo -->
+				<path d="M11 8L6 12L11 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+					stroke-linejoin="round" />
+			</svg>
+		</button>
+		<button class="side-arrow right-arrow" id="next-page" title="Página siguiente" aria-label="Página siguiente">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<!-- Arco/cayado (báculo) hacia la derecha -->
+				<path d="M6 4C14 4 14 20 6 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+				<!-- Punta en forma de chevrón curvo -->
+				<path d="M13 8L18 12L13 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+					stroke-linejoin="round" />
+			</svg>
+		</button>
+
+		<!-- Indicadores de zona de swipe para móvil -->
+		<div class="swipe-indicator left" id="swipe-indicator-left"></div>
+		<div class="swipe-indicator right" id="swipe-indicator-right"></div>
+
+
+
+		<!-- Menú superior responsivo -->
+		<div class="top-menu-wrapper">
+			<div class="top-menu">
+				<span class="input-with-icon with-prefix prefix-e" data-prefix="E">
+					<input id="exercise-input" type="number" min="1" max="22" value="1"
+						class="has-icon control-input" />
+					<button id="show-exercise-btn" class="icon-btn" title="Ir al ejercicio">Ir</button>
+					<button id="show-all-btn" class="icon-btn" title="Mostrar PDF" aria-label="Mostrar PDF">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+							stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M3 5.5A2.5 2.5 0 0 1 5.5 3H12v18H5.5A2.5 2.5 0 0 1 3 18.5v-13z" />
+							<path d="M21 5.5A2.5 2.5 0 0 0 18.5 3H12v18h6.5A2.5 2.5 0 0 0 21 18.5v-13z" />
+						</svg>
+					</button>
+				</span>
+
+				<span class="input-with-icon with-prefix prefix-p" data-prefix="P">
+					<input id="page-input" type="number" min="98" value="98" class="has-icon control-input" />
+					<button id="goto-page-btn" class="icon-btn" title="Ir a la página">Ir</button>
+				</span>
+
+
+				<button id="download-page-btn" class="round-icon-btn" title="Descargar esta página en PDF"
+					aria-label="Descargar esta página en PDF">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+						stroke-linejoin="round" aria-hidden="true">
+						<path d="M12 3v12" />
+						<path d="M7 10l5 5 5-5" />
+						<path d="M5 21h14" />
+					</svg>
+				</button>
+
+				<!-- Controles de ancho al final -->
+				<div class="width-controls-group" id="width-controls-group">
+					<button id="width-decrease-btn-menu" class="menu-width-btn" title="Reducir ancho"
+						aria-label="Reducir ancho de la imagen">−</button>
+					<button id="width-increase-btn-menu" class="menu-width-btn" title="Aumentar ancho"
+						aria-label="Aumentar ancho de la imagen">+</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Modal elegante para errores -->
+		<div class="error-modal" id="error-modal">
+			<div class="error-modal-content">
+				<div class="error-icon">📚</div>
+				<div class="error-title">Imagen no disponible</div>
+				<div class="error-message" id="error-message">La imagen del ejercicio no se encuentra disponible en este
+					momento.</div>
+				<button class="error-button" onclick="closeErrorModal()">¡Entendido!</button>
+			</div>
+		</div>
+
+
+		<div class="page-counter" id="page-counter">Página 98</div>
+		<div class="loading" id="loading">Cargando PDF...</div>
+
+		<canvas id="pdf-canvas"></canvas>
+		<img id="exercise-img" alt="Ejercicio" />
+		<!-- Modal exportación -->
+		<div class="export-modal-overlay" id="export-modal" role="dialog" aria-modal="true"
+			aria-labelledby="export-modal-title">
+			<div class="export-modal">
+				<button class="export-close-x" id="export-close-btn" aria-label="Cerrar">×</button>
+				<h3 id="export-modal-title">Exportar PDF:</h3>
+				<p class="desc"></p>
+				<div class="export-actions">
+					<button class="btn-export-page" id="export-page-btn">Descargar página actual</button>
+					<button class="btn-export-full" id="export-full-btn">Descargar todo el PDF</button>
+					<button class="btn-cancel-export" id="export-cancel-btn">Cancelar</button>
+				</div>
+				<div class="export-progress" id="export-progress">Preparando exportación...</div>
+			</div>
+		</div>
+	</div>
+	<script>
+
+		        // Bloqueo: solo se puede abrir esta página si viene desde el padre indicado con token de sesión válido.
+        const params = new URLSearchParams(window.location.search || '');
+        const rawParentId = params.get('parent') || params.get('group') || '';
+        const parentId = (rawParentId || '').trim().toLowerCase();
+        const parentSlug = parentId.replace(/[^a-z0-9_-]/gi, '');
+        const PARENT_SESSION_KEY = parentSlug ? `${parentSlug}_session_v1` : '';
+        const PARENT_SESSION_META_KEY = parentSlug ? `${PARENT_SESSION_KEY}_meta` : '';
+        const REQUIRED_ACTIVITY_ID = 'u1t1';
+
+        const readParentSession = () => {
+            let meta = null;
+            try {
+                const raw = localStorage.getItem(PARENT_SESSION_META_KEY);
+                if (raw) meta = JSON.parse(raw);
+            } catch (_) { meta = null; }
+            let tokenFromSession = null;
+            try { tokenFromSession = sessionStorage.getItem(PARENT_SESSION_KEY); } catch (_) { tokenFromSession = null; }
+            const token = tokenFromSession || meta?.token || null;
+            const expiresAt = meta?.expiresAt ?? null;
+            return { token, expiresAt };
+        };
+
+        const DEV_BYPASS = false; // poner en true solo para vista provisional (no publicar así)
+
+        (() => {
+            if (DEV_BYPASS) {
+                console.warn('Bypass de validación activo: desactiva antes de publicar.');
+                return;
+            }
+            const tokenFromUrl = params.get('session');
+            const activityFromUrl = params.get('activity');
+            const { token: storedToken, expiresAt } = readParentSession();
+            const parentProvided = !!parentSlug;
+            const ref = (document.referrer || '').toLowerCase();
+            const selfReferrer = ref && ref.includes((window.location.pathname || '').toLowerCase().replace(/^\//, ''));
+            const referrerOk = parentProvided && ([`${parentSlug}.html`, `${parentSlug}.`].some((frag) => ref.includes(frag)) || selfReferrer);
+            const notExpired = !expiresAt || expiresAt > Date.now();
+            const activityOk = !activityFromUrl || activityFromUrl === REQUIRED_ACTIVITY_ID;
+            const sessionMatch = tokenFromUrl && storedToken && tokenFromUrl === storedToken;
+            const sessionValid = Boolean(parentProvided && sessionMatch && notExpired && activityOk && referrerOk);
+
+            if (!sessionValid) {
+                const backUrl = document.referrer || (parentProvided ? `${parentSlug}.html` : 'index.html');
+                document.body.innerHTML = `
+                    <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f6fb;padding:32px;">
+                        <div style="background:#fff;border:1px solid #e2e8f0;box-shadow:0 14px 40px rgba(15,23,42,0.12);border-radius:16px;padding:28px;max-width:520px;text-align:center;font-family:'Poppins','Segoe UI',system-ui,sans-serif;">
+                            <h2 style="margin-top:0;margin-bottom:8px;color:#c81d25;">Acceso restringido</h2>
+                            <p style="margin:0 0 14px 0;color:#475569;">Abre este pdf desde la página principal.</p>
+                        </div>
+                    </main>
+                `;
+                try { sessionStorage.removeItem(PARENT_SESSION_KEY); } catch (_) {}
+                throw new Error(`Sesión no autorizada: abre la pagina desde ${parentSlug}.html`);
+            }
+        })();
+
+
+		// Configurar PDF.js worker
+		pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+		// Inicialización temprana para prevenir parpadeos en móvil
+		let isInitialLoad = true; // Flag para controlar la primera carga
+		let isMobile = window.innerWidth <= 768;
+
+		// Ocultar elementos problemáticos inmediatamente en móvil
+		if (isMobile) {
+			document.addEventListener('DOMContentLoaded', function () {
+				const container = document.querySelector('.pdf-viewer-container');
+				const canvas = document.getElementById('pdf-canvas');
+				const loading = document.getElementById('loading');
+
+				if (canvas) canvas.style.display = 'none';
+				if (loading) loading.style.display = 'none';
+
+				// Solo mostrar contenido cuando esté completamente inicializado
+				setTimeout(() => {
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 2000); // 2 segundos de gracia para carga completa
+
+				// Backup: mostrar contenido después de máximo 4 segundos sin importar el estado
+				setTimeout(() => {
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 4000);
+			});
+		}
+
+		// Variables globales
+		const urlDefault = './lecciones7.pdf';
+		let pdfDoc = null;
+		let currentPage = 1;
+		let totalPages = 0;
+		// Mapeo de numeración real (98-111) respecto a las páginas lógicas del PDF (1-14)
+		const REAL_PAGE_START = 98; // la primera página visible se llama 98
+		const REAL_PAGE_OFFSET = REAL_PAGE_START - 1; // lógico 1 -> real 98
+		function logicalToReal(page) { return page + REAL_PAGE_OFFSET; }
+		function realToLogical(realPage) { return realPage - REAL_PAGE_OFFSET; }
+		function realPageRange() {
+			const min = REAL_PAGE_START;
+			const max = totalPages ? logicalToReal(totalPages) : REAL_PAGE_START;
+			return { min, max };
+		}
+		let zoomLevel = (window.innerWidth <= 768) ? 1.0 : 2.4; // En PC: más zoom para permitir paneo
+		let canvas = null;
+		let ctx = null;
+		// Variables para zoom con gestos
+		let currentZoom = 1.0;
+		let zoomOriginX = 0;
+		let zoomOriginY = 0;
+		let isPinchZooming = false;
+		let lastPinchDistance = 0;
+		const MIN_ZOOM = 0.5;
+		const MAX_ZOOM = 4.0;
+		// Variables para control de ancho de ejercicios
+		let exerciseWidthScale = 1.0;
+		const MIN_WIDTH_SCALE = 0.5;
+		const MAX_WIDTH_SCALE = 2.0;
+		const WIDTH_SCALE_STEP = 0.1;
+		// Control de modales para evitar múltiples simultáneos
+		let isModalVisible = false;
+		let lastModalTime = 0;
+		const MODAL_COOLDOWN = 2000; // 2 segundos entre modales
+		// Estado para teclado móvil y tamaño de viewport estable
+		let keyboardOpen = false;
+		let stableViewport = { width: window.innerWidth, height: window.innerHeight };
+		let pendingKeyboardCloseRender = false;
+		// Cola / control de render estable
+		let __isRendering = false;
+		let __pendingPage = null;
+		// Modo estable configurable
+		const STABLE_MODE = true; // fuerza secuencial y evita saltos
+		const NO_FLIP_ANIMATION = true; // desactiva la animación rotateY para máxima estabilidad
+		let exerciseBeforeError = 1; // Guardar el ejercicio que se intentó abrir
+		let currentExerciseTarget = null; // Ejercicio solicitado/visible actualmente
+		let showImageRequestId = 0; // Control de concurrencia para carga de ejercicios
+		// Caché de resultados exitosos y fracasos definitivos
+		const exerciseImageCache = new Map(); // n -> { url, status: 'ok'|'fail' }
+		const PREFETCH_AHEAD = 1; // cuántos ejercicios adelante prefetch
+		const IMAGE_TIMEOUT_MS = 6500; // ampliar timeout para conexiones lentas
+		const MAX_RETRY_ROUND = 2; // cuántas rondas completas de candidatos antes de declarar fail
+
+		function prefetchExercise(n) {
+			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') return;
+			if (n < 1 || n > imageLinks.length) return;
+			const base = baseImageUrl.replace(/\/$/, '');
+			const candidates = [];
+			if (imageLinks[n - 1]) candidates.push(imageLinks[n - 1]);
+			candidates.push(`${base}/U2L${n}.png`, `$${'base'}/U2L${n}.png`, `$${'base'}/U2L${n}.png`); // intentionally redundant fallback
+			if (n < 10) {
+				const nn = `0${n}`;
+				candidates.push(`${base}/U2L${nn}.png`, `$${'base'}/U2L${nn}.png`, `$${'base'}/U2L${nn}.png`);
+			}
+			// intentar primer candidato solamente para no saturar
+			const url = candidates[0];
+			const img = new Image();
+			img.onload = () => {
+				if (!exerciseImageCache.has(n)) exerciseImageCache.set(n, { url, status: 'ok' });
+			};
+			img.src = url;
+		}
+
+		// Helper para saber si el ejercicio está visible (estado real computado)
+		function isExerciseVisible() {
+			const el = document.getElementById('exercise-img');
+			if (!el) return false;
+			return window.getComputedStyle(el).display !== 'none';
+		}
+
+		// Funciones auxiliares para zoom con gestos
+		function getTouchDistance(touches) {
+			if (touches.length < 2) return 0;
+			const touch1 = touches[0];
+			const touch2 = touches[1];
+			const dx = touch1.clientX - touch2.clientX;
+			const dy = touch1.clientY - touch2.clientY;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+
+		function getTouchCenter(touches) {
+			if (touches.length < 2) return { x: 0, y: 0 };
+			const touch1 = touches[0];
+			const touch2 = touches[1];
+			return {
+				x: (touch1.clientX + touch2.clientX) / 2,
+				y: (touch1.clientY + touch2.clientY) / 2
+			};
+		}
+
+		function resetZoom() {
+			currentZoom = 1.0;
+			zoomOriginX = 0;
+			zoomOriginY = 0;
+			applyZoomToElement();
+		}
+
+		// Funciones para control de ancho de ejercicios
+		function showWidthControls() {
+			const controls = document.getElementById('width-controls-group');
+			if (controls && isExerciseVisible()) {
+				controls.classList.add('visible');
+			}
+		}
+
+		function hideWidthControls() {
+			const controls = document.getElementById('width-controls-group');
+			if (controls) {
+				controls.classList.remove('visible');
+			}
+		}
+
+		function increaseExerciseWidth() {
+			if (exerciseWidthScale < MAX_WIDTH_SCALE) {
+				exerciseWidthScale = Math.min(MAX_WIDTH_SCALE, exerciseWidthScale + WIDTH_SCALE_STEP);
+				adjustImageSize();
+				playButtonSound();
+			}
+		}
+
+		function decreaseExerciseWidth() {
+			if (exerciseWidthScale > MIN_WIDTH_SCALE) {
+				exerciseWidthScale = Math.max(MIN_WIDTH_SCALE, exerciseWidthScale - WIDTH_SCALE_STEP);
+				adjustImageSize();
+				playButtonSound();
+			}
+		}
+
+		function applyZoomToElement() {
+			const canvas = document.getElementById('pdf-canvas');
+
+			// SOLO aplicar zoom al PDF, NUNCA a las imágenes de ejercicios
+			if (!isExerciseVisible() && canvas && canvas.style.display !== 'none') {
+				// Aplicar zoom a canvas PDF únicamente
+				canvas.classList.add('zooming');
+				const transform = `translateX(-50%) scale(${currentZoom}) translate(${zoomOriginX}px, ${zoomOriginY}px)`;
+				canvas.style.transform = transform;
+				// Remover clase después de un breve delay para reactivar transiciones
+				setTimeout(() => canvas.classList.remove('zooming'), 50);
+			}
+		}
+
+		// Funciones para gestionar historial con localStorage
+		function saveUserState(type, data) {
+			const state = {
+				type: type, // 'pdf' o 'exercise'
+				data: data, // { page: number } para PDF, { exerciseNumber: number } para ejercicio
+				timestamp: Date.now()
+			};
+			localStorage.setItem('u7_visorUserState', JSON.stringify(state));
+		}
+
+		// Guardar/leer último ejercicio válido mostrado
+		function setLastValidExercise(n) {
+			try { localStorage.setItem('u7_lastValidExercise', String(n)); } catch (e) { }
+		}
+		function getLastValidExercise() {
+			try {
+				const v = localStorage.getItem('u7_lastValidExercise');
+				return v ? parseInt(v, 10) : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		function getUserState() {
+			try {
+				const saved = localStorage.getItem('u7_visorUserState');
+				return saved ? JSON.parse(saved) : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		function restoreUserState() {
+			const savedState = getUserState();
+			const pdfCanvas = document.getElementById('pdf-canvas');
+			const exerciseImg = document.getElementById('exercise-img');
+
+			// Ocultar ejercicio y mostrar PDF por seguridad
+			if (exerciseImg) exerciseImg.style.display = 'none';
+			if (pdfCanvas) {
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.visibility = 'visible';
+				pdfCanvas.style.transition = '';
+				pdfCanvas.style.opacity = '1';
+				pdfCanvas.style.transform = 'translateX(-50%)';
+			}
+
+			// Decidir página de retorno (usa estado guardado si hay, respetando numeración real)
+			let targetLogical = 1;
+			if (savedState && savedState.type === 'pdf' && savedState.data && Number.isFinite(savedState.data.page)) {
+				targetLogical = savedState.data.page >= REAL_PAGE_START
+					? realToLogical(savedState.data.page)
+					: savedState.data.page;
+				if (targetLogical < 1) targetLogical = 1;
+				if (totalPages && targetLogical > totalPages) targetLogical = totalPages;
+			}
+
+			currentPage = targetLogical;
+			try { renderPageStable(targetLogical, true); } catch (e) { }
+		}
+
+		// Base de imágenes (ajusta si guardas en otro sitio)
+		const baseImageUrl = 'https://fawzinoo.github.io/Fotos/';
+		const imageLinks = Array.from({ length: 22 }, (_, i) => `${baseImageUrl}U2L${i + 1}.png`);
+		const exerciseImg = document.getElementById('exercise-img');
+		// Mapeo de ejercicios a páginas del PDF
+		const exerciseToPage = {
+			1: 1,
+			2: 2, 3: 2, 4: 2,
+			5: 3, 6: 3,
+			7: 5, 8: 5,
+			9: 6, 10: 6,
+			11: 7, 12: 7, 13: 7,
+			14: 8, 15: 8,
+			16: 9, 17: 9,
+			18: 13,
+			19: 14, 20: 14,
+			21: 15, 22: 15
+		};
+		// Conjunto rápido de ejercicios definidos
+		const definedExercises = new Set(Object.keys(exerciseToPage).map(k => parseInt(k, 10)));
+
+		function getCurrentExerciseNumber() {
+			const img = document.getElementById('exercise-img');
+			if (img && isExerciseVisible() && img.dataset && img.dataset.exerciseNumber) {
+				return parseInt(img.dataset.exerciseNumber, 10);
+			}
+			return null;
+		}
+
+		function navigateExercise(delta, isSwipe = false) {
+			// Basado en ejercicio actual o input
+			let current = getCurrentExerciseNumber();
+			if (!current) {
+				const last = getLastValidExercise();
+				if (last) current = last; else current = parseInt(document.getElementById('exercise-input').value, 10) || 1;
+			}
+			let target = current + delta;
+			// Buscar siguiente válido dentro de límites razonables
+			const MAX = imageLinks.length;
+			while (target >= 1 && target <= MAX && !definedExercises.has(target)) {
+				target += delta;
+			}
+			if (target < 1 || target > MAX) return; // no hace nada si sale de rango
+			// Evitar repetir
+			if (target === currentExerciseTarget || target === current) return;
+			// Actualizar input visual
+			const exInput = document.getElementById('exercise-input');
+			if (exInput) exInput.value = target;
+			// Reproducir sonido apropiado: swipe para gestos, botón para clics
+			if (isSwipe) {
+				playSwipeSound();
+			} else {
+				playButtonSound();
+			}
+			// NAVEGAR SIEMPRE CON suppressError = true para evitar modales al navegar
+			showImageByNumber(target, { suppressError: true, onSuccess: () => updateNavigationArrows(), onFail: () => updateNavigationArrows() });
+			setTimeout(updateNavigationArrows, 0);
+		}
+
+		// Inicializar canvas
+		canvas = document.getElementById('pdf-canvas');
+		ctx = canvas.getContext('2d');
+
+
+		// Permitir modificar el ancho y el alto visual de la página PDF
+		const widthFactor = 1.0; // Ajuste neutral en ancho (móvil)
+		const heightFactorMobile = 0.8; // Móvil como antes
+		const heightFactorDesktop = 1.0; // Escritorio sin reducción
+		const widthFactorDesktop = 0.9; // PC: reducir un poco más el ancho efectivo
+		const DISPLAY_SCALE_DESKTOP = 0.92; // PC: estrechar visualmente sin afectar calidad
+		const DESKTOP_TOP_OFFSET = 40; // PC: reducir espacio visual superior desplazando un poco el scroll
+
+		function renderPage(pageNum) {
+			if (STABLE_MODE) {
+				if (__isRendering) { __pendingPage = pageNum; return; }
+				__isRendering = true;
+			}
+			const loading = document.getElementById('loading');
+			// Solo mostrar pantalla de carga después de la carga inicial
+			if (!isInitialLoad) {
+				loading.style.display = 'block';
+			}
+
+			// Si hay una animación en curso, la cancelamos para evitar que el canvas quede "volcado"
+			if (window.__pageFlip && window.__pageFlip.isAnimating) {
+				try { window.__pageFlip.cancel(); } catch (e) { }
+			}
+
+			// Si el teclado está abierto y el resize ha reducido artificialmente el viewport, posponer render salvo que sea forzado
+			if (keyboardOpen) {
+				// Mantener tamaño anterior (stableViewport)
+				// Mostrar la página actual sin recalcular escala para evitar miniaturas
+				// Marcamos que al cerrar el teclado se hará un render correcto
+				pendingKeyboardCloseRender = true;
+			}
+
+			pdfDoc.getPage(pageNum).then(function (page) {
+				// Obtener dimensiones de la pantalla (estables si teclado abierto)
+				const containerWidth = keyboardOpen ? stableViewport.width : window.innerWidth;
+				const containerHeight = keyboardOpen ? stableViewport.height : window.innerHeight;
+				const dpr = window.devicePixelRatio || 1;
+
+				// Calcular escala: móvil como antes (alto × 1.25), PC ajusta a una sola página visible
+				const viewport = page.getViewport({ scale: 1 });
+				let scale;
+				if (window.innerWidth <= 768) {
+					const scaleY = containerHeight / viewport.height;
+					scale = scaleY * 1.25 * dpr * zoomLevel; // Móvil: sin cambios
+				} else {
+					const scaleX = (containerWidth / viewport.width) * widthFactorDesktop;
+					const scaleY = (containerHeight / viewport.height) * heightFactorDesktop;
+					const baseScale = Math.min(scaleX, scaleY); // PC: aseguramos 1 página completa
+					scale = baseScale * dpr * zoomLevel;
+				}
+
+				// Viewport escalado para alta resolución
+				const scaledViewport = page.getViewport({ scale: scale });
+
+				// Ajustar el tamaño interno del canvas (alta resolución)
+				canvas.width = scaledViewport.width;
+				canvas.height = scaledViewport.height;
+
+				// Ajustar el tamaño visual del canvas (pantalla)
+				if (window.innerWidth <= 768) {
+					canvas.style.width = ((scaledViewport.width / dpr) / widthFactor) + 'px';
+					canvas.style.height = ((scaledViewport.height / dpr) * heightFactorMobile) + 'px';
+					canvas.style.objectFit = 'fill'; // Móvil: tal cual estaba
+				} else {
+					canvas.style.width = ((scaledViewport.width / dpr) * DISPLAY_SCALE_DESKTOP) + 'px';
+					canvas.style.height = ((scaledViewport.height / dpr) * DISPLAY_SCALE_DESKTOP) + 'px';
+					canvas.style.objectFit = 'contain'; // PC: página completa, sin deformar
+				}
+
+				// Asegurar que el canvas está en el flujo (ya no usamos display:none), mantenemos opacity para fade
+				if (canvas.style.display === 'none') canvas.style.display = 'block';
+
+				const renderContext = {
+					canvasContext: ctx,
+					viewport: scaledViewport
+				};
+				page.render(renderContext).promise.then(function () {
+					loading.style.display = 'none';
+					if (isInitialLoad) {
+						// Fade ultrarápido para evitar percepción de parpadeo largo
+						requestAnimationFrame(() => { canvas.style.opacity = '1'; });
+					} else {
+						canvas.style.opacity = '1';
+					}
+					isInitialLoad = false;
+					// (Badge autor removido; sin clases adicionales)
+					// En escritorio, anclar scroll del contenedor a la esquina superior izquierda para paneo inicial
+					try {
+						if (window.innerWidth > 768) {
+							const cont = document.querySelector('.pdf-viewer-container');
+							if (cont) { cont.scrollLeft = 0; cont.scrollTop = DESKTOP_TOP_OFFSET; }
+						}
+					} catch (e) { }
+					updatePageCounter();
+					saveUserState('pdf', { page: currentPage });
+				}).catch(() => { }).finally(() => {
+					if (STABLE_MODE) {
+						__isRendering = false;
+						if (__pendingPage != null && __pendingPage !== currentPage) {
+							const next = __pendingPage; __pendingPage = null; renderPage(next); return;
+						}
+						__pendingPage = null;
+					}
+				});
+			});
+		}
+
+		// Mostrar imagen desde enlaces con reintento png->jpg, fallback a PDF
+		function showImageByNumber(n, options = {}) {
+			console.log('showImageByNumber llamada con:', n);
+			const { suppressError = false, onFail, onSuccess } = options;
+			const myReq = ++showImageRequestId;
+			exerciseBeforeError = n;
+			currentExerciseTarget = n;
+			function isStale() { return myReq !== showImageRequestId; }
+			if (!definedExercises.has(n)) {
+				if (!isStale()) {
+					exerciseImageCache.set(n, { status: 'fail' });
+					if (!suppressError) showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+					if (typeof onFail === 'function') onFail();
+				}
+				return;
+			}
+			const pdfCanvas = document.getElementById('pdf-canvas');
+			const exerciseImgEl = document.getElementById('exercise-img');
+			if (!isExerciseVisible()) resetZoom();
+			// Al solicitar ejercicio, ocultar badge autor (modo ejercicio)
+			// (Clases de badge removidas)
+			// Caso cacheado: fade suave manteniendo PDF hasta opacidad 1
+			if (exerciseImageCache.has(n) && exerciseImageCache.get(n).status === 'ok') {
+				const cached = exerciseImageCache.get(n);
+				exerciseImgEl.style.display = 'block';
+				exerciseImgEl.style.opacity = '0';
+				exerciseImgEl.style.transition = 'opacity 140ms ease';
+				exerciseImgEl.src = cached.url;
+				exerciseImgEl.dataset.exerciseNumber = String(n);
+				adjustImageSize();
+				showWidthControls();
+				const mapped = exerciseToPage[n];
+				if (mapped) {
+					currentPage = mapped;
+					const pageInput = document.getElementById('page-input'); if (pageInput) pageInput.value = logicalToReal(mapped);
+					const pageCounter = document.getElementById('page-counter'); if (pageCounter && totalPages) { pageCounter.innerHTML = `Página <span class="pc-num">${logicalToReal(mapped)}</span> de <span class="pc-num">${logicalToReal(totalPages)}</span>`; }
+				}
+				saveUserState('exercise', { exerciseNumber: n });
+				setLastValidExercise(n);
+				requestAnimationFrame(() => {
+					exerciseImgEl.style.opacity = '1';
+					setTimeout(() => { if (pdfCanvas) { pdfCanvas.style.display = 'none'; pdfCanvas.style.visibility = 'hidden'; } }, 160);
+				});
+				if (typeof onSuccess === 'function') onSuccess();
+				for (let i = 1; i <= PREFETCH_AHEAD; i++) { prefetchExercise(n + i); }
+				updateNavigationArrows();
+				return;
+			}
+			// Preparar imagen para carga: visible pero transparente; mantener PDF de fondo
+			// (Clases de badge removidas)
+			exerciseImgEl.style.display = 'block';
+			exerciseImgEl.style.opacity = '0';
+			exerciseImgEl.style.transition = 'opacity 160ms ease';
+			exerciseImgEl.style.transform = 'translate(-50%, -50%)';
+			adjustImageSize();
+			showWidthControls();
+			const base = baseImageUrl.replace(/\/$/, '');
+			const candidates = [];
+			if (imageLinks[n - 1]) candidates.push(imageLinks[n - 1]);
+			candidates.push(`${base}/U2L${n}.png`, `$${'base'}/U2L${n}.png`, `$${'base'}/U2L${n}.png`);
+			if (n < 10) { const nn = `0${n}`; candidates.push(`${base}/U2L${nn}.png`, `$${'base'}/U2L${nn}.png`, `$${'base'}/U2L${nn}.png`); }
+			let tried = 0; let round = 1;
+			function tryNext() {
+				if (tried >= candidates.length) {
+					if (round < MAX_RETRY_ROUND) { tried = 0; round++; }
+					else {
+						if (isStale() || getCurrentExerciseNumber() !== n) return;
+						currentExerciseTarget = null; exerciseImageCache.set(n, { status: 'fail' });
+						if (!suppressError && myReq === showImageRequestId) showErrorModal(`Ejercicio ${n}`, 'El ejercicio no está programado por tu profesor, elige otro ejercicio.');
+						// revertir a PDF con transición suave
+						if (pdfCanvas) {
+							pdfCanvas.style.display = 'block'; pdfCanvas.style.visibility = 'visible'; pdfCanvas.style.opacity = '0';
+							requestAnimationFrame(() => { pdfCanvas.style.transition = 'opacity .3s'; pdfCanvas.style.opacity = '1'; });
+						}
+						exerciseImgEl.style.display = 'none'; hideWidthControls(); if (typeof onFail === 'function') onFail();
+						return;
+					}
+				}
+				const url = candidates[tried++];
+				const testImg = new Image(); let timeoutId;
+				function cleanup() { try { testImg.onload = null; testImg.onerror = null; } catch (e) { } if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; } }
+				testImg.onload = function () {
+					if (myReq !== showImageRequestId) { cleanup(); return; }
+					exerciseImgEl.src = url; exerciseImgEl.dataset.exerciseNumber = String(n); exerciseImageCache.set(n, { url, status: 'ok' }); adjustImageSize(); showWidthControls();
+					const mapped = exerciseToPage[n]; if (mapped) { currentPage = mapped; const pageInput = document.getElementById('page-input'); if (pageInput) pageInput.value = logicalToReal(mapped); const pageCounter = document.getElementById('page-counter'); if (pageCounter && totalPages) { pageCounter.innerHTML = `Página <span class=\"pc-num\">${logicalToReal(mapped)}</span> de <span class=\"pc-num\">${logicalToReal(totalPages)}</span>`; } }
+					saveUserState('exercise', { exerciseNumber: n }); setLastValidExercise(n);
+					requestAnimationFrame(() => { exerciseImgEl.style.opacity = '1'; setTimeout(() => { if (pdfCanvas) { pdfCanvas.style.display = 'none'; pdfCanvas.style.visibility = 'hidden'; } }, 170); });
+					if (typeof onSuccess === 'function') onSuccess(); for (let i = 1; i <= PREFETCH_AHEAD; i++) { prefetchExercise(n + i); } updateNavigationArrows(); cleanup();
+				};
+				testImg.onerror = function () { if (isStale()) { cleanup(); return; } cleanup(); tryNext(); };
+				timeoutId = setTimeout(() => { try { testImg.src = ''; } catch (e) { }; testImg.onerror && testImg.onerror(); }, IMAGE_TIMEOUT_MS);
+				testImg.src = url;
+			}
+			tryNext();
+		}
+
+		// Actualizar contador de páginas (muestra numeración real 98-111)
+		function updatePageCounter() {
+			const pageCounter = document.getElementById('page-counter');
+			const realCurrent = logicalToReal(currentPage);
+			const realTotal = totalPages ? logicalToReal(totalPages) : REAL_PAGE_START;
+			pageCounter.innerHTML = `Página <span class="pc-num">${realCurrent}</span> de <span class="pc-num">${realTotal}</span>`;
+
+			// Sincronizar el input de página si existe
+			const pageInput = document.getElementById('page-input');
+			if (pageInput) {
+				pageInput.value = String(realCurrent);
+				if (totalPages) pageInput.max = String(realTotal);
+				pageInput.min = String(REAL_PAGE_START);
+			}
+
+			updateNavigationArrows();
+		}
+
+		function updateNavigationArrows() {
+			const left = document.getElementById('prev-page');
+			const right = document.getElementById('next-page');
+			if (!left || !right) return;
+			if (isExerciseVisible()) {
+				let ex = getCurrentExerciseNumber();
+				if (!ex && currentExerciseTarget) ex = currentExerciseTarget;
+				if (!ex) {
+					const v = parseInt(document.getElementById('exercise-input').value, 10);
+					if (Number.isFinite(v)) ex = v;
+				}
+				let prevValid = null; for (let i = ex - 1; i >= 1; i--) { if (definedExercises.has(i)) { prevValid = i; break; } }
+				let nextValid = null; for (let i = ex + 1; i <= imageLinks.length; i++) { if (definedExercises.has(i)) { nextValid = i; break; } }
+				left.style.opacity = prevValid ? '1' : '0.3';
+				right.style.opacity = nextValid ? '1' : '0.3';
+				// Aplicar clases claras simétricas cuando hay ejercicios navegables
+				if (prevValid) left.classList.add('exercise-left-active'); else left.classList.remove('exercise-left-active');
+				if (nextValid) right.classList.add('exercise-right-active'); else right.classList.remove('exercise-right-active');
+
+				// Requisito: a partir del ejercicio 2 la flecha izquierda debe verse igual que la derecha (activa),
+				// incluso si momentáneamente aún no se detectó prevValid por asincronía.
+				if (ex >= 2) {
+					left.style.opacity = '1';
+					left.classList.add('exercise-left-active');
+				}
+			} else {
+				left.style.opacity = currentPage <= 1 ? '0.3' : '1';
+				right.style.opacity = currentPage >= totalPages ? '0.3' : '1';
+				left.classList.remove('exercise-left-active');
+				right.classList.remove('exercise-right-active');
+			}
+		}
+
+		// Navegación por páginas
+		function nextPage() {
+			if (currentPage < totalPages) {
+				currentPage++;
+				renderPage(currentPage);
+			}
+		}
+
+		function prevPage() {
+			if (currentPage > 1) {
+				currentPage--;
+				renderPage(currentPage);
+			}
+		}
+
+
+
+		// Sonido para botones (navegación, acciones y cierre de modal) con debounce
+		const pageSound = new Audio('https://fawzinoo.github.io/audios/botonn.mp3');
+		pageSound.preload = 'auto';
+
+		// Sonido específico para gestos de swipe
+		const swipeSound = new Audio('https://www.fesliyanstudios.com/play-mp3/387');
+		swipeSound.preload = 'auto';
+		let lastSoundAt = 0;
+		function playButtonSound(minIntervalMs = 350) {
+			const now = Date.now();
+			// si el sonido ya se está reproduciendo recientemente, no reiniciar
+			if (!pageSound.paused && (now - lastSoundAt < 1000)) return;
+			if (now - lastSoundAt < minIntervalMs) return; // debounce
+			lastSoundAt = now;
+			try {
+				pageSound.pause();
+				pageSound.currentTime = 0;
+				pageSound.play();
+			} catch (e) { }
+		}
+
+		// Función específica para sonido de swipe
+		let lastSwipeSoundAt = 0;
+		function playSwipeSound(minIntervalMs = 200) {
+			const now = Date.now();
+			// si el sonido ya se está reproduciendo recientemente, no reiniciar
+			if (!swipeSound.paused && (now - lastSwipeSoundAt < 800)) return;
+			if (now - lastSwipeSoundAt < minIntervalMs) return; // debounce
+			lastSwipeSoundAt = now;
+			try {
+				swipeSound.pause();
+				swipeSound.currentTime = 0;
+				swipeSound.play();
+			} catch (e) { }
+		}
+
+		// Vibración ligera al presionar botones (si el dispositivo lo soporta)
+		function haptic(ms = 18) {
+			try {
+				if (window.navigator && 'vibrate' in window.navigator) {
+					window.navigator.vibrate(ms);
+				}
+			} catch (e) { }
+		}
+
+		// Adjuntar vibración a todos los botones de la interfaz
+		(function attachHaptics() {
+			const btns = document.querySelectorAll('button');
+			btns.forEach(b => {
+				b.addEventListener('click', () => haptic(22), { passive: true });
+				b.addEventListener('pointerdown', () => haptic(14), { passive: true });
+			});
+		})();
+
+		// Animación de transición tipo libro
+		function animatePage(direction) {
+			if (NO_FLIP_ANIMATION) return; // desactivar animación para estabilidad
+			if (!window.__pageFlip) initPageFlipHelper();
+			window.__pageFlip.start(direction);
+		}
+
+		// Helper para controlar animaciones y poder cancelarlas limpiamente
+		function initPageFlipHelper() {
+			const baseTransform = 'translateX(-50%)';
+			const canvas = document.getElementById('pdf-canvas');
+			window.__pageFlip = {
+				isAnimating: false,
+				_timeout: null,
+				start(dir) {
+					if (this.isAnimating) this.cancel();
+					this.isAnimating = true;
+					try { canvas.style.willChange = 'transform'; } catch (e) { }
+					canvas.style.transition = 'transform 0.45s cubic-bezier(.77,0,.18,1)';
+					canvas.style.transform = (dir === 'right')
+						? baseTransform + ' rotateY(-30deg) scale(0.96)'
+						: baseTransform + ' rotateY(30deg) scale(0.96)';
+					this._timeout = setTimeout(() => {
+						canvas.style.transition = 'transform 0.25s ease';
+						canvas.style.transform = baseTransform;
+						setTimeout(() => {
+							this.isAnimating = false;
+							canvas.style.transition = '';
+							canvas.style.willChange = '';
+						}, 260);
+					}, 450);
+				},
+				cancel() {
+					try { clearTimeout(this._timeout); } catch (e) { }
+					this._timeout = null;
+					this.isAnimating = false;
+					canvas.style.transition = '';
+					canvas.style.transform = baseTransform;
+					canvas.style.willChange = '';
+				}
+			};
+		}
+
+		// Función para limpiar memoria después de descargas
+		function cleanupAfterDownload() {
+			// Forzar garbage collection si está disponible
+			if (window.gc) {
+				try {
+					window.gc();
+				} catch (e) { }
+			}
+
+			// Limpiar caché de imágenes si es muy grande (más de 10 ejercicios)
+			if (exerciseImageCache.size > 10) {
+				const keys = Array.from(exerciseImageCache.keys());
+				// Mantener solo los últimos 5 ejercicios accedidos
+				keys.slice(0, -5).forEach(key => exerciseImageCache.delete(key));
+			}
+		}
+
+		// Renderizar una página del PDF a un canvas fuera de pantalla, a buena resolución
+		async function renderPageToCanvas(pageNum, scale = 2) {
+			if (!pdfDoc) throw new Error('PDF no cargado');
+
+			try {
+				const page = await pdfDoc.getPage(pageNum);
+				const viewport = page.getViewport({ scale });
+				const off = document.createElement('canvas');
+				const offCtx = off.getContext('2d');
+
+				// Limitar el tamaño máximo del canvas para móviles
+				const isMobile = window.innerWidth <= 768;
+				const maxCanvasSize = isMobile ? 4096 : 8192; // 4MB vs 8MB aprox
+
+				if (viewport.width > maxCanvasSize || viewport.height > maxCanvasSize) {
+					const reductionFactor = Math.min(maxCanvasSize / viewport.width, maxCanvasSize / viewport.height);
+					scale *= reductionFactor;
+					const newViewport = page.getViewport({ scale });
+					off.width = newViewport.width;
+					off.height = newViewport.height;
+					await page.render({ canvasContext: offCtx, viewport: newViewport }).promise;
+				} else {
+					off.width = viewport.width;
+					off.height = viewport.height;
+					await page.render({ canvasContext: offCtx, viewport }).promise;
+				}
+
+				return off;
+			} catch (error) {
+				console.error('Error renderizando página:', error);
+				throw new Error('Error al procesar la página ' + pageNum);
+			}
+		}
+
+		// Descargar la página actual o la mapeada desde ejercicio como PDF de una sola página
+		async function downloadCurrentPdfPage() {
+			try {
+				const progressEl = document.getElementById('export-progress');
+				if (progressEl) {
+					progressEl.style.display = 'block';
+					progressEl.textContent = 'Preparando descarga...';
+				}
+
+				// Determinar la página destino
+				let exNum = null;
+				const exEl = document.getElementById('exercise-img');
+				const isExerciseVisible = exEl && exEl.style.display !== 'none';
+				if (isExerciseVisible) {
+					if (exEl.dataset && exEl.dataset.exerciseNumber) {
+						exNum = parseInt(exEl.dataset.exerciseNumber, 10);
+					} else if (currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					} else {
+						exNum = getLastValidExercise();
+					}
+				}
+				let pageNum = (exNum && exerciseToPage[exNum]) ? exerciseToPage[exNum] : currentPage;
+
+				if (progressEl) progressEl.textContent = 'Generando página...';
+
+				// Renderizar con alta calidad para garantizar mínimo 1MB
+				const page = await pdfDoc.getPage(pageNum);
+				const highViewport = page.getViewport({ scale: 2.5 }); // Escala muy alta para garantizar 1MB+
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				canvas.width = highViewport.width;
+				canvas.height = highViewport.height;
+
+				await page.render({ canvasContext: ctx, viewport: highViewport }).promise;
+				drawWatermark(canvas, pageNum);
+
+				if (progressEl) progressEl.textContent = 'Creando PDF de máxima calidad...';
+
+				// Crear PDF manteniendo calidad alta para garantizar tamaño mínimo
+				const pxToPt = 72 / 96;
+				const widthPt = highViewport.width * pxToPt;
+				const heightPt = highViewport.height * pxToPt;
+
+				const dataUrl = canvas.toDataURL('image/jpeg', 0.99); // Máxima calidad para garantizar 1MB+
+				const { jsPDF } = window.jspdf;
+				const pdf = new jsPDF({ unit: 'pt', format: [widthPt, heightPt] });
+				pdf.addImage(dataUrl, 'JPEG', 0, 0, widthPt, heightPt);
+
+				if (progressEl) progressEl.textContent = 'Descargando...';
+				await new Promise(resolve => setTimeout(resolve, 100));
+
+				// Solución compatible para móviles y PC
+				const pdfBlob = pdf.output('blob');
+				const fileName = `pagina_${logicalToReal(pageNum)}.pdf`;
+
+				// Detectar si es móvil con mejor precisión
+				const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+					('ontouchstart' in window) ||
+					(navigator.maxTouchPoints > 0);
+
+				// Detectar Samsung Internet Browser específicamente
+				const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent);
+
+				if (isMobile) {
+					if (isSamsungBrowser) {
+						// Para Samsung Internet: usar data URL directo (método alternativo)
+						try {
+							const pdfDataUri = pdf.output('datauristring');
+							const downloadLink = document.createElement('a');
+							downloadLink.href = pdfDataUri;
+							downloadLink.download = fileName;
+							downloadLink.style.display = 'none';
+
+							document.body.appendChild(downloadLink);
+
+							// Samsung Browser necesita interacción directa
+							setTimeout(() => {
+								downloadLink.click();
+								setTimeout(() => {
+									if (document.body.contains(downloadLink)) {
+										document.body.removeChild(downloadLink);
+									}
+								}, 3000);
+							}, 500);
+
+						} catch (e) {
+							// Si falla, usar método tradicional de Samsung
+							pdf.save(fileName);
+						}
+
+					} else {
+						// Para otros móviles: usar blob URL
+						const blobUrl = URL.createObjectURL(pdfBlob);
+						const downloadLink = document.createElement('a');
+						downloadLink.href = blobUrl;
+						downloadLink.download = fileName;
+						downloadLink.style.display = 'none';
+
+						// Agregar al DOM, hacer clic y remover
+						document.body.appendChild(downloadLink);
+
+						// En móviles, necesitamos un evento de usuario real con timeout más largo
+						setTimeout(() => {
+							downloadLink.click();
+
+							// Limpiar después de más tiempo para móviles
+							setTimeout(() => {
+								if (document.body.contains(downloadLink)) {
+									document.body.removeChild(downloadLink);
+								}
+								URL.revokeObjectURL(blobUrl);
+							}, 2000);
+						}, 300);
+					}
+
+				} else {
+					// Para PC: usar método tradicional
+					pdf.save(fileName);
+				}				// Limpiar
+				canvas.width = 1;
+				canvas.height = 1;
+
+				setTimeout(() => {
+					if (progressEl) progressEl.style.display = 'none';
+					cleanupAfterDownload();
+				}, 500);
+
+			} catch (e) {
+				console.error('Error en descarga:', e);
+				const progressEl = document.getElementById('export-progress');
+				if (progressEl) progressEl.style.display = 'none';
+				alert('Error al descargar la página: ' + (e && e.message ? e.message : e));
+			}
+		}
+
+		// Función para dibujar watermark en un canvas de página exportada
+		function drawWatermark(offCanvas, pageNum) {
+			const stampCtx = offCanvas.getContext('2d');
+			stampCtx.save();
+			const base = Math.max(16, Math.round(offCanvas.width * 0.0138));
+			const ribbonH = Math.min(offCanvas.height * 0.13, base * 9.2);
+			const lines = [
+				{ text: 'Nivel: A2.1', weight: 600, scale: 1.00, color: '#0d2342' },
+				{ text: 'Prof: Faouzi ELHilali', weight: 500, scale: 0.87, color: '#111111' },
+				{ text: '@Instituto Cervantes', weight: 500, scale: 0.74, color: '#1b3358' },
+				{ text: '@IDIGA', weight: 500, scale: 0.74, color: '#4a2e16' }
+			];
+			const bgGradTop = 'rgba(255,255,255,0.92)';
+			const bgGradBot = 'rgba(240,237,232,0.88)';
+			const accentEdge = 'rgba(60,60,60,0.25)';
+			const marginLeft = Math.round(base * 0.9);
+			const marginTop = Math.round(base * 0.45);
+			let maxW = 0; const metrics = [];
+			lines.forEach(l => {
+				const fs = Math.round(base * l.scale * 1.06);
+				const font = `${l.weight} ${fs}px "Inter", system-ui, -apple-system, sans-serif`;
+				stampCtx.font = font;
+				const w = stampCtx.measureText(l.text).width;
+				metrics.push({ font, fs, w });
+				if (w > maxW) maxW = w;
+			});
+			const gap = Math.round(base * 0.28);
+			const paddingX = Math.round(base * 0.95);
+			const paddingY = Math.round(base * 0.60);
+			const totalTextHeight = metrics.reduce((a, m) => a + m.fs, 0) + gap * (lines.length - 1);
+			let boxH = totalTextHeight + paddingY * 2;
+			if (boxH > ribbonH - marginTop * 2) {
+				const scaleDown = (ribbonH - marginTop * 2 - paddingY * 2 - gap * (lines.length - 1)) / metrics.reduce((a, m) => a + m.fs, 0);
+				metrics.forEach(m => { m.fs = Math.round(m.fs * scaleDown); });
+				boxH = ribbonH - marginTop * 2;
+			}
+			const boxW = Math.round(maxW + paddingX * 2);
+			// Posición condicional: solo páginas 2,4,6 a la derecha; resto a la izquierda
+			let boxX;
+			const rightPages = new Set([2, 4, 6]);
+			if (rightPages.has(pageNum)) {
+				const rightMargin = Math.round(base * 0.9);
+				boxX = Math.max(rightMargin, offCanvas.width - boxW - rightMargin);
+			} else {
+				boxX = Math.round(marginLeft);
+			}
+			const boxY = Math.round(marginTop);
+			const grad = stampCtx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
+			grad.addColorStop(0, bgGradTop);
+			grad.addColorStop(1, bgGradBot);
+			const radius = Math.min(16, Math.round(base * 1.05));
+			stampCtx.beginPath();
+			stampCtx.moveTo(boxX + radius, boxY);
+			stampCtx.lineTo(boxX + boxW - radius, boxY);
+			stampCtx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + radius);
+			stampCtx.lineTo(boxX + boxW, boxY + boxH - radius);
+			stampCtx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - radius, boxY + boxH);
+			stampCtx.lineTo(boxX + radius, boxY + boxH);
+			stampCtx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - radius);
+			stampCtx.lineTo(boxX, boxY + radius);
+			stampCtx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
+			stampCtx.closePath();
+			stampCtx.fillStyle = grad;
+			stampCtx.fill();
+			stampCtx.strokeStyle = accentEdge;
+			stampCtx.lineWidth = Math.max(1, Math.round(base * 0.08));
+			stampCtx.stroke();
+			const shadowGrad = stampCtx.createLinearGradient(boxX, boxY, boxX, boxY + radius * 2);
+			shadowGrad.addColorStop(0, 'rgba(0,0,0,0.18)');
+			shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+			stampCtx.fillStyle = shadowGrad;
+			stampCtx.beginPath();
+			stampCtx.moveTo(boxX + radius, boxY);
+			stampCtx.lineTo(boxX + boxW - radius, boxY);
+			stampCtx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + radius);
+			stampCtx.lineTo(boxX + boxW, boxY + radius * 1.6);
+			stampCtx.lineTo(boxX, boxY + radius * 1.6);
+			stampCtx.lineTo(boxX, boxY + radius);
+			stampCtx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
+			stampCtx.closePath();
+			stampCtx.fill();
+			let y = boxY + paddingY;
+			stampCtx.textBaseline = 'top';
+			for (let i = 0; i < 2; i++) {
+				const l = lines[i]; const m = metrics[i];
+				stampCtx.font = `${l.weight} ${m.fs}px "Inter", system-ui, -apple-system, sans-serif`;
+				stampCtx.fillStyle = l.color;
+				const tx = Math.round(boxX + paddingX) + 0.5;
+				const ty = Math.round(y) + 0.5;
+				stampCtx.fillText(l.text, tx, ty);
+				stampCtx.lineWidth = 0.9; stampCtx.strokeStyle = 'rgba(0,0,0,0.25)'; stampCtx.strokeText(l.text, tx, ty);
+				y += m.fs + gap;
+			}
+			const sepY = Math.round(y - gap * 0.5) + 0.5;
+			stampCtx.strokeStyle = 'rgba(0,0,0,0.35)';
+			stampCtx.lineWidth = Math.max(1, Math.round(base * 0.06));
+			stampCtx.beginPath();
+			stampCtx.moveTo(boxX + Math.round(paddingX * 0.55), sepY);
+			stampCtx.lineTo(boxX + boxW - Math.round(paddingX * 0.55), sepY);
+			stampCtx.stroke();
+			const bottomStartY = sepY + Math.round(gap * 0.4);
+			const bottomEndY = boxY + boxH - paddingY;
+			const bottomH = bottomEndY - bottomStartY;
+			stampCtx.fillStyle = 'rgba(235,235,235,0.95)';
+			stampCtx.fillRect(boxX + 1, bottomStartY, boxW - 2, bottomH);
+			stampCtx.fillStyle = 'rgba(0,0,0,0.08)';
+			stampCtx.fillRect(boxX + 1, bottomStartY, boxW - 2, 1);
+			y = bottomStartY + Math.round(gap * 0.35);
+			for (let i = 2; i < lines.length; i++) {
+				const l = lines[i]; const m = metrics[i];
+				stampCtx.font = `${l.weight} ${m.fs}px "Inter", system-ui, -apple-system, sans-serif`;
+				stampCtx.fillStyle = l.color;
+				const tx = Math.round(boxX + paddingX) + 0.5; const ty = Math.round(y) + 0.5;
+				stampCtx.fillText(l.text, tx, ty);
+				stampCtx.lineWidth = 0.9; stampCtx.strokeStyle = 'rgba(0,0,0,0.22)'; stampCtx.strokeText(l.text, tx, ty);
+				y += m.fs + gap;
+			}
+			stampCtx.restore();
+		}
+
+		// Función para crear la página de portada elegante
+		function createCoverPage(width, height) {
+			const canvas = document.createElement('canvas');
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext('2d');
+
+			// Fondo degradado elegante
+			const gradient = ctx.createLinearGradient(0, 0, 0, height);
+			gradient.addColorStop(0, '#1e3c72'); // Azul oscuro elegante
+			gradient.addColorStop(0.3, '#2a5298'); // Azul medio
+			gradient.addColorStop(0.7, '#1e3c72'); // Azul oscuro
+			gradient.addColorStop(1, '#0f1419'); // Casi negro
+			ctx.fillStyle = gradient;
+			ctx.fillRect(0, 0, width, height);
+
+			// Patrón decorativo sutil
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+			ctx.lineWidth = 1;
+			for (let i = 0; i < width; i += 80) {
+				ctx.beginPath();
+				ctx.moveTo(i, 0);
+				ctx.lineTo(i + height / 4, height);
+				ctx.stroke();
+			}
+
+			// Configuración de texto base
+			const baseSize = Math.max(24, width * 0.035);
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+
+			// Posición vertical centrada con espaciado
+			const centerY = height / 2;
+			const spacing = baseSize * 1.8;
+
+			// Marco decorativo
+			const frameMargin = width * 0.12;
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+			ctx.lineWidth = 3;
+			ctx.strokeRect(frameMargin, height * 0.15, width - frameMargin * 2, height * 0.7);
+
+			// Línea decorativa superior
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(width * 0.25, height * 0.25);
+			ctx.lineTo(width * 0.75, height * 0.25);
+			ctx.stroke();
+
+			// UNIDAD 7 (Título principal)
+			ctx.font = `bold ${baseSize * 2.2}px "Times New Roman", Georgia, serif`;
+			ctx.fillStyle = '#ffffff';
+			ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+			ctx.shadowBlur = 8;
+			ctx.shadowOffsetY = 3;
+			ctx.fillText('UNIDAD 7', width / 2, centerY - spacing * 2.2);
+
+			// Cuaderno de ejercicios (Subtítulo)
+			ctx.font = `italic ${baseSize * 1.4}px "Times New Roman", Georgia, serif`;
+			ctx.fillStyle = '#e8f4f8';
+			ctx.shadowBlur = 6;
+			ctx.fillText('Libro del alumno', width / 2, centerY - spacing * 1);
+
+			// Nivel A2.1 (Destacado)
+			ctx.font = `bold ${baseSize * 1.8}px "Arial", "Helvetica", sans-serif`;
+			ctx.fillStyle = '#ffd700'; // Dorado elegante
+			ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+			ctx.shadowBlur = 10;
+			ctx.fillText('Nivel A2.1', width / 2, centerY + spacing * 0.2);
+
+			// Línea decorativa media
+			ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(width * 0.3, centerY + spacing * 0.8);
+			ctx.lineTo(width * 0.7, centerY + spacing * 0.8);
+			ctx.stroke();
+
+			// Profesor
+			ctx.font = `${baseSize * 1.1}px "Arial", "Helvetica", sans-serif`;
+			ctx.fillStyle = '#b8e6b8'; // Verde suave
+			ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+			ctx.shadowBlur = 4;
+			ctx.fillText('Prof: Faouzi ElHilali', width / 2, centerY + spacing * 1.5);
+
+			// Instituto Cervantes
+			ctx.font = `${baseSize * 0.95}px "Arial", "Helvetica", sans-serif`;
+			ctx.fillStyle = '#ffc478'; // Naranja suave
+			ctx.fillText('@Instituto Cervantes', width / 2, centerY + spacing * 2.2);
+
+			// IDIGA
+			ctx.font = `${baseSize * 0.95}px "Arial", "Helvetica", sans-serif`;
+			ctx.fillStyle = '#ff9999'; // Rosa suave
+			ctx.fillText('@IDIGA', width / 2, centerY + spacing * 2.8);
+
+			// Línea decorativa inferior
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(width * 0.25, height * 0.75);
+			ctx.lineTo(width * 0.75, height * 0.75);
+			ctx.stroke();
+
+			// Elementos decorativos en las esquinas
+			const cornerSize = width * 0.05;
+			ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
+			ctx.lineWidth = 3;
+			// Esquina superior izquierda
+			ctx.beginPath();
+			ctx.moveTo(frameMargin, frameMargin + cornerSize);
+			ctx.lineTo(frameMargin, frameMargin);
+			ctx.lineTo(frameMargin + cornerSize, frameMargin);
+			ctx.stroke();
+			// Esquina superior derecha
+			ctx.beginPath();
+			ctx.moveTo(width - frameMargin - cornerSize, frameMargin);
+			ctx.lineTo(width - frameMargin, frameMargin);
+			ctx.lineTo(width - frameMargin, frameMargin + cornerSize);
+			ctx.stroke();
+			// Esquina inferior izquierda
+			ctx.beginPath();
+			ctx.moveTo(frameMargin, height - frameMargin - cornerSize);
+			ctx.lineTo(frameMargin, height - frameMargin);
+			ctx.lineTo(frameMargin + cornerSize, height - frameMargin);
+			ctx.stroke();
+			// Esquina inferior derecha
+			ctx.beginPath();
+			ctx.moveTo(width - frameMargin - cornerSize, height - frameMargin);
+			ctx.lineTo(width - frameMargin, height - frameMargin);
+			ctx.lineTo(width - frameMargin, height - frameMargin - cornerSize);
+			ctx.stroke();
+
+			// Limpiar sombras para evitar efectos en elementos posteriores
+			ctx.shadowColor = 'transparent';
+			ctx.shadowBlur = 0;
+			ctx.shadowOffsetY = 0;
+
+			return canvas;
+		}
+
+		async function downloadFullPdf() {
+			if (!pdfDoc) return;
+
+			const progressEl = document.getElementById('export-progress');
+			if (progressEl) { progressEl.style.display = 'block'; progressEl.textContent = 'Creando PDF con portada...'; }
+
+			try {
+				const { jsPDF } = window.jspdf;
+				const total = pdfDoc.numPages;
+
+				// Obtener dimensiones del PDF original
+				const firstPage = await pdfDoc.getPage(1);
+				const viewport = firstPage.getViewport({ scale: 1 });
+				const pxToPt = 72 / 96;
+				const docWpt = viewport.width * pxToPt;
+				const docHpt = viewport.height * pxToPt;
+
+				// Crear PDF con portada incluida
+				const pdf = new jsPDF({ unit: 'pt', format: [docWpt, docHpt] });
+
+				// 1. PORTADA (primera página)
+				if (progressEl) progressEl.textContent = 'Creando portada elegante...';
+				const coverCanvas = createCoverPage(viewport.width, viewport.height);
+				const coverDataUrl = coverCanvas.toDataURL('image/jpeg', 0.99);
+				pdf.addImage(coverDataUrl, 'JPEG', 0, 0, docWpt, docHpt);
+
+				// 2. PÁGINAS DEL PDF (garantizar tamaño mínimo del original 2.1MB)
+				for (let i = 1; i <= total; i++) {
+					pdf.addPage([docWpt, docHpt]);
+
+					if (progressEl) {
+						const progress = Math.round((i / total) * 100);
+						progressEl.textContent = `Agregando página ${i}/${total} (${progress}%)...`;
+					}
+
+					// Usar escala muy alta para garantizar tamaño superior al original
+					const page = await pdfDoc.getPage(i);
+					const maxViewport = page.getViewport({ scale: 2.0 }); // Escala máxima para garantizar peso superior
+					const canvas = document.createElement('canvas');
+					const ctx = canvas.getContext('2d');
+					canvas.width = maxViewport.width;
+					canvas.height = maxViewport.height;
+
+					await page.render({ canvasContext: ctx, viewport: maxViewport }).promise;
+					drawWatermark(canvas, i);
+
+					// Máxima calidad sin compresión para mantener tamaño original
+					const dataUrl = canvas.toDataURL('image/jpeg', 0.98);
+					pdf.addImage(dataUrl, 'JPEG', 0, 0, docWpt, docHpt);
+
+					// Limpiar canvas
+					canvas.width = 1;
+					canvas.height = 1;
+
+					// Pausa cada 2 páginas para no bloquear la UI
+					if (i % 2 === 0) {
+						await new Promise(resolve => setTimeout(resolve, 100));
+					}
+				}
+
+				if (progressEl) progressEl.textContent = 'Finalizando descarga...';
+				await new Promise(resolve => setTimeout(resolve, 300));
+
+				// Usar el MISMO protocolo que funciona para páginas individuales
+				const pdfBlob = pdf.output('blob');
+				const fileName = 'Unidad7_A2.1_Completo.pdf';
+
+				// Detectar si es móvil con mejor precisión
+				const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+					('ontouchstart' in window) ||
+					(navigator.maxTouchPoints > 0);
+
+				// Detectar Samsung Internet Browser específicamente
+				const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent);
+
+				if (isMobile) {
+					if (isSamsungBrowser) {
+						// Para Samsung Internet: usar data URL directo (MISMO que páginas individuales)
+						try {
+							const pdfDataUri = pdf.output('datauristring');
+							const downloadLink = document.createElement('a');
+							downloadLink.href = pdfDataUri;
+							downloadLink.download = fileName;
+							downloadLink.style.display = 'none';
+
+							document.body.appendChild(downloadLink);
+
+							// Samsung Browser necesita interacción directa (MISMO protocolo)
+							setTimeout(() => {
+								downloadLink.click();
+								setTimeout(() => {
+									if (document.body.contains(downloadLink)) {
+										document.body.removeChild(downloadLink);
+									}
+								}, 3000); // MISMO timeout que páginas individuales
+							}, 500); // MISMO timeout inicial que páginas individuales
+
+						} catch (e) {
+							// Si falla, usar método tradicional de Samsung
+							pdf.save(fileName);
+						}
+
+					} else {
+						// Para otros móviles: usar blob URL (MISMO que páginas individuales)
+						const blobUrl = URL.createObjectURL(pdfBlob);
+						const downloadLink = document.createElement('a');
+						downloadLink.href = blobUrl;
+						downloadLink.download = fileName;
+						downloadLink.style.display = 'none';
+
+						// Agregar al DOM, hacer clic y remover
+						document.body.appendChild(downloadLink);
+
+						// En móviles, usar EXACTAMENTE el mismo protocolo que páginas individuales
+						setTimeout(() => {
+							downloadLink.click();
+
+							// Limpiar después de más tiempo para móviles (MISMO que páginas individuales)
+							setTimeout(() => {
+								if (document.body.contains(downloadLink)) {
+									document.body.removeChild(downloadLink);
+								}
+								URL.revokeObjectURL(blobUrl);
+							}, 2000); // MISMO timeout que páginas individuales
+						}, 300); // MISMO timeout inicial que páginas individuales
+					}
+
+				} else {
+					// Para PC: usar método tradicional (MISMO que páginas individuales)
+					pdf.save(fileName);
+				}
+
+				// Limpiar canvas de portada
+				coverCanvas.width = 1;
+				coverCanvas.height = 1;
+
+				// Mensaje simple de éxito en el progreso
+				if (progressEl) {
+					progressEl.textContent = '✅ ¡Descarga completada!';
+					setTimeout(() => {
+						progressEl.style.display = 'none';
+					}, 2000);
+				}
+
+			} catch (error) {
+				console.error('Error en descarga:', error);
+
+				// Mensaje simple de error
+				if (progressEl) {
+					progressEl.textContent = '❌ Error en descarga - Intenta de nuevo';
+					progressEl.style.color = '#dc3545';
+					setTimeout(() => {
+						progressEl.style.display = 'none';
+						progressEl.style.color = ''; // Restaurar color
+					}, 3000);
+				}
+			}
+
+			// No mostrar ningún modal adicional
+			cleanupAfterDownload();
+			closeExportModal();
+		}		// Función para detectar dispositivos con limitaciones de memoria
+		function isLowMemoryDevice() {
+			// Detectar dispositivos con menos de 4GB de RAM (aproximado)
+			const memoryGB = navigator.deviceMemory || 4;
+			const isMobile = window.innerWidth <= 768;
+			const isLowEnd = memoryGB < 4;
+			const hasSlowConnection = navigator.connection &&
+				(navigator.connection.effectiveType === 'slow-2g' ||
+					navigator.connection.effectiveType === '2g' ||
+					navigator.connection.effectiveType === '3g');
+
+			return isMobile && (isLowEnd || hasSlowConnection);
+		}
+
+		// Modal control mejorado con advertencias para dispositivos móviles
+		function openExportModal() {
+			const m = document.getElementById('export-modal');
+			if (!m) return;
+
+			// Actualizar descripción del modal según el dispositivo
+			const desc = m.querySelector('p.desc');
+			if (desc) {
+				desc.innerHTML = '' +
+					'';
+			}
+
+			// Habilitar el botón de PDF completo para todos los dispositivos
+			const fullBtn = document.getElementById('export-full-btn');
+			if (fullBtn) {
+				fullBtn.style.opacity = '1';
+				fullBtn.style.cursor = 'pointer';
+				fullBtn.title = 'Descarga un PDF completo con portada elegante y todas las páginas del cuaderno';
+			}
+
+			m.style.display = 'flex';
+		}
+		function closeExportModal() {
+			const m = document.getElementById('export-modal'); if (!m) return; m.style.display = 'none';
+			const progressEl = document.getElementById('export-progress'); if (progressEl) progressEl.style.display = 'none';
+		}
+
+		// Event listeners
+		let isPaging = false;
+		document.getElementById('next-page').onclick = function () {
+			if (isExerciseVisible()) {
+				navigateExercise(+1, true);
+				return;
+			}
+			if (isPaging || currentPage >= totalPages) return; // no hay cambio
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch (e) { } }
+			isPaging = true;
+			animatePage('right');
+			playSwipeSound();
+			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch (e) { }
+			setTimeout(() => { nextPage(); isPaging = false; updateNavigationArrows(); }, 220);
+		};
+
+		document.getElementById('prev-page').onclick = function () {
+			if (isExerciseVisible()) {
+				navigateExercise(-1, true);
+				return;
+			}
+			if (isPaging || currentPage <= 1) return; // no hay cambio
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch (e) { } }
+			isPaging = true;
+			animatePage('left');
+			playSwipeSound();
+			try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch (e) { }
+			setTimeout(() => { prevPage(); isPaging = false; updateNavigationArrows(); }, 220);
+		};
+
+
+
+		document.getElementById('show-exercise-btn').onclick = function () {
+			const input = document.getElementById('exercise-input');
+
+			// Limpiar estado rojo si existe
+			if (input.classList.contains('red-placeholder')) {
+				input.classList.remove('red-placeholder');
+				if (input._removeClass) {
+					input.removeEventListener('input', input._removeClass);
+					input._removeClass = null;
+				}
+			}
+
+			const n = parseInt(input.value, 10);
+			console.log('Ejercicio solicitado:', n); // Debug
+
+			if (!n || n < 1 || n > imageLinks.length) {
+				alert('Número entre 1 y ' + imageLinks.length);
+				return;
+			}
+
+			playButtonSound();
+
+			// Verificar que el elemento de imagen existe
+			const exerciseImgEl = document.getElementById('exercise-img');
+			if (!exerciseImgEl) {
+				console.error('Elemento exercise-img no encontrado');
+				return;
+			}
+
+			// SOLO MOSTRAR MODAL EN ACCIÓN DIRECTA DEL USUARIO (botón)
+			showImageByNumber(n, {
+				suppressError: false, // Permitir modal solo aquí
+				onSuccess: () => {
+					console.log('Ejercicio cargado exitosamente:', n);
+					updateNavigationArrows();
+				},
+				onFail: () => {
+					console.log('Error cargando ejercicio:', n);
+					updateNavigationArrows();
+				}
+			});
+			setTimeout(updateNavigationArrows, 0);
+		};
+
+		document.getElementById('show-all-btn').onclick = function () {
+			// Transición instantánea de la imagen al PDF
+			if (isExerciseVisible()) {
+				playButtonSound();
+
+				// Ocultar botones de control de ancho
+				hideWidthControls();
+
+				// NO resetear zoom al cambiar a PDF (mantener el zoom existente)
+				// resetZoom(); // COMENTADO
+
+				// Ocultar imagen inmediatamente
+				exerciseImg.style.display = 'none';
+				exerciseImg.style.transition = 'none';
+
+				// Calcular página destino según el ejercicio visible/solicitado/guardado
+				let exNum = null;
+				try {
+					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
+						exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
+					}
+					if (!exNum && currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					}
+					if (!exNum) {
+						exNum = getLastValidExercise();
+					}
+				} catch (e) { }
+				const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
+				// Mostrar PDF inmediatamente sin transiciones elaboradas
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.visibility = 'visible';
+				pdfCanvas.style.opacity = '1';
+				pdfCanvas.style.transform = 'translateX(-50%) scale(1)';
+				pdfCanvas.style.transition = 'none';
+				// Ocultar botones de control de ancho
+				hideWidthControls();
+				if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
+					currentPage = targetPage;
+				}
+				renderPage(currentPage);
+			} else {
+				// Si no hay imagen, ya estamos en PDF: calcular si hay un destino mapeado reciente
+				const pdfCanvas = document.getElementById('pdf-canvas');
+				pdfCanvas.style.display = 'block';
+				pdfCanvas.style.visibility = 'visible';
+				// NO resetear zoom al cambiar vista (mantener zoom)
+				// resetZoom(); // COMENTADO
+				let exNum = null;
+				try {
+					if (exerciseImg.dataset && exerciseImg.dataset.exerciseNumber) {
+						exNum = parseInt(exerciseImg.dataset.exerciseNumber, 10);
+					}
+					if (!exNum && currentExerciseTarget) {
+						exNum = parseInt(currentExerciseTarget, 10);
+					}
+					if (!exNum) {
+						exNum = getLastValidExercise();
+					}
+				} catch (e) { }
+				const targetPage = exNum && exerciseToPage[exNum] ? exerciseToPage[exNum] : null;
+				if (targetPage && targetPage >= 1 && (!totalPages || targetPage <= totalPages)) {
+					currentPage = targetPage;
+				}
+				renderPage(currentPage);
+			}
+		};
+
+		// Descargar página actual/mapeada
+		document.getElementById('download-page-btn').onclick = function () {
+			playButtonSound();
+			openExportModal();
+		};
+		// Eventos modal exportación
+		const exportPageBtn = document.getElementById('export-page-btn');
+		const exportFullBtn = document.getElementById('export-full-btn');
+		const exportCancelBtn = document.getElementById('export-cancel-btn');
+		const exportCloseBtn = document.getElementById('export-close-btn');
+		if (exportPageBtn) exportPageBtn.addEventListener('click', async () => { playButtonSound(); await downloadCurrentPdfPage(); closeExportModal(); });
+		if (exportFullBtn) exportFullBtn.addEventListener('click', async () => { playButtonSound(); await downloadFullPdf(); });
+		if (exportCancelBtn) exportCancelBtn.addEventListener('click', () => { playButtonSound(); closeExportModal(); });
+		if (exportCloseBtn) exportCloseBtn.addEventListener('click', () => { playButtonSound(); closeExportModal(); });
+		window.addEventListener('keydown', (e) => { const m = document.getElementById('export-modal'); if (m && m.style.display === 'flex' && e.key === 'Escape') { closeExportModal(); } });
+
+		// Ir a página específica
+		function renderPageStable(targetPage, forceWhileKeyboard = false) {
+			if (keyboardOpen && !forceWhileKeyboard) {
+				pendingKeyboardCloseRender = true;
+				currentPage = targetPage;
+				return;
+			}
+			// Si forzamos durante teclado, anulamos el pending previo (estaba esperando cierre)
+			if (forceWhileKeyboard) {
+				pendingKeyboardCloseRender = false;
+			}
+			currentPage = targetPage;
+			renderPage(currentPage);
+		}
+
+		document.getElementById('goto-page-btn').onclick = function () {
+			const input = document.getElementById('page-input');
+			if (!input) return;
+			let realPage = parseInt(input.value, 10);
+			if (!Number.isFinite(realPage)) return;
+			const { min: realMin, max: realMax } = realPageRange();
+			// Validación de página inexistente (usando numeración real)
+			if (realPage < realMin || realPage > realMax) {
+				showErrorModal('Página ' + realPage, 'La página solicitada no existe en este documento (' + realMin + ' - ' + realMax + ').');
+				return;
+			}
+			const n = realToLogical(realPage);
+			if (n === currentPage) return;
+			if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch (e) { } }
+			const exEl = document.getElementById('exercise-img');
+			const wasExerciseVisible = isExerciseVisible();
+			playButtonSound();
+
+			if (wasExerciseVisible) {
+				exEl.style.transition = 'opacity 0.25s ease';
+				exEl.style.opacity = '0';
+				setTimeout(() => {
+					exEl.style.display = 'none';
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					pdfCanvas.style.display = 'block';
+					pdfCanvas.style.visibility = 'visible';
+					pdfCanvas.style.opacity = '1';
+					pdfCanvas.style.transform = 'translateX(-50%)';
+					// Ocultar botones de control de ancho
+					hideWidthControls();
+					// SIEMPRE activar el indicador rojo al ir a una página
+					const exInput = document.getElementById('exercise-input');
+					if (exInput) {
+						// Limpiar listeners anteriores si existen
+						if (exInput._removeClass) {
+							exInput.removeEventListener('input', exInput._removeClass);
+						}
+						exInput.value = ''; // Input vacío con cursor parpadeando
+						exInput.classList.add('dash-placeholder');
+						exInput.focus(); // Enfocar para mostrar cursor
+						// Remover la clase cuando el usuario empiece a escribir
+						const removeClass = () => {
+							if (exInput.value !== '') {
+								exInput.classList.remove('dash-placeholder');
+								exInput.removeEventListener('input', removeClass);
+								exInput._removeClass = null;
+							}
+						};
+						exInput._removeClass = removeClass;
+						exInput.addEventListener('input', removeClass);
+					}
+					currentExerciseTarget = null;
+					// Forzar render inmediato (aunque se detecte teclado abierto) para evitar esperar cerrar menú
+					renderPageStable(n, true);
+				}, 260);
+			} else {
+				// SIEMPRE activar el indicador rojo al ir a una página (incluso si ya estábamos en PDF)
+				const exInput = document.getElementById('exercise-input');
+				if (exInput) {
+					// Limpiar listeners anteriores si existen
+					if (exInput._removeClass) {
+						exInput.removeEventListener('input', exInput._removeClass);
+					}
+					exInput.value = ''; // Input vacío con cursor parpadeando
+					exInput.classList.add('dash-placeholder');
+					exInput.focus(); // Enfocar para mostrar cursor
+					// Remover la clase cuando el usuario empiece a escribir
+					const removeClass = () => {
+						if (exInput.value !== '') {
+							exInput.classList.remove('dash-placeholder');
+							exInput.removeEventListener('input', removeClass);
+							exInput._removeClass = null;
+						}
+					};
+					exInput._removeClass = removeClass;
+					exInput.addEventListener('input', removeClass);
+				}
+				// Forzar render inmediato también en caso ya estar en PDF
+				renderPageStable(n, true);
+			}
+		};
+
+		// Enter en input de página → Ir
+		document.getElementById('page-input').addEventListener('keypress', function (e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				const input = this;
+				let realPage = parseInt(input.value, 10);
+				if (!Number.isFinite(realPage)) return;
+				const { min: realMin, max: realMax } = realPageRange();
+				if (realPage < realMin || realPage > realMax) {
+					showErrorModal('Página ' + realPage, 'La página solicitada no existe en este documento (' + realMin + ' - ' + realMax + ').');
+					return;
+				}
+				const n = realToLogical(realPage);
+				if (n === currentPage) return;
+				// Cancelar animación si existiera
+				if (window.__pageFlip && window.__pageFlip.isAnimating) { try { window.__pageFlip.cancel(); } catch (e) { } }
+				// Si hay imagen visible, primero ocultarla (similar al botón Ir)
+				const exEl = document.getElementById('exercise-img');
+				const wasExerciseVisible = isExerciseVisible();
+				playButtonSound();
+				if (wasExerciseVisible) {
+					exEl.style.transition = 'opacity 0.25s ease';
+					exEl.style.opacity = '0';
+					setTimeout(() => {
+						exEl.style.display = 'none';
+						// Al ir a una página desde un ejercicio, mostrar input vacío con fondo rojo
+						const exInput = document.getElementById('exercise-input');
+						if (exInput) {
+							exInput.value = ''; // Input vacío con cursor parpadeando
+							exInput.classList.add('dash-placeholder');
+							exInput.focus(); // Enfocar para mostrar cursor
+							// Remover la clase cuando el usuario empiece a escribir
+							const removeClass = () => {
+								if (exInput.value !== '') {
+									exInput.classList.remove('dash-placeholder');
+									exInput.removeEventListener('input', removeClass);
+								}
+							};
+							exInput.addEventListener('input', removeClass);
+						}
+						currentExerciseTarget = null;
+						renderPageStable(n, true); // forzar aunque teclado siga abierto
+					}, 250);
+				} else {
+					// SIEMPRE activar el indicador rojo al ir a una página (incluso si ya estábamos en PDF)
+					const exInput = document.getElementById('exercise-input');
+					if (exInput) {
+						// Limpiar listeners anteriores si existen
+						if (exInput._removeClass) {
+							exInput.removeEventListener('input', exInput._removeClass);
+						}
+						exInput.value = ''; // Input vacío con cursor parpadeando
+						exInput.classList.add('dash-placeholder');
+						exInput.focus(); // Enfocar para mostrar cursor
+						// Remover la clase cuando el usuario empiece a escribir
+						const removeClass = () => {
+							if (exInput.value !== '') {
+								exInput.classList.remove('dash-placeholder');
+								exInput.removeEventListener('input', removeClass);
+								exInput._removeClass = null;
+							}
+						};
+						exInput._removeClass = removeClass;
+						exInput.addEventListener('input', removeClass);
+					}
+					renderPageStable(n, true);
+				}
+			}
+		});
+
+		// Permitir presionar Enter en el campo de ejercicio para ejecutar "Ir"
+		document.getElementById('exercise-input').addEventListener('keypress', function (e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				document.getElementById('show-exercise-btn').click();
+			}
+		});
+
+		// Navegación con teclado
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'ArrowRight' || e.key === ' ') {
+				e.preventDefault();
+				if (isExerciseVisible()) {
+					navigateExercise(+1, true); updateNavigationArrows();
+				} else {
+					playSwipeSound();
+					nextPage(); updateNavigationArrows();
+				}
+			} else if (e.key === 'ArrowLeft') {
+				e.preventDefault();
+				if (isExerciseVisible()) {
+					navigateExercise(-1, true); updateNavigationArrows();
+				} else {
+					playSwipeSound();
+					prevPage(); updateNavigationArrows();
+				}
+			}
+		});
+
+		// Ajustar tamaño de la imagen para caber en el área visible (entre selector superior y contador inferior)
+		function adjustImageSize() {
+			const img = document.getElementById('exercise-img');
+			if (!img || img.style.display === 'none') return;
+			// La cinta debe superponerse (overlay); no debe empujar la imagen hacia abajo
+			// Por eso ignoramos la altura del menú en el cálculo de área visible
+			let menuHeight = 0;
+			const counter = document.getElementById('page-counter');
+			const counterRect = counter.getBoundingClientRect();
+			// espacio visible entre menú superior y contador inferior
+			const visibleTop = menuHeight;
+			const visibleBottom = Math.min(window.innerHeight, counterRect.top);
+			const availableHeight = Math.max(100, visibleBottom - visibleTop);
+
+			// Preferir ocupar todo el alto disponible en móviles y ajustar ancho proporcional
+			if (window.innerWidth <= 768) {
+				img.style.height = availableHeight + 'px';
+				// Calcular ancho real en lugar de usar transform scale para evitar superposición
+				if (img.naturalHeight && img.naturalWidth) {
+					const baseWidth = (availableHeight * img.naturalWidth) / img.naturalHeight;
+					const scaledWidth = baseWidth * exerciseWidthScale;
+					img.style.width = scaledWidth + 'px';
+				} else {
+					img.style.width = 'auto';
+				}
+				img.style.transform = 'translateX(-50%)';
+				img.style.maxWidth = (100 * exerciseWidthScale) + 'vw';
+				img.style.top = visibleTop + 'px';
+				img.style.left = '50%';
+				// Asegurar que la imagen esté por encima pero no cause superposición
+				img.style.background = '#1a1a1a';
+				img.style.zIndex = '2400';
+			} else {
+				// Desktop: detectar si la imagen tiene poco ancho (aspect ratio estrecho) para agrandarla
+				let targetWidth = 100 * exerciseWidthScale; // Aplicar escala de ancho
+
+				if (img.naturalHeight && img.naturalWidth) {
+					const aspectRatio = img.naturalWidth / img.naturalHeight;
+					// Si la imagen es estrecha (ratio < 1.3), usar más ancho
+					// Esto incluye fotos verticales (ratio < 1) y cuadradas/casi cuadradas
+					if (aspectRatio < 1.3) {
+						targetWidth = 140 * exerciseWidthScale; // 40% más ancho para imágenes estrechas
+					} else if (aspectRatio < 1.8) {
+						targetWidth = 120 * exerciseWidthScale; // 20% más ancho para imágenes moderadamente estrechas
+					}
+					// Para imágenes muy anchas (ratio >= 1.8), mantener targetWidth base
+				}
+
+				img.style.width = targetWidth + 'vw';
+				img.style.height = 'auto';
+				img.style.transform = 'translate(-50%, -50%)';
+
+				if (img.naturalHeight && img.naturalWidth) {
+					const multiplier = targetWidth / 100;
+					const renderedHeight = (window.innerWidth * multiplier * img.naturalHeight) / img.naturalWidth;
+					if (renderedHeight > availableHeight) {
+						// Si la altura resultante excede el espacio, ajustar por altura pero mantener la proporción con la escala personalizada
+						img.style.height = availableHeight + 'px';
+						// Calcular el ancho proporcional manteniendo la escala de ejercicio
+						const baseAutoWidth = (availableHeight * img.naturalWidth) / img.naturalHeight;
+						const scaledWidth = baseAutoWidth * exerciseWidthScale;
+						img.style.width = scaledWidth + 'px';
+					}
+				}
+				img.style.top = (visibleTop + (availableHeight / 2)) + 'px';
+				img.style.left = '50%';
+			}
+		}
+
+		window.addEventListener('resize', function () {
+			adjustImageSize();
+		});
+
+		// Toggle del menú: abre/cierra como cinta de izquierda a derecha
+		(function initMenuToggle() {
+			const toggleBtn = document.getElementById('menu-toggle-btn');
+			const wrapper = document.querySelector('.top-menu-wrapper');
+			const body = document.body;
+			if (!toggleBtn || !wrapper) return;
+
+			let inactivityTimer = null;
+			const INACTIVITY_MS = 15000;
+			function clearInactivity() { if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null; } }
+			function scheduleInactivity() {
+				clearInactivity();
+				if (!document.body.classList.contains('menu-open')) return;
+				// No cerrar si hay foco en inputs dentro del menú
+				const active = document.activeElement;
+				if (active && wrapper.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'BUTTON')) return;
+				inactivityTimer = setTimeout(() => { setOpen(false); }, INACTIVITY_MS);
+			}
+
+			function updateToggleBtnSize() {
+				try {
+					const bar = document.querySelector('.top-menu');
+					const rect = (bar || wrapper).getBoundingClientRect();
+					if (rect && rect.height > 0) {
+						// Altura igual a la barra (cinta)
+						toggleBtn.style.height = Math.round(rect.height) + 'px';
+						// Alinear el borde superior con el de la barra
+						toggleBtn.style.top = Math.round(rect.top) + 'px';
+						// Mantener el radio de borde definido por CSS (sin forzar píldora)
+					}
+				} catch (e) { }
+			}
+
+			// Posicionar la cinta pegada al botón en escritorio
+			function updateWrapperLeftDesktop() {
+				try {
+					if (window.innerWidth <= 768) {
+						// En móvil, restablecer para que gobierne el CSS
+						wrapper.style.left = '';
+						wrapper.style.right = '';
+						wrapper.style.width = '';
+						wrapper.style.paddingLeft = '';
+						return;
+					}
+					const rect = toggleBtn.getBoundingClientRect();
+					// Posicionar la cinta para que su parte izquierda quede detrás del botón
+					const HIDDEN_SPACE = 25; // px que quedan ocultos detrás del botón
+					const left = Math.max(0, Math.round(rect.left - HIDDEN_SPACE));
+					wrapper.style.left = left + 'px';
+					wrapper.style.right = 'auto';
+					wrapper.style.width = 'auto';
+					wrapper.style.paddingLeft = (HIDDEN_SPACE + 10) + 'px'; // espacio para que el contenido no se tape
+				} catch (e) { }
+			}
+
+			function setOpen(open) {
+				if (open) {
+					body.classList.add('menu-open');
+					toggleBtn.setAttribute('aria-expanded', 'true');
+				} else {
+					body.classList.remove('menu-open');
+					toggleBtn.setAttribute('aria-expanded', 'false');
+				}
+				// Sonido al abrir/cerrar menú (debounced)
+				try { playButtonSound(); } catch (e) { }
+				// Reajustar imagen según el espacio visible
+				requestAnimationFrame(() => adjustImageSize());
+				// Programar auto-ocultado si está abierto
+				if (open) scheduleInactivity(); else clearInactivity();
+			}
+
+			toggleBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const isOpen = document.body.classList.contains('menu-open');
+				// Período de gracia tras cerrar la modal: evita que un toque cercano la cierre
+				const graceUntil = (typeof window.__menuGraceUntil === 'number') ? window.__menuGraceUntil : 0;
+				const now = Date.now();
+				if (isOpen && now < graceUntil) {
+					// Ignorar intento de cerrar durante la gracia
+					scheduleInactivity();
+					return;
+				}
+				setOpen(!isOpen);
+				updateToggleBtnSize();
+				updateWrapperLeftDesktop();
+			});
+
+			// Cerrar al hacer clic fuera cuando está abierto
+			document.addEventListener('click', (e) => {
+				if (!document.body.classList.contains('menu-open')) return;
+				// No cerrar por clics cuando la modal está visible
+				const modal = document.getElementById('error-modal');
+				if (modal && modal.style.display === 'flex') return;
+				// Respetar período de gracia post-modal
+				const graceUntil = (typeof window.__menuGraceUntil === 'number') ? window.__menuGraceUntil : 0;
+				if (Date.now() < graceUntil) return;
+				// No cerrar cuando el clic proviene de flechas laterales (interacción válida)
+				const isSideArrow = e.target.closest && e.target.closest('.side-arrow');
+				if (isSideArrow) { scheduleInactivity(); return; }
+				const isInsideMenu = wrapper.contains(e.target);
+				const isBtn = toggleBtn.contains(e.target);
+				if (!isInsideMenu && !isBtn) setOpen(false);
+				else scheduleInactivity();
+			});
+
+			// Cerrar con Escape
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && document.body.classList.contains('menu-open')) {
+					setOpen(false);
+				}
+				else if (document.body.classList.contains('menu-open')) {
+					// tecleo dentro con menú abierto reinicia timer
+					scheduleInactivity();
+				}
+			});
+
+			// Interacciones que reinician el temporizador cuando el menú está abierto
+			['mousemove', 'touchstart', 'scroll'].forEach(evt => {
+				document.addEventListener(evt, () => {
+					if (document.body.classList.contains('menu-open')) scheduleInactivity();
+				}, { passive: true });
+			});
+			// Inputs y botones internos
+			wrapper.addEventListener('input', scheduleInactivity);
+			wrapper.addEventListener('click', scheduleInactivity);
+
+			// Sincronizar en carga y resize
+			window.addEventListener('load', () => { updateToggleBtnSize(); updateWrapperLeftDesktop(); });
+			window.addEventListener('resize', () => { updateToggleBtnSize(); updateWrapperLeftDesktop(); });
+			// Llamada inicial
+			updateToggleBtnSize();
+			updateWrapperLeftDesktop();
+
+			// Funciones globales para interactuar con el menú desde otros componentes
+			try {
+				window.showMenuAfterModal = function () { setOpen(true); };
+				window.__resetMenuInactivity = function () { scheduleInactivity(); };
+			} catch (e) { }
+		})();
+
+		// Intentar cargar una versión de mayor resolución si la imagen se va a escalar mucho
+		function attemptHiRes(originalUrl, imgEl, displayWidth) {
+			if (!originalUrl) return;
+			// construir variantes comunes de alta resolución
+			const variants = [];
+			// ejemplo: image.png -> image@2x.png, image_2x.png, image-2x.png
+			const m = originalUrl.match(/(.+)\.(png|jpe?g)$/i);
+			if (!m) return;
+			const prefix = m[1];
+			const ext = m[2];
+			variants.push(`${prefix}@2x.${ext}`);
+			variants.push(`${prefix}_2x.${ext}`);
+			variants.push(`${prefix}-2x.${ext}`);
+
+			// si la imagen naturalWidth es menor que el displayWidth, intentar hi-res
+			if (imgEl.naturalWidth && imgEl.naturalWidth < displayWidth * 1.5) {
+				(async function tryVariants() {
+					for (const v of variants) {
+						try {
+							await new Promise((res, rej) => {
+								const p = new Image();
+								p.onload = () => res(p);
+								p.onerror = () => rej();
+								p.src = v;
+							});
+							// si existe, usar srcset para permitir browser seleccionar mejor
+							imgEl.srcset = `${v} 2x, ${originalUrl} 1x`;
+							imgEl.src = v; // forzar reemplazo inmediato
+							return;
+						} catch (e) {
+							// ignora y prueba siguiente
+						}
+					}
+				})();
+			}
+		}
+
+		// Bloquear scroll global solo en móviles (permite paneo con rueda/trackpad en PC)
+		document.addEventListener('wheel', function (e) {
+			if (window.innerWidth <= 768) {
+				e.preventDefault();
+			}
+		}, { passive: false });
+
+		document.addEventListener('touchmove', function (e) {
+			// Permitir touchmove durante gestos de swipe
+			if (isSwipeGesture) return;
+			e.preventDefault();
+		}, { passive: false });
+
+		// Gestión de gestos táctiles para navegación y zoom en móvil
+		let touchStartX = 0;
+		let touchStartY = 0;
+		let touchStartTime = 0;
+		let isSwipeGesture = false;
+		let activeIndicator = null;
+		let lastTapTime = 0;
+		const SWIPE_THRESHOLD = 20; // ULTRA SENSIBLE: mínima distancia para considerar swipe
+		const SWIPE_VELOCITY_THRESHOLD = 0.1; // ULTRA SENSIBLE: mínima velocidad
+		const EDGE_ZONE_WIDTH = 100; // MÁXIMA ZONA: ancho de zona lateral para iniciar swipe (px)
+		const MAX_VERTICAL_DRIFT = 200; // MÁXIMA TOLERANCIA: máxima desviación vertical permitida
+
+		// Detectar inicio del gesto táctil
+		document.addEventListener('touchstart', function (e) {
+			// NO permitir zoom con dos dedos en ejercicios (solo en PDF)
+			if (e.touches.length === 2) {
+				// Si está viendo un ejercicio, bloquear el zoom
+				if (isExerciseVisible()) {
+					e.preventDefault();
+					return;
+				}
+
+				// Solo permitir zoom en páginas PDF
+				e.preventDefault();
+				isPinchZooming = true;
+				isSwipeGesture = false;
+				lastPinchDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+				zoomOriginX = center.x - window.innerWidth / 2;
+				zoomOriginY = center.y - window.innerHeight / 2;
+
+				// Ocultar indicadores si estaban activos
+				if (activeIndicator) {
+					activeIndicator.classList.remove('active');
+					activeIndicator = null;
+				}
+				return;
+			}
+
+			// Detectar doble tap para reset de zoom (solo en PDF)
+			if (e.touches.length === 1) {
+				const currentTime = Date.now();
+				if (currentTime - lastTapTime < 300 && currentZoom !== 1.0 && !isExerciseVisible()) {
+					e.preventDefault();
+					resetZoom();
+					return;
+				}
+				lastTapTime = currentTime;
+			}
+
+			if (e.touches.length !== 1 || isPinchZooming) return; // solo gestos de un dedo para swipe
+
+			const touch = e.touches[0];
+			const screenWidth = window.innerWidth;
+
+			// Solo permitir inicio desde las zonas laterales si no hay zoom activo
+			if (currentZoom > 1.1) {
+				// Con zoom activo, permitir paneo desde cualquier parte
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+				touchStartTime = Date.now();
+				return;
+			}
+
+			const isLeftEdge = touch.clientX <= EDGE_ZONE_WIDTH;
+			const isRightEdge = touch.clientX >= (screenWidth - EDGE_ZONE_WIDTH);
+
+			if (!isLeftEdge && !isRightEdge) return;
+
+			touchStartX = touch.clientX;
+			touchStartY = touch.clientY;
+			touchStartTime = Date.now();
+			isSwipeGesture = true;
+
+			// Activar indicador visual
+			const leftIndicator = document.getElementById('swipe-indicator-left');
+			const rightIndicator = document.getElementById('swipe-indicator-right');
+
+			if (isLeftEdge && leftIndicator) {
+				leftIndicator.classList.add('active');
+				activeIndicator = leftIndicator;
+			} else if (isRightEdge && rightIndicator) {
+				rightIndicator.classList.add('active');
+				activeIndicator = rightIndicator;
+			}
+		}, { passive: false });
+
+		// Procesar el movimiento táctil
+		document.addEventListener('touchmove', function (e) {
+			// Manejar zoom con dos dedos (SOLO en PDF, NO en ejercicios)
+			if (isPinchZooming && e.touches.length === 2 && !isExerciseVisible()) {
+				e.preventDefault();
+				const currentDistance = getTouchDistance(e.touches);
+				const center = getTouchCenter(e.touches);
+
+				if (lastPinchDistance > 0) {
+					const zoomDelta = currentDistance / lastPinchDistance;
+					const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * zoomDelta));
+
+					if (newZoom !== currentZoom) {
+						currentZoom = newZoom;
+						// Actualizar origen basado en el centro del gesto
+						zoomOriginX = center.x - window.innerWidth / 2;
+						zoomOriginY = center.y - window.innerHeight / 2;
+						applyZoomToElement();
+					}
+				}
+
+				lastPinchDistance = currentDistance;
+				return;
+			}
+
+			// Manejar paneo con zoom activo (SOLO en PDF)
+			if (currentZoom > 1.1 && e.touches.length === 1 && !isExerciseVisible()) {
+				e.preventDefault();
+				const touch = e.touches[0];
+				const deltaX = (touch.clientX - touchStartX) / currentZoom;
+				const deltaY = (touch.clientY - touchStartY) / currentZoom;
+
+				zoomOriginX += deltaX;
+				zoomOriginY += deltaY;
+
+				touchStartX = touch.clientX;
+				touchStartY = touch.clientY;
+
+				applyZoomToElement();
+				return;
+			}
+
+			if (!isSwipeGesture || e.touches.length !== 1) return;
+
+			const touch = e.touches[0];
+			const deltaX = touch.clientX - touchStartX;
+			const deltaY = touch.clientY - touchStartY;
+
+			// Cancelar si hay mucha desviación vertical
+			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) {
+				isSwipeGesture = false;
+				if (activeIndicator) {
+					activeIndicator.classList.remove('active');
+					activeIndicator = null;
+				}
+				return;
+			}
+
+			// Prevenir scroll durante el swipe
+			e.preventDefault();
+		}, { passive: false });
+
+		// Finalizar el gesto y ejecutar navegación
+		document.addEventListener('touchend', function (e) {
+			// Finalizar zoom con dos dedos
+			if (isPinchZooming) {
+				isPinchZooming = false;
+				lastPinchDistance = 0;
+				return;
+			}
+
+			// Limpiar indicador visual
+			if (activeIndicator) {
+				activeIndicator.classList.remove('active');
+				activeIndicator = null;
+			}
+
+			if (!isSwipeGesture) return;
+
+			const touch = e.changedTouches[0];
+			const deltaX = touch.clientX - touchStartX;
+			const deltaY = touch.clientY - touchStartY;
+			const deltaTime = Date.now() - touchStartTime;
+			const velocity = deltaTime > 0 ? Math.abs(deltaX) / deltaTime : 0;
+
+			isSwipeGesture = false;
+
+			// Verificar si cumple los requisitos de swipe (ULTRA SENSIBLES)
+			if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
+			if (Math.abs(deltaY) > MAX_VERTICAL_DRIFT) return;
+			// REMOVIDO: el requerimiento de velocidad mínima para máxima sensibilidad
+
+			// Determinar dirección y navegar
+			if (deltaX > 0) {
+				// Swipe derecha → página anterior
+				if (isExerciseVisible()) {
+					navigateExercise(-1, true);
+				} else if (currentPage > 1) {
+					// Usar el sonido específico para swipes
+					isPaging = true;
+					animatePage('left');
+					playSwipeSound();
+					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch (e) { }
+					setTimeout(() => {
+						prevPage();
+						isPaging = false;
+						updateNavigationArrows();
+					}, 220);
+				}
+			} else {
+				// Swipe izquierda → página siguiente
+				if (isExerciseVisible()) {
+					navigateExercise(+1, true);
+				} else if (currentPage < totalPages) {
+					// Usar el sonido específico para swipes
+					isPaging = true;
+					animatePage('right');
+					playSwipeSound();
+					try { if (document.body.classList.contains('menu-open')) { window.__resetMenuInactivity && window.__resetMenuInactivity(); } } catch (e) { }
+					setTimeout(() => {
+						nextPage();
+						isPaging = false;
+						updateNavigationArrows();
+					}, 220);
+				}
+			}
+		}, { passive: true });
+
+		// Ocultar controles automáticamente
+		let hideControlsTimeout;
+
+		function showControls() {
+			const controls = document.querySelector('.floating-controls');
+			const pageCounter = document.querySelector('.page-counter');
+			if (controls) controls.style.opacity = '1';
+			if (pageCounter) pageCounter.style.opacity = '1';
+			clearTimeout(hideControlsTimeout);
+			hideControlsTimeout = setTimeout(() => {
+				if (controls) controls.style.opacity = '0.3';
+				if (pageCounter) pageCounter.style.opacity = '0.3';
+			}, 3000);
+		}
+
+		document.addEventListener('mousemove', showControls);
+		document.addEventListener('touchstart', showControls);
+
+		// Cargar PDF y restaurar estado previo
+		pdfjsLib.getDocument(urlDefault).promise.then(function (pdfDoc_) {
+			pdfDoc = pdfDoc_;
+			totalPages = pdfDoc.numPages;
+
+			// Verificar estado guardado ANTES de renderizar
+			const savedState = getUserState();
+			let shouldRenderPDF = true;
+
+			if (savedState) {
+				if (savedState.type === 'exercise') {
+					// Si había un ejercicio, no renderizar PDF y mostrar ejercicio directamente
+					shouldRenderPDF = false;
+					const exerciseNum = savedState.data.exerciseNumber;
+					document.getElementById('exercise-input').value = exerciseNum;
+					// Ocultar PDF completamente
+					const pdfCanvas = document.getElementById('pdf-canvas');
+					pdfCanvas.style.display = 'none';
+					// Mostrar ejercicio inmediatamente
+					showImageByNumber(exerciseNum, { suppressError: true });
+					showControls();
+
+					// Marcar como cargado en móvil para ejercicios
+					if (isMobile) {
+						setTimeout(() => {
+							const container = document.querySelector('.pdf-viewer-container');
+							if (container) container.classList.add('loaded');
+							document.body.classList.add('mobile-loaded');
+						}, 300);
+					}
+
+					return; // No continuar con renderización de PDF
+				} else if (savedState.type === 'pdf') {
+					let savedPage = savedState.data.page || 1;
+					// Aceptar estados previos (lógicos 1-14) o nuevos (reales 98-111)
+					if (savedPage >= REAL_PAGE_START) {
+						savedPage = realToLogical(savedPage);
+					}
+					if (savedPage < 1) savedPage = 1;
+					if (totalPages && savedPage > totalPages) savedPage = totalPages;
+					currentPage = savedPage;
+				}
+			}
+
+			// Solo renderizar PDF si es necesario
+			if (shouldRenderPDF) {
+				renderPage(currentPage);
+				showControls();
+			}
+
+			// Marcar como completamente cargado en móvil
+			if (isMobile) {
+				setTimeout(() => {
+					const container = document.querySelector('.pdf-viewer-container');
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 500); // Medio segundo después de la carga para asegurar estabilidad
+			}
+		}).catch(function (error) {
+			console.error('Error cargando PDF:', error);
+			const loading = document.getElementById('loading');
+			loading.style.display = 'block';
+			loading.textContent = 'Error: No se pudo cargar el PDF';
+
+			// También marcar como cargado en caso de error para que se vea el error
+			if (isMobile) {
+				setTimeout(() => {
+					const container = document.querySelector('.pdf-viewer-container');
+					if (container) container.classList.add('loaded');
+					document.body.classList.add('mobile-loaded');
+				}, 100);
+			}
+		});
+
+		// Redimensionar al cambiar tamaño de ventana
+		window.addEventListener('resize', function () {
+			if (!pdfDoc) return;
+			// Si el teclado no está abierto, actualizamos el stableViewport
+			if (!keyboardOpen) {
+				stableViewport.width = window.innerWidth;
+				stableViewport.height = window.innerHeight;
+				renderPage(currentPage);
+			} else {
+				// Ignorar resize intermedios provocados por el teclado
+			}
+		});
+
+		// Detección de teclado móvil usando visualViewport (cuando disponible)
+		(function setupKeyboardDetection() {
+			const vv = window.visualViewport;
+			if (!vv) return; // Fallback: no soportado, no hacemos nada
+			const THRESHOLD = 120; // px de reducción de altura para considerar teclado abierto
+			let lastHeight = vv.height;
+			function check(e) {
+				const delta = stableViewport.height - vv.height;
+				if (!keyboardOpen && delta > THRESHOLD) {
+					keyboardOpen = true;
+					// Guardar viewport estable antes del teclado
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+				}
+				else if (keyboardOpen && (stableViewport.height - vv.height) <= THRESHOLD) {
+					// Teclado cerrándose
+					keyboardOpen = false;
+					// Actualizar viewport estable y re-render si había pendiente
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+					if (pendingKeyboardCloseRender) {
+						pendingKeyboardCloseRender = false;
+						setTimeout(() => { try { renderPage(currentPage); } catch (e) { } }, 40);
+					}
+				}
+				lastHeight = vv.height;
+			}
+			vv.addEventListener('resize', check);
+			vv.addEventListener('scroll', check); // algunos navegadores disparan scroll interno
+		})();
+
+		// Focus/blur directo en los inputs como respaldo (por si visualViewport falla)
+		['exercise-input', 'page-input'].forEach(id => {
+			const el = document.getElementById(id);
+			if (!el) return;
+			el.addEventListener('focus', () => {
+				// Guardar viewport actual antes de potencial teclado
+				stableViewport.width = window.innerWidth;
+				stableViewport.height = window.innerHeight;
+				keyboardOpen = true;
+			});
+			el.addEventListener('blur', () => {
+				// Esperar un tick para que cierre realmente
+				setTimeout(() => {
+					keyboardOpen = false;
+					stableViewport.width = window.innerWidth;
+					stableViewport.height = window.innerHeight;
+					if (pendingKeyboardCloseRender) {
+						pendingKeyboardCloseRender = false;
+						try { renderPage(currentPage); } catch (e) { }
+					}
+				}, 120);
+			});
+		});
+
+		// Funciones para la modal elegante de errores
+		function showErrorModal(title, message) {
+			const now = Date.now();
+
+			// Evitar modales múltiples - solo mostrar si:
+			// 1. No hay modal visible actualmente
+			// 2. Ha pasado suficiente tiempo desde el último modal
+			if (isModalVisible || (now - lastModalTime < MODAL_COOLDOWN)) {
+				console.log('Modal bloqueado por cooldown o modal activo');
+				return;
+			}
+
+			const modal = document.getElementById('error-modal');
+			const content = modal.querySelector('.error-modal-content');
+			modal.querySelector('.error-title').textContent = title + ' no disponible';
+			modal.querySelector('.error-message').textContent = message;
+			modal.style.display = 'flex';
+
+			isModalVisible = true;
+			lastModalTime = now;
+
+			// Reposicionar si teclado abierto en móvil
+			adjustErrorModalPosition();
+		}
+
+		function adjustErrorModalPosition() {
+			const modal = document.getElementById('error-modal');
+			if (modal.style.display !== 'flex') return;
+			const content = modal.querySelector('.error-modal-content');
+			if (!content) return;
+			// Reset
+			content.style.marginTop = '';
+			content.style.transformOrigin = '';
+			// Si teclado abierto, subir el modal
+			if (keyboardOpen) {
+				try {
+					const vv = window.visualViewport;
+					let visibleHeight = vv ? vv.height : window.innerHeight;
+					// Subir un porcentaje de la diferencia
+					const diff = window.innerHeight - visibleHeight; // espacio ocupado por teclado
+					if (diff > 80) { // umbral mínimo
+						// Movemos el contenido hacia arriba proporcionalmente (60% del teclado)
+						const shift = Math.min(diff * 0.6, visibleHeight * 0.35);
+						content.style.marginTop = '-' + Math.round(shift) + 'px';
+						content.style.transformOrigin = 'center bottom';
+					}
+				} catch (e) { }
+			}
+		}
+
+		// Escuchar cambios del visualViewport mientras la modal esté abierta
+		(function observeViewportForModal() {
+			const vv = window.visualViewport;
+			if (!vv) return;
+			['resize', 'scroll'].forEach(evt => vv.addEventListener(evt, () => adjustErrorModalPosition()));
+		})();
+
+		let isClosingModal = false;
+		function closeErrorModal() {
+			if (isClosingModal) return; // evitar reentradas
+			isClosingModal = true;
+			const modal = document.getElementById('error-modal');
+			const modalContent = modal.querySelector('.error-modal-content');
+			// Limpiar ajustes de posición previos
+			modalContent.style.marginTop = '';
+			modalContent.style.transformOrigin = '';
+
+			// Animación elegante: zoom out + fade
+			modalContent.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease';
+			modalContent.style.transform = 'translateY(0) scale(0.9)';
+			modalContent.style.opacity = '0';
+
+			// Fade del fondo
+			modal.style.transition = 'opacity 0.4s ease';
+			modal.style.opacity = '0';
+
+			setTimeout(() => {
+				modal.style.display = 'none';
+				modal.style.opacity = '1';
+				modalContent.style.transform = 'translateY(0) scale(1)';
+				modalContent.style.opacity = '1';
+				modalContent.style.transition = '';
+				modal.style.transition = '';
+
+				// Si ya hay un ejercicio visible detrás del modal, no recargar; solo cerrar
+				const exerciseImgEl = document.getElementById('exercise-img');
+				if (exerciseImgEl && exerciseImgEl.style.display !== 'none') {
+					// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
+					try { if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal(); } catch (e) { }
+					isClosingModal = false;
+					isModalVisible = false;
+					return;
+				}
+
+				// Preferir volver al último ejercicio válido; si no, restaurar estado general
+				const last = getLastValidExercise();
+				if (last) {
+					// Solo reproducir sonido si efectivamente vamos a cambiar a un ejercicio (no estamos ya en él)
+					playButtonSound();
+					showImageByNumber(last, { suppressError: true, onFail: () => restoreUserState() });
+				} else {
+					// También reproducir si vamos a restaurar el PDF u otro estado
+					playButtonSound();
+					restoreUserState();
+				}
+				// Mostrar la cinta y arrancar su temporizador (15s) desde este momento
+				try {
+					if (typeof window.showMenuAfterModal === 'function') window.showMenuAfterModal();
+					// Establecer período de gracia para evitar cierre inmediato por toque contiguo
+					window.__menuGraceUntil = Date.now() + 600; // 600ms
+				} catch (e) { }
+				isClosingModal = false;
+				isModalVisible = false;
+			}, 400);
+		}
+
+		// Cerrar modal con Escape
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape' && document.getElementById('error-modal').style.display === 'flex') {
+				closeErrorModal();
+			}
+		});
+
+		function enableClickToClear(input) {
+			if (!input) return;
+			let lastValue = input.value;  // valor previo
+			let wasCleared = false;       // se vació en este foco
+			let changed = false;          // el usuario escribió/cambió algo
+
+			input.addEventListener('focusin', () => {
+				lastValue = input.value;
+				wasCleared = false;
+				changed = false;
+			});
+
+			input.addEventListener('pointerdown', (e) => {
+				const r = input.getBoundingClientRect();
+				const spinnerZone = 26; // ancho aprox. de las flechas
+				const onSpinner = e.clientX > (r.right - spinnerZone);
+				if (onSpinner) return; // no borrar si se toca el spinner
+				requestAnimationFrame(() => {
+					if (document.activeElement !== input) input.focus();
+					lastValue = input.value;
+					input.value = '';     // borrar
+					wasCleared = true;
+					changed = false;
+				});
+			});
+
+			// Si escribe o usa las flechas, marcamos como cambiado
+			input.addEventListener('input', () => { if (wasCleared) changed = true; });
+
+			// Si sale sin cambiar, restaurar
+			input.addEventListener('blur', () => {
+				if (wasCleared && !changed) {
+					input.value = lastValue;
+				}
+				wasCleared = false;
+				changed = false;
+			});
+
+		}
+
+		// Activar en ambos inputs
+		enableClickToClear(document.getElementById('exercise-input'));
+		enableClickToClear(document.getElementById('page-input'));
+
+		// Event listeners para botones de control de ancho
+		document.getElementById('width-increase-btn-menu').addEventListener('click', increaseExerciseWidth);
+		document.getElementById('width-decrease-btn-menu').addEventListener('click', decreaseExerciseWidth);
+	</script>
+</body>
+
+</html>

@@ -3570,7 +3570,7 @@
             return { token, expiresAt };
         };
 
-        const DEV_BYPASS = true; // poner en true solo para vista provisional (no publicar así)
+        const DEV_BYPASS = false; // poner en true solo para vista provisional (no publicar así)
 
         (() => {
             if (DEV_BYPASS) {
@@ -5188,6 +5188,7 @@
                 let correct = 0;
                 let incorrect = 0;
                 let unanswered = 0;
+                const pendingResults = [];
 
                 quizQuestions.forEach((fieldset) => {
                     const questionId = fieldset.dataset.question;
@@ -5205,16 +5206,13 @@
                         fieldset.classList.add("quiz-question--incomplete");
                         return;
                     }
-                    if (selected.value === expectedAnswer) {
-                        correct += 1;
-                        fieldset.classList.add("quiz-question--correct");
-                        selected.closest('.quiz-option')?.classList.add('quiz-option--correct');
-                    } else {
-                        incorrect += 1;
-                        fieldset.classList.add("quiz-question--incorrect");
-                        const selectedOption = selected.closest('.quiz-option');
-                        selectedOption?.classList.add('quiz-option--incorrect');
-                    }
+
+                    // Guardar para aplicar el resultado solo si todas las preguntas están respondidas
+                    pendingResults.push({
+                        fieldset,
+                        selectedOption: selected.closest('.quiz-option'),
+                        isCorrect: selected.value === expectedAnswer
+                    });
                 });
 
                 if (unanswered) {
@@ -5223,6 +5221,18 @@
                     firstIncomplete?.scrollIntoView({ behavior: "smooth", block: "center" });
                     return;
                 }
+
+                pendingResults.forEach(({ fieldset, selectedOption, isCorrect }) => {
+                    if (isCorrect) {
+                        correct += 1;
+                        fieldset.classList.add("quiz-question--correct");
+                        selectedOption?.classList.add('quiz-option--correct');
+                    } else {
+                        incorrect += 1;
+                        fieldset.classList.add("quiz-question--incorrect");
+                        selectedOption?.classList.add('quiz-option--incorrect');
+                    }
+                });
 
                 const total = quizQuestions.length;
                 const percent = Math.round((correct / total) * 100);

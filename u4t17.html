@@ -1534,34 +1534,34 @@
                     <button type="button" data-speed="1.5">1.5x</button>
                 </div>
             </div>
-            <p class="dialog-line" data-speaker="laura" data-start="0" data-end="2.5"><strong>Laura:</strong> Hola,
+            <p class="dialog-line" data-speaker="laura" data-start="0" data-end="2"><strong>Laura:</strong> Hola,
                 ¿lista para el viaje?</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="2.5" data-end="4.5"><strong>Carmen:</strong> Sí,
+            <p class="dialog-line" data-speaker="carmen" data-start="2" data-end="6.9"><strong>Carmen:</strong> Sí,
                 ¿tú qué tienes que llevar todavía?</p>
-            <p class="dialog-line" data-speaker="laura" data-start="4.5" data-end="6.5"><strong>Laura:</strong> Ropa
+            <p class="dialog-line" data-speaker="laura" data-start="7" data-end="12"><strong>Laura:</strong> Ropa
                 ligera y una chaqueta. Tengo que meter un suéter fino.</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="6.5" data-end="9"><strong>Carmen:</strong> Yo llevo
+            <p class="dialog-line" data-speaker="carmen" data-start="12" data-end="19"><strong>Carmen:</strong> Yo llevo
                 camiseta, pantalón y un jersey. Tenemos que dejar espacio para recuerdos.</p>
-            <p class="dialog-line" data-speaker="laura" data-start="9" data-end="11"><strong>Laura:</strong> ¿Llevas
+            <p class="dialog-line" data-speaker="laura" data-start="19" data-end="22"><strong>Laura:</strong> ¿Llevas
                 calzado cómodo?</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="11" data-end="13"><strong>Carmen:</strong> Sí,
+            <p class="dialog-line" data-speaker="carmen" data-start="22" data-end="26"><strong>Carmen:</strong> Sí,
                 zapatillas y sandalias.</p>
-            <p class="dialog-line" data-speaker="laura" data-start="13" data-end="15.5"><strong>Laura:</strong> ¿Tienes
+            <p class="dialog-line" data-speaker="laura" data-start="26" data-end="29"><strong>Laura:</strong> ¿Tienes
                 el pasaporte y los billetes?</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="15.5" data-end="17.5"><strong>Carmen:</strong> Sí,
+            <p class="dialog-line" data-speaker="carmen" data-start="29" data-end="34"><strong>Carmen:</strong> Sí,
                 y
                 también la tarjeta de embarque.</p>
-            <p class="dialog-line" data-speaker="laura" data-start="17.5" data-end="20"><strong>Laura:</strong> Yo llevo
+            <p class="dialog-line" data-speaker="laura" data-start="34" data-end="38"><strong>Laura:</strong> Yo llevo
                 una botella de agua y un libro.</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="20" data-end="22.5"><strong>Carmen:</strong>
+            <p class="dialog-line" data-speaker="carmen" data-start="38" data-end="43"><strong>Carmen:</strong>
                 Perfecto, yo llevo cargador y auriculares.</p>
-            <p class="dialog-line" data-speaker="laura" data-start="22.5" data-end="24.5"><strong>Laura:</strong> ¿Vamos
+            <p class="dialog-line" data-speaker="laura" data-start="43" data-end="47"><strong>Laura:</strong> ¿Vamos
                 en metro al aeropuerto? Tenemos que llegar antes de las siete.</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="24.5" data-end="26"><strong>Carmen:</strong> Sí,
+            <p class="dialog-line" data-speaker="carmen" data-start="48" data-end="51"><strong>Carmen:</strong> Sí,
                 sale a las siete.</p>
-            <p class="dialog-line" data-speaker="laura" data-start="26" data-end="27.5"><strong>Laura:</strong> Genial,
+            <p class="dialog-line" data-speaker="laura" data-start="51" data-end="53"><strong>Laura:</strong> Genial,
                 nos vemos allí.</p>
-            <p class="dialog-line" data-speaker="carmen" data-start="27.5" data-end="29"><strong>Carmen:</strong> Hasta
+            <p class="dialog-line" data-speaker="carmen" data-start="53" data-end="55"><strong>Carmen:</strong> Hasta
                 pronto.</p>
         </section>
         <div class="quiz-card" id="quiz-card">
@@ -2859,6 +2859,7 @@
         let advanceTimeoutId = null;
         const retryDelayMs = 86400000; // 24 horas para poder releer antes de reintentar
         let retryIntervalId = null;
+        let deferFirstQuestionAudio = false;
 
         const persistQuizState = (extra = {}) => {
             if (!storageAvailable) return;
@@ -3015,6 +3016,7 @@
             currentQuestionIndex = 0;
             score = 0;
             quizStartTime = null;
+            deferFirstQuestionAudio = true;
             updateScore();
             quizCard.classList.remove('quiz-correct', 'quiz-incorrect');
             if (quizBody) quizBody.style.display = '';
@@ -3321,7 +3323,18 @@
                 setStatus(`Pregunta ${currentQuestionIndex + 1} de ${totalQuestions}.`);
                 updateMeter();
                 // reproducir el audio asociado a esta pregunta (usa audioUrl en el objeto pregunta)
-                try { playQuestionSegment(currentQuestionIndex); } catch (_) { }
+                const shouldDeferFirstAudio = deferFirstQuestionAudio && currentQuestionIndex === 0;
+                if (shouldDeferFirstAudio) {
+                    deferFirstQuestionAudio = false;
+                    const firstIndex = currentQuestionIndex;
+                    setTimeout(() => {
+                        if (currentQuestionIndex === firstIndex) {
+                            try { playQuestionSegment(firstIndex); } catch (_) { }
+                        }
+                    }, 2000);
+                } else {
+                    try { playQuestionSegment(currentQuestionIndex); } catch (_) { }
+                }
                 persistQuizState({ status: 'in-progress' });
             };
 

@@ -94,17 +94,73 @@
         }
 
 
+        /* Reutilización de estilos de login de portal.html */
+        .swal2-popup.access-gate {
+            width: min(420px, calc(100vw - 32px)) !important;
+            padding: 14px 16px 18px !important;
+            border-radius: 16px !important;
+            box-shadow: 0 18px 60px rgba(8, 56, 215, 0.18);
+        }
+
+        .gate-fieldset {
+            display: grid;
+            gap: 10px;
+            margin-top: 4px;
+        }
+
+        .gate-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .gate-label {
+            font-size: 13px;
+            color: #4b5563;
+            font-weight: 600;
+            text-align: left;
+        }
+
+        .gate-input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .gate-input:focus {
+            outline: none;
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+            background: #ffffff;
+        }
+
+        .content-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transition: opacity 0.5s ease;
+        }
+
+        .content-visible {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+
         /* Estilo idéntico al de sel-idiomas: firma del editor dentro del contenedor */
         .editor-name {
-            position: absolute;
-            bottom: 5px;
+            position: fixed;
+            bottom: 15px;
             left: 15px;
             /* abajo izquierda del contenedor */
             font-size: 9px;
             animation: colorTintineo 3s infinite;
             font-weight: bold;
             text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
-            z-index: 21;
+            z-index: 1000;
             /* sobre el contenido base */
             pointer-events: none;
             /* no bloquea clics */
@@ -2246,7 +2302,204 @@
     </style>
 </head>
 
-<body>
+<body class="content-hidden">
+    <div class="global-loading-overlay">
+        <div class="global-loading-card">
+            <div class="global-loading-spinner"></div>
+            <div class="global-loading-message">Verificando acceso...</div>
+        </div>
+    </div>
+
+    <script>
+        (function enforceAccessGate() {
+            const STORAGE_KEYS = {
+                first: 'access_first_name',
+                last: 'access_last_name',
+                code: 'access_code' // No se usará en localStorage para el código real
+            };
+            const SESSION_OK_KEY = 'access_gate_ok';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2rQGiKl9uPDB4C-if355hVoGVcXEO15V0qt1a81bAMf9uV_TnKlYWvUj6qrYZ5MIUWg/exec';
+
+            let gatePromptOpen = false;
+
+            const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const normalizeCode = (code) => (code || '').trim().toUpperCase();
+
+            function showContent() {
+                document.body.classList.add('content-visible');
+                document.body.classList.remove('content-hidden');
+                // Quitar overlay
+                const overlay = document.querySelector('.global-loading-overlay');
+                if (overlay) {
+                    overlay.style.opacity = '0';
+                    setTimeout(() => overlay.remove(), 500);
+                }
+            }
+
+            async function isStoredAccessValid() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                const storedCode = normalizeCode(sessionStorage.getItem('access_code') || '');
+                
+                if (!storedFirst || !storedLast || !storedCode) return false;
+
+                try {
+                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&t=${Date.now()}`);
+                    const data = await response.json();
+                    
+                    if (data.blocked) {
+                        sessionStorage.clear();
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Acceso Bloqueado',
+                            text: 'Contacta con tu profesor para más información.',
+                            confirmButtonText: 'Entendido',
+                            allowOutsideClick: false
+                        }).then(() => {
+                           // Redirigir al portal o recargar
+                           window.location.href = 'portal.html';
+                        });
+                        return false;
+                    }
+
+                    if (data.valid) {
+                        showContent();
+                        return true;
+                    } else {
+                        sessionStorage.removeItem('access_code');
+                        return false;
+                    }
+                } catch (e) {
+                    showContent();
+                    return true;
+                }
+            }
+
+            async function sendPortalData(first, last, code) {
+                try {
+                    await fetch(G_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'portal',
+                            nombre: first,
+                            apellido: last,
+                            codigo: code
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Error enviando datos', e);
+                }
+            }
+
+            function saveAccess(first, last, code) {
+                localStorage.setItem(STORAGE_KEYS.first, first);
+                localStorage.setItem(STORAGE_KEYS.last, last);
+                sessionStorage.setItem('access_code', code);
+                sendPortalData(first, last, code);
+                showContent();
+            }
+
+            function askForName() {
+                if (gatePromptOpen) return;
+                gatePromptOpen = true;
+                
+                if (!window.Swal) {
+                   setTimeout(askForName, 500);
+                   return;
+                }
+
+                Swal.fire({
+                    title: 'Verificación de Acceso',
+                    html: `
+                    <div class="gate-fieldset">
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-first-name">Nombre</label>
+                            <input id="swal-first-name" class="gate-input" placeholder="Tu nombre" autocomplete="off" />
+                        </div>
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-last-name">Apellido</label>
+                            <input id="swal-last-name" class="gate-input" placeholder="Tu apellido" autocomplete="off" />
+                        </div>
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-code">Código de Acceso</label>
+                            <input id="swal-code" class="gate-input" placeholder="Código" autocomplete="off" type="password" />
+                        </div>
+                    </div>
+                `,
+                    focusConfirm: false,
+                    confirmButtonText: 'Entrar',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showLoaderOnConfirm: true,
+                    customClass: { popup: 'access-gate' },
+                    preConfirm: async () => {
+                        const first = normalizeName(document.getElementById('swal-first-name')?.value || '');
+                        const last = normalizeName(document.getElementById('swal-last-name')?.value || '');
+                        const code = normalizeCode(document.getElementById('swal-code')?.value || '');
+                        
+                        const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                        const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+
+                        if (!first || !last || !code) {
+                            Swal.showValidationMessage('Completa todos los campos.');
+                            return false;
+                        }
+
+                        if ((storedFirst || storedLast) && (first !== storedFirst || last !== storedLast)) {
+                            Swal.showValidationMessage('Usa el mismo nombre asignado a este dispositivo.');
+                            return false;
+                        }
+
+                        try {
+                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&t=${Date.now()}`);
+                            const result = await response.json();
+                            
+                            if (result.blocked) {
+                                Swal.showValidationMessage('Usuario bloqueado. Contacta al profesor.');
+                                return false;
+                            }
+                            if (!result.valid) {
+                                Swal.showValidationMessage('Código incorrecto.');
+                                return false;
+                            }
+                            return { first, last, code };
+                        } catch (error) {
+                            Swal.showValidationMessage('Error de conexión.');
+                            return false;
+                        }
+                    },
+                    didOpen: () => {
+                        const firstInput = document.getElementById('swal-first-name');
+                        const lastInput = document.getElementById('swal-last-name');
+                        const storedFirst = localStorage.getItem(STORAGE_KEYS.first);
+                        const storedLast = localStorage.getItem(STORAGE_KEYS.last);
+                        if (storedFirst && firstInput) firstInput.value = storedFirst;
+                        if (storedLast && lastInput) lastInput.value = storedLast;
+                    }
+                }).then((result) => {
+                    gatePromptOpen = false;
+                    if (result.isConfirmed) {
+                        saveAccess(result.value.first, result.value.last, result.value.code);
+                    } else {
+                        askForName();
+                    }
+                });
+            }
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                const isValid = await isStoredAccessValid();
+                if (!isValid) askForName();
+                
+                // Verificación periódica
+                setInterval(async () => {
+                    const stillValid = await isStoredAccessValid();
+                    if (!stillValid) location.reload();
+                }, 30000);
+            });
+        })();
+    </script>
     <script>
         // Toggle para mostrar/ocultar el botón "Resultado del examen" en el modal de contacto
         const SHOW_EXAM_BUTTON = false; // pon en false para ocultarlo

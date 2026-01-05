@@ -97,10 +97,9 @@
             justify-content: center;
             padding: 20px;
             background: radial-gradient(circle at center, #f8f9fa 0%, #e9ecef 100%);
-            opacity: 0;
-            /* Oculto por defecto */
+            opacity: 1;
             transition: opacity 0.5s ease;
-            pointer-events: none;
+            pointer-events: auto;
         }
 
         .portal-container.access-granted {
@@ -281,13 +280,7 @@
     </style>
 </head>
 
-<body>
-    <div class="global-loading-overlay">
-        <div class="global-loading-card">
-            <div class="global-loading-spinner"></div>
-            <div class="global-loading-message">Cargando Portal...</div>
-        </div>
-    </div>
+<body style="background-color: #f0f2f5;">
 
     <header>
         <div class="logo-corner">
@@ -327,6 +320,7 @@
             const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2rQGiKl9uPDB4C-if355hVoGVcXEO15V0qt1a81bAMf9uV_TnKlYWvUj6qrYZ5MIUWg/exec';
 
             let gatePromptOpen = false;
+            let verificationInterval = null;
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -334,6 +328,15 @@
             function showPortal() {
                 const container = document.querySelector('.portal-container');
                 if (container) container.classList.add('access-granted');
+                startVerificationTimer();
+            }
+
+            function startVerificationTimer() {
+                if (verificationInterval) return;
+                verificationInterval = setInterval(async () => {
+                    const stillValid = await isStoredAccessValid();
+                    if (!stillValid) location.reload();
+                }, 30000);
             }
 
             async function isStoredAccessValid() {
@@ -507,33 +510,15 @@
             }
 
             document.addEventListener('DOMContentLoaded', async () => {
-                const overlay = document.querySelector('.global-loading-overlay');
-
                 const valid = await isStoredAccessValid();
-                if (!valid) askForName();
-
-                if (overlay) {
-                    setTimeout(() => {
-                        overlay.style.opacity = '0';
-                        setTimeout(() => overlay.remove(), 500);
-                    }, 800);
+                if (!valid) {
+                    askForName();
+                } else {
+                    // Si ya es válido desde el inicio, el temporizador se activa dentro de showPortal()
                 }
-
-                // Verificación de código cada 30 segundos
-                setInterval(async () => {
-                    const stillValid = await isStoredAccessValid();
-                    if (!stillValid) location.reload();
-                }, 30000);
             });
         })();
 
-        (function enforceInitialRefresh() {
-            const KEY = 'portal_refresh_done';
-            if (!sessionStorage.getItem(KEY)) {
-                sessionStorage.setItem(KEY, 'true');
-                location.reload();
-            }
-        })();
     </script>
 </body>
 

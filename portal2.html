@@ -314,16 +314,20 @@
             const STORAGE_KEYS = {
                 first: 'access_first_name',
                 last: 'access_last_name',
-                code: 'access_code'
+                code: 'access_code',
+                token: 'access_token'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
-            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx452Y8muZRST7q5nUajTdLOnzbq2i7B6gf7Q3p5XnwBJz75UYij6xqLVPm7MTIsSNb/exec';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxIOSoJoaCYubzdct7twzrJQD0PfBm1xhOEcTrXxpGEg7iUj73jKTPfV_BnXjMbncxs/exec';
 
             let gatePromptOpen = false;
             let verificationInterval = null;
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
+
+            // Generar token aleatorio
+            const generateToken = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
             function showPortal() {
                 const container = document.querySelector('.portal-container');
@@ -343,11 +347,12 @@
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                 const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+                const storedToken = localStorage.getItem(STORAGE_KEYS.token) || '';
 
                 if (!storedFirst || !storedLast || !storedCode) return false;
 
                 try {
-                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&t=${Date.now()}`);
+                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&token=${encodeURIComponent(storedToken)}&t=${Date.now()}`);
                     const data = await response.json();
 
                     if (data.blocked) {
@@ -367,7 +372,9 @@
                         showPortal();
                         return true;
                     } else {
+                        // Si el servidor dice inválido (por código incorrecto o token diferente)
                         localStorage.removeItem(STORAGE_KEYS.code);
+                        localStorage.removeItem(STORAGE_KEYS.token);
                         return false;
                     }
                 } catch (e) {
@@ -376,17 +383,18 @@
                 }
             }
 
-            async function sendPortalData(first, last, code) {
+            async function sendPortalData(first, last, code, token) {
                 try {
                     await fetch(G_SCRIPT_URL, {
                         method: 'POST',
                         mode: 'no-cors',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            type: 'portal',
+                            type: 'portal2',
                             nombre: first,
                             apellido: last,
-                            codigo: code
+                            codigo: code,
+                            token: token // Enviamos el token nuevo
                         })
                     });
                 } catch (e) {
@@ -395,12 +403,15 @@
             }
 
             function saveAccess(first, last, code) {
+                const newToken = generateToken(); // Generamos nuevo token de sesión
                 localStorage.setItem(STORAGE_KEYS.first, first);
                 localStorage.setItem(STORAGE_KEYS.last, last);
-                // Guardamos el código en localStorage para mantener la sesión activa
                 localStorage.setItem(STORAGE_KEYS.code, code);
+                localStorage.setItem(STORAGE_KEYS.token, newToken); // Guardamos token
+
                 try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) { }
-                sendPortalData(first, last, code);
+
+                sendPortalData(first, last, code, newToken);
                 showPortal();
             }
 

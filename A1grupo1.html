@@ -125,6 +125,36 @@
             background: #ffffff;
         }
 
+        .gate-input-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .gate-input-wrapper .gate-input {
+            padding-right: 40px;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #6b7280;
+            font-size: 16px;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s ease;
+        }
+
+        .toggle-password:hover {
+            color: #7c3aed;
+        }
+
         .content-hidden {
             opacity: 0 !important;
             pointer-events: none !important;
@@ -2125,16 +2155,20 @@
             const STORAGE_KEYS = {
                 first: 'access_first_name',
                 last: 'access_last_name',
-                code: 'access_code'
+                code: 'access_code',
+                token: 'access_token'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
-            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2rQGiKl9uPDB4C-if355hVoGVcXEO15V0qt1a81bAMf9uV_TnKlYWvUj6qrYZ5MIUWg/exec';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxXkW3T9VNZrnII5_qF5-XtUAM4Yg0kfuCLqz7nwzjWPxUckgvRTa23PYTx9SMpj5Wacg/exec';
 
             let gatePromptOpen = false;
             let verificationInterval = null;
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
+
+            // Generar token aleatorio
+            const generateToken = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
             function showContent() {
                 document.body.classList.add('content-visible');
@@ -2158,16 +2192,18 @@
             async function isStoredAccessValid() {
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
-                const storedCode = normalizeCode(sessionStorage.getItem('access_code') || '');
+                const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+                const storedToken = localStorage.getItem(STORAGE_KEYS.token) || '';
 
                 if (!storedFirst || !storedLast || !storedCode) return false;
 
                 try {
-                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&t=${Date.now()}`);
+                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&token=${encodeURIComponent(storedToken)}&t=${Date.now()}`);
                     const data = await response.json();
 
                     if (data.blocked) {
-                        sessionStorage.clear();
+                        localStorage.removeItem(STORAGE_KEYS.code);
+                        localStorage.removeItem(STORAGE_KEYS.token);
                         Swal.fire({
                             icon: 'error',
                             title: 'Acceso Bloqueado',
@@ -2184,7 +2220,8 @@
                         showContent();
                         return true;
                     } else {
-                        sessionStorage.removeItem('access_code');
+                        localStorage.removeItem(STORAGE_KEYS.code);
+                        localStorage.removeItem(STORAGE_KEYS.token);
                         return false;
                     }
                 } catch (e) {
@@ -2193,7 +2230,7 @@
                 }
             }
 
-            async function sendPortalData(first, last, code) {
+            async function sendPortalData(first, last, code, token) {
                 try {
                     await fetch(G_SCRIPT_URL, {
                         method: 'POST',
@@ -2203,7 +2240,8 @@
                             type: 'portal',
                             nombre: first,
                             apellido: last,
-                            codigo: code
+                            codigo: code,
+                            token: token
                         })
                     });
                 } catch (e) {
@@ -2212,10 +2250,13 @@
             }
 
             function saveAccess(first, last, code) {
+                const newToken = generateToken();
                 localStorage.setItem(STORAGE_KEYS.first, first);
                 localStorage.setItem(STORAGE_KEYS.last, last);
-                sessionStorage.setItem('access_code', code);
-                sendPortalData(first, last, code);
+                localStorage.setItem(STORAGE_KEYS.code, code);
+                localStorage.setItem(STORAGE_KEYS.token, newToken);
+
+                sendPortalData(first, last, code, newToken);
                 showContent();
             }
 
@@ -2240,7 +2281,12 @@
                         </div>
                         <div class="gate-field">
                             <label class="gate-label" for="swal-code">Código de Acceso</label>
-                            <input id="swal-code" class="gate-input" placeholder="Código" autocomplete="off" type="password" />
+                            <div class="gate-input-wrapper">
+                                <input id="swal-code" class="gate-input" placeholder="Código" autocomplete="off" type="password" />
+                                <button type="button" class="toggle-password" id="toggle-code-visibility" aria-label="Mostrar código">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `,
@@ -2272,7 +2318,11 @@
                                 return false;
                             }
                             if (!result.valid) {
-                                Swal.showValidationMessage('Código incorrecto.');
+                                if (result.reason === 'already_active') {
+                                    Swal.showValidationMessage('Ya hay una sesión activa para este usuario. El acceso es único.');
+                                } else {
+                                    Swal.showValidationMessage('Código incorrecto.');
+                                }
                                 return false;
                             }
                             return { first, last, code };
@@ -2288,6 +2338,19 @@
                         const storedLast = localStorage.getItem(STORAGE_KEYS.last);
                         if (storedFirst && firstInput) firstInput.value = storedFirst;
                         if (storedLast && lastInput) lastInput.value = storedLast;
+
+                        // Toggle password visibility
+                        const codeInput = document.getElementById('swal-code');
+                        const toggleBtn = document.getElementById('toggle-code-visibility');
+                        if (toggleBtn && codeInput) {
+                            toggleBtn.addEventListener('click', () => {
+                                const isPassword = codeInput.type === 'password';
+                                codeInput.type = isPassword ? 'text' : 'password';
+                                toggleBtn.innerHTML = isPassword
+                                    ? '<i class="fas fa-eye"></i>'
+                                    : '<i class="fas fa-eye-slash"></i>';
+                            });
+                        }
                     }
                 }).then((result) => {
                     gatePromptOpen = false;

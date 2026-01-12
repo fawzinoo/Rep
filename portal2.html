@@ -368,7 +368,7 @@
                 token: 'access_token'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
-            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwaWs_zSyqcT_C2StfrgwypWPlKKEZHY_NvU74xqZhnchy8gB6BwyNvJOQSrv-ZVvRl/exec';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzMJkkJOH7iDEf1v72p6BXnkX7juir4kNlZYzWDPOOU_OtZMTg1fgGUn3zvVlnCRYi_/exec';
 
             let gatePromptOpen = false;
             let verificationInterval = null;
@@ -628,13 +628,11 @@
                 }
             }
 
-            // === DETECCIÓN DE VISIBILIDAD Y CIERRE ===
             function sendOfflineStatus() {
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                 if (!storedFirst || !storedLast) return;
 
-                // Usar sendBeacon para enviar antes de cerrar (más fiable que fetch)
                 const payload = JSON.stringify({
                     type: 'status',
                     nombre: storedFirst,
@@ -662,19 +660,24 @@
                 }).catch(() => { });
             }
 
-            // Solo detectar cuando la pestaña se oculta/muestra (más estable)
+            // Detectar visibilidad
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     sendOfflineStatus();
                 } else {
                     sendOnlineStatus();
+                    updateOnlineCount(); // Actualizar contador al volver
                 }
             });
 
-            // Detectar cierre de página
             window.addEventListener('beforeunload', () => {
                 sendOfflineStatus();
             });
+
+            // Heartbeat: Asegurar estado online cada 30s si la pestaña está activa
+            setInterval(() => {
+                if (!document.hidden && !gatePromptOpen) sendOnlineStatus();
+            }, 30000);
         })();
 
     </script>

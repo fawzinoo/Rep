@@ -1188,6 +1188,36 @@
                 0 0 8px rgba(0, 0, 0, 0.28);
         }
 
+        /* Contador de usuarios online */
+        .online-badge {
+            position: absolute;
+            left: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            align-items: center;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #059669;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 10;
+            -webkit-text-stroke: 0;
+            text-shadow: none;
+        }
+
+        .online-badge i {
+            color: #10b981;
+            font-size: 10px;
+        }
+
+        .unit-toggle.active .online-badge {
+            display: flex;
+        }
+
         .unit-toggle::before {
             content: '';
             position: absolute;
@@ -6095,6 +6125,87 @@
                     }
                 });
             });
+        })();
+    </script>
+
+    <script>
+        // === CONTADOR DE USUARIOS ONLINE ===
+        (function () {
+            const ONLINE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwaWs_zSyqcT_C2StfrgwypWPlKKEZHY_NvU74xqZhnchy8gB6BwyNvJOQSrv-ZVvRl/exec';
+
+            // Insertar badge en todos los unit-toggle
+            document.querySelectorAll('.unit-toggle').forEach(toggle => {
+                const badge = document.createElement('span');
+                badge.className = 'online-badge';
+                badge.innerHTML = '<i class="fas fa-user"></i><span class="online-count">...</span>';
+                toggle.appendChild(badge);
+            });
+
+            // Actualizar contador
+            async function updateOnlineCount() {
+                try {
+                    const response = await fetch(`${ONLINE_SCRIPT_URL}?mode=online_count&t=${Date.now()}`);
+                    const count = await response.text();
+                    document.querySelectorAll('.online-count').forEach(el => {
+                        el.textContent = count;
+                    });
+                } catch (e) {
+                    console.warn('Error obteniendo usuarios online', e);
+                }
+            }
+
+            // Funciones de estado online/offline
+            const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+            function sendOfflineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
+                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
+                if (!storedFirst || !storedLast) return;
+
+                const payload = JSON.stringify({
+                    type: 'status',
+                    nombre: storedFirst,
+                    apellido: storedLast,
+                    estado: 'OFF'
+                });
+                navigator.sendBeacon(ONLINE_SCRIPT_URL, payload);
+            }
+
+            function sendOnlineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
+                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
+                if (!storedFirst || !storedLast) return;
+
+                fetch(ONLINE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'status',
+                        nombre: storedFirst,
+                        apellido: storedLast,
+                        estado: 'En linea'
+                    })
+                }).catch(() => { });
+            }
+
+            // Detectar visibilidad
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    sendOfflineStatus();
+                } else {
+                    sendOnlineStatus();
+                    updateOnlineCount();
+                }
+            });
+
+            window.addEventListener('beforeunload', () => {
+                sendOfflineStatus();
+            });
+
+            // Iniciar
+            updateOnlineCount();
+            setInterval(updateOnlineCount, 5000);
         })();
     </script>
 

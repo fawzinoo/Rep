@@ -1054,6 +1054,43 @@
             }
         }
 
+        /* Contador de usuarios online - Estilo Premium Transparente */
+        .online-badge {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            align-items: center;
+            gap: 6px;
+            background: transparent;
+            padding: 2px 5px;
+            z-index: 10;
+            -webkit-text-stroke: 0;
+            box-shadow: none;
+            pointer-events: none;
+        }
+
+        .online-badge .online-count {
+            font-size: 17px;
+            font-weight: 800;
+            color: #ffffff;
+            /* Brillo blanco y sombra negra para legibilidad sobre rojo */
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 2px 2px 4px rgba(0, 0, 0, 0.6);
+        }
+
+        .online-badge i {
+            color: #ffdb4d;
+            /* Dorado brillante */
+            font-size: 15px;
+            /* Brillo dorado */
+            filter: drop-shadow(0 0 5px rgba(255, 219, 77, 0.9)) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+        }
+
+        .unit-toggle.active .online-badge {
+            display: flex;
+        }
+
         .unit-toggle {
             width: 100%;
             max-width: 1200px;
@@ -5908,6 +5945,93 @@
                     }
                 });
             });
+        })();
+    </script>
+
+    <script>
+        // === CONTADOR DE USUARIOS ONLINE ===
+        (function () {
+            const ONLINE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwaWs_zSyqcT_C2StfrgwypWPlKKEZHY_NvU74xqZhnchy8gB6BwyNvJOQSrv-ZVvRl/exec';
+
+            // Insertar badge en todos los unit-toggle
+            document.querySelectorAll('.unit-toggle').forEach(toggle => {
+                const badge = document.createElement('span');
+                badge.className = 'online-badge';
+                badge.innerHTML = '<i class="fas fa-user"></i><span class="online-count">...</span>';
+                toggle.appendChild(badge);
+            });
+
+            // Actualizar contador
+            async function updateOnlineCount() {
+                try {
+                    const response = await fetch(`${ONLINE_SCRIPT_URL}?mode=online_count&t=${Date.now()}`);
+                    const count = await response.text();
+                    document.querySelectorAll('.online-count').forEach(el => {
+                        el.textContent = count;
+                    });
+                } catch (e) {
+                    console.warn('Error obteniendo usuarios online', e);
+                }
+            }
+
+            // Funciones de estado online/offline
+            const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+            function sendOfflineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
+                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
+                if (!storedFirst || !storedLast) return;
+
+                const payload = JSON.stringify({
+                    type: 'status',
+                    nombre: storedFirst,
+                    apellido: storedLast,
+                    estado: 'OFF'
+                });
+                navigator.sendBeacon(ONLINE_SCRIPT_URL, payload);
+            }
+
+            function sendOnlineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
+                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
+                if (!storedFirst || !storedLast) return;
+
+                fetch(ONLINE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'status',
+                        nombre: storedFirst,
+                        apellido: storedLast,
+                        estado: 'En linea'
+                    })
+                }).catch(() => { });
+            }
+
+            // Detectar visibilidad
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    sendOfflineStatus();
+                } else {
+                    sendOnlineStatus();
+                    updateOnlineCount();
+                }
+            });
+
+            window.addEventListener('beforeunload', () => {
+                sendOfflineStatus();
+            });
+
+            // Iniciar
+            if (!document.hidden) sendOnlineStatus();
+            updateOnlineCount();
+            setInterval(updateOnlineCount, 5000);
+
+            // Heartbeat: Asegurar estado online cada 30s si la pestaña está activa
+            setInterval(() => {
+                if (!document.hidden) sendOnlineStatus();
+            }, 30000);
         })();
     </script>
 

@@ -2403,8 +2403,46 @@
                 if (verificationInterval) return;
                 verificationInterval = setInterval(async () => {
                     const stillValid = await isStoredAccessValid();
-                    if (!stillValid) window.location.href = 'portal.html';
+                    if (!stillValid) {
+                        window.location.href = 'portal.html';
+                    } else if (!document.hidden) {
+                        // Si es válido y la pestaña es visible, asegurar "En linea"
+                        sendOnlineStatus();
+                    }
                 }, 30000);
+            }
+
+            // === FUNCIONES DE ESTADO ONLINE/OFFLINE ===
+            function sendOfflineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                if (!storedFirst || !storedLast) return;
+
+                const payload = JSON.stringify({
+                    type: 'status',
+                    nombre: storedFirst,
+                    apellido: storedLast,
+                    estado: 'OFF'
+                });
+                navigator.sendBeacon(G_SCRIPT_URL, payload);
+            }
+
+            function sendOnlineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                if (!storedFirst || !storedLast) return;
+
+                fetch(G_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'status',
+                        nombre: storedFirst,
+                        apellido: storedLast,
+                        estado: 'En linea'
+                    })
+                }).catch(() => { });
             }
 
             async function isStoredAccessValid() {
@@ -2590,7 +2628,7 @@
             document.addEventListener('DOMContentLoaded', async () => {
                 const isValid = await isStoredAccessValid();
                 if (!isValid) askForName();
-                // El temporizador se activa dentro de showContent()
+                else if (!document.hidden) sendOnlineStatus();
             });
         })();
     </script>
@@ -6134,7 +6172,7 @@
     <script>
         // === CONTADOR DE USUARIOS ONLINE ===
         (function () {
-            const G_URL = 'https://script.google.com/macros/s/AKfycbyIZlWVXyOpDX5f4mGK7Wbhojsa9n4xsbfAYJhfH857MCkoavLZBaUq4972rOH-uSB5bA/exec';
+            const G_URL = 'https://script.google.com/macros/s/AKfycbw1mrD2bNegLFPUz-DeHPiu3_nLRfEonatqm018gALLGDJzh9APfdjVfI0kS_mtthFaCw/exec';
 
             // Insertar badge en todos los unit-toggle
             document.querySelectorAll('.unit-toggle').forEach(toggle => {
@@ -6157,64 +6195,25 @@
                 }
             }
 
-            // Funciones de estado online/offline
-            const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-            function sendOfflineStatus() {
-                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
-                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
-                if (!storedFirst || !storedLast) return;
-
-                const payload = JSON.stringify({
-                    type: 'status',
-                    nombre: storedFirst,
-                    apellido: storedLast,
-                    estado: 'OFF'
-                });
-                navigator.sendBeacon(G_URL, payload);
-            }
-
-            function sendOnlineStatus() {
-                const storedFirst = normalizeName(localStorage.getItem('access_first_name') || '');
-                const storedLast = normalizeName(localStorage.getItem('access_last_name') || '');
-                if (!storedFirst || !storedLast) return;
-
-                fetch(G_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'status',
-                        nombre: storedFirst,
-                        apellido: storedLast,
-                        estado: 'En linea'
-                    })
-                }).catch(() => { });
-            }
-
             // Detectar visibilidad
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    sendOfflineStatus();
-                } else {
-                    sendOnlineStatus();
-                    updateOnlineCount();
+                if (typeof sendOfflineStatus === 'function') {
+                    if (document.hidden) {
+                        sendOfflineStatus();
+                    } else {
+                        sendOnlineStatus();
+                        updateOnlineCount();
+                    }
                 }
             });
 
             window.addEventListener('beforeunload', () => {
-                sendOfflineStatus();
+                if (typeof sendOfflineStatus === 'function') sendOfflineStatus();
             });
 
             // Iniciar
-            if (!document.hidden) sendOnlineStatus();
             updateOnlineCount();
             setInterval(updateOnlineCount, 5000);
-
-            // Heartbeat: Asegurar estado online cada 30s si la pestaña está activa
-            setInterval(() => {
-                if (!document.hidden) sendOnlineStatus();
-            }, 30000);
         })();
     </script>
 

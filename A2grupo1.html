@@ -2630,6 +2630,20 @@
                 if (!isValid) askForName();
                 else if (!document.hidden) sendOnlineStatus();
             });
+
+            // Detectar visibilidad y cierre
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    sendOfflineStatus();
+                } else {
+                    sendOnlineStatus();
+                    if (typeof updateOnlineCount === 'function') updateOnlineCount();
+                }
+            });
+
+            window.addEventListener('beforeunload', () => {
+                sendOfflineStatus();
+            });
         })();
     </script>
     <script>
@@ -6183,7 +6197,7 @@
             });
 
             // Actualizar contador
-            async function updateOnlineCount() {
+            window.updateOnlineCount = async function () {
                 try {
                     const response = await fetch(`${G_URL}?mode=online_count&t=${Date.now()}`);
                     const count = await response.text();
@@ -6193,23 +6207,7 @@
                 } catch (e) {
                     console.warn('Error obteniendo usuarios online', e);
                 }
-            }
-
-            // Detectar visibilidad
-            document.addEventListener('visibilitychange', () => {
-                if (typeof sendOfflineStatus === 'function') {
-                    if (document.hidden) {
-                        sendOfflineStatus();
-                    } else {
-                        sendOnlineStatus();
-                        updateOnlineCount();
-                    }
-                }
-            });
-
-            window.addEventListener('beforeunload', () => {
-                if (typeof sendOfflineStatus === 'function') sendOfflineStatus();
-            });
+            };
 
             // Iniciar
             updateOnlineCount();

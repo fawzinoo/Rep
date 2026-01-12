@@ -97,9 +97,9 @@
             justify-content: center;
             padding: 20px;
             background: radial-gradient(circle at center, #f8f9fa 0%, #e9ecef 100%);
-            opacity: 1;
+            opacity: 0;
             transition: opacity 0.5s ease;
-            pointer-events: auto;
+            pointer-events: none;
         }
 
         .portal-container.access-granted {
@@ -383,16 +383,209 @@
                 }, 30000);
             }
 
+            async function isStoredAccessValid() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
+                const storedToken = localStorage.getItem(STORAGE_KEYS.token) || '';
+
+                if (!storedFirst || !storedLast || !storedCode) return false;
+
+                try {
+                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&token=${encodeURIComponent(storedToken)}&t=${Date.now()}`);
+                    const data = await response.json();
+
+                    if (data.blocked) {
+                        localStorage.removeItem(STORAGE_KEYS.code);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Acceso Bloqueado',
+                            text: 'Contacta con tu profesor para más información.',
+                            confirmButtonText: 'Entendido',
+                            allowOutsideClick: false
+                        }).then(() => location.reload());
+                        return false;
+                    }
+
+                    if (data.valid) {
+                        showPortal();
+                        return true;
+                    } else {
+                        localStorage.removeItem(STORAGE_KEYS.code);
+                        localStorage.removeItem(STORAGE_KEYS.token);
+                        return false;
+                    }
+                } catch (e) {
+                    showPortal();
+                    return true;
+                }
+            }
+
+            async function sendPortalData(first, last, code, token) {
+                try {
+                    await fetch(G_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'portal',
+                            nombre: first,
+                            apellido: last,
+                            codigo: code,
+                            token: token
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Error enviando datos al portal', e);
+                }
+            }
+
+            function saveAccess(first, last, code) {
+                const newToken = generateToken();
+                localStorage.setItem(STORAGE_KEYS.first, first);
+                localStorage.setItem(STORAGE_KEYS.last, last);
+                localStorage.setItem(STORAGE_KEYS.code, code);
+                localStorage.setItem(STORAGE_KEYS.token, newToken);
+
+                try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) { }
+
+                sendPortalData(first, last, code, newToken);
+                showPortal();
+            }
+
+            function askForName() {
+                if (gatePromptOpen) return;
+                gatePromptOpen = true;
+                if (!window.Swal || typeof Swal.fire !== 'function') {
+                    document.body.innerHTML = '<div style="padding:24px;font-family:Arial,sans-serif;">Acceso bloqueado. Reinterntar cargando SweetAlert.</div>';
+                    gatePromptOpen = false;
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Ingresa tus datos de acceso',
+                    html: `
+                    <div class="gate-fieldset">
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-first-name">Nombre</label>
+                            <input id="swal-first-name" class="gate-input" placeholder="Ej: Juan" autocomplete="off" />
+                        </div>
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-last-name">Apellido</label>
+                            <input id="swal-last-name" class="gate-input" placeholder="Ej: Pérez" autocomplete="off" />
+                        </div>
+                        <div class="gate-field">
+                            <label class="gate-label" for="swal-code">Código de Acceso</label>
+                            <div class="gate-input-wrapper">
+                                <input id="swal-code" class="gate-input" placeholder="Ingresa tu código" autocomplete="off" type="password" />
+                                <button type="button" class="toggle-password" id="toggle-code-visibility" aria-label="Mostrar código">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                    focusConfirm: false,
+                    confirmButtonText: 'Verificar y Entrar',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showCancelButton: false,
+                    showLoaderOnConfirm: true,
+                    customClass: { popup: 'access-gate' },
+                    preConfirm: async () => {
+                        const first = normalizeName(document.getElementById('swal-first-name')?.value || '');
+                        const last = normalizeName(document.getElementById('swal-last-name')?.value || '');
+                        const code = normalizeCode(document.getElementById('swal-code')?.value || '');
+                        const full = normalizeName(`${first} ${last}`.trim());
+
+                        const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                        const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                        const storedFull = normalizeName(`${storedFirst} ${storedLast}`.trim());
+
+                        if (!first || !last || !code) {
+                            Swal.showValidationMessage('Completa todos los campos.');
+                            return false;
+                        }
+
+                        if (storedFull && full !== storedFull) {
+                            Swal.showValidationMessage('Debes usar el mismo nombre y apellido que registraste la primera vez.');
+                            return false;
+                        }
+
+                        try {
+                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&t=${Date.now()}`);
+                            const result = await response.json();
+
+                            if (result.blocked) {
+                                Swal.showValidationMessage('Acceso bloqueado. Contacta con tu profesor.');
+                                return false;
+                            }
+
+                            if (!result.valid) {
+                                if (result.reason === 'already_active') {
+                                    Swal.showValidationMessage('Ya hay una sesión activa para este usuario. El acceso es único.');
+                                } else {
+                                    Swal.showValidationMessage('Código incorrecto o no autorizado.');
+                                }
+                                return false;
+                            }
+
+                            return { first, last, code };
+                        } catch (error) {
+                            Swal.showValidationMessage('Error de conexión con el servidor.');
+                            return false;
+                        }
+                    },
+                    didOpen: () => {
+                        const firstInput = document.getElementById('swal-first-name');
+                        const lastInput = document.getElementById('swal-last-name');
+                        const codeInput = document.getElementById('swal-code');
+
+                        const storedFirstRaw = localStorage.getItem(STORAGE_KEYS.first) || '';
+                        const storedLastRaw = localStorage.getItem(STORAGE_KEYS.last) || '';
+                        if (storedFirstRaw && firstInput) firstInput.value = storedFirstRaw;
+                        if (storedLastRaw && lastInput) lastInput.value = storedLastRaw;
+
+                        if (firstInput && !storedFirstRaw) firstInput.focus();
+                        else if (codeInput) codeInput.focus();
+
+                        const handleEnter = (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                document.querySelector('.swal2-confirm')?.click();
+                            }
+                        };
+                        [firstInput, lastInput, codeInput].forEach(i => i?.addEventListener('keydown', handleEnter));
+
+                        const toggleBtn = document.getElementById('toggle-code-visibility');
+                        if (toggleBtn && codeInput) {
+                            toggleBtn.addEventListener('click', () => {
+                                const isPassword = codeInput.type === 'password';
+                                codeInput.type = isPassword ? 'text' : 'password';
+                                toggleBtn.innerHTML = isPassword
+                                    ? '<i class="fas fa-eye"></i>'
+                                    : '<i class="fas fa-eye-slash"></i>';
+                            });
+                        }
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        saveAccess(result.value.first, result.value.last, result.value.code);
+                    } else {
+                        askForName();
+                    }
+                    gatePromptOpen = false;
+                });
+            }
+
             document.addEventListener('DOMContentLoaded', async () => {
                 const valid = await isStoredAccessValid();
                 if (!valid) {
                     askForName();
                 } else {
-                    // Si es válido al cargar y la pestaña es visible, marcar online
                     if (!document.hidden) sendOnlineStatus();
                 }
 
-                // Iniciar contador de usuarios online
                 updateOnlineCount();
                 setInterval(updateOnlineCount, 5000);
             });
@@ -408,7 +601,6 @@
                 }
             }
 
-            // === DETECCIÓN DE VISIBILIDAD Y CIERRE ===
             function sendOfflineStatus() {
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
@@ -441,7 +633,6 @@
                 }).catch(() => { });
             }
 
-            // Detectar visibilidad
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     sendOfflineStatus();
@@ -455,12 +646,10 @@
                 sendOfflineStatus();
             });
 
-            // Heartbeat: Asegurar estado online cada 30s si la pestaña está activa
             setInterval(() => {
                 if (!document.hidden && !gatePromptOpen) sendOnlineStatus();
             }, 30000);
         })();
-
     </script>
 </body>
 

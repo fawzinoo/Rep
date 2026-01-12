@@ -369,7 +369,7 @@
                 token: 'access_token'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
-            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzceU1skBStChiOQDJVjiq0HagZx9NOlnR6P7j3ljTSVfFEZnIasFm7YJMHxVpf6z8r/exec';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwY7mMyAbQAsONuFEla7YwHDvpgegZXHnBbVWKEMaN-FqVHeY2GA2t5tCC-8fxsIl1J/exec';
 
             let gatePromptOpen = false;
             let verificationInterval = null;
@@ -623,6 +623,63 @@
                     console.warn('Error obteniendo usuarios online', e);
                 }
             }
+
+            // === DETECCIÓN DE VISIBILIDAD Y CIERRE ===
+            function sendOfflineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                if (!storedFirst || !storedLast) return;
+
+                // Usar sendBeacon para enviar antes de cerrar (más fiable que fetch)
+                const payload = JSON.stringify({
+                    type: 'status',
+                    nombre: storedFirst,
+                    apellido: storedLast,
+                    estado: 'OFF'
+                });
+                navigator.sendBeacon(G_SCRIPT_URL, payload);
+            }
+
+            function sendOnlineStatus() {
+                const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
+                const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
+                if (!storedFirst || !storedLast) return;
+
+                fetch(G_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'status',
+                        nombre: storedFirst,
+                        apellido: storedLast,
+                        estado: 'En linea'
+                    })
+                }).catch(() => { });
+            }
+
+            // Detectar cambio de pestaña o minimizar
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    sendOfflineStatus();
+                } else {
+                    sendOnlineStatus();
+                }
+            });
+
+            // Detectar cierre de página
+            window.addEventListener('beforeunload', () => {
+                sendOfflineStatus();
+            });
+
+            // Detectar pérdida de foco (ir a otra app en móvil)
+            window.addEventListener('blur', () => {
+                sendOfflineStatus();
+            });
+
+            window.addEventListener('focus', () => {
+                sendOnlineStatus();
+            });
         })();
 
     </script>

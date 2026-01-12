@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="https://fawzinoo.github.io/Fotos/f.png">
     <link rel="icon" type="image/png" sizes="16x16" href="https://fawzinoo.github.io/Fotos/f.png">
     <link rel="apple-touch-icon" sizes="180x180" href="https://fawzinoo.github.io/Fotos/f.png">
-    <title>Portal de Acceso - Español</title>
+    <title>Portal de Acceso2 - Español</title>
     <style>
         body {
             font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -97,9 +97,9 @@
             justify-content: center;
             padding: 20px;
             background: radial-gradient(circle at center, #f8f9fa 0%, #e9ecef 100%);
-            opacity: 0;
+            opacity: 1;
             transition: opacity 0.5s ease;
-            pointer-events: none;
+            pointer-events: auto;
         }
 
         .portal-container.access-granted {
@@ -338,6 +338,21 @@
                     <i class="fas fa-user" style="color: #10b981; font-size: 12px;"></i>
                     <span id="online-count" style="font-weight: bold;">...</span>
                 </div>
+                <style>
+                    @keyframes pulse-green {
+                        0% {
+                            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+                        }
+
+                        70% {
+                            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+                        }
+
+                        100% {
+                            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+                        }
+                    }
+                </style>
             </div>
         </div>
     </div>
@@ -397,6 +412,7 @@
 
                     if (data.blocked) {
                         localStorage.removeItem(STORAGE_KEYS.code);
+                        sessionStorage.removeItem(STORAGE_KEYS.code);
                         Swal.fire({
                             icon: 'error',
                             title: 'Acceso Bloqueado',
@@ -411,6 +427,7 @@
                         showPortal();
                         return true;
                     } else {
+                        // Si el servidor dice inválido (por código incorrecto o token diferente)
                         localStorage.removeItem(STORAGE_KEYS.code);
                         localStorage.removeItem(STORAGE_KEYS.token);
                         return false;
@@ -428,11 +445,11 @@
                         mode: 'no-cors',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            type: 'portal',
+                            type: 'portal2',
                             nombre: first,
                             apellido: last,
                             codigo: code,
-                            token: token
+                            token: token // Enviamos el token nuevo
                         })
                     });
                 } catch (e) {
@@ -441,11 +458,11 @@
             }
 
             function saveAccess(first, last, code) {
-                const newToken = generateToken();
+                const newToken = generateToken(); // Generamos nuevo token de sesión
                 localStorage.setItem(STORAGE_KEYS.first, first);
                 localStorage.setItem(STORAGE_KEYS.last, last);
                 localStorage.setItem(STORAGE_KEYS.code, code);
-                localStorage.setItem(STORAGE_KEYS.token, newToken);
+                localStorage.setItem(STORAGE_KEYS.token, newToken); // Guardamos token
 
                 try { sessionStorage.setItem(SESSION_OK_KEY, 'true'); } catch (_) { }
 
@@ -507,6 +524,7 @@
                             return false;
                         }
 
+                        // Lógica original: Deben coincidir con los datos del primer registro
                         if (storedFull && full !== storedFull) {
                             Swal.showValidationMessage('Debes usar el mismo nombre y apellido que registraste la primera vez.');
                             return false;
@@ -523,7 +541,9 @@
 
                             if (!result.valid) {
                                 if (result.reason === 'already_active') {
-                                    Swal.showValidationMessage('Ya hay una sesión activa para este usuario. El acceso es único.');
+                                    Swal.showValidationMessage('Ya hay una sesión activa para este usuario en otro dispositivo. El acceso es único.');
+                                } else if (result.blocked) {
+                                    Swal.showValidationMessage('Acceso bloqueado. Contacta con tu profesor.');
                                 } else {
                                     Swal.showValidationMessage('Código incorrecto o no autorizado.');
                                 }
@@ -557,6 +577,7 @@
                         };
                         [firstInput, lastInput, codeInput].forEach(i => i?.addEventListener('keydown', handleEnter));
 
+                        // Toggle password visibility
                         const toggleBtn = document.getElementById('toggle-code-visibility');
                         if (toggleBtn && codeInput) {
                             toggleBtn.addEventListener('click', () => {
@@ -583,9 +604,11 @@
                 if (!valid) {
                     askForName();
                 } else {
+                    // Si es válido al cargar y la pestaña es visible, marcar online
                     if (!document.hidden) sendOnlineStatus();
                 }
 
+                // Iniciar contador de usuarios online
                 updateOnlineCount();
                 setInterval(updateOnlineCount, 5000);
             });
@@ -595,7 +618,11 @@
                     const response = await fetch(`${G_SCRIPT_URL}?mode=online_count&t=${Date.now()}`);
                     const count = await response.text();
                     const counterEl = document.getElementById('online-count');
-                    if (counterEl) counterEl.textContent = count;
+                    const wrapperEl = document.getElementById('online-users-wrapper');
+
+                    if (counterEl && document.body.contains(counterEl)) {
+                        counterEl.textContent = count;
+                    }
                 } catch (e) {
                     console.warn('Error obteniendo usuarios online', e);
                 }
@@ -633,12 +660,13 @@
                 }).catch(() => { });
             }
 
+            // Detectar visibilidad
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     sendOfflineStatus();
                 } else {
                     sendOnlineStatus();
-                    updateOnlineCount();
+                    updateOnlineCount(); // Actualizar contador al volver
                 }
             });
 
@@ -646,10 +674,12 @@
                 sendOfflineStatus();
             });
 
+            // Heartbeat: Asegurar estado online cada 30s si la pestaña está activa
             setInterval(() => {
                 if (!document.hidden && !gatePromptOpen) sendOnlineStatus();
             }, 30000);
         })();
+
     </script>
 </body>
 

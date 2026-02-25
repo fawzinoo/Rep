@@ -3046,14 +3046,11 @@
 
             <div class="gallery">
 
-                <div class="card locked-card" data-card-id="alfabeto">
-                    <div class="card-image-container">
+                <div class="card" data-card-id="alfabeto">
+                    <a href="https://fawzinoo.github.io/Rep/nalfabeto.html">
                         <img src="https://pub-11bb4faf6d9e4b69841ec72f1723c243.r2.dev/abecedario.webp" alt="alf">
-                        <div class="lock-overlay">
-                            <i class="fas fa-lock lock-icon"></i>
-                        </div>
-                    </div>
-                    <h1 class="locked-title">El alfabeto español</h1>
+                        <h1>El alfabeto español</h1>
+                    </a>
                 </div>
 
 
@@ -4406,13 +4403,13 @@
             // <!------------------------------unidad1------------------------------->
 
             "El alfabeto español": false,
-            "Resumen de 0 a 100": false,            
-            "Consonante+vocal": false,
-            "Paises del mundo": false,
-            "Gentilicios": false,
-            "idiomas": false,
-            "profesiones y oficios 1": false,
-            "Lugares de trabajo": false,
+            "Resumen de 0 a 100": true,            
+            "Consonante+vocal": true,
+            "Paises del mundo": true,
+            "Gentilicios": true,
+            "idiomas": true,
+            "profesiones y oficios 1": true,
+            "Lugares de trabajo": true,
             // <!------------------------->
             "Cuaderno de ejercicios1": false,
             // <!------------------------->
@@ -5112,8 +5109,84 @@
             });
         }
 
-        // Event listener para manejar los candados dinámicamente
-        document.addEventListener('DOMContentLoaded', function () {
+        const TOPIC_LOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxB7X0U-Op6jqBCSsqS5WUEEKB7IE1ZvrYkgsG0XVLwnPoMKqnNw3rD2LHqH47TfVZx/exec';
+        const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
+        const TOPIC_UNLOCK_RULES = [
+            { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
+            { column: 'U1L1T4', unlockTitle: 'Consonante+vocal' },
+            { column: 'U1L2T4', unlockTitle: 'Paises del mundo' },
+            { column: 'U1L3T4', unlockTitle: 'Gentilicios' },
+            { column: 'U1L4T4', unlockTitle: 'idiomas' },
+            { column: 'U1L5T4', unlockTitle: 'profesiones y oficios 1' },
+            { column: 'U1L6T4', unlockTitle: 'Lugares de trabajo' }
+        ];
+
+        function normalizeStudentNameForMatch(value) {
+            return String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+        }
+
+        function getCurrentStudentFromStorage() {
+            const nombre = normalizeStudentNameForMatch(localStorage.getItem('access_first_name') || '');
+            const apellido = normalizeStudentNameForMatch(localStorage.getItem('access_last_name') || '');
+            if (!nombre || !apellido) return null;
+            return { nombre, apellido };
+        }
+
+        async function fetchRankingByColumn(columna) {
+            const url = `${TOPIC_LOCK_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&t=${Date.now()}`;
+            const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+                throw new Error(`Ranking inválido para ${columna}`);
+            }
+            return data.ranking;
+        }
+
+        function getStudentPointsFromRanking(rows, student) {
+            if (!student || !Array.isArray(rows)) return 0;
+            const row = rows.find((item) =>
+                normalizeStudentNameForMatch(item?.nombre) === student.nombre &&
+                normalizeStudentNameForMatch(item?.apellido) === student.apellido
+            );
+            const points = Number(row?.puntos);
+            return Number.isFinite(points) ? points : 0;
+        }
+
+        async function updateCandadosFromT4Progress() {
+            const student = getCurrentStudentFromStorage();
+            if (!student) return;
+
+            const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
+            const pointsByColumn = {};
+
+            await Promise.all(
+                uniqueColumns.map(async (column) => {
+                    try {
+                        const ranking = await fetchRankingByColumn(column);
+                        pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
+                    } catch (error) {
+                        // Si falla la consulta de una columna, no forzamos bloqueo.
+                        pointsByColumn[column] = null;
+                        console.warn(`No se pudo obtener ${column}:`, error);
+                    }
+                })
+            );
+
+            TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
+                const points = pointsByColumn[column];
+                if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
+                    CANDADOS[unlockTitle] = false;
+                }
+            });
+        }
+
+        function applyCandadosToCards() {
             // Procesar cada tarjeta según el objeto CANDADOS
             const allCards = document.querySelectorAll('.card, .locked-card');
 
@@ -5133,7 +5206,36 @@
                     // Si no está en CANDADOS, dejar como está
                 }
             });
+        }
+
+        let candadosRefreshInFlight = false;
+        async function refreshDynamicCandados() {
+            if (candadosRefreshInFlight) return;
+            candadosRefreshInFlight = true;
+            try {
+                // Aplicar estado base local al instante (evita flicker inicial)
+                applyCandadosToCards();
+                await updateCandadosFromT4Progress();
+            } catch (error) {
+                console.warn('No se pudieron actualizar candados por progreso:', error);
+            } finally {
+                applyCandadosToCards();
+                candadosRefreshInFlight = false;
+            }
+        }
+
+        // Event listener para manejar los candados dinámicamente
+        document.addEventListener('DOMContentLoaded', refreshDynamicCandados);
+        window.addEventListener('focus', refreshDynamicCandados);
+        window.addEventListener('pageshow', refreshDynamicCandados);
+
+        // Si el access gate desbloquea contenido sin recargar, refrescar candados.
+        const accessStateObserver = new MutationObserver(() => {
+            if (document.body.classList.contains('content-visible')) {
+                refreshDynamicCandados();
+            }
         });
+        accessStateObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
         // Función para convertir una tarjeta a bloqueada
         function convertToLockedCard(card, cardTitle) {

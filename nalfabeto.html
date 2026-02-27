@@ -2872,6 +2872,9 @@
             U1L0T4: ['u1l0t4']
         };
         const LOCAL_SCORE_KEYS_BY_COLUMN = {
+            U1L0T1: 'martillo-U1L0T1',
+            U1L0T2: 'martillo-U1L0T2',
+            U1L0T3: 'martillo-U1L0T3',
             U1L0T4: 'martillo-U1L0T4'
         };
         const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -2913,44 +2916,89 @@
             if (pill) pill.textContent = text;
         }
 
+        function getStoredScoresFromUnlockState() {
+            try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                const scores = parsed?.scores;
+                if (!scores || typeof scores !== 'object') return {};
+                return {
+                    U1L0T1: Number.isFinite(Number(scores.U1L0T1)) ? Number(scores.U1L0T1) : null,
+                    U1L0T2: Number.isFinite(Number(scores.U1L0T2)) ? Number(scores.U1L0T2) : null,
+                    U1L0T3: Number.isFinite(Number(scores.U1L0T3)) ? Number(scores.U1L0T3) : null,
+                    U1L0T4: Number.isFinite(Number(scores.U1L0T4)) ? Number(scores.U1L0T4) : null
+                };
+            } catch (e) {
+                return {};
+            }
+        }
+
         function getLocalPointsByColumn(columna) {
             try {
                 const lsKey = LOCAL_SCORE_KEYS_BY_COLUMN[columna];
-                if (!lsKey) return null;
-                const raw = localStorage.getItem(lsKey);
-                if (raw === null || raw === '') return null;
-                const points = Number(raw);
-                if (!Number.isFinite(points)) return null;
-                if (points < 0 || points > 5) return null;
-                return points;
+                if (lsKey) {
+                    const raw = localStorage.getItem(lsKey);
+                    if (!(raw === null || raw === '')) {
+                        const points = Number(raw);
+                        if (Number.isFinite(points) && points >= 0 && points <= 5) return points;
+                    }
+                }
+                const fallbackScores = getStoredScoresFromUnlockState();
+                const fallback = Number(fallbackScores[columna]);
+                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
+                return null;
             } catch (e) {
                 return null;
             }
         }
 
         function getStoredUnlockState() {
+            const emptyState = { test2: false, test3: false, test4: false };
+            const parseUnlock = (value) => {
+                if (typeof value === 'boolean') return value;
+                if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) return numeric >= 4;
+                return false;
+            };
             try {
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-                if (!raw) return { test2: false, test3: false, test4: false };
+                if (!raw) return emptyState;
                 const parsed = JSON.parse(raw);
                 return parsed && typeof parsed === 'object'
                     ? {
-                        test2: Boolean(parsed.test2),
-                        test3: Boolean(parsed.test3),
-                        test4: Boolean(parsed.test4)
+                        test2: parseUnlock(parsed.test2),
+                        test3: parseUnlock(parsed.test3),
+                        test4: parseUnlock(parsed.test4)
                     }
-                    : { test2: false, test3: false, test4: false };
+                    : emptyState;
             } catch (e) {
-                return { test2: false, test3: false, test4: false };
+                return emptyState;
             }
         }
 
-        function saveStoredUnlockState(state) {
+        function saveStoredUnlockState(state, pointsByColumn) {
             try {
                 localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
-                    test2: Boolean(state?.test2),
-                    test3: Boolean(state?.test3),
-                    test4: Boolean(state?.test4)
+                    test2: {
+                        unlocked: Boolean(state?.test2),
+                        points: Number(pointsByColumn?.U1L0T1) || 0
+                    },
+                    test3: {
+                        unlocked: Boolean(state?.test3),
+                        points: Number(pointsByColumn?.U1L0T2) || 0
+                    },
+                    test4: {
+                        unlocked: Boolean(state?.test4),
+                        points: Number(pointsByColumn?.U1L0T3) || 0
+                    },
+                    scores: {
+                        U1L0T1: Number(pointsByColumn?.U1L0T1) || 0,
+                        U1L0T2: Number(pointsByColumn?.U1L0T2) || 0,
+                        U1L0T3: Number(pointsByColumn?.U1L0T3) || 0,
+                        U1L0T4: Number(pointsByColumn?.U1L0T4) || 0
+                    }
                 }));
             } catch (e) { }
         }
@@ -3053,7 +3101,7 @@
             }
 
             if (persist) {
-                saveStoredUnlockState(currentState);
+                saveStoredUnlockState(currentState, pointsByColumn);
             }
         }
 
@@ -3133,8 +3181,9 @@
                         const points = getStudentPointsFromRanking(ranking, student);
                         pointsByColumn[columna] = points;
                         setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
-                        if (columna === 'U1L0T4' && (points === 4 || points === 5)) {
-                            try { localStorage.setItem(LOCAL_SCORE_KEYS_BY_COLUMN[columna], String(points)); } catch (e) { }
+                        const lsKey = LOCAL_SCORE_KEYS_BY_COLUMN[columna];
+                        if (lsKey) {
+                            try { localStorage.setItem(lsKey, String(points)); } catch (e) { }
                         }
                     } catch (error) {
                         console.warn(`No se pudo cargar puntos de ${columna}:`, error);

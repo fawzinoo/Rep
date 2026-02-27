@@ -2871,6 +2871,9 @@
             U1L0T3: ['u1l0t3'],
             U1L0T4: ['u1l0t4']
         };
+        const LOCAL_SCORE_KEYS_BY_COLUMN = {
+            U1L0T4: 'martillo-U1L0T4'
+        };
         const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
         const TEST_UNLOCK_COPY = {
             test2: {
@@ -2908,6 +2911,21 @@
         function setTestScorePillText(pillId, text) {
             const pill = document.getElementById(pillId);
             if (pill) pill.textContent = text;
+        }
+
+        function getLocalPointsByColumn(columna) {
+            try {
+                const lsKey = LOCAL_SCORE_KEYS_BY_COLUMN[columna];
+                if (!lsKey) return null;
+                const raw = localStorage.getItem(lsKey);
+                if (raw === null || raw === '') return null;
+                const points = Number(raw);
+                if (!Number.isFinite(points)) return null;
+                if (points < 0 || points > 5) return null;
+                return points;
+            } catch (e) {
+                return null;
+            }
         }
 
         function getStoredUnlockState() {
@@ -3083,21 +3101,41 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1L0T1: 0, U1L0T2: 0, U1L0T3: 0, U1L0T4: 0 };
             TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
+            TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                const localPoints = getLocalPointsByColumn(columna);
+                if (localPoints === null) return;
+                pointsByColumn[columna] = localPoints;
+                setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+            });
             applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false });
             const student = getCurrentStudentFromStorage();
             if (!student) {
-                TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '0 pts'));
+                TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                    const localPoints = getLocalPointsByColumn(columna);
+                    const points = localPoints === null ? 0 : localPoints;
+                    pointsByColumn[columna] = points;
+                    setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                });
                 applyTestUnlockFlow(pointsByColumn);
                 return;
             }
 
             await Promise.all(
                 TEST_SCORE_COLUMNS.map(async ({ pillId, columna }) => {
+                    const localPoints = getLocalPointsByColumn(columna);
+                    if (localPoints !== null) {
+                        pointsByColumn[columna] = localPoints;
+                        setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+                        return;
+                    }
                     try {
                         const ranking = await fetchRankingByColumn(columna);
                         const points = getStudentPointsFromRanking(ranking, student);
                         pointsByColumn[columna] = points;
                         setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                        if (columna === 'U1L0T4' && (points === 4 || points === 5)) {
+                            try { localStorage.setItem(LOCAL_SCORE_KEYS_BY_COLUMN[columna], String(points)); } catch (e) { }
+                        }
                     } catch (error) {
                         console.warn(`No se pudo cargar puntos de ${columna}:`, error);
                         setTestScorePillText(pillId, '--');

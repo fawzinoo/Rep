@@ -2871,7 +2871,8 @@
             U1L0T3: ['u1l0t3'],
             U1L0T4: ['u1l0t4']
         };
-        const LOCAL_SCORE_KEYS_BY_COLUMN = {
+        const U1L0_COMBINED_BADGES_KEY = 'martillo-U1L0';
+        const LEGACY_LOCAL_SCORE_KEYS_BY_COLUMN = {
             U1L0T1: 'martillo-U1L0T1',
             U1L0T2: 'martillo-U1L0T2',
             U1L0T3: 'martillo-U1L0T3',
@@ -2916,6 +2917,54 @@
             if (pill) pill.textContent = text;
         }
 
+        function getCombinedLocalScores() {
+            try {
+                const raw = localStorage.getItem(U1L0_COMBINED_BADGES_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function setCombinedLocalScore(columna, points) {
+            const numericPoints = Number(points);
+            if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+            try {
+                const current = getCombinedLocalScores();
+                current[columna] = numericPoints;
+                localStorage.setItem(U1L0_COMBINED_BADGES_KEY, JSON.stringify(current));
+                const legacyKey = LEGACY_LOCAL_SCORE_KEYS_BY_COLUMN[columna];
+                if (legacyKey) localStorage.removeItem(legacyKey);
+            } catch (e) { }
+        }
+
+        function migrateLegacyMartilloScores() {
+            try {
+                const current = getCombinedLocalScores();
+                let changed = false;
+                Object.entries(LEGACY_LOCAL_SCORE_KEYS_BY_COLUMN).forEach(([columna, legacyKey]) => {
+                    const raw = localStorage.getItem(legacyKey);
+                    if (raw === null || raw === '') return;
+                    const points = Number(raw);
+                    if (Number.isFinite(points) && points >= 0 && points <= 5) {
+                        const existing = Number(current[columna]);
+                        if (!(Number.isFinite(existing) && existing >= 0 && existing <= 5)) {
+                            current[columna] = points;
+                            changed = true;
+                        }
+                    }
+                });
+                if (changed) {
+                    localStorage.setItem(U1L0_COMBINED_BADGES_KEY, JSON.stringify(current));
+                }
+                Object.values(LEGACY_LOCAL_SCORE_KEYS_BY_COLUMN).forEach((legacyKey) => {
+                    localStorage.removeItem(legacyKey);
+                });
+            } catch (e) { }
+        }
+
         function getStoredScoresFromUnlockState() {
             try {
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
@@ -2936,17 +2985,29 @@
 
         function getLocalPointsByColumn(columna) {
             try {
-                const lsKey = LOCAL_SCORE_KEYS_BY_COLUMN[columna];
-                if (lsKey) {
-                    const raw = localStorage.getItem(lsKey);
+                const combined = getCombinedLocalScores();
+                const combinedPoints = Number(combined[columna]);
+                if (Number.isFinite(combinedPoints) && combinedPoints >= 0 && combinedPoints <= 5) {
+                    return combinedPoints;
+                }
+
+                const legacyKey = LEGACY_LOCAL_SCORE_KEYS_BY_COLUMN[columna];
+                if (legacyKey) {
+                    const raw = localStorage.getItem(legacyKey);
                     if (!(raw === null || raw === '')) {
                         const points = Number(raw);
-                        if (Number.isFinite(points) && points >= 0 && points <= 5) return points;
+                        if (Number.isFinite(points) && points >= 0 && points <= 5) {
+                            setCombinedLocalScore(columna, points);
+                            return points;
+                        }
                     }
                 }
                 const fallbackScores = getStoredScoresFromUnlockState();
                 const fallback = Number(fallbackScores[columna]);
-                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
+                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) {
+                    setCombinedLocalScore(columna, fallback);
+                    return fallback;
+                }
                 return null;
             } catch (e) {
                 return null;
@@ -3147,6 +3208,7 @@
         }
 
         async function loadTestScoresIntoPills() {
+            migrateLegacyMartilloScores();
             const pointsByColumn = { U1L0T1: 0, U1L0T2: 0, U1L0T3: 0, U1L0T4: 0 };
             TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
@@ -3181,10 +3243,7 @@
                         const points = getStudentPointsFromRanking(ranking, student);
                         pointsByColumn[columna] = points;
                         setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
-                        const lsKey = LOCAL_SCORE_KEYS_BY_COLUMN[columna];
-                        if (lsKey) {
-                            try { localStorage.setItem(lsKey, String(points)); } catch (e) { }
-                        }
+                        setCombinedLocalScore(columna, points);
                     } catch (error) {
                         console.warn(`No se pudo cargar puntos de ${columna}:`, error);
                         setTestScorePillText(pillId, '--');

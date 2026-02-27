@@ -2150,6 +2150,121 @@
             }
         }
 
+        .unlock-celebration-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 120000;
+            opacity: 0;
+            transition: opacity 320ms ease;
+            background: rgba(7, 12, 24, 0.58);
+            backdrop-filter: blur(8px);
+            padding: 20px;
+        }
+
+        .unlock-celebration-overlay.show {
+            opacity: 1;
+        }
+
+        .unlock-celebration-overlay.hide {
+            opacity: 0;
+        }
+
+        .unlock-celebration-card {
+            width: min(92vw, 440px);
+            border-radius: 22px;
+            padding: 20px 20px 16px 20px;
+            position: relative;
+            text-align: center;
+            color: #fff;
+            background: linear-gradient(135deg, #1f2a56 0%, #2d3f8f 45%, #ff7a45 100%);
+            border: 1px solid rgba(255, 255, 255, 0.34);
+            box-shadow: 0 20px 52px rgba(0, 0, 0, 0.38);
+            transform: translateY(18px) scale(0.9);
+            animation: unlockCardIn 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .unlock-celebration-emoji {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            animation: unlockForgeSpark 1.2s ease-in-out infinite;
+        }
+
+        .unlock-celebration-title {
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 900;
+            letter-spacing: 0.2px;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .unlock-celebration-text {
+            margin: 9px 0 10px 0;
+            font-size: 0.96rem;
+            font-weight: 700;
+            opacity: 0.93;
+            line-height: 1.35;
+        }
+
+        .unlock-topic-highlight {
+            margin: 0 auto 8px;
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 214, 107, 0.2) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            font-size: 1.26rem;
+            font-weight: 900;
+            letter-spacing: 0.3px;
+            color: #ffffff;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+        }
+
+        .unlock-celebration-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            font-size: 1.15rem;
+            font-weight: 900;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        @keyframes unlockCardIn {
+            0% {
+                opacity: 0;
+                transform: translateY(18px) scale(0.9);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes unlockForgeSpark {
+            0%,
+            100% {
+                transform: scale(1) rotate(0deg);
+                filter: drop-shadow(0 0 0 rgba(255, 215, 107, 0));
+            }
+
+            50% {
+                transform: scale(1.09) rotate(2deg);
+                filter: drop-shadow(0 0 10px rgba(255, 215, 107, 0.8));
+            }
+        }
+
         @keyframes expandToFullscreen {
             from {
                 width: 400px;
@@ -3954,7 +4069,6 @@
 
 
 
-
             <style>
                 /* Icono solo para el de arriba; no rompe el texto que actualiza el JS */
                 #porcentaje-guardado {
@@ -4316,12 +4430,14 @@
         const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
         const LESSON_COLUMN_KEY = 'U1L0T4';
         const U1L0T4_BADGE_KEY = 'martillo-U1L0T4';
+        const U1L0T4_UNLOCK_OVERLAY_ID = 'unlock-numbers-overlay';
         const RANKING_TEST4_MODE = 'ranking_test4';
         const RANKING_ALFABETO_MODE = 'ranking_alfabeto';
         
         const RANKING_GENERAL_MODE = 'ranking_general';
 const RANKING_SCOPE = 'alfabeto';
         let unlockNumbersAnnouncedThisGame = false;
+        let pendingU1L0T4UnlockPoints = null;
 
         function normalizeStudentName(name) {
             return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -4380,9 +4496,58 @@ const RANKING_SCOPE = 'alfabeto';
                 console.warn('No se pudo guardar la insignia U1L0T4 en localStorage:', e);
             }
 
+            pendingU1L0T4UnlockPoints = puntosNumericos;
+        }
+
+        function showPendingU1L0T4UnlockModal() {
+            const puntosNumericos = Number(pendingU1L0T4UnlockPoints);
             if (unlockNumbersAnnouncedThisGame) return;
+            if (puntosNumericos !== 4 && puntosNumericos !== 5) return;
+
             unlockNumbersAnnouncedThisGame = true;
-            alert(`Tema desbloqueado: Numeros de 0 a 100.\nInsignia ${U1L0T4_BADGE_KEY}: ${puntosNumericos}`);
+            pendingU1L0T4UnlockPoints = null;
+
+            const existing = document.getElementById(U1L0T4_UNLOCK_OVERLAY_ID);
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = U1L0T4_UNLOCK_OVERLAY_ID;
+            overlay.className = 'unlock-celebration-overlay';
+            overlay.innerHTML = `
+                <div class="unlock-celebration-card" role="status" aria-live="polite">
+                    <button id="unlock-numbers-close-btn" type="button" class="unlock-celebration-close" aria-label="Cerrar">×</button>
+                    <div class="unlock-celebration-emoji" aria-hidden="true">🔓⚡🔨</div>
+                    <h3 class="unlock-celebration-title">Tema desbloqueado</h3>
+                    <p class="unlock-celebration-text">Ya esta disponible:</p>
+                    <div class="unlock-topic-highlight">Numeros de 0 a 100</div>
+                </div>
+            `;
+
+            try {
+                const unlockAudio = new Audio('https://fawzinoo.github.io/audios/livel.mp3');
+                unlockAudio.volume = 0.9;
+                unlockAudio.play().catch(() => { });
+            } catch (e) { }
+
+            document.body.appendChild(overlay);
+            requestAnimationFrame(() => overlay.classList.add('show'));
+
+            let closed = false;
+            const hideAndRemove = (playSound = false) => {
+                if (closed) return;
+                closed = true;
+                if (playSound) {
+                    try { playButtonSound(); } catch (e) { }
+                }
+                overlay.classList.remove('show');
+                overlay.classList.add('hide');
+                setTimeout(() => {
+                    if (overlay.parentNode) overlay.remove();
+                }, 360);
+            };
+
+            const closeBtn = overlay.querySelector('#unlock-numbers-close-btn');
+            if (closeBtn) closeBtn.addEventListener('click', () => hideAndRemove(true));
         }
 
         function getRankingBadge(pos) {
@@ -7017,6 +7182,10 @@ const RANKING_SCOPE = 'alfabeto';
                     }
                 }
             }, 100);
+
+            setTimeout(() => {
+                showPendingU1L0T4UnlockModal();
+            }, 260);
         }
 
         // Función para mostrar palabras correctas
@@ -8811,6 +8980,7 @@ const RANKING_SCOPE = 'alfabeto';
                 saveLastGamePercentage();
             }
             unlockNumbersAnnouncedThisGame = false;
+            pendingU1L0T4UnlockPoints = null;
 
             // LIMPIAR PROGRESO GUARDADO al reiniciar
             clearCurrentProgress();

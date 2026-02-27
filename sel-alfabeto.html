@@ -4047,7 +4047,7 @@ let lockedAfterCorrect = false;            // bloquea el botón tras acierto has
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
 const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
 const LESSON_COLUMN_KEY = 'U1L0T1';
-const U1L0T1_BADGE_KEY = 'martillo-U1L0T1';
+const U1L0_COMBINED_BADGES_KEY = 'martillo-U1L0';
 const RANKING_TEST1_MODE = 'ranking_test1';
 const RANKING_ALFABETO_MODE = 'ranking_alfabeto';
 
@@ -4056,6 +4056,19 @@ const RANKING_SCOPE = 'alfabeto';
 
 function normalizeStudentName(name) {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function saveCombinedU1L0Score(columna, puntos) {
+    const numericPoints = Number(puntos);
+    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+    try {
+        const raw = localStorage.getItem(U1L0_COMBINED_BADGES_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        const current = parsed && typeof parsed === 'object' ? parsed : {};
+        current[columna] = numericPoints;
+        localStorage.setItem(U1L0_COMBINED_BADGES_KEY, JSON.stringify(current));
+        localStorage.removeItem(`martillo-${columna}`);
+    } catch (e) { }
 }
 
 function getStudentFromStorage() {
@@ -7466,7 +7479,7 @@ function saveLastGamePercentage(shouldSendPoints = false) {
     const totalCards = flashcards.length;
     const gamePercentage = totalCards > 0 ? Math.round((correctCount / totalCards) * 100) : 0;
     const puntosObtenidos = pointsFromPercentage(gamePercentage);
-    try { localStorage.setItem(U1L0T1_BADGE_KEY, String(puntosObtenidos)); } catch (e) { }
+    saveCombinedU1L0Score('U1L0T1', puntosObtenidos);
     
     // Guardar porcentaje del último partido jugado
     localStorage.setItem('de0a1003', gamePercentage.toString());

@@ -3146,6 +3146,18 @@
             applyTestUnlockFlow(pointsByColumn);
         }
         void loadTestScoresIntoPills();
+        let testScoresRefreshInFlight = false;
+        let lastTestScoresRefreshTs = 0;
+        function refreshTestScoresOnReturn() {
+            const now = Date.now();
+            if (testScoresRefreshInFlight) return;
+            if (now - lastTestScoresRefreshTs < 700) return;
+            lastTestScoresRefreshTs = now;
+            testScoresRefreshInFlight = true;
+            Promise.resolve(loadTestScoresIntoPills()).finally(() => {
+                testScoresRefreshInFlight = false;
+            });
+        }
 
         let lastModalSoundTs = 0;
         const playModalButtonSound = () => {
@@ -3380,11 +3392,19 @@
 
         window.addEventListener('beforeunload', () => persistExposureOnLeave('refresh'));
         window.addEventListener('pagehide', () => persistExposureOnLeave('refresh'));
+        window.addEventListener('pageshow', () => {
+            refreshTestScoresOnReturn();
+        });
+        window.addEventListener('focus', () => {
+            refreshTestScoresOnReturn();
+        });
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 persistExposureOnLeave('refresh');
                 snapshotProgressState();
+                return;
             }
+            refreshTestScoresOnReturn();
         });
 
         if (navigator.onLine === false) {

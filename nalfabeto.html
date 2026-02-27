@@ -2889,62 +2889,6 @@
         let unlockCelebrationQueue = [];
         let unlockCelebrationRunning = false;
 
-        const MARTILLO_T4_COLUMN = 'U1L0T4';
-        const MARTILLO_KEY = `martillo-${MARTILLO_T4_COLUMN}`;
-        const MARTILLO_LOCAL_PROGRESS_KEYS = ['alfabeto1'];
-        const MARTILLO_UNLOCK_THRESHOLD = 4;
-
-        function pointsFromLocalPercentageForMartillo(percentageValue) {
-            const percentage = Number(percentageValue);
-            if (!Number.isFinite(percentage)) return null;
-            if (percentage === 100) return 5;
-            if (percentage >= 70 && percentage < 100) return 4;
-            if (percentage >= 50 && percentage < 70) return 3;
-            if (percentage >= 30 && percentage < 50) return 2;
-            if (percentage >= 10 && percentage < 30) return 1;
-            return 0;
-        }
-
-        function preloadMartilloFromLocalProgress(pointsByColumn) {
-            const current = Number(pointsByColumn?.[MARTILLO_T4_COLUMN]) || 0;
-            let inferredPoints = current;
-
-            if (localStorage.getItem(MARTILLO_KEY) === '1' && inferredPoints < MARTILLO_UNLOCK_THRESHOLD) {
-                inferredPoints = MARTILLO_UNLOCK_THRESHOLD;
-            }
-
-            for (const key of MARTILLO_LOCAL_PROGRESS_KEYS) {
-                const stored = localStorage.getItem(key);
-                const candidate = pointsFromLocalPercentageForMartillo(stored);
-                if (Number.isFinite(candidate) && candidate > inferredPoints) {
-                    inferredPoints = candidate;
-                }
-            }
-
-            if (inferredPoints > current) {
-                pointsByColumn[MARTILLO_T4_COLUMN] = inferredPoints;
-                const pill = document.getElementById('test4-score-pill');
-                if (pill && (pill.textContent === '...' || pill.textContent === '--' || pill.textContent === '0 pts')) {
-                    pill.textContent = `${inferredPoints} ${inferredPoints === 1 ? 'pt' : 'pts'}`;
-                }
-            }
-        }
-        function syncMartilloUnlock(pointsByColumn, options = {}) {
-            const celebrate = options.celebrate !== false;
-            const points = Number(pointsByColumn?.[MARTILLO_T4_COLUMN]) || 0;
-            if (points < MARTILLO_UNLOCK_THRESHOLD) return;
-
-            const pendingPopupKey = `${MARTILLO_KEY}-pending-popup`;
-            const alreadyUnlocked = localStorage.getItem(MARTILLO_KEY) === '1';
-            const hasPendingPopup = localStorage.getItem(pendingPopupKey) === '1';
-            try { localStorage.setItem(MARTILLO_KEY, '1'); } catch (e) { }
-
-            if (celebrate && (!alreadyUnlocked || hasPendingPopup)) {
-                showUnlockCelebrationCard('Enhorabuena', 'Has abierto un nuevo tema de tarjetas.');
-                try { localStorage.removeItem(pendingPopupKey); } catch (e) { }
-    }
-            }
-
         function normalizeStudentName(value) {
             return String(value || '')
                 .normalize('NFD')
@@ -3090,8 +3034,6 @@
                 if (currentState.test4 && !prevState.test4) queueUnlockCelebration('test4');
             }
 
-            syncMartilloUnlock(pointsByColumn, { celebrate });
-
             if (persist) {
                 saveStoredUnlockState(currentState);
             }
@@ -3141,8 +3083,6 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1L0T1: 0, U1L0T2: 0, U1L0T3: 0, U1L0T4: 0 };
             TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
-            preloadMartilloFromLocalProgress(pointsByColumn);
-            syncMartilloUnlock(pointsByColumn, { celebrate: false });
             applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false });
             const student = getCurrentStudentFromStorage();
             if (!student) {

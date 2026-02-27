@@ -5111,6 +5111,7 @@
 
         const TOPIC_LOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxB7X0U-Op6jqBCSsqS5WUEEKB7IE1ZvrYkgsG0XVLwnPoMKqnNw3rD2LHqH47TfVZx/exec';
         const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
+        const TOPIC_MARTILLO_PREFIX = 'martillo-';
         const TOPIC_UNLOCK_RULES = [
             { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
             { column: 'U1L1T4', unlockTitle: 'Consonante+vocal' },
@@ -5120,6 +5121,16 @@
             { column: 'U1L5T4', unlockTitle: 'profesiones y oficios 1' },
             { column: 'U1L6T4', unlockTitle: 'Lugares de trabajo' }
         ];
+        const UNIT1_TOPIC_LOCK_BASELINE = {
+            'El alfabeto español': false,
+            'Resumen de 0 a 100': true,
+            'Consonante+vocal': true,
+            'Paises del mundo': true,
+            'Gentilicios': true,
+            'idiomas': true,
+            'profesiones y oficios 1': true,
+            'Lugares de trabajo': true
+        };
 
         function normalizeStudentNameForMatch(value) {
             return String(value || '')
@@ -5135,6 +5146,35 @@
             const apellido = normalizeStudentNameForMatch(localStorage.getItem('access_last_name') || '');
             if (!nombre || !apellido) return null;
             return { nombre, apellido };
+        }
+
+        function resetUnit1TopicLocksToBaseline() {
+            Object.keys(UNIT1_TOPIC_LOCK_BASELINE).forEach((title) => {
+                CANDADOS[title] = UNIT1_TOPIC_LOCK_BASELINE[title];
+            });
+        }
+
+        function getMartilloKey(column) {
+            return `${TOPIC_MARTILLO_PREFIX}${column}`;
+        }
+
+        function markMartilloUnlocked(column) {
+            try { localStorage.setItem(getMartilloKey(column), '1'); } catch (e) { }
+        }
+
+        function isMartilloUnlocked(column) {
+            try { return localStorage.getItem(getMartilloKey(column)) === '1'; } catch (e) { return false; }
+        }
+
+        function applyMartilloUnlocksToCandados() {
+            const unlockedColumns = new Set();
+            TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
+                if (isMartilloUnlocked(column)) {
+                    CANDADOS[unlockTitle] = false;
+                    unlockedColumns.add(column);
+                }
+            });
+            return unlockedColumns;
         }
 
         async function fetchRankingByColumn(columna) {
@@ -5158,7 +5198,7 @@
             return Number.isFinite(points) ? points : 0;
         }
 
-        async function updateCandadosFromT4Progress() {
+        async function updateCandadosFromT4Progress(skipColumns = new Set()) {
             const student = getCurrentStudentFromStorage();
             if (!student) return;
 
@@ -5167,6 +5207,7 @@
 
             await Promise.all(
                 uniqueColumns.map(async (column) => {
+                    if (skipColumns.has(column)) return;
                     try {
                         const ranking = await fetchRankingByColumn(column);
                         pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
@@ -5182,6 +5223,7 @@
                 const points = pointsByColumn[column];
                 if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
                     CANDADOS[unlockTitle] = false;
+                    markMartilloUnlocked(column);
                 }
             });
         }
@@ -5249,9 +5291,15 @@
             if (candadosRefreshInFlight) return;
             candadosRefreshInFlight = true;
             try {
-                // Aplicar estado base local al instante (evita flicker inicial)
+                // 1) Estado instantaneo por baseline + martillo local.
+                resetUnit1TopicLocksToBaseline();
+                const unlockedByMartillo = applyMartilloUnlocksToCandados();
                 applyCandadosToCards();
-                await updateCandadosFromT4Progress();
+
+                // 2) Fallback doGet solo para columnas que no estén marcadas en localStorage.
+                if (unlockedByMartillo.size < TOPIC_UNLOCK_RULES.length) {
+                    await updateCandadosFromT4Progress(unlockedByMartillo);
+                }
             } catch (error) {
                 console.warn('No se pudieron actualizar candados por progreso:', error);
             } finally {

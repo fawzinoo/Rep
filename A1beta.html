@@ -2135,6 +2135,108 @@
             animation: titleSheen 14s ease-in-out infinite, titleFloat 6s ease-in-out infinite, titlePulse 5.5s ease-in-out infinite;
         }
 
+        .topic-test-semaphore {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 8;
+            pointer-events: none;
+            padding: 8px 10px;
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(2, 6, 23, 0.78), rgba(15, 23, 42, 0.56));
+            border: 1px solid rgba(148, 163, 184, 0.42);
+            box-shadow: 0 8px 20px rgba(2, 6, 23, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(3px);
+            min-width: 114px;
+        }
+
+        .topic-test-semaphore-title {
+            margin: 0 0 6px 0;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: rgba(226, 232, 240, 0.92);
+            text-align: center;
+        }
+
+        .topic-test-semaphore-lights {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+        }
+
+        .topic-test-light {
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            border: 1px solid rgba(148, 163, 184, 0.7);
+            background: radial-gradient(circle at 30% 30%, #94a3b8 0%, #334155 72%);
+            box-shadow: inset 0 -3px 7px rgba(2, 6, 23, 0.62);
+            opacity: 0.35;
+            transition: transform 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease, filter 0.28s ease;
+        }
+
+        .topic-test-light.is-on {
+            opacity: 1;
+            transform: scale(1.08);
+            animation: semaphorePulse 1.9s ease-in-out infinite;
+        }
+
+        .topic-test-light.is-on[data-test="1"] {
+            border-color: rgba(244, 63, 94, 0.95);
+            background: radial-gradient(circle at 30% 28%, #ffe4e6 0%, #f43f5e 68%);
+            box-shadow: 0 0 10px rgba(244, 63, 94, 0.62), inset 0 -3px 7px rgba(136, 19, 55, 0.5);
+        }
+
+        .topic-test-light.is-on[data-test="2"] {
+            border-color: rgba(249, 115, 22, 0.95);
+            background: radial-gradient(circle at 30% 28%, #ffedd5 0%, #f97316 68%);
+            box-shadow: 0 0 10px rgba(249, 115, 22, 0.62), inset 0 -3px 7px rgba(124, 45, 18, 0.5);
+        }
+
+        .topic-test-light.is-on[data-test="3"] {
+            border-color: rgba(59, 130, 246, 0.95);
+            background: radial-gradient(circle at 30% 28%, #dbeafe 0%, #3b82f6 68%);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.62), inset 0 -3px 7px rgba(30, 58, 138, 0.5);
+        }
+
+        .topic-test-light.is-on[data-test="4"] {
+            border-color: rgba(34, 197, 94, 0.95);
+            background: radial-gradient(circle at 30% 28%, #dcfce7 0%, #22c55e 68%);
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.66), inset 0 -3px 7px rgba(20, 83, 45, 0.5);
+        }
+
+        @keyframes semaphorePulse {
+            0%,
+            100% {
+                filter: brightness(1);
+            }
+            50% {
+                filter: brightness(1.14);
+            }
+        }
+
+        @media (max-width: 560px) {
+            .topic-test-semaphore {
+                top: 10px;
+                left: 10px;
+                padding: 7px 9px;
+                min-width: 102px;
+            }
+
+            .topic-test-semaphore-title {
+                font-size: 9px;
+                margin-bottom: 5px;
+            }
+
+            .topic-test-light {
+                width: 11px;
+                height: 11px;
+            }
+        }
+
         /* Colores específicos para cada actividad */
         .paises-menu-item.repaso {
             background: linear-gradient(135deg, #FF5757 0%, #E53E3E 100%);
@@ -5112,6 +5214,8 @@
         const TOPIC_LOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxB7X0U-Op6jqBCSsqS5WUEEKB7IE1ZvrYkgsG0XVLwnPoMKqnNw3rD2LHqH47TfVZx/exec';
         const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
         const ALFABETO_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
+        const NEXT_TOPIC_SEMAPHORE_TITLE = 'Resumen de 0 a 100';
+        const NEXT_TOPIC_SEMAPHORE_COLUMNS = ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'];
         const TOPIC_UNLOCK_RULES = [
             { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
             { column: 'U1L1T4', unlockTitle: 'Consonante+vocal' },
@@ -5121,6 +5225,7 @@
             { column: 'U1L5T4', unlockTitle: 'profesiones y oficios 1' },
             { column: 'U1L6T4', unlockTitle: 'Lugares de trabajo' }
         ];
+        let latestTopicPointsByColumn = {};
 
         function normalizeStudentNameForMatch(value) {
             return String(value || '')
@@ -5159,22 +5264,53 @@
             return Number.isFinite(points) ? points : 0;
         }
 
-        function getLocalTopicPointsByColumn(column) {
-            if (column !== 'U1L0T4') return null;
+        function parseAlfabetoUnlockState() {
             try {
                 const raw = localStorage.getItem(ALFABETO_UNLOCK_STATE_KEY);
                 if (!raw) return null;
                 const parsed = JSON.parse(raw);
                 if (!parsed || typeof parsed !== 'object') return null;
+                return parsed;
+            } catch (e) {
+                return null;
+            }
+        }
 
-                const scoreFromMap = Number(parsed?.scores?.U1L0T4);
-                if (Number.isFinite(scoreFromMap) && scoreFromMap >= 0 && scoreFromMap <= 5) return scoreFromMap;
+        function sanitizeTopicPoints(value) {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
+            return null;
+        }
 
-                const scoreFromTest4Points = Number(parsed?.test4?.points);
-                if (Number.isFinite(scoreFromTest4Points) && scoreFromTest4Points >= 0 && scoreFromTest4Points <= 5) return scoreFromTest4Points;
+        function parseUnlockFlag(value) {
+            if (typeof value === 'boolean') return value;
+            if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) return numeric >= TOPIC_UNLOCK_THRESHOLD;
+            return null;
+        }
 
-                const scoreFromLegacyTest4 = Number(parsed?.test4);
-                if (Number.isFinite(scoreFromLegacyTest4) && scoreFromLegacyTest4 >= 0 && scoreFromLegacyTest4 <= 5) return scoreFromLegacyTest4;
+        function getLocalTopicPointsByColumn(column) {
+            try {
+                const parsed = parseAlfabetoUnlockState();
+                if (!parsed) return null;
+
+                const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
+                if (scoreFromMap !== null) return scoreFromMap;
+
+                const legacyMap = {
+                    U1L0T1: parsed?.test2?.points,
+                    U1L0T2: parsed?.test3?.points,
+                    U1L0T3: parsed?.test4?.points,
+                    U1L0T4: parsed?.test4?.points
+                };
+                const scoreFromLegacyMap = sanitizeTopicPoints(legacyMap[column]);
+                if (scoreFromLegacyMap !== null) return scoreFromLegacyMap;
+
+                if (column === 'U1L0T4') {
+                    const scoreFromLegacyTest4 = sanitizeTopicPoints(parsed?.test4);
+                    if (scoreFromLegacyTest4 !== null) return scoreFromLegacyTest4;
+                }
 
                 return null;
             } catch (e) {
@@ -5182,10 +5318,93 @@
             }
         }
 
+        function getNextTopicSemaphoreState(pointsByColumn = {}) {
+            const parsed = parseAlfabetoUnlockState();
+            const getScore = (column) => {
+                const localScore = getLocalTopicPointsByColumn(column);
+                if (localScore !== null) return localScore;
+                const remoteScore = sanitizeTopicPoints(pointsByColumn?.[column]);
+                if (remoteScore !== null) return remoteScore;
+                return null;
+            };
+
+            const t1Score = getScore('U1L0T1');
+            const t2Score = getScore('U1L0T2');
+            const t3Score = getScore('U1L0T3');
+            const t4Score = getScore('U1L0T4');
+
+            const test1LegacyFlag = parseUnlockFlag(parsed?.test1);
+            const test2UnlockFlag = parseUnlockFlag(parsed?.test2);
+            const test3UnlockFlag = parseUnlockFlag(parsed?.test3);
+            const test4UnlockFlag = parseUnlockFlag(parsed?.test4);
+
+            const test1UnlockedByScore = t1Score !== null && t1Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test2UnlockedByScore = test1UnlockedByScore && t2Score !== null && t2Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test3UnlockedByScore = test2UnlockedByScore && t3Score !== null && t3Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test4UnlockedByScore = test3UnlockedByScore && t4Score !== null && t4Score >= TOPIC_UNLOCK_THRESHOLD;
+
+            return {
+                test1: test1LegacyFlag === true || test2UnlockFlag === true || test1UnlockedByScore,
+                test2: test3UnlockFlag === true || test2UnlockedByScore,
+                test3: test4UnlockFlag === true || test3UnlockedByScore,
+                test4: test4UnlockedByScore
+            };
+        }
+
+        function removeNextTopicSemaphore(card) {
+            if (!card) return;
+            const existing = card.querySelector('.topic-test-semaphore');
+            if (existing) existing.remove();
+        }
+
+        function ensureNextTopicSemaphore(card) {
+            if (!card) return null;
+            let panel = card.querySelector('.topic-test-semaphore');
+            if (panel) return panel;
+
+            panel = document.createElement('div');
+            panel.className = 'topic-test-semaphore';
+            panel.setAttribute('aria-hidden', 'true');
+            panel.innerHTML = `
+                <div class="topic-test-semaphore-title">Tests 1-4</div>
+                <div class="topic-test-semaphore-lights">
+                    <span class="topic-test-light" data-test="1"></span>
+                    <span class="topic-test-light" data-test="2"></span>
+                    <span class="topic-test-light" data-test="3"></span>
+                    <span class="topic-test-light" data-test="4"></span>
+                </div>
+            `;
+            card.appendChild(panel);
+            return panel;
+        }
+
+        function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
+            if (!card || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE || shouldBeLocked !== false) {
+                removeNextTopicSemaphore(card);
+                return;
+            }
+
+            const panel = ensureNextTopicSemaphore(card);
+            if (!panel) return;
+            const state = getNextTopicSemaphoreState(latestTopicPointsByColumn);
+            const stateByTest = {
+                1: Boolean(state.test1),
+                2: Boolean(state.test2),
+                3: Boolean(state.test3),
+                4: Boolean(state.test4)
+            };
+
+            panel.querySelectorAll('.topic-test-light').forEach((light) => {
+                const testNumber = Number(light.dataset.test);
+                light.classList.toggle('is-on', Boolean(stateByTest[testNumber]));
+            });
+        }
+
         async function updateCandadosFromT4Progress() {
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
+            const allColumns = [...new Set([...uniqueColumns, ...NEXT_TOPIC_SEMAPHORE_COLUMNS])];
             const pointsByColumn = {};
-            uniqueColumns.forEach((column) => {
+            allColumns.forEach((column) => {
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);
             });
 
@@ -5202,7 +5421,7 @@
                 applyCandadosToCards();
             }
 
-            const columnsNeedingFetch = uniqueColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
+            const columnsNeedingFetch = allColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
             const student = getCurrentStudentFromStorage();
             if (columnsNeedingFetch.length > 0 && student) {
                 await Promise.all(
@@ -5218,6 +5437,12 @@
                     })
                 );
             }
+
+            allColumns.forEach((column) => {
+                if (Number.isFinite(pointsByColumn[column])) {
+                    latestTopicPointsByColumn[column] = pointsByColumn[column];
+                }
+            });
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
@@ -5246,6 +5471,7 @@
                         // Asegurar URL con sesión incluso si ya estaba en modo normal.
                         ensureNormalCardSessionLink(card, cardTitle);
                     }
+                    syncNextTopicSemaphore(card, cardTitle, shouldBeLocked);
                     // Si no está en CANDADOS, dejar como está
                 }
             });

@@ -885,6 +885,158 @@
             color: #166534;
         }
 
+        .locked-topic-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 16000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(2, 6, 23, 0.58);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+
+        .locked-topic-modal-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .locked-topic-modal-card {
+            position: relative;
+            width: min(760px, 92vw);
+            border-radius: 18px;
+            border: 1px solid rgba(226, 232, 240, 0.65);
+            background: linear-gradient(140deg, #ffffff 0%, #f8fafc 100%);
+            box-shadow: 0 16px 40px rgba(2, 6, 23, 0.3);
+            padding: 26px 24px 22px 24px;
+            text-align: center;
+        }
+
+        .locked-topic-modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 34px;
+            height: 34px;
+            border-radius: 11px;
+            border: 1px solid #cbd5e1;
+            background: rgba(255, 255, 255, 0.9);
+            color: #475569;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.2s ease;
+        }
+
+        .locked-topic-modal-close:hover {
+            transform: scale(1.05);
+            background: #eef2ff;
+        }
+
+        .locked-topic-modal-info {
+            width: 86px;
+            height: 86px;
+            margin: 6px auto 14px auto;
+            border-radius: 50%;
+            border: 6px solid #38bdf8;
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 50px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .locked-topic-modal-title {
+            margin: 0;
+            font-size: clamp(40px, 4vw, 60px);
+            font-weight: 900;
+            color: #1f2937;
+            letter-spacing: 0.3px;
+            line-height: 1.1;
+        }
+
+        .locked-topic-modal-lock {
+            font-size: 52px;
+            margin: 12px 0 6px 0;
+            color: #f59e0b;
+        }
+
+        .locked-topic-modal-text {
+            margin: 0 auto 18px auto;
+            max-width: 640px;
+            font-size: clamp(20px, 2.3vw, 40px);
+            font-weight: 600;
+            color: #334155;
+            line-height: 1.45;
+        }
+
+        .locked-topic-modal-text strong {
+            color: #1e293b;
+            font-weight: 900;
+        }
+
+        .locked-topic-modal-actions {
+            display: flex;
+            justify-content: center;
+        }
+
+        .locked-topic-modal-ok {
+            border: 1px solid #a5b4fc;
+            background: linear-gradient(120deg, #7c3aed, #4f46e5);
+            color: #fff;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: clamp(18px, 2vw, 32px);
+            padding: 14px 36px;
+            cursor: pointer;
+            transition: transform 0.18s ease, filter 0.18s ease;
+        }
+
+        .locked-topic-modal-ok:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.06);
+        }
+
+        @media (max-width: 640px) {
+            .locked-topic-modal-card {
+                padding: 20px 16px 18px 16px;
+                border-radius: 14px;
+            }
+
+            .locked-topic-modal-info {
+                width: 72px;
+                height: 72px;
+                border-width: 5px;
+                font-size: 42px;
+                margin-bottom: 10px;
+            }
+
+            .locked-topic-modal-title {
+                font-size: clamp(32px, 9vw, 44px);
+            }
+
+            .locked-topic-modal-lock {
+                font-size: 44px;
+                margin-top: 10px;
+            }
+
+            .locked-topic-modal-text {
+                font-size: clamp(18px, 5.6vw, 28px);
+            }
+
+            .locked-topic-modal-ok {
+                font-size: clamp(17px, 5vw, 24px);
+                padding: 12px 26px;
+            }
+        }
+
         /* Estilo moderno para el modal de datos del examen (SweetAlert) */
         .exam-title {
             font-size: 22px !important;
@@ -3218,6 +3370,22 @@
                     <i class="fab fa-facebook-f"></i>
                     Facebook
                 </button>
+            </div>
+        </div>
+    </div>
+    <div id="lockedTopicModal" class="locked-topic-modal-overlay" aria-hidden="true">
+        <div class="locked-topic-modal-card" role="dialog" aria-modal="true" aria-labelledby="lockedTopicModalTitle">
+            <button class="locked-topic-modal-close" type="button" data-locked-topic-close aria-label="Cerrar aviso">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="locked-topic-modal-info" aria-hidden="true">i</div>
+            <h2 id="lockedTopicModalTitle" class="locked-topic-modal-title">Tema bloqueado</h2>
+            <div class="locked-topic-modal-lock" aria-hidden="true">
+                <i class="fas fa-lock"></i>
+            </div>
+            <p id="lockedTopicModalText" class="locked-topic-modal-text"></p>
+            <div class="locked-topic-modal-actions">
+                <button class="locked-topic-modal-ok" type="button" data-locked-topic-close>Entendido</button>
             </div>
         </div>
     </div>
@@ -5890,28 +6058,95 @@
             return previousTitle || null;
         }
 
+        let lockedTopicModalLastFocusedElement = null;
+
+        function getLockedTopicModalElements() {
+            const overlay = document.getElementById('lockedTopicModal');
+            if (!overlay) return null;
+            const text = document.getElementById('lockedTopicModalText');
+            const closeButtons = overlay.querySelectorAll('[data-locked-topic-close]');
+            return { overlay, text, closeButtons };
+        }
+
+        function setLockedTopicModalMessage(cardTitle, previousTitle) {
+            const elements = getLockedTopicModalElements();
+            if (!elements || !elements.text) return;
+
+            const textEl = elements.text;
+            textEl.textContent = '';
+
+            if (previousTitle) {
+                textEl.append('Para desbloquear ');
+                const lockedTopic = document.createElement('strong');
+                lockedTopic.textContent = cardTitle;
+                textEl.appendChild(lockedTopic);
+                textEl.append(', completa primero ');
+                const requiredTopic = document.createElement('strong');
+                requiredTopic.textContent = previousTitle;
+                textEl.appendChild(requiredTopic);
+                textEl.append('.');
+                return;
+            }
+
+            textEl.append('Para desbloquear ');
+            const topic = document.createElement('strong');
+            topic.textContent = cardTitle;
+            textEl.appendChild(topic);
+            textEl.append(', primero completa el tema anterior.');
+        }
+
+        function showLockedTopicModal(cardTitle, previousTitle) {
+            const elements = getLockedTopicModalElements();
+            if (!elements || !elements.overlay) return;
+
+            setLockedTopicModalMessage(cardTitle, previousTitle);
+            lockedTopicModalLastFocusedElement = document.activeElement;
+            elements.overlay.classList.add('show');
+            elements.overlay.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeLockedTopicModal() {
+            const elements = getLockedTopicModalElements();
+            if (!elements || !elements.overlay) return;
+
+            elements.overlay.classList.remove('show');
+            elements.overlay.setAttribute('aria-hidden', 'true');
+
+            if (lockedTopicModalLastFocusedElement && typeof lockedTopicModalLastFocusedElement.focus === 'function') {
+                lockedTopicModalLastFocusedElement.focus();
+            }
+            lockedTopicModalLastFocusedElement = null;
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const elements = getLockedTopicModalElements();
+            if (!elements || !elements.overlay || elements.overlay.dataset.bound === '1') return;
+
+            elements.overlay.dataset.bound = '1';
+
+            elements.closeButtons.forEach(function (button) {
+                button.addEventListener('click', closeLockedTopicModal);
+            });
+
+            elements.overlay.addEventListener('click', function (event) {
+                if (event.target === elements.overlay) {
+                    closeLockedTopicModal();
+                }
+            });
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape') return;
+            const elements = getLockedTopicModalElements();
+            if (elements && elements.overlay && elements.overlay.classList.contains('show')) {
+                closeLockedTopicModal();
+            }
+        });
+
         // Aviso para tarjetas bloqueadas (sin contraseña).
         function unlockCard(cardTitle, url, cardElement) {
             const previousTitle = getPreviousTopicTitle(cardElement, cardTitle);
-            const dependencyLine = previousTitle
-                ? `Para desbloquear <strong>${cardTitle}</strong>, completa primero <strong>${previousTitle}</strong>.`
-                : `Para desbloquear <strong>${cardTitle}</strong>, primero completa el tema anterior.`;
-
-            Swal.fire({
-                icon: 'info',
-                title: 'Tema bloqueado',
-                html: `
-                    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-                        <i class="fas fa-lock" style="font-size:2rem; color:#f59e0b;"></i>
-                        <div style="font-size:1rem; color:#334155; text-align:center; line-height:1.45;">
-                            ${dependencyLine}
-                        </div>
-                    </div>
-                `,
-                confirmButtonText: 'Entendido',
-                allowOutsideClick: true,
-                buttonsStyling: true
-            });
+            showLockedTopicModal(cardTitle, previousTitle);
         }
 
         // === FUNCIONALIDAD DEL MENÚ DE PAÍSES ===

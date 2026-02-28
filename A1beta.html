@@ -3046,7 +3046,7 @@
                         preserveAspectRatio="none" xml:space="preserve">
                         <filter id="glow">
                             <feGaussianBlur class="blur" result="coloredBlur" stdDeviation="2"></feGaussianBlur>
-                            <feTurbulence type="fractalNoise" baseFrequency="0.075" numOctaves="1"
+                            <feTurbulence type="fractalNoise" baseFrequency="0.075" numOctaves="0.3"
                                 result="turbulence"></feTurbulence>
                             <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="30" xChannelSelector="R"
                                 yChannelSelector="G" result="displace"></feDisplacementMap>
@@ -5280,33 +5280,6 @@
         function sanitizeTopicPoints(value) {
             const numeric = Number(value);
             if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
-            if (typeof value === 'string') {
-                const match = value.match(/-?\d+(?:[.,]\d+)?/);
-                if (match) {
-                    const parsed = Number(String(match[0]).replace(',', '.'));
-                    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 5) return parsed;
-                }
-            }
-            return null;
-        }
-
-        function getFirstValidTopicPoints(candidates = []) {
-            for (const candidate of candidates) {
-                const score = sanitizeTopicPoints(candidate);
-                if (score !== null) return score;
-            }
-            return null;
-        }
-
-        function pointsFromPercentageValue(percentageValue) {
-            const percentage = Number(percentageValue);
-            if (!Number.isFinite(percentage)) return null;
-            if (percentage === 100) return 5;
-            if (percentage >= 70) return 4;
-            if (percentage >= 50) return 3;
-            if (percentage >= 30) return 2;
-            if (percentage >= 10) return 1;
-            if (percentage >= 0) return 0;
             return null;
         }
 
@@ -5322,91 +5295,25 @@
             try {
                 const parsed = parseAlfabetoUnlockState();
                 if (!parsed) return null;
-
-                const normalizedColumn = String(column || '').trim();
-                const lowerColumn = normalizedColumn.toLowerCase();
                 const testKeyByColumn = {
                     U1L0T1: 'test1',
                     U1L0T2: 'test2',
                     U1L0T3: 'test3',
                     U1L0T4: 'test4'
                 };
-                const testKey = testKeyByColumn[normalizedColumn] || '';
+                const testKey = testKeyByColumn[column];
 
-                const directScore = getFirstValidTopicPoints([
-                    parsed?.scores?.[normalizedColumn],
-                    parsed?.scores?.[lowerColumn],
-                    parsed?.[normalizedColumn],
-                    parsed?.[lowerColumn]
-                ]);
-                if (directScore !== null) return directScore;
+                const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
+                if (scoreFromMap !== null) return scoreFromMap;
 
                 if (testKey) {
-                    const fromTestShape = getFirstValidTopicPoints([
-                        parsed?.[testKey]?.points,
-                        parsed?.[testKey]?.score,
-                        parsed?.[testKey]?.value,
-                        parsed?.[testKey]?.puntos,
-                        parsed?.[testKey]
-                    ]);
-                    if (fromTestShape !== null) return fromTestShape;
-                }
-
-                // Compatibilidad con estructuras antiguas donde test2/test3/test4 guardaban puntos previos.
-                const legacyCrossTestPoints = {
-                    U1L0T1: parsed?.test2?.points,
-                    U1L0T2: parsed?.test3?.points,
-                    U1L0T3: parsed?.test4?.points,
-                    U1L0T4: parsed?.test4?.points
-                };
-                const legacyScore = getFirstValidTopicPoints([legacyCrossTestPoints[normalizedColumn]]);
-                if (legacyScore !== null) return legacyScore;
-
-                // Fallback ultra tolerante: buscar claves conocidas en cualquier nivel.
-                const lookupHintsByColumn = {
-                    U1L0T1: ['u1l0t1', 'test1'],
-                    U1L0T2: ['u1l0t2', 'test2'],
-                    U1L0T3: ['u1l0t3', 'test3'],
-                    U1L0T4: ['u1l0t4', 'test4']
-                };
-                const hints = lookupHintsByColumn[normalizedColumn] || [];
-                const deepScores = [];
-                const visit = (node) => {
-                    if (!node || typeof node !== 'object') return;
-                    Object.keys(node).forEach((key) => {
-                        const value = node[key];
-                        const normalizedKey = String(key || '').toLowerCase();
-                        if (hints.some((hint) => normalizedKey.includes(hint))) {
-                            const inlineScore = getFirstValidTopicPoints([
-                                value?.points,
-                                value?.score,
-                                value?.value,
-                                value?.puntos,
-                                value
-                            ]);
-                            if (inlineScore !== null) deepScores.push(inlineScore);
-                        }
-                        if (value && typeof value === 'object') visit(value);
-                    });
-                };
-                visit(parsed);
-                const deepScore = getFirstValidTopicPoints(deepScores);
-                if (deepScore !== null) return deepScore;
-
-                // Fallback legacy total.
-                if (normalizedColumn === 'U1L0T4') {
-                    const martilloLegacy = getFirstValidTopicPoints([
-                        localStorage.getItem('martillo-U1L0T4'),
-                        localStorage.getItem('martillo-U1L0')
-                    ]);
-                    if (martilloLegacy !== null) return martilloLegacy;
-
-                    // Fallback por porcentaje guardado en reco-alfabeto.
-                    const percentageFallbackPoints = getFirstValidTopicPoints([
-                        pointsFromPercentageValue(localStorage.getItem('alfabeto1')),
-                        pointsFromPercentageValue(localStorage.getItem('lastSuccessPercentage'))
-                    ]);
-                    if (percentageFallbackPoints !== null) return percentageFallbackPoints;
+                    const testNode = parsed?.[testKey];
+                    const fromTestNode = sanitizeTopicPoints(
+                        testNode?.points ?? testNode?.score ?? testNode?.value ?? testNode?.puntos
+                    );
+                    if (fromTestNode !== null) return fromTestNode;
+                    const fromLegacyTestValue = sanitizeTopicPoints(testNode);
+                    if (fromLegacyTestValue !== null) return fromLegacyTestValue;
                 }
 
                 return null;
@@ -5425,26 +5332,25 @@
                 return null;
             };
 
-            const t1Score = getScore('U1L0T1');
-            const t2Score = getScore('U1L0T2');
-            const t3Score = getScore('U1L0T3');
-            const t4Score = getScore('U1L0T4');
+            const t1Score = Number(getScore('U1L0T1')) || 0;
+            const t2Score = Number(getScore('U1L0T2')) || 0;
+            const t3Score = Number(getScore('U1L0T3')) || 0;
+            const t4Score = Number(getScore('U1L0T4')) || 0;
 
-            const test1LegacyFlag = parseUnlockFlag(parsed?.test1);
             const test2UnlockFlag = parseUnlockFlag(parsed?.test2);
             const test3UnlockFlag = parseUnlockFlag(parsed?.test3);
             const test4UnlockFlag = parseUnlockFlag(parsed?.test4);
 
-            const test1UnlockedByScore = t1Score !== null && t1Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test2UnlockedByScore = test1UnlockedByScore && t2Score !== null && t2Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test3UnlockedByScore = test2UnlockedByScore && t3Score !== null && t3Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test4UnlockedByScore = test3UnlockedByScore && t4Score !== null && t4Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test1Unlocked = t1Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test2Unlocked = test2UnlockFlag === true || (test1Unlocked && t2Score >= TOPIC_UNLOCK_THRESHOLD);
+            const test3Unlocked = test3UnlockFlag === true || (test2Unlocked && t3Score >= TOPIC_UNLOCK_THRESHOLD);
+            const test4Unlocked = test4UnlockFlag === true || (test3Unlocked && t4Score >= TOPIC_UNLOCK_THRESHOLD);
 
             return {
-                test1: test1LegacyFlag === true || test2UnlockFlag === true || test1UnlockedByScore,
-                test2: test3UnlockFlag === true || test2UnlockedByScore,
-                test3: test4UnlockFlag === true || test3UnlockedByScore,
-                test4: test4UnlockFlag === true || test4UnlockedByScore
+                test1: test1Unlocked,
+                test2: test2Unlocked,
+                test3: test3Unlocked,
+                test4: test4Unlocked
             };
         }
 
@@ -5476,7 +5382,8 @@
         }
 
         function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
-            if (!card || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE || shouldBeLocked !== false) {
+            const isNextTopicCard = card?.dataset?.cardId === NEXT_TOPIC_CARD_ID;
+            if (!card || !isNextTopicCard || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE || shouldBeLocked !== false) {
                 removeNextTopicSemaphore(card);
                 return;
             }
@@ -5497,32 +5404,6 @@
             });
         }
 
-        function syncNextTopicByCardId() {
-            const card = document.querySelector(`[data-card-id="${NEXT_TOPIC_CARD_ID}"]`);
-            if (!card) return;
-
-            const localT4 = getLocalTopicPointsByColumn('U1L0T4');
-            const remoteT4 = sanitizeTopicPoints(latestTopicPointsByColumn?.U1L0T4);
-            const t4Points = localT4 !== null ? localT4 : remoteT4;
-            const semaphoreState = getNextTopicSemaphoreState(latestTopicPointsByColumn);
-            const unlocked = Boolean(semaphoreState.test4) || (t4Points !== null && t4Points >= TOPIC_UNLOCK_THRESHOLD);
-
-            if (unlocked) {
-                CANDADOS[NEXT_TOPIC_SEMAPHORE_TITLE] = false;
-                convertToNormalCard(card, NEXT_TOPIC_SEMAPHORE_TITLE);
-                ensureNormalCardSessionLink(card, NEXT_TOPIC_SEMAPHORE_TITLE);
-                syncNextTopicSemaphore(card, NEXT_TOPIC_SEMAPHORE_TITLE, false);
-            } else {
-                removeNextTopicSemaphore(card);
-            }
-
-            console.warn('[A1beta] next-topic-local-sync', {
-                unlocked,
-                t4Points,
-                semaphoreState
-            });
-        }
-
         async function updateCandadosFromT4Progress() {
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
             const allColumns = [...new Set([...uniqueColumns, ...NEXT_TOPIC_SEMAPHORE_COLUMNS])];
@@ -5530,23 +5411,13 @@
             allColumns.forEach((column) => {
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);
             });
-            const localSemaphoreState = getNextTopicSemaphoreState(pointsByColumn);
 
             // Aplicar desbloqueos disponibles en localStorage al instante (sin esperar doGet)
             let unlockedFromLocal = false;
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
                 const unlockedByScore = Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD;
-                const unlockedByStateFallback = unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE && localSemaphoreState.test4 === true;
-                if (unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE) {
-                    console.warn('[A1beta] unlock-check resumen', {
-                        pointsU1L0T4: pointsByColumn.U1L0T4,
-                        localSemaphoreState,
-                        unlockedByScore,
-                        unlockedByStateFallback
-                    });
-                }
-                if (unlockedByScore || unlockedByStateFallback) {
+                if (unlockedByScore) {
                     if (CANDADOS[unlockTitle] !== false) unlockedFromLocal = true;
                     CANDADOS[unlockTitle] = false;
                 }
@@ -5609,9 +5480,6 @@
                     // Si no está en CANDADOS, dejar como está
                 }
             });
-
-            // Forzar el estado del siguiente tema por card-id, aunque falle doGet o cambie el título.
-            syncNextTopicByCardId();
         }
 
         function ensureNormalCardSessionLink(card, cardTitle) {
@@ -5668,8 +5536,6 @@
         document.addEventListener('DOMContentLoaded', refreshDynamicCandados);
         window.addEventListener('focus', refreshDynamicCandados);
         window.addEventListener('pageshow', refreshDynamicCandados);
-        // Ejecutar de inmediato también, por si el script se evalúa cuando DOMContentLoaded ya pasó.
-        refreshDynamicCandados();
 
         // Si el access gate desbloquea contenido sin recargar, refrescar candados.
         const accessStateObserver = new MutationObserver(() => {

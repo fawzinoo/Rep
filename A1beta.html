@@ -2150,6 +2150,22 @@
             min-width: 114px;
         }
 
+        .topic-test-semaphore.is-locked {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            min-width: 178px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: linear-gradient(145deg, rgba(2, 6, 23, 0.92), rgba(15, 23, 42, 0.82));
+            border: 1px solid rgba(148, 163, 184, 0.56);
+            box-shadow: 0 16px 30px rgba(2, 6, 23, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        }
+
+        .next-topic-semaphore-card .lock-icon {
+            display: none !important;
+        }
+
         .topic-test-semaphore-title {
             margin: 0 0 6px 0;
             font-size: 10px;
@@ -2224,6 +2240,11 @@
                 left: 10px;
                 padding: 7px 9px;
                 min-width: 102px;
+            }
+
+            .topic-test-semaphore.is-locked {
+                min-width: 148px;
+                padding: 10px 12px;
             }
 
             .topic-test-semaphore-title {
@@ -5358,37 +5379,46 @@
             if (!card) return;
             const existing = card.querySelector('.topic-test-semaphore');
             if (existing) existing.remove();
+            card.classList.remove('next-topic-semaphore-card');
         }
 
-        function ensureNextTopicSemaphore(card) {
+        function ensureNextTopicSemaphore(card, shouldAttachToLockOverlay) {
             if (!card) return null;
             let panel = card.querySelector('.topic-test-semaphore');
-            if (panel) return panel;
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.className = 'topic-test-semaphore';
+                panel.setAttribute('aria-hidden', 'true');
+                panel.innerHTML = `
+                    <div class="topic-test-semaphore-title">Tests 1-4</div>
+                    <div class="topic-test-semaphore-lights">
+                        <span class="topic-test-light" data-test="1"></span>
+                        <span class="topic-test-light" data-test="2"></span>
+                        <span class="topic-test-light" data-test="3"></span>
+                        <span class="topic-test-light" data-test="4"></span>
+                    </div>
+                `;
+            }
 
-            panel = document.createElement('div');
-            panel.className = 'topic-test-semaphore';
-            panel.setAttribute('aria-hidden', 'true');
-            panel.innerHTML = `
-                <div class="topic-test-semaphore-title">Tests 1-4</div>
-                <div class="topic-test-semaphore-lights">
-                    <span class="topic-test-light" data-test="1"></span>
-                    <span class="topic-test-light" data-test="2"></span>
-                    <span class="topic-test-light" data-test="3"></span>
-                    <span class="topic-test-light" data-test="4"></span>
-                </div>
-            `;
-            card.appendChild(panel);
+            const lockOverlay = card.querySelector('.lock-overlay');
+            const host = shouldAttachToLockOverlay && lockOverlay ? lockOverlay : card;
+            if (panel.parentElement !== host) {
+                host.appendChild(panel);
+            }
+            panel.classList.toggle('is-locked', Boolean(shouldAttachToLockOverlay));
             return panel;
         }
 
         function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
             const isNextTopicCard = card?.dataset?.cardId === NEXT_TOPIC_CARD_ID;
-            if (!card || !isNextTopicCard || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE || shouldBeLocked !== false) {
+            if (!card || !isNextTopicCard || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE) {
                 removeNextTopicSemaphore(card);
                 return;
             }
 
-            const panel = ensureNextTopicSemaphore(card);
+            const isLocked = shouldBeLocked === true;
+            card.classList.add('next-topic-semaphore-card');
+            const panel = ensureNextTopicSemaphore(card, isLocked);
             if (!panel) return;
             const state = getNextTopicSemaphoreState(latestTopicPointsByColumn);
             const stateByTest = {

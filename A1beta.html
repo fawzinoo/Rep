@@ -5111,6 +5111,7 @@
 
         const TOPIC_LOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxB7X0U-Op6jqBCSsqS5WUEEKB7IE1ZvrYkgsG0XVLwnPoMKqnNw3rD2LHqH47TfVZx/exec';
         const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
+        const ALFABETO_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
         const TOPIC_UNLOCK_RULES = [
             { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
             { column: 'U1L1T4', unlockTitle: 'Consonante+vocal' },
@@ -5158,25 +5159,52 @@
             return Number.isFinite(points) ? points : 0;
         }
 
-        async function updateCandadosFromT4Progress() {
-            const student = getCurrentStudentFromStorage();
-            if (!student) return;
+        function getLocalTopicPointsByColumn(column) {
+            if (column !== 'U1L0T4') return null;
+            try {
+                const raw = localStorage.getItem(ALFABETO_UNLOCK_STATE_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return null;
 
+                const scoreFromMap = Number(parsed?.scores?.U1L0T4);
+                if (Number.isFinite(scoreFromMap) && scoreFromMap >= 0 && scoreFromMap <= 5) return scoreFromMap;
+
+                const scoreFromTest4Points = Number(parsed?.test4?.points);
+                if (Number.isFinite(scoreFromTest4Points) && scoreFromTest4Points >= 0 && scoreFromTest4Points <= 5) return scoreFromTest4Points;
+
+                const scoreFromLegacyTest4 = Number(parsed?.test4);
+                if (Number.isFinite(scoreFromLegacyTest4) && scoreFromLegacyTest4 >= 0 && scoreFromLegacyTest4 <= 5) return scoreFromLegacyTest4;
+
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function updateCandadosFromT4Progress() {
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
             const pointsByColumn = {};
+            uniqueColumns.forEach((column) => {
+                pointsByColumn[column] = getLocalTopicPointsByColumn(column);
+            });
 
-            await Promise.all(
-                uniqueColumns.map(async (column) => {
-                    try {
-                        const ranking = await fetchRankingByColumn(column);
-                        pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
-                    } catch (error) {
-                        // Si falla la consulta de una columna, no forzamos bloqueo.
-                        pointsByColumn[column] = null;
-                        console.warn(`No se pudo obtener ${column}:`, error);
-                    }
-                })
-            );
+            const columnsNeedingFetch = uniqueColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
+            const student = getCurrentStudentFromStorage();
+            if (columnsNeedingFetch.length > 0 && student) {
+                await Promise.all(
+                    columnsNeedingFetch.map(async (column) => {
+                        try {
+                            const ranking = await fetchRankingByColumn(column);
+                            pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
+                        } catch (error) {
+                            // Si falla la consulta de una columna, no forzamos bloqueo.
+                            pointsByColumn[column] = null;
+                            console.warn(`No se pudo obtener ${column}:`, error);
+                        }
+                    })
+                );
+            }
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];

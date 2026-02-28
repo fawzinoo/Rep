@@ -3046,7 +3046,7 @@
                         preserveAspectRatio="none" xml:space="preserve">
                         <filter id="glow">
                             <feGaussianBlur class="blur" result="coloredBlur" stdDeviation="2"></feGaussianBlur>
-                            <feTurbulence type="fractalNoise" baseFrequency="0.075" numOctaves="0.3"
+                            <feTurbulence type="fractalNoise" baseFrequency="0.075" numOctaves="1"
                                 result="turbulence"></feTurbulence>
                             <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="30" xChannelSelector="R"
                                 yChannelSelector="G" result="displace"></feDisplacementMap>
@@ -5279,6 +5279,13 @@
         function sanitizeTopicPoints(value) {
             const numeric = Number(value);
             if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
+            if (typeof value === 'string') {
+                const match = value.match(/-?\d+(?:[.,]\d+)?/);
+                if (match) {
+                    const parsed = Number(String(match[0]).replace(',', '.'));
+                    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 5) return parsed;
+                }
+            }
             return null;
         }
 
@@ -5341,6 +5348,46 @@
                 };
                 const legacyScore = getFirstValidTopicPoints([legacyCrossTestPoints[normalizedColumn]]);
                 if (legacyScore !== null) return legacyScore;
+
+                // Fallback ultra tolerante: buscar claves conocidas en cualquier nivel.
+                const lookupHintsByColumn = {
+                    U1L0T1: ['u1l0t1', 'test1'],
+                    U1L0T2: ['u1l0t2', 'test2'],
+                    U1L0T3: ['u1l0t3', 'test3'],
+                    U1L0T4: ['u1l0t4', 'test4']
+                };
+                const hints = lookupHintsByColumn[normalizedColumn] || [];
+                const deepScores = [];
+                const visit = (node) => {
+                    if (!node || typeof node !== 'object') return;
+                    Object.keys(node).forEach((key) => {
+                        const value = node[key];
+                        const normalizedKey = String(key || '').toLowerCase();
+                        if (hints.some((hint) => normalizedKey.includes(hint))) {
+                            const inlineScore = getFirstValidTopicPoints([
+                                value?.points,
+                                value?.score,
+                                value?.value,
+                                value?.puntos,
+                                value
+                            ]);
+                            if (inlineScore !== null) deepScores.push(inlineScore);
+                        }
+                        if (value && typeof value === 'object') visit(value);
+                    });
+                };
+                visit(parsed);
+                const deepScore = getFirstValidTopicPoints(deepScores);
+                if (deepScore !== null) return deepScore;
+
+                // Fallback legacy total.
+                if (normalizedColumn === 'U1L0T4') {
+                    const martilloLegacy = getFirstValidTopicPoints([
+                        localStorage.getItem('martillo-U1L0T4'),
+                        localStorage.getItem('martillo-U1L0')
+                    ]);
+                    if (martilloLegacy !== null) return martilloLegacy;
+                }
 
                 return null;
             } catch (e) {
@@ -5445,6 +5492,14 @@
                 const points = pointsByColumn[column];
                 const unlockedByScore = Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD;
                 const unlockedByStateFallback = unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE && localSemaphoreState.test4 === true;
+                if (unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE) {
+                    console.debug('[A1beta] unlock-check resumen', {
+                        pointsU1L0T4: pointsByColumn.U1L0T4,
+                        localSemaphoreState,
+                        unlockedByScore,
+                        unlockedByStateFallback
+                    });
+                }
                 if (unlockedByScore || unlockedByStateFallback) {
                     if (CANDADOS[unlockTitle] !== false) unlockedFromLocal = true;
                     CANDADOS[unlockTitle] = false;
@@ -5564,6 +5619,8 @@
         document.addEventListener('DOMContentLoaded', refreshDynamicCandados);
         window.addEventListener('focus', refreshDynamicCandados);
         window.addEventListener('pageshow', refreshDynamicCandados);
+        // Ejecutar de inmediato también, por si el script se evalúa cuando DOMContentLoaded ya pasó.
+        refreshDynamicCandados();
 
         // Si el access gate desbloquea contenido sin recargar, refrescar candados.
         const accessStateObserver = new MutationObserver(() => {

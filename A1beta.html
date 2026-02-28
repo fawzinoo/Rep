@@ -5476,10 +5476,22 @@
 
         const TOPIC_LOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxB7X0U-Op6jqBCSsqS5WUEEKB7IE1ZvrYkgsG0XVLwnPoMKqnNw3rD2LHqH47TfVZx/exec';
         const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
-        const ALFABETO_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
-        const NEXT_TOPIC_SEMAPHORE_TITLE = 'El alfabeto español';
-        const NEXT_TOPIC_CARD_ID = 'alfabeto';
-        const NEXT_TOPIC_SEMAPHORE_COLUMNS = ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'];
+        const TOPIC_UNLOCK_STATE_KEYS = {
+            U1L0: 'alfabeto-test-unlock-state-v2',
+            U1L1: 'de0a100-test-unlock-state-v2'
+        };
+        const TOPIC_SEMAPHORE_CONFIG = [
+            {
+                title: 'El alfabeto español',
+                cardId: 'alfabeto',
+                columns: ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4']
+            },
+            {
+                title: 'Resumen de 0 a 100',
+                cardId: 'de0a100',
+                columns: ['U1L1T1', 'U1L1T2', 'U1L1T3', 'U1L1T4']
+            }
+        ];
         const TOPIC_UNLOCK_RULES = [
             { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
             { column: 'U1L1T4', unlockTitle: 'Consonante+vocal' },
@@ -5554,9 +5566,15 @@
             return 'LK';
         }
 
-        function parseAlfabetoUnlockState() {
+        function parseTopicUnlockStateByColumn(column) {
             try {
-                const raw = localStorage.getItem(ALFABETO_UNLOCK_STATE_KEY);
+                const match = String(column || '').match(/^(U\d+L\d+)T\d+$/i);
+                if (!match) return null;
+                const lessonPrefix = match[1].toUpperCase();
+                const stateKey = TOPIC_UNLOCK_STATE_KEYS[lessonPrefix];
+                if (!stateKey) return null;
+
+                const raw = localStorage.getItem(stateKey);
                 if (!raw) return null;
                 const parsed = JSON.parse(raw);
                 if (!parsed || typeof parsed !== 'object') return null;
@@ -5582,15 +5600,13 @@
 
         function getLocalTopicPointsByColumn(column) {
             try {
-                const parsed = parseAlfabetoUnlockState();
+                const parsed = parseTopicUnlockStateByColumn(column);
                 if (!parsed) return null;
-                const testKeyByColumn = {
-                    U1L0T1: 'test1',
-                    U1L0T2: 'test2',
-                    U1L0T3: 'test3',
-                    U1L0T4: 'test4'
-                };
-                const testKey = testKeyByColumn[column];
+                const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
+                const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
+                const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
+                    ? `test${testIndex}`
+                    : null;
 
                 const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
                 if (scoreFromMap !== null) return scoreFromMap;
@@ -5612,6 +5628,13 @@
         }
 
         function getNextTopicSemaphoreState(pointsByColumn = {}) {
+            return getTopicSemaphoreState(['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'], pointsByColumn);
+        }
+
+        function getTopicSemaphoreState(columns, pointsByColumn = {}) {
+            if (!Array.isArray(columns) || columns.length !== 4) {
+                return { test1: false, test2: false, test3: false, test4: false };
+            }
             const getScore = (column) => {
                 const localScore = getLocalTopicPointsByColumn(column);
                 if (localScore !== null) return localScore;
@@ -5620,10 +5643,10 @@
                 return null;
             };
 
-            const t1Score = Number(getScore('U1L0T1')) || 0;
-            const t2Score = Number(getScore('U1L0T2')) || 0;
-            const t3Score = Number(getScore('U1L0T3')) || 0;
-            const t4Score = Number(getScore('U1L0T4')) || 0;
+            const t1Score = Number(getScore(columns[0])) || 0;
+            const t2Score = Number(getScore(columns[1])) || 0;
+            const t3Score = Number(getScore(columns[2])) || 0;
+            const t4Score = Number(getScore(columns[3])) || 0;
 
             const test1Unlocked = t1Score >= TOPIC_UNLOCK_THRESHOLD;
             const test2Unlocked = t2Score >= TOPIC_UNLOCK_THRESHOLD;
@@ -5684,15 +5707,17 @@
         }
 
         function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
-            const isNextTopicCard = card?.dataset?.cardId === NEXT_TOPIC_CARD_ID;
-            if (!card || !isNextTopicCard || cardTitle !== NEXT_TOPIC_SEMAPHORE_TITLE) {
+            const semaphoreConfig = TOPIC_SEMAPHORE_CONFIG.find((config) =>
+                config.cardId === card?.dataset?.cardId && config.title === cardTitle
+            );
+            if (!card || !semaphoreConfig || shouldBeLocked === true) {
                 removeNextTopicSemaphore(card);
                 return;
             }
 
             const panel = ensureNextTopicSemaphore(card, false);
             if (!panel) return;
-            const state = getNextTopicSemaphoreState(latestTopicPointsByColumn);
+            const state = getTopicSemaphoreState(semaphoreConfig.columns, latestTopicPointsByColumn);
             const stateByTest = {
                 1: Boolean(state.test1),
                 2: Boolean(state.test2),
@@ -5708,7 +5733,8 @@
 
         async function updateCandadosFromT4Progress() {
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
-            const allColumns = [...new Set([...uniqueColumns, ...NEXT_TOPIC_SEMAPHORE_COLUMNS])];
+            const semaphoreColumns = TOPIC_SEMAPHORE_CONFIG.flatMap((config) => config.columns || []);
+            const allColumns = [...new Set([...uniqueColumns, ...semaphoreColumns])];
             const pointsByColumn = {};
             allColumns.forEach((column) => {
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);

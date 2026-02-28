@@ -2924,7 +2924,7 @@
             U1L3T3: ['u1l3t3'],
             U1L3T4: ['u1l3t4']
         };
-        const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v1';
+        const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v2';
         const TEST_UNLOCK_COPY = {
             test2: {
                 title: 'Nivel 2 desbloqueado',
@@ -2939,8 +2939,40 @@
                 text: 'Has desbloqueado el cuarto nivel. Ultimo reto habilitado.'
             }
         };
+        const UNLOCK_LEVEL_SOUND_URL = 'https://fawzinoo.github.io/audios/livel.mp3';
+        const unlockLevelAudio = new Audio(UNLOCK_LEVEL_SOUND_URL);
+        unlockLevelAudio.preload = 'auto';
+        unlockLevelAudio.volume = 0.9;
+        let pendingUnlockSoundRetry = false;
         let unlockCelebrationQueue = [];
         let unlockCelebrationRunning = false;
+
+        function requestUnlockSoundRetryOnUserGesture() {
+            const retry = () => {
+                if (!pendingUnlockSoundRetry) return;
+                pendingUnlockSoundRetry = false;
+                tryPlayUnlockLevelSound();
+            };
+            window.addEventListener('pointerdown', retry, { once: true, capture: true });
+            window.addEventListener('touchstart', retry, { once: true, capture: true });
+            window.addEventListener('keydown', retry, { once: true, capture: true });
+        }
+
+        function tryPlayUnlockLevelSound() {
+            try {
+                unlockLevelAudio.currentTime = 0;
+                const maybePromise = unlockLevelAudio.play();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {
+                        pendingUnlockSoundRetry = true;
+                        requestUnlockSoundRetryOnUserGesture();
+                    });
+                }
+            } catch (e) {
+                pendingUnlockSoundRetry = true;
+                requestUnlockSoundRetryOnUserGesture();
+            }
+        }
 
         function normalizeStudentName(value) {
             return String(value || '')
@@ -2963,29 +2995,81 @@
             if (pill) pill.textContent = text;
         }
 
-        function getStoredUnlockState() {
+        function getStoredScoresFromUnlockState() {
             try {
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-                if (!raw) return { test2: false, test3: false, test4: false };
+                if (!raw) return {};
                 const parsed = JSON.parse(raw);
-                return parsed && typeof parsed === 'object'
-                    ? {
-                        test2: Boolean(parsed.test2),
-                        test3: Boolean(parsed.test3),
-                        test4: Boolean(parsed.test4)
-                    }
-                    : { test2: false, test3: false, test4: false };
+                const scores = parsed?.scores;
+                if (!scores || typeof scores !== 'object') return {};
+                return {
+                    U1L3T1: Number.isFinite(Number(scores.U1L3T1)) ? Number(scores.U1L3T1) : null,
+                    U1L3T2: Number.isFinite(Number(scores.U1L3T2)) ? Number(scores.U1L3T2) : null,
+                    U1L3T3: Number.isFinite(Number(scores.U1L3T3)) ? Number(scores.U1L3T3) : null,
+                    U1L3T4: Number.isFinite(Number(scores.U1L3T4)) ? Number(scores.U1L3T4) : null
+                };
             } catch (e) {
-                return { test2: false, test3: false, test4: false };
+                return {};
             }
         }
 
-        function saveStoredUnlockState(state) {
+        function getLocalPointsByColumn(columna) {
+            try {
+                const fallbackScores = getStoredScoresFromUnlockState();
+                const fallback = Number(fallbackScores[columna]);
+                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function getStoredUnlockState() {
+            const emptyState = { test2: false, test3: false, test4: false };
+            const parseUnlock = (value) => {
+                if (typeof value === 'boolean') return value;
+                if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) return numeric >= 4;
+                return false;
+            };
+            try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                if (!raw) return emptyState;
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object'
+                    ? {
+                        test2: parseUnlock(parsed.test2),
+                        test3: parseUnlock(parsed.test3),
+                        test4: parseUnlock(parsed.test4)
+                    }
+                    : emptyState;
+            } catch (e) {
+                return emptyState;
+            }
+        }
+
+        function saveStoredUnlockState(state, pointsByColumn) {
             try {
                 localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
-                    test2: Boolean(state?.test2),
-                    test3: Boolean(state?.test3),
-                    test4: Boolean(state?.test4)
+                    test2: {
+                        unlocked: Boolean(state?.test2),
+                        points: Number(pointsByColumn?.U1L3T1) || 0
+                    },
+                    test3: {
+                        unlocked: Boolean(state?.test3),
+                        points: Number(pointsByColumn?.U1L3T2) || 0
+                    },
+                    test4: {
+                        unlocked: Boolean(state?.test4),
+                        points: Number(pointsByColumn?.U1L3T3) || 0
+                    },
+                    scores: {
+                        U1L3T1: Number(pointsByColumn?.U1L3T1) || 0,
+                        U1L3T2: Number(pointsByColumn?.U1L3T2) || 0,
+                        U1L3T3: Number(pointsByColumn?.U1L3T3) || 0,
+                        U1L3T4: Number(pointsByColumn?.U1L3T4) || 0
+                    }
                 }));
             } catch (e) { }
         }
@@ -3001,6 +3085,7 @@
         function showUnlockCelebrationCard(title, text) {
             const existing = document.getElementById('unlock-celebration-overlay');
             if (existing) existing.remove();
+            tryPlayUnlockLevelSound();
 
             const overlay = document.createElement('div');
             overlay.id = 'unlock-celebration-overlay';
@@ -3088,7 +3173,7 @@
             }
 
             if (persist) {
-                saveStoredUnlockState(currentState);
+                saveStoredUnlockState(currentState, pointsByColumn);
             }
         }
 
@@ -3136,16 +3221,33 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1L3T1: 0, U1L3T2: 0, U1L3T3: 0, U1L3T4: 0 };
             TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
+            TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                const localPoints = getLocalPointsByColumn(columna);
+                if (localPoints === null) return;
+                pointsByColumn[columna] = localPoints;
+                setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+            });
             applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false });
             const student = getCurrentStudentFromStorage();
             if (!student) {
-                TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '0 pts'));
+                TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                    const localPoints = getLocalPointsByColumn(columna);
+                    const points = localPoints === null ? 0 : localPoints;
+                    pointsByColumn[columna] = points;
+                    setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                });
                 applyTestUnlockFlow(pointsByColumn);
                 return;
             }
 
             await Promise.all(
                 TEST_SCORE_COLUMNS.map(async ({ pillId, columna }) => {
+                    const localPoints = getLocalPointsByColumn(columna);
+                    if (localPoints !== null) {
+                        pointsByColumn[columna] = localPoints;
+                        setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+                        return;
+                    }
                     try {
                         const ranking = await fetchRankingByColumn(columna);
                         const points = getStudentPointsFromRanking(ranking, student);
@@ -3172,6 +3274,27 @@
             }
         });
         void loadTestScoresIntoPills();
+
+        let testScoresRefreshInFlight = false;
+        let lastTestScoresRefreshTs = 0;
+        function refreshTestScoresOnReturn() {
+            const now = Date.now();
+            if (testScoresRefreshInFlight) return;
+            if (now - lastTestScoresRefreshTs < 700) return;
+            lastTestScoresRefreshTs = now;
+            testScoresRefreshInFlight = true;
+            Promise.resolve(loadTestScoresIntoPills()).finally(() => {
+                testScoresRefreshInFlight = false;
+            });
+        }
+        window.addEventListener('focus', refreshTestScoresOnReturn);
+        window.addEventListener('pageshow', refreshTestScoresOnReturn);
+        window.addEventListener('popstate', refreshTestScoresOnReturn);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                refreshTestScoresOnReturn();
+            }
+        });
 
         let lastModalSoundTs = 0;
         const playModalButtonSound = () => {
@@ -4058,7 +4181,7 @@
     gap: 8px;
     z-index: 2;
     pointer-events: none;
-}
+            }
 
 .signal-bar {
     width: 14px;
@@ -4071,15 +4194,15 @@
         opacity 0.2s,
         background 0.2s;
     will-change: opacity;
-}
+            }
 
 .signal-bar.inactive {
     background: #ccc;
     opacity: 0.2;
-}
+            }
 .signal-bar.active {
     opacity: 0.85;
-}
+            }
 `;
         document.head.appendChild(style);
 

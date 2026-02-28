@@ -2150,6 +2150,121 @@
             }
         }
 
+        .unlock-celebration-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 120000;
+            opacity: 0;
+            transition: opacity 320ms ease;
+            background: rgba(7, 12, 24, 0.58);
+            backdrop-filter: blur(8px);
+            padding: 20px;
+        }
+
+        .unlock-celebration-overlay.show {
+            opacity: 1;
+        }
+
+        .unlock-celebration-overlay.hide {
+            opacity: 0;
+        }
+
+        .unlock-celebration-card {
+            width: min(92vw, 440px);
+            border-radius: 22px;
+            padding: 20px 20px 16px 20px;
+            position: relative;
+            text-align: center;
+            color: #fff;
+            background: linear-gradient(135deg, #1f2a56 0%, #2d3f8f 45%, #ff7a45 100%);
+            border: 1px solid rgba(255, 255, 255, 0.34);
+            box-shadow: 0 20px 52px rgba(0, 0, 0, 0.38);
+            transform: translateY(18px) scale(0.9);
+            animation: unlockCardIn 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .unlock-celebration-emoji {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            animation: unlockForgeSpark 1.2s ease-in-out infinite;
+        }
+
+        .unlock-celebration-title {
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 900;
+            letter-spacing: 0.2px;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .unlock-celebration-text {
+            margin: 9px 0 10px 0;
+            font-size: 0.96rem;
+            font-weight: 700;
+            opacity: 0.93;
+            line-height: 1.35;
+        }
+
+        .unlock-topic-highlight {
+            margin: 0 auto 8px;
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 214, 107, 0.2) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            font-size: 1.26rem;
+            font-weight: 900;
+            letter-spacing: 0.3px;
+            color: #ffffff;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+        }
+
+        .unlock-celebration-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            font-size: 1.15rem;
+            font-weight: 900;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        @keyframes unlockCardIn {
+            0% {
+                opacity: 0;
+                transform: translateY(18px) scale(0.9);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes unlockForgeSpark {
+            0%,
+            100% {
+                transform: scale(1) rotate(0deg);
+                filter: drop-shadow(0 0 0 rgba(255, 215, 107, 0));
+            }
+
+            50% {
+                transform: scale(1.09) rotate(2deg);
+                filter: drop-shadow(0 0 10px rgba(255, 215, 107, 0.8));
+            }
+        }
+
         @keyframes expandToFullscreen {
             from {
                 width: 400px;
@@ -4554,14 +4669,32 @@
         // Endpoint Apps Script (PortalB) para guardar puntos por leccion y ranking
         const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
         const LESSON_COLUMN_KEY = 'U1L1T4';
+        const TEST_UNLOCK_STATE_KEY = 'de0a100-test-unlock-state-v2';
+        const U1L1T4_UNLOCK_OVERLAY_ID = 'unlock-consonante-overlay';
         const RANKING_TEST1_MODE = 'ranking_test4';
         const RANKING_DE0A100_MODE = 'ranking_de0a100';
         
         const RANKING_GENERAL_MODE = 'ranking_general';
 const RANKING_SCOPE = 'de0a100';
+        let unlockConsonanteAnnouncedThisGame = false;
+        let pendingU1L1T4UnlockPoints = null;
 
         function normalizeStudentName(name) {
             return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        function saveUnlockStateScore(columna, puntos) {
+            const numericPoints = Number(puntos);
+            if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+            try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                const current = parsed && typeof parsed === 'object' ? parsed : {};
+                const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+                scores[columna] = numericPoints;
+                current.scores = scores;
+                localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+            } catch (e) { }
         }
 
         function getStudentFromStorage() {
@@ -4605,6 +4738,67 @@ const RANKING_SCOPE = 'de0a100';
             } catch (error) {
                 console.warn('Error al enviar puntos a Google Sheet:', error);
             }
+        }
+
+        function saveU1L1T4BadgeAndAnnounceUnlock(puntos) {
+            const puntosNumericos = Number(puntos);
+            if (!Number.isFinite(puntosNumericos) || puntosNumericos < 0 || puntosNumericos > 5) return;
+
+            saveUnlockStateScore('U1L1T4', puntosNumericos);
+
+            if (puntosNumericos !== 4 && puntosNumericos !== 5) return;
+            pendingU1L1T4UnlockPoints = puntosNumericos;
+        }
+
+        function showPendingU1L1T4UnlockModal() {
+            const puntosNumericos = Number(pendingU1L1T4UnlockPoints);
+            if (unlockConsonanteAnnouncedThisGame) return;
+            if (puntosNumericos !== 4 && puntosNumericos !== 5) return;
+
+            unlockConsonanteAnnouncedThisGame = true;
+            pendingU1L1T4UnlockPoints = null;
+
+            const existing = document.getElementById(U1L1T4_UNLOCK_OVERLAY_ID);
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = U1L1T4_UNLOCK_OVERLAY_ID;
+            overlay.className = 'unlock-celebration-overlay';
+            overlay.innerHTML = `
+                <div class="unlock-celebration-card" role="status" aria-live="polite">
+                    <button id="unlock-consonante-close-btn" type="button" class="unlock-celebration-close" aria-label="Cerrar">×</button>
+                    <div class="unlock-celebration-emoji" aria-hidden="true">🔓⚡🔨</div>
+                    <h3 class="unlock-celebration-title">Tema desbloqueado</h3>
+                    <p class="unlock-celebration-text">Ya esta disponible:</p>
+                    <div class="unlock-topic-highlight">Consonante+vocal</div>
+                </div>
+            `;
+
+            try {
+                const unlockAudio = new Audio('https://fawzinoo.github.io/audios/livel.mp3');
+                unlockAudio.volume = 0.9;
+                unlockAudio.play().catch(() => { });
+            } catch (e) { }
+
+            document.body.appendChild(overlay);
+            requestAnimationFrame(() => overlay.classList.add('show'));
+
+            let closed = false;
+            const hideAndRemove = (playSound = false) => {
+                if (closed) return;
+                closed = true;
+                if (playSound) {
+                    try { playButtonSound(); } catch (e) { }
+                }
+                overlay.classList.remove('show');
+                overlay.classList.add('hide');
+                setTimeout(() => {
+                    if (overlay.parentNode) overlay.remove();
+                }, 360);
+            };
+
+            const closeBtn = overlay.querySelector('#unlock-consonante-close-btn');
+            if (closeBtn) closeBtn.addEventListener('click', () => hideAndRemove(true));
         }
 
         function getRankingBadge(pos) {
@@ -6725,6 +6919,10 @@ const RANKING_SCOPE = 'de0a100';
                     }
                 }
             }, 100);
+
+            setTimeout(() => {
+                showPendingU1L1T4UnlockModal();
+            }, 260);
         }
 
         // Función para mostrar palabras correctas
@@ -8415,6 +8613,7 @@ const RANKING_SCOPE = 'de0a100';
 
             // Enviar puntos al completar la partida (doPost lesson_points)
             if (totalCards > 0 && completedCards.size === totalCards) {
+                saveU1L1T4BadgeAndAnnounceUnlock(puntosObtenidos);
                 void sendLessonPointsToSheet(gamePercentage, puntosObtenidos);
             }
 
@@ -8492,6 +8691,8 @@ const RANKING_SCOPE = 'de0a100';
             if (totalAttempts > 0) {
                 saveLastGamePercentage();
             }
+            unlockConsonanteAnnouncedThisGame = false;
+            pendingU1L1T4UnlockPoints = null;
 
             // LIMPIAR PROGRESO GUARDADO al reiniciar
             clearCurrentProgress();

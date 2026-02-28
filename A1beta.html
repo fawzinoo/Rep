@@ -5282,6 +5282,14 @@
             return null;
         }
 
+        function getFirstValidTopicPoints(candidates = []) {
+            for (const candidate of candidates) {
+                const score = sanitizeTopicPoints(candidate);
+                if (score !== null) return score;
+            }
+            return null;
+        }
+
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
@@ -5295,22 +5303,44 @@
                 const parsed = parseAlfabetoUnlockState();
                 if (!parsed) return null;
 
-                const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
-                if (scoreFromMap !== null) return scoreFromMap;
+                const normalizedColumn = String(column || '').trim();
+                const lowerColumn = normalizedColumn.toLowerCase();
+                const testKeyByColumn = {
+                    U1L0T1: 'test1',
+                    U1L0T2: 'test2',
+                    U1L0T3: 'test3',
+                    U1L0T4: 'test4'
+                };
+                const testKey = testKeyByColumn[normalizedColumn] || '';
 
-                const legacyMap = {
+                const directScore = getFirstValidTopicPoints([
+                    parsed?.scores?.[normalizedColumn],
+                    parsed?.scores?.[lowerColumn],
+                    parsed?.[normalizedColumn],
+                    parsed?.[lowerColumn]
+                ]);
+                if (directScore !== null) return directScore;
+
+                if (testKey) {
+                    const fromTestShape = getFirstValidTopicPoints([
+                        parsed?.[testKey]?.points,
+                        parsed?.[testKey]?.score,
+                        parsed?.[testKey]?.value,
+                        parsed?.[testKey]?.puntos,
+                        parsed?.[testKey]
+                    ]);
+                    if (fromTestShape !== null) return fromTestShape;
+                }
+
+                // Compatibilidad con estructuras antiguas donde test2/test3/test4 guardaban puntos previos.
+                const legacyCrossTestPoints = {
                     U1L0T1: parsed?.test2?.points,
                     U1L0T2: parsed?.test3?.points,
                     U1L0T3: parsed?.test4?.points,
                     U1L0T4: parsed?.test4?.points
                 };
-                const scoreFromLegacyMap = sanitizeTopicPoints(legacyMap[column]);
-                if (scoreFromLegacyMap !== null) return scoreFromLegacyMap;
-
-                if (column === 'U1L0T4') {
-                    const scoreFromLegacyTest4 = sanitizeTopicPoints(parsed?.test4);
-                    if (scoreFromLegacyTest4 !== null) return scoreFromLegacyTest4;
-                }
+                const legacyScore = getFirstValidTopicPoints([legacyCrossTestPoints[normalizedColumn]]);
+                if (legacyScore !== null) return legacyScore;
 
                 return null;
             } catch (e) {
@@ -5347,7 +5377,7 @@
                 test1: test1LegacyFlag === true || test2UnlockFlag === true || test1UnlockedByScore,
                 test2: test3UnlockFlag === true || test2UnlockedByScore,
                 test3: test4UnlockFlag === true || test3UnlockedByScore,
-                test4: test4UnlockedByScore
+                test4: test4UnlockFlag === true || test4UnlockedByScore
             };
         }
 
@@ -5407,12 +5437,15 @@
             allColumns.forEach((column) => {
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);
             });
+            const localSemaphoreState = getNextTopicSemaphoreState(pointsByColumn);
 
             // Aplicar desbloqueos disponibles en localStorage al instante (sin esperar doGet)
             let unlockedFromLocal = false;
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
-                if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
+                const unlockedByScore = Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD;
+                const unlockedByStateFallback = unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE && localSemaphoreState.test4 === true;
+                if (unlockedByScore || unlockedByStateFallback) {
                     if (CANDADOS[unlockTitle] !== false) unlockedFromLocal = true;
                     CANDADOS[unlockTitle] = false;
                 }

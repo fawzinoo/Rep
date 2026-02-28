@@ -5215,6 +5215,7 @@
         const TOPIC_UNLOCK_THRESHOLD = 4; // 4 o 5 desbloquea el siguiente tema
         const ALFABETO_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
         const NEXT_TOPIC_SEMAPHORE_TITLE = 'Resumen de 0 a 100';
+        const NEXT_TOPIC_CARD_ID = 'de0a100';
         const NEXT_TOPIC_SEMAPHORE_COLUMNS = ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'];
         const TOPIC_UNLOCK_RULES = [
             { column: 'U1L0T4', unlockTitle: 'Resumen de 0 a 100' },
@@ -5477,6 +5478,32 @@
             });
         }
 
+        function syncNextTopicByCardId() {
+            const card = document.querySelector(`[data-card-id="${NEXT_TOPIC_CARD_ID}"]`);
+            if (!card) return;
+
+            const localT4 = getLocalTopicPointsByColumn('U1L0T4');
+            const remoteT4 = sanitizeTopicPoints(latestTopicPointsByColumn?.U1L0T4);
+            const t4Points = localT4 !== null ? localT4 : remoteT4;
+            const semaphoreState = getNextTopicSemaphoreState(latestTopicPointsByColumn);
+            const unlocked = Boolean(semaphoreState.test4) || (t4Points !== null && t4Points >= TOPIC_UNLOCK_THRESHOLD);
+
+            if (unlocked) {
+                CANDADOS[NEXT_TOPIC_SEMAPHORE_TITLE] = false;
+                convertToNormalCard(card, NEXT_TOPIC_SEMAPHORE_TITLE);
+                ensureNormalCardSessionLink(card, NEXT_TOPIC_SEMAPHORE_TITLE);
+                syncNextTopicSemaphore(card, NEXT_TOPIC_SEMAPHORE_TITLE, false);
+            } else {
+                removeNextTopicSemaphore(card);
+            }
+
+            console.warn('[A1beta] next-topic-local-sync', {
+                unlocked,
+                t4Points,
+                semaphoreState
+            });
+        }
+
         async function updateCandadosFromT4Progress() {
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
             const allColumns = [...new Set([...uniqueColumns, ...NEXT_TOPIC_SEMAPHORE_COLUMNS])];
@@ -5493,7 +5520,7 @@
                 const unlockedByScore = Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD;
                 const unlockedByStateFallback = unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE && localSemaphoreState.test4 === true;
                 if (unlockTitle === NEXT_TOPIC_SEMAPHORE_TITLE) {
-                    console.debug('[A1beta] unlock-check resumen', {
+                    console.warn('[A1beta] unlock-check resumen', {
                         pointsU1L0T4: pointsByColumn.U1L0T4,
                         localSemaphoreState,
                         unlockedByScore,
@@ -5563,6 +5590,9 @@
                     // Si no está en CANDADOS, dejar como está
                 }
             });
+
+            // Forzar el estado del siguiente tema por card-id, aunque falle doGet o cambie el título.
+            syncNextTopicByCardId();
         }
 
         function ensureNormalCardSessionLink(card, cardTitle) {

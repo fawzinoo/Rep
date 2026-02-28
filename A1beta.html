@@ -1709,14 +1709,14 @@
 
         /* Tarjetas bloqueadas */
         .locked-card {
-            opacity: 0.95;
-            filter: grayscale(0.3) brightness(0.9);
+            opacity: 1;
+            filter: none;
         }
 
         /* Restaurar y enfatizar sombra en tarjetas bloqueadas (evita que otras reglas la eliminen) */
         .locked-card {
             /* sombra más pronunciada y suave */
-            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36), 0 6px 18px rgba(0, 0, 0, 0.24) !important;
+            box-shadow: 0 10px 22px rgba(2, 6, 23, 0.24), 0 2px 8px rgba(2, 6, 23, 0.14) !important;
             position: relative;
             /* para que el overlay no afecte al flujo */
             overflow: hidden;
@@ -2090,14 +2090,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(140deg, rgba(2, 6, 23, 0.55), rgba(2, 6, 23, 0.75));
-            /* más oscuro para destacar el candado */
+            background: transparent;
             color: #ffd700;
             z-index: 6;
             /* por encima de la imagen pero debajo de popups/global */
             pointer-events: none;
             /* deja que el click lo maneje la tarjeta */
-            backdrop-filter: blur(2px);
+            backdrop-filter: none;
         }
 
         .locked-card .card-image-container {
@@ -2168,25 +2167,13 @@
                 repeating-linear-gradient(125deg,
                     transparent 0 14px,
                     rgba(255, 255, 255, 0.05) 14px 16px);
-            opacity: 0.38;
+            opacity: 0.08;
             transform: rotate(-9deg);
             z-index: 0;
         }
 
         .locked-topic-chip {
-            position: absolute;
-            top: 14px;
-            left: 14px;
-            z-index: 2;
-            padding: 6px 11px;
-            border-radius: 999px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            color: #e2e8f0;
-            background: rgba(15, 23, 42, 0.72);
-            border: 1px solid rgba(203, 213, 225, 0.3);
-            backdrop-filter: blur(2px);
+            display: none;
         }
 
         /* Icono del candado: grande, con fondo y sombra para resaltar */
@@ -2197,9 +2184,9 @@
             height: 96px;
             line-height: 96px;
             border-radius: 20px;
-            background: linear-gradient(135deg, #ffd166, #f59e0b);
-            border: 1px solid rgba(255, 255, 255, 0.35);
-            color: #2a1a09;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.55);
+            color: #f8fafc;
             /* tono oscuro para contraste */
             display: inline-block;
             text-align: center;
@@ -5882,86 +5869,48 @@
             card.style.boxShadow = '';
         }
 
-        // Función universal para desbloquear cualquier tarjeta
+        function getPreviousTopicTitle(cardElement, cardTitle) {
+            const hardcodedPrevious = {
+                'Resumen de 0 a 100': 'El alfabeto español',
+                'Consonante+vocal': 'Resumen de 0 a 100',
+                'Paises del mundo': 'Consonante+vocal',
+                'Gentilicios': 'Paises del mundo',
+                'idiomas': 'Gentilicios',
+                'profesiones y oficios 1': 'idiomas',
+                'Lugares de trabajo': 'profesiones y oficios 1'
+            };
+            if (hardcodedPrevious[cardTitle]) return hardcodedPrevious[cardTitle];
+
+            const gallery = cardElement?.closest('.gallery');
+            if (!gallery) return null;
+            const cards = Array.from(gallery.querySelectorAll('.card, .locked-card'));
+            const currentIndex = cards.findIndex((card) => card === cardElement);
+            if (currentIndex <= 0) return null;
+            const previousTitle = cards[currentIndex - 1]?.querySelector('h1')?.textContent?.trim() || '';
+            return previousTitle || null;
+        }
+
+        // Aviso para tarjetas bloqueadas (sin contraseña).
         function unlockCard(cardTitle, url, cardElement) {
-            // Si es la tarjeta de países del mundo, mostrar el menú especial
-            if (cardTitle === 'Países del mundo') {
-                mostrarMenuPaises();
-                return;
-            }
+            const previousTitle = getPreviousTopicTitle(cardElement, cardTitle);
+            const dependencyLine = previousTitle
+                ? `Para desbloquear <strong>${cardTitle}</strong>, completa primero <strong>${previousTitle}</strong>.`
+                : `Para desbloquear <strong>${cardTitle}</strong>, primero completa el tema anterior.`;
 
             Swal.fire({
-                title: 'Contenido Privado',
-                html: `<i class="fas fa-lock" style="font-size: 2rem; color: #ffd700; margin-bottom: 10px;"></i><br>
-                       <strong>${cardTitle}</strong><br>
-                       <small style="color: #666;">Este contenido requiere autorización</small>`,
-                input: 'password',
-                inputLabel: 'Introduzca la contraseña:',
-                inputPlaceholder: 'Escribe tu contraseña aquí',
-                showCancelButton: true,
-                confirmButtonText: '<i class="fas fa-unlock"></i> Desbloquear',
-                cancelButtonText: '<i class="fas fa-times"></i> Cancelar',
-                customClass: {
-                    confirmButton: 'btn btn-success',
-                    cancelButton: 'btn btn-secondary'
-                },
+                icon: 'info',
+                title: 'Tema bloqueado',
+                html: `
+                    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+                        <i class="fas fa-lock" style="font-size:2rem; color:#f59e0b;"></i>
+                        <div style="font-size:1rem; color:#334155; text-align:center; line-height:1.45;">
+                            ${dependencyLine}
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Entendido',
+                allowOutsideClick: true,
                 buttonsStyling: true
-            }).then((result) => {
-
-                const encodedPassword = "MDAwMw==";  // "0003" en base64
-                const decodedPassword = atob(encodedPassword);
-
-                if (result.isConfirmed) {
-                    if (result.value === decodedPassword) {
-
-                        // Desbloquear dinámicamente la tarjeta
-                        const lockOverlay = cardElement.querySelector('.lock-overlay');
-                        const title = cardElement.querySelector('.locked-title');
-
-                        // Animación de desbloqueo
-                        if (lockOverlay) {
-                            lockOverlay.style.transition = 'opacity 0.8s ease-out';
-                            lockOverlay.style.opacity = '0';
-
-                            setTimeout(() => {
-                                lockOverlay.remove();
-                            }, 800);
-                        }
-
-                        // Restaurar título a colores normales
-                        if (title) {
-                            title.classList.remove('locked-title');
-                            title.style.color = 'white';
-                            title.style.background = 'linear-gradient(to right, #7f8183, #044264)';
-                            title.style.opacity = '1';
-                        }
-
-                        // Remover filtros de la tarjeta
-                        cardElement.style.opacity = '1';
-                        cardElement.style.filter = 'none';
-
-                        Swal.fire({
-                            icon: 'success',
-                            title: '¡Acceso concedido!',
-                            text: 'Contenido desbloqueado. Redirigiendo...',
-                            showConfirmButton: false,
-                            timer: 2000
-                        }).then(() => {
-                            if (url && url !== '#') {
-                                const activityId = ACTIVITY_IDS_BY_TITLE[cardTitle] || '';
-                                const sessionUrl = activityId ? buildSessionUrl(url, activityId) : url;
-                                window.location.href = sessionUrl || url;
-                            }
-                        });
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Contraseña incorrecta',
-                            html: '<i class="fas fa-exclamation-triangle"></i><br>Acceso denegado. Inténtalo de nuevo.',
-                            confirmButtonText: 'Reintentar'
-                        });
-                    }
-                }
             });
         }
 

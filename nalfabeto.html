@@ -2887,8 +2887,39 @@
             }
         };
         const UNLOCK_LEVEL_SOUND_URL = 'https://fawzinoo.github.io/audios/livel.mp3';
+        const unlockLevelAudio = new Audio(UNLOCK_LEVEL_SOUND_URL);
+        unlockLevelAudio.preload = 'auto';
+        unlockLevelAudio.volume = 0.9;
+        let pendingUnlockSoundRetry = false;
         let unlockCelebrationQueue = [];
         let unlockCelebrationRunning = false;
+
+        function requestUnlockSoundRetryOnUserGesture() {
+            const retry = () => {
+                if (!pendingUnlockSoundRetry) return;
+                pendingUnlockSoundRetry = false;
+                tryPlayUnlockLevelSound();
+            };
+            window.addEventListener('pointerdown', retry, { once: true, capture: true });
+            window.addEventListener('touchstart', retry, { once: true, capture: true });
+            window.addEventListener('keydown', retry, { once: true, capture: true });
+        }
+
+        function tryPlayUnlockLevelSound() {
+            try {
+                unlockLevelAudio.currentTime = 0;
+                const maybePromise = unlockLevelAudio.play();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {
+                        pendingUnlockSoundRetry = true;
+                        requestUnlockSoundRetryOnUserGesture();
+                    });
+                }
+            } catch (e) {
+                pendingUnlockSoundRetry = true;
+                requestUnlockSoundRetryOnUserGesture();
+            }
+        }
 
         function normalizeStudentName(value) {
             return String(value || '')
@@ -3002,11 +3033,7 @@
             const existing = document.getElementById('unlock-celebration-overlay');
             if (existing) existing.remove();
 
-            try {
-                const unlockAudio = new Audio(UNLOCK_LEVEL_SOUND_URL);
-                unlockAudio.volume = 0.9;
-                unlockAudio.play().catch(() => { });
-            } catch (e) { }
+            tryPlayUnlockLevelSound();
 
             const overlay = document.createElement('div');
             overlay.id = 'unlock-celebration-overlay';

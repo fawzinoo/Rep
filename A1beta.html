@@ -5519,7 +5519,8 @@
             { column: 'U1L5T4', unlockTitle: 'profesiones y oficios 1' },
             { column: 'U1L6T4', unlockTitle: 'Lugares de trabajo' }
         ];
-        let latestTopicPointsByColumn = {};
+        const TOPIC_POINTS_CACHE_KEY = 'a1beta-topic-points-cache-v1';
+        let latestTopicPointsByColumn = readTopicPointsCache();
         const LOCKED_CARD_VISUAL_THEMES = [
             { bg: 'linear-gradient(145deg, #0b132b 0%, #1c2541 55%, #3a506b 100%)', glow: 'rgba(56, 189, 248, 0.32)' },
             { bg: 'linear-gradient(145deg, #1f2937 0%, #111827 56%, #0f172a 100%)', glow: 'rgba(250, 204, 21, 0.28)' },
@@ -5603,9 +5604,53 @@
         }
 
         function sanitizeTopicPoints(value) {
-            const numeric = Number(value);
-            if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
+            if (value === null || value === undefined) return null;
+            if (typeof value === 'boolean') return null;
+
+            let numeric = null;
+            if (typeof value === 'number') {
+                numeric = value;
+            } else if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return null;
+                const match = trimmed.replace(',', '.').match(/-?\d+(\.\d+)?/);
+                if (!match) return null;
+                numeric = Number(match[0]);
+            } else {
+                return null;
+            }
+
+            if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return Math.round(numeric);
             return null;
+        }
+
+        function readTopicPointsCache() {
+            try {
+                const raw = localStorage.getItem(TOPIC_POINTS_CACHE_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return {};
+
+                const out = {};
+                Object.keys(parsed).forEach((column) => {
+                    const points = sanitizeTopicPoints(parsed[column]);
+                    if (points !== null) out[column] = points;
+                });
+                return out;
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveTopicPointsCache(pointsByColumn) {
+            try {
+                const payload = {};
+                Object.keys(pointsByColumn || {}).forEach((column) => {
+                    const points = sanitizeTopicPoints(pointsByColumn[column]);
+                    if (points !== null) payload[column] = points;
+                });
+                localStorage.setItem(TOPIC_POINTS_CACHE_KEY, JSON.stringify(payload));
+            } catch (_) { }
         }
 
         function parseUnlockFlag(value) {
@@ -5619,30 +5664,53 @@
         function getLocalTopicPointsByColumn(column) {
             try {
                 const parsed = parseTopicUnlockStateByColumn(column);
-                if (!parsed) return null;
-                const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
-                const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
-                const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
-                    ? `test${testIndex}`
-                    : null;
+                if (parsed) {
+                    const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
+                    const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
+                    const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
+                        ? `test${testIndex}`
+                        : null;
 
-                const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
-                if (scoreFromMap !== null) return scoreFromMap;
+                    const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
+                    if (scoreFromMap !== null) return scoreFromMap;
 
-                if (testKey) {
-                    const testNode = parsed?.[testKey];
-                    const fromTestNode = sanitizeTopicPoints(
-                        testNode?.points ?? testNode?.score ?? testNode?.value ?? testNode?.puntos
-                    );
-                    if (fromTestNode !== null) return fromTestNode;
-                    const fromLegacyTestValue = sanitizeTopicPoints(testNode);
-                    if (fromLegacyTestValue !== null) return fromLegacyTestValue;
+                    const scoreFromRoot = sanitizeTopicPoints(parsed?.[column]);
+                    if (scoreFromRoot !== null) return scoreFromRoot;
+
+                    if (testKey) {
+                        const testNode = parsed?.[testKey] ?? parsed?.tests?.[testKey];
+                        const fromTestNode = sanitizeTopicPoints(
+                            testNode?.points ?? testNode?.score ?? testNode?.value ?? testNode?.puntos
+                        );
+                        if (fromTestNode !== null) return fromTestNode;
+                        // Legacy compat: solo aceptar numéricos en top-level, no booleanos true/false.
+                        if (typeof testNode !== 'boolean') {
+                            const fromLegacyTestValue = sanitizeTopicPoints(testNode);
+                            if (fromLegacyTestValue !== null) return fromLegacyTestValue;
+                        }
+                    }
                 }
+
+                const legacyColumnKey = `martillo-${String(column || '').toUpperCase()}`;
+                const legacyScore = sanitizeTopicPoints(localStorage.getItem(legacyColumnKey));
+                if (legacyScore !== null) return legacyScore;
+
+                const cachedScore = sanitizeTopicPoints(latestTopicPointsByColumn?.[column]);
+                if (cachedScore !== null) return cachedScore;
 
                 return null;
             } catch (e) {
                 return null;
             }
+        }
+
+        function syncCandadosFromLocalProgress() {
+            TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
+                const points = getLocalTopicPointsByColumn(column);
+                if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
+                    CANDADOS[unlockTitle] = false;
+                }
+            });
         }
 
         function getNextTopicSemaphoreState(pointsByColumn = {}) {
@@ -5794,6 +5862,7 @@
                     latestTopicPointsByColumn[column] = pointsByColumn[column];
                 }
             });
+            saveTopicPointsCache(latestTopicPointsByColumn);
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
@@ -5868,6 +5937,7 @@
             candadosRefreshInFlight = true;
             try {
                 // Aplicar estado base local al instante (evita flicker inicial)
+                syncCandadosFromLocalProgress();
                 applyCandadosToCards();
                 await updateCandadosFromT4Progress();
             } catch (error) {

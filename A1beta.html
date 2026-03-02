@@ -1641,6 +1641,12 @@
             margin: auto;
         }
 
+        #unit1-lexico .gallery {
+            padding-top: 42px;
+            row-gap: 78px;
+            column-gap: 20px;
+        }
+
         .coming-soon {
             margin: 0;
             padding: 20px;
@@ -2355,9 +2361,9 @@
         .topic-test-semaphore {
             position: absolute;
             top: 10px;
-            right: 10px;
-            left: auto;
-            transform: none;
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%);
             z-index: 8;
             pointer-events: none;
             padding: 10px 12px;
@@ -2386,6 +2392,54 @@
             gap: 8px;
             position: relative;
             z-index: 1;
+        }
+
+        .topic-test-total-floating {
+            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(100, 116, 139, 0.9);
+            color: #ffd700;
+            border: 1px solid rgba(226, 232, 240, 0.42);
+            font-weight: 800;
+            font-size: 15px;
+            line-height: 1;
+            letter-spacing: 0.2px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+            z-index: 12;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translateX(-50%);
+            overflow: visible;
+        }
+
+        .topic-test-total-crown {
+            position: absolute;
+            top: -24px;
+            left: 50%;
+            width: calc(100% - 14px);
+            height: 30px;
+            max-width: none;
+            transform: translateX(-50%);
+            object-fit: fill;
+            object-position: center;
+            pointer-events: none;
+            user-select: none;
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.32));
+        }
+
+        .next-topic-semaphore-card {
+            margin-bottom: 0;
+        }
+
+        .topic-test-total-floating i {
+            color: #ffd700;
+            font-size: 18px;
+            line-height: 1;
         }
 
         .topic-test-semaphore-item {
@@ -2457,14 +2511,26 @@
         }
 
         @media (max-width: 560px) {
+            #unit1-lexico .gallery {
+                padding-top: 34px;
+                row-gap: 62px;
+                column-gap: 16px;
+            }
+
             .locked-topic-chip {
                 font-size: 10px;
                 padding: 5px 9px;
             }
 
+            .next-topic-semaphore-card {
+                margin-bottom: 0;
+            }
+
             .topic-test-semaphore {
-                right: 8px;
                 top: 8px;
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
                 padding: 8px 9px;
                 min-width: 126px;
             }
@@ -5735,6 +5801,39 @@
             }
         }
 
+        function getUnlockStateScoreOnly(column) {
+            try {
+                const parsed = parseTopicUnlockStateByColumn(column);
+                if (!parsed || typeof parsed !== 'object') return null;
+                const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
+                const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
+                const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
+                    ? `test${testIndex}`
+                    : null;
+
+                const scoreFromMap = sanitizeTopicPoints(parsed?.scores?.[column]);
+                if (scoreFromMap !== null) return scoreFromMap;
+
+                const scoreFromRoot = sanitizeTopicPoints(parsed?.[column]);
+                if (scoreFromRoot !== null) return scoreFromRoot;
+
+                if (testKey) {
+                    const testNode = parsed?.[testKey] ?? parsed?.tests?.[testKey];
+                    const fromTestNode = sanitizeTopicPoints(
+                        testNode?.points ?? testNode?.score ?? testNode?.value ?? testNode?.puntos
+                    );
+                    if (fromTestNode !== null) return fromTestNode;
+                    if (typeof testNode !== 'boolean') {
+                        const fromLegacy = sanitizeTopicPoints(testNode);
+                        if (fromLegacy !== null) return fromLegacy;
+                    }
+                }
+                return null;
+            } catch (_) {
+                return null;
+            }
+        }
+
         function syncCandadosFromLocalProgress() {
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = getLocalTopicPointsByColumn(column);
@@ -5782,7 +5881,82 @@
             if (!card) return;
             const existing = card.querySelector('.topic-test-semaphore');
             if (existing) existing.remove();
+            removeTopicTotalBadge(card);
             card.classList.remove('next-topic-semaphore-card');
+        }
+
+        function removeTopicTotalBadge(card) {
+            if (!card) return;
+            const gallery = card.closest('.gallery');
+            if (!gallery) return;
+            const cardId = card.dataset.cardId || '';
+            if (!cardId) return;
+            const badge = gallery.querySelector(`.topic-test-total-floating[data-card-id="${cardId}"]`);
+            if (badge) badge.remove();
+        }
+
+        function ensureTopicTotalBadge(card) {
+            if (!card) return null;
+            const gallery = card.closest('.gallery');
+            if (!gallery) return null;
+            const cardId = card.dataset.cardId || '';
+            if (!cardId) return null;
+
+            const galleryPosition = window.getComputedStyle(gallery).position;
+            if (!galleryPosition || galleryPosition === 'static') {
+                gallery.style.position = 'relative';
+            }
+
+            let badge = gallery.querySelector(`.topic-test-total-floating[data-card-id="${cardId}"]`);
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.className = 'topic-test-total-floating';
+                badge.dataset.cardId = cardId;
+                badge.setAttribute('aria-hidden', 'true');
+                badge.innerHTML = `
+                    <img class="topic-test-total-crown" src="https://copilot.microsoft.com/th/id/BCO.6febba08-38e9-4fef-85c8-194a3e15def1.png" alt="" aria-hidden="true">
+                    <i class="fas fa-trophy" aria-hidden="true"></i>
+                    <span data-topic-total-text>0 pts</span>
+                `;
+                gallery.appendChild(badge);
+            }
+            return badge;
+        }
+
+        function positionTopicTotalBadge(card, badge, panel = null) {
+            if (!card || !badge) return;
+            const gallery = card.closest('.gallery');
+            if (!gallery) return;
+            const cardRect = card.getBoundingClientRect();
+            const galleryRect = gallery.getBoundingClientRect();
+            const badgeHeight = badge.offsetHeight || 34;
+            const badgeWidth = badge.offsetWidth || 120;
+            const horizontalMargin = 8;
+            const cardCenterX = (cardRect.left - galleryRect.left) + (cardRect.width / 2);
+            const minCenterX = horizontalMargin + (badgeWidth / 2);
+            const maxCenterX = Math.max(minCenterX, galleryRect.width - horizontalMargin - (badgeWidth / 2));
+            const clampedCenterX = Math.min(Math.max(cardCenterX, minCenterX), maxCenterX);
+            const topGapAboveCard = 0;
+            const desiredTop = (cardRect.top - galleryRect.top) - badgeHeight - topGapAboveCard;
+            badge.style.left = `${clampedCenterX}px`;
+            badge.style.top = `${desiredTop}px`;
+        }
+
+        function refreshTopicTotalBadgePositions() {
+            const selector = TOPIC_SEMAPHORE_CONFIG
+                .map((config) => config?.cardId)
+                .filter(Boolean)
+                .map((cardId) => `.card[data-card-id="${cardId}"], .locked-card[data-card-id="${cardId}"]`)
+                .join(', ');
+            if (!selector) return;
+            const cards = document.querySelectorAll(selector);
+            cards.forEach((card) => {
+                const panel = card.querySelector('.topic-test-semaphore');
+                if (!panel) return;
+                const badge = ensureTopicTotalBadge(card);
+                if (!badge) return;
+                positionTopicTotalBadge(card, badge, panel);
+            });
         }
 
         function ensureNextTopicSemaphore(card, shouldAttachToLockOverlay) {
@@ -5823,17 +5997,53 @@
             return panel;
         }
 
+        function getTopicScoreValue(column, pointsByColumn = {}) {
+            const localScore = getLocalTopicPointsByColumn(column);
+            if (localScore !== null) return Number(localScore) || 0;
+            const remoteScore = sanitizeTopicPoints(pointsByColumn?.[column]);
+            if (remoteScore !== null) return Number(remoteScore) || 0;
+            return null;
+        }
+
+        function getTopicTotalPoints(columns, pointsByColumn = {}) {
+            if (!Array.isArray(columns) || columns.length === 0) return null;
+            let hasAnyScore = false;
+            let total = 0;
+            columns.forEach((column) => {
+                const score = getTopicScoreValue(column, pointsByColumn);
+                if (score === null) return;
+                hasAnyScore = true;
+                total += Number(score) || 0;
+            });
+            return hasAnyScore ? total : null;
+        }
+
+        function getRemoteTopicTotalPoints(columns, pointsByColumn = {}) {
+            if (!Array.isArray(columns) || columns.length === 0) return null;
+            let hasAnyScore = false;
+            let total = 0;
+            columns.forEach((column) => {
+                const remoteScore = sanitizeTopicPoints(pointsByColumn?.[column]);
+                if (remoteScore === null) return;
+                hasAnyScore = true;
+                total += Number(remoteScore) || 0;
+            });
+            return hasAnyScore ? total : null;
+        }
+
         function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
             const semaphoreConfig = TOPIC_SEMAPHORE_CONFIG.find((config) =>
                 config.cardId === card?.dataset?.cardId && config.title === cardTitle
             );
-            if (!card || !semaphoreConfig || shouldBeLocked === true) {
+            const isLockedCard = Boolean(card?.classList?.contains('locked-card'));
+            if (!card || !semaphoreConfig || shouldBeLocked === true || isLockedCard) {
                 removeNextTopicSemaphore(card);
                 return;
             }
 
             const panel = ensureNextTopicSemaphore(card, false);
             if (!panel) return;
+            card.classList.add('next-topic-semaphore-card');
             const state = getTopicSemaphoreState(semaphoreConfig.columns, latestTopicPointsByColumn);
             const stateByTest = {
                 1: Boolean(state.test1),
@@ -5846,6 +6056,22 @@
                 const testNumber = Number(light.dataset.test);
                 light.classList.toggle('is-on', Boolean(stateByTest[testNumber]));
             });
+
+            const badge = ensureTopicTotalBadge(card);
+            if (!badge) return;
+            const localScores = semaphoreConfig.columns.map((column) => getUnlockStateScoreOnly(column));
+            const hasLocalUnlockStateScores = localScores.some((score) => score !== null);
+            const localTotal = hasLocalUnlockStateScores
+                ? localScores.reduce((sum, score) => sum + (Number(score) || 0), 0)
+                : null;
+            const remoteTotal = getRemoteTopicTotalPoints(semaphoreConfig.columns, latestTopicPointsByColumn);
+            const totalPoints = localTotal !== null ? localTotal : remoteTotal;
+            const totalText = badge.querySelector('[data-topic-total-text]');
+            if (totalText) {
+                totalText.textContent = `${Number.isFinite(totalPoints) ? totalPoints : 0} pts`;
+            }
+            positionTopicTotalBadge(card, badge, panel);
+            requestAnimationFrame(() => positionTopicTotalBadge(card, badge, panel));
         }
 
         async function updateCandadosFromT4Progress() {
@@ -5856,6 +6082,14 @@
             allColumns.forEach((column) => {
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);
             });
+
+            // Requisito alfabeto: si no existe su unlock-state en localStorage, forzar doGet de U1L0T1..U1L0T4.
+            const hasAlfabetoUnlockState = Boolean(parseTopicUnlockStateByColumn('U1L0T1'));
+            if (!hasAlfabetoUnlockState) {
+                ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'].forEach((column) => {
+                    pointsByColumn[column] = null;
+                });
+            }
 
             // Aplicar desbloqueos disponibles en localStorage al instante (sin esperar doGet)
             let unlockedFromLocal = false;
@@ -5904,6 +6138,25 @@
         }
 
         function applyCandadosToCards() {
+            // Limpiar restos visuales huérfanos (píldoras/semaforos) antes de re-sincronizar.
+            document.querySelectorAll('.topic-test-total-floating').forEach((badge) => {
+                const gallery = badge.closest('.gallery');
+                if (!gallery) {
+                    badge.remove();
+                    return;
+                }
+                const cardId = String(badge.dataset.cardId || '').trim();
+                if (!cardId) return;
+                const target = gallery.querySelector(`.card[data-card-id="${cardId}"], .locked-card[data-card-id="${cardId}"]`);
+                if (!target || target.classList.contains('locked-card')) {
+                    badge.remove();
+                }
+            });
+            document.querySelectorAll('.locked-card .topic-test-semaphore').forEach((panel) => panel.remove());
+            document.querySelectorAll('.locked-card.next-topic-semaphore-card').forEach((card) => {
+                card.classList.remove('next-topic-semaphore-card');
+            });
+
             // Procesar cada tarjeta según el objeto CANDADOS
             const allCards = document.querySelectorAll('.card, .locked-card');
 
@@ -5912,6 +6165,7 @@
                 if (titleElement) {
                     const cardTitle = titleElement.textContent.trim();
                     const shouldBeLocked = CANDADOS[cardTitle];
+                    let cardForSync = card;
 
                     if (shouldBeLocked === true) {
                         // Convertir a tarjeta bloqueada
@@ -5919,10 +6173,25 @@
                     } else if (shouldBeLocked === false) {
                         // Convertir a tarjeta normal
                         convertToNormalCard(card, cardTitle);
-                        // Asegurar URL con sesión incluso si ya estaba en modo normal.
-                        ensureNormalCardSessionLink(card, cardTitle);
                     }
-                    syncNextTopicSemaphore(card, cardTitle, shouldBeLocked);
+                    const cardId = String(card.dataset.cardId || '').trim();
+                    if (cardId) {
+                        const gallery = card.closest('.gallery') || document;
+                        const candidates = Array.from(
+                            gallery.querySelectorAll(`.card[data-card-id="${cardId}"], .locked-card[data-card-id="${cardId}"]`)
+                        );
+                        const byTitle = candidates.find((candidate) => {
+                            const candidateTitle = candidate.querySelector('h1')?.textContent?.trim() || '';
+                            return candidateTitle === cardTitle;
+                        });
+                        cardForSync = byTitle || candidates[0] || card;
+                    }
+
+                    if (shouldBeLocked === false) {
+                        // Asegurar URL con sesión sobre la tarjeta viva en el DOM.
+                        ensureNormalCardSessionLink(cardForSync, cardTitle);
+                    }
+                    syncNextTopicSemaphore(cardForSync, cardTitle, shouldBeLocked);
                     // Si no está en CANDADOS, dejar como está
                 }
             });
@@ -5975,14 +6244,23 @@
                 console.warn('No se pudieron actualizar candados por progreso:', error);
             } finally {
                 applyCandadosToCards();
+                requestAnimationFrame(refreshTopicTotalBadgePositions);
                 candadosRefreshInFlight = false;
             }
         }
 
         // Event listener para manejar los candados dinámicamente
         document.addEventListener('DOMContentLoaded', refreshDynamicCandados);
+        window.addEventListener('load', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
         window.addEventListener('focus', refreshDynamicCandados);
         window.addEventListener('pageshow', refreshDynamicCandados);
+        window.addEventListener('resize', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
+        window.addEventListener('orientationchange', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
+        if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
+            document.fonts.ready
+                .then(() => requestAnimationFrame(refreshTopicTotalBadgePositions))
+                .catch(() => {});
+        }
         refreshDynamicCandados();
 
         // Si el access gate desbloquea contenido sin recargar, refrescar candados.

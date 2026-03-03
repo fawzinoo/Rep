@@ -5758,6 +5758,69 @@
             return null;
         }
 
+        function isLocalOneWayUnlockColumn(column) {
+            return /^U1L0T[1-4]$/i.test(String(column || '').trim());
+        }
+
+        function getLocalTopicUnlockedByColumn(column) {
+            if (!isLocalOneWayUnlockColumn(column)) return null;
+            try {
+                const normalizedColumn = String(column || '').toUpperCase().trim();
+                const parsed = parseTopicUnlockStateByColumn(column);
+                if (!parsed || typeof parsed !== 'object') return null;
+
+                const fromUnlockMap = parseUnlockFlag(parsed?.unlocksByColumn?.[normalizedColumn]);
+                if (fromUnlockMap !== null) return fromUnlockMap;
+
+                // Compatibilidad con estado legado de nalfabeto:
+                // U1L0T1->test2, U1L0T2->test3, U1L0T3->test4.
+                const legacyMap = {
+                    U1L0T1: 'test2',
+                    U1L0T2: 'test3',
+                    U1L0T3: 'test4'
+                };
+                const legacyKey = legacyMap[normalizedColumn];
+                if (legacyKey) {
+                    const legacyNode = parsed?.[legacyKey] ?? parsed?.tests?.[legacyKey];
+                    const legacyUnlock = parseUnlockFlag(legacyNode);
+                    if (legacyUnlock !== null) return legacyUnlock;
+                    const legacyUnlockFlag = parseUnlockFlag(legacyNode?.unlocked);
+                    if (legacyUnlockFlag !== null) return legacyUnlockFlag;
+                }
+
+                const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
+                const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
+                const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
+                    ? `test${testIndex}`
+                    : null;
+
+                if (testKey) {
+                    const testNode = parsed?.[testKey] ?? parsed?.tests?.[testKey];
+                    const fromTestNode = parseUnlockFlag(testNode);
+                    if (fromTestNode !== null) return fromTestNode;
+                    const fromTestUnlocked = parseUnlockFlag(testNode?.unlocked);
+                    if (fromTestUnlocked !== null) return fromTestUnlocked;
+                }
+
+                const fromRoot = parseUnlockFlag(parsed?.[column]);
+                if (fromRoot !== null) return fromRoot;
+
+                const score = sanitizeTopicPoints(parsed?.scores?.[column]);
+                if (score !== null) return score >= TOPIC_UNLOCK_THRESHOLD;
+
+                return null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function isColumnUnlockedByLocalStateOrScore(column, points = null) {
+            const localUnlock = getLocalTopicUnlockedByColumn(column);
+            if (localUnlock === true) return true;
+            const numericPoints = Number.isFinite(points) ? points : getLocalTopicPointsByColumn(column);
+            return Number.isFinite(numericPoints) && numericPoints >= TOPIC_UNLOCK_THRESHOLD;
+        }
+
         function getLocalTopicPointsByColumn(column) {
             try {
                 const parsed = parseTopicUnlockStateByColumn(column);
@@ -5837,7 +5900,7 @@
         function syncCandadosFromLocalProgress() {
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = getLocalTopicPointsByColumn(column);
-                if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
+                if (isColumnUnlockedByLocalStateOrScore(column, points)) {
                     CANDADOS[unlockTitle] = false;
                 }
             });
@@ -5864,10 +5927,10 @@
             const t3Score = Number(getScore(columns[2])) || 0;
             const t4Score = Number(getScore(columns[3])) || 0;
 
-            const test1Unlocked = t1Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test2Unlocked = t2Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test3Unlocked = t3Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test4Unlocked = t4Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test1Unlocked = Boolean(getLocalTopicUnlockedByColumn(columns[0])) || (t1Score >= TOPIC_UNLOCK_THRESHOLD);
+            const test2Unlocked = Boolean(getLocalTopicUnlockedByColumn(columns[1])) || (t2Score >= TOPIC_UNLOCK_THRESHOLD);
+            const test3Unlocked = Boolean(getLocalTopicUnlockedByColumn(columns[2])) || (t3Score >= TOPIC_UNLOCK_THRESHOLD);
+            const test4Unlocked = Boolean(getLocalTopicUnlockedByColumn(columns[3])) || (t4Score >= TOPIC_UNLOCK_THRESHOLD);
 
             return {
                 test1: test1Unlocked,
@@ -6095,8 +6158,7 @@
             let unlockedFromLocal = false;
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
-                const unlockedByScore = Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD;
-                if (unlockedByScore) {
+                if (isColumnUnlockedByLocalStateOrScore(column, points)) {
                     if (CANDADOS[unlockTitle] !== false) unlockedFromLocal = true;
                     CANDADOS[unlockTitle] = false;
                 }
@@ -6131,7 +6193,7 @@
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
-                if (Number.isFinite(points) && points >= TOPIC_UNLOCK_THRESHOLD) {
+                if (isColumnUnlockedByLocalStateOrScore(column, points)) {
                     CANDADOS[unlockTitle] = false;
                 }
             });

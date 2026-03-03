@@ -2984,11 +2984,17 @@
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
                 if (!raw) return emptyState;
                 const parsed = JSON.parse(raw);
+                const unlocksByColumn = parsed?.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+                    ? parsed.unlocksByColumn
+                    : {};
+                const byTest2 = parseUnlock(parsed?.test2) || parseUnlock(unlocksByColumn?.U1L0T1);
+                const byTest3 = parseUnlock(parsed?.test3) || parseUnlock(unlocksByColumn?.U1L0T2);
+                const byTest4 = parseUnlock(parsed?.test4) || parseUnlock(unlocksByColumn?.U1L0T3);
                 return parsed && typeof parsed === 'object'
                     ? {
-                        test2: parseUnlock(parsed.test2),
-                        test3: parseUnlock(parsed.test3),
-                        test4: parseUnlock(parsed.test4)
+                        test2: Boolean(byTest2),
+                        test3: Boolean(byTest3),
+                        test4: Boolean(byTest4)
                     }
                     : emptyState;
             } catch (e) {
@@ -2998,25 +3004,56 @@
 
         function saveStoredUnlockState(state, pointsByColumn) {
             try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                const current = parsed && typeof parsed === 'object' ? parsed : {};
+                const prevState = getStoredUnlockState();
+                let mergedTest4 = Boolean(prevState.test4 || state?.test4);
+                let mergedTest3 = Boolean(prevState.test3 || state?.test3 || mergedTest4);
+                let mergedTest2 = Boolean(prevState.test2 || state?.test2 || mergedTest3);
+
+                const prevScores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+                const normalizeScore = (value, fallback = 0) => {
+                    const numeric = Number(value);
+                    if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
+                    const backup = Number(fallback);
+                    return Number.isFinite(backup) && backup >= 0 && backup <= 5 ? backup : 0;
+                };
+
+                const scores = {
+                    U1L0T1: normalizeScore(pointsByColumn?.U1L0T1, prevScores?.U1L0T1),
+                    U1L0T2: normalizeScore(pointsByColumn?.U1L0T2, prevScores?.U1L0T2),
+                    U1L0T3: normalizeScore(pointsByColumn?.U1L0T3, prevScores?.U1L0T3),
+                    U1L0T4: normalizeScore(pointsByColumn?.U1L0T4, prevScores?.U1L0T4)
+                };
+
+                const prevUnlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+                    ? current.unlocksByColumn
+                    : {};
+                const unlocksByColumn = {
+                    ...prevUnlocksByColumn,
+                    U1L0T1: Boolean(prevUnlocksByColumn?.U1L0T1 || mergedTest2),
+                    U1L0T2: Boolean(prevUnlocksByColumn?.U1L0T2 || mergedTest3),
+                    U1L0T3: Boolean(prevUnlocksByColumn?.U1L0T3 || mergedTest4),
+                    U1L0T4: Boolean(prevUnlocksByColumn?.U1L0T4)
+                };
+
                 localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
+                    ...current,
                     test2: {
-                        unlocked: Boolean(state?.test2),
-                        points: Number(pointsByColumn?.U1L0T1) || 0
+                        unlocked: mergedTest2,
+                        points: scores.U1L0T1
                     },
                     test3: {
-                        unlocked: Boolean(state?.test3),
-                        points: Number(pointsByColumn?.U1L0T2) || 0
+                        unlocked: mergedTest3,
+                        points: scores.U1L0T2
                     },
                     test4: {
-                        unlocked: Boolean(state?.test4),
-                        points: Number(pointsByColumn?.U1L0T3) || 0
+                        unlocked: mergedTest4,
+                        points: scores.U1L0T3
                     },
-                    scores: {
-                        U1L0T1: Number(pointsByColumn?.U1L0T1) || 0,
-                        U1L0T2: Number(pointsByColumn?.U1L0T2) || 0,
-                        U1L0T3: Number(pointsByColumn?.U1L0T3) || 0,
-                        U1L0T4: Number(pointsByColumn?.U1L0T4) || 0
-                    }
+                    scores,
+                    unlocksByColumn
                 }));
             } catch (e) { }
         }
@@ -3098,9 +3135,14 @@
             const t2 = Number(pointsByColumn?.U1L0T2) || 0;
             const t3 = Number(pointsByColumn?.U1L0T3) || 0;
 
-            const test2Unlocked = t1 >= 4;
-            const test3Unlocked = test2Unlocked && t2 >= 4;
-            const test4Unlocked = test3Unlocked && t3 >= 4;
+            const prevState = getStoredUnlockState();
+            const byScoreTest2 = t1 >= 4;
+            const byScoreTest3 = byScoreTest2 && t2 >= 4;
+            const byScoreTest4 = byScoreTest3 && t3 >= 4;
+
+            const test4Unlocked = Boolean(prevState.test4 || byScoreTest4);
+            const test3Unlocked = Boolean(prevState.test3 || byScoreTest3 || test4Unlocked);
+            const test2Unlocked = Boolean(prevState.test2 || byScoreTest2 || test3Unlocked);
 
             setTestButtonLocked('mode-test1-btn', false);
             setTestButtonLocked('mode-test2-btn', !test2Unlocked);
@@ -3114,7 +3156,6 @@
             };
 
             if (celebrate) {
-                const prevState = getStoredUnlockState();
                 if (currentState.test2 && !prevState.test2) queueUnlockCelebration('test2');
                 if (currentState.test3 && !prevState.test3) queueUnlockCelebration('test3');
                 if (currentState.test4 && !prevState.test4) queueUnlockCelebration('test4');

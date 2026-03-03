@@ -7793,7 +7793,7 @@ function goToNextCardWithDebug() {
   if (window.__PAISES_RANKING_ENHANCED__) return;
   window.__PAISES_RANKING_ENHANCED__ = true;
 
-  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
+  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
   const LESSON_COLUMN_KEY = 'U1L3T4';
   const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v2';
   const U1L3T4_UNLOCK_OVERLAY_ID = 'unlock-gentilicios-overlay';
@@ -8379,7 +8379,25 @@ function goToNextCardWithDebug() {
     return data.ranking;
   }
 
+  async function fetchRankingByColumn(columna) {
+    const url = `${PORTALB_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+      throw new Error('No se pudo obtener el ranking.');
+    }
+    const expected = String(columna || '').trim().toUpperCase();
+    const received = String(data.columna || '').trim().toUpperCase();
+    if (expected && received && expected !== received) {
+      throw new Error(`Columna inesperada: ${data.columna}`);
+    }
+    return data.ranking;
+  }
+
   async function fetchRankingData(modeKey = 'test') {
+    if (modeKey === 'test') {
+      return fetchRankingByColumn(LESSON_COLUMN_KEY);
+    }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'paises') mode = RANKING_PAISES_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;

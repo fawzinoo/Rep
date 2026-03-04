@@ -446,6 +446,15 @@
             box-shadow: 0 5px 14px rgba(37, 99, 235, 0.22);
             overflow: hidden;
             flex-shrink: 0;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.2s ease;
+        }
+
+        .student-identity-icon:hover,
+        .student-identity-icon:focus-visible {
+            transform: translateY(-1px) scale(1.04);
+            box-shadow: 0 7px 16px rgba(37, 99, 235, 0.3);
+            outline: none;
         }
 
         .student-identity-avatar {
@@ -2899,11 +2908,9 @@
             };
             const SESSION_OK_KEY = 'access_gate_ok';
             const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
-            const RESTORE_RETRY_COOLDOWN_MS = 120000;
 
             let gatePromptOpen = false;
             let verificationInterval = null;
-            let lastRestoreAttemptAt = 0;
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -2930,28 +2937,6 @@
                 }, 30000);
             }
 
-            async function verifyAccess(first, last, code, token = '') {
-                const tokenPart = token ? `&token=${encodeURIComponent(token)}` : '';
-                const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}${tokenPart}&t=${Date.now()}`);
-                return response.json();
-            }
-
-            async function tryRestoreUserFromLocal(first, last, code, token) {
-                const now = Date.now();
-                if (now - lastRestoreAttemptAt < RESTORE_RETRY_COOLDOWN_MS) return false;
-                lastRestoreAttemptAt = now;
-                if (!first || !last || !code) return false;
-
-                try {
-                    await sendPortalData(first, last, code, token || generateToken());
-                    await new Promise(resolve => setTimeout(resolve, 900));
-                    const recheck = await verifyAccess(first, last, code, token || '');
-                    return !!(recheck && recheck.valid && !recheck.blocked);
-                } catch (e) {
-                    return false;
-                }
-            }
-
             async function isStoredAccessValid() {
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
@@ -2961,7 +2946,8 @@
                 if (!storedFirst || !storedLast || !storedCode) return false;
 
                 try {
-                    const data = await verifyAccess(storedFirst, storedLast, storedCode, storedToken);
+                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&token=${encodeURIComponent(storedToken)}&t=${Date.now()}`);
+                    const data = await response.json();
 
                     if (data.blocked) {
                         localStorage.removeItem(STORAGE_KEYS.code);
@@ -2982,14 +2968,6 @@
                         showContent();
                         return true;
                     } else {
-                        const shouldTryRestore = data.reason !== 'already_active';
-                        if (shouldTryRestore) {
-                            const restored = await tryRestoreUserFromLocal(storedFirst, storedLast, storedCode, storedToken);
-                            if (restored) {
-                                showContent();
-                                return true;
-                            }
-                        }
                         localStorage.removeItem(STORAGE_KEYS.code);
                         localStorage.removeItem(STORAGE_KEYS.token);
                         return false;
@@ -3084,7 +3062,8 @@
                             return false;
                         }
                         try {
-                            const result = await verifyAccess(first, last, code, '');
+                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&t=${Date.now()}`);
+                            const result = await response.json();
                             if (result.blocked) {
                                 Swal.showValidationMessage('Usuario bloqueado. Contacta al profesor.');
                                 return false;
@@ -3336,7 +3315,8 @@
     </header>
     <div class="student-identity-strip" aria-live="polite">
         <div class="student-identity-card">
-            <span class="student-identity-icon" aria-hidden="true">
+            <span class="student-identity-icon" id="studentSyncTrigger" role="button" tabindex="0"
+                aria-label="Sincronizar datos locales">
                 <img class="student-identity-avatar"
                     src="https://copilot.microsoft.com/th/id/BCO.be4ef29e-511c-4c5c-a25e-833e0bee5947.png"
                     alt="Icono de estudiante" width="40" height="40">
@@ -3371,6 +3351,189 @@
             };
 
             window.refreshStudentIdentityCard();
+        })();
+    </script>
+    <script>
+        (function studentLocalSync() {
+            const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
+            const SYNC_PASSWORD = '0000';
+            const COLUMN_REGEX = /^U\d+L\d+(?:T|E|OT)\d+$/i;
+
+            const normalizeName = (value) => String(value || '').trim().toLowerCase();
+
+            const parseLessonPoints = (value) => {
+                const raw = String(value == null ? '' : value).trim();
+                const match = raw.match(/^([0-5])(?:\.0+)?([fF])?$/);
+                if (match) {
+                    const base = Number(match[1]);
+                    return match[2] ? `${base}f` : base;
+                }
+
+                if (
+                    typeof value === 'number' &&
+                    Number.isFinite(value) &&
+                    value >= 0 &&
+                    value <= 5 &&
+                    Math.floor(value) === value
+                ) {
+                    return value;
+                }
+
+                return null;
+            };
+
+            const safeJsonParse = (value) => {
+                try {
+                    return JSON.parse(value);
+                } catch (_) {
+                    return null;
+                }
+            };
+
+            const addPoint = (collector, column, rawValue) => {
+                const normalizedColumn = String(column || '').trim().toUpperCase();
+                if (!COLUMN_REGEX.test(normalizedColumn)) return;
+                const points = parseLessonPoints(rawValue);
+                if (points === null) return;
+                collector[normalizedColumn] = points;
+            };
+
+            const collectLocalPointsByColumn = () => {
+                const pointsByColumn = {};
+
+                for (let i = 0; i < localStorage.length; i += 1) {
+                    const key = localStorage.key(i);
+                    if (!key) continue;
+                    const raw = localStorage.getItem(key);
+
+                    addPoint(pointsByColumn, key, raw);
+
+                    if (/^martillo-/i.test(key)) {
+                        addPoint(pointsByColumn, key.replace(/^martillo-/i, ''), raw);
+                    }
+
+                    if (!raw || raw[0] !== '{') continue;
+                    const parsed = safeJsonParse(raw);
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+
+                    Object.keys(parsed).forEach((column) => {
+                        addPoint(pointsByColumn, column, parsed[column]);
+                    });
+
+                    if (parsed.scores && typeof parsed.scores === 'object' && !Array.isArray(parsed.scores)) {
+                        Object.keys(parsed.scores).forEach((column) => {
+                            addPoint(pointsByColumn, column, parsed.scores[column]);
+                        });
+                    }
+                }
+
+                return pointsByColumn;
+            };
+
+            const postJson = async (payload) => {
+                await fetch(SYNC_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            };
+
+            const syncAllLocalData = async () => {
+                const nombre = normalizeName(localStorage.getItem('access_first_name') || '');
+                const apellido = normalizeName(localStorage.getItem('access_last_name') || '');
+                const codigo = String(localStorage.getItem('access_code') || '').trim();
+                const token = String(localStorage.getItem('access_token') || '').trim();
+
+                if (!nombre || !apellido) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Sin nombre de estudiante',
+                        text: 'No hay nombre/apellido en localStorage.',
+                        confirmButtonText: 'Cerrar'
+                    });
+                    return;
+                }
+
+                const pointsByColumn = collectLocalPointsByColumn();
+                const entries = Object.entries(pointsByColumn);
+
+                Swal.fire({
+                    title: 'Sincronizando...',
+                    html: 'Enviando datos locales a la hoja.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                try {
+                    await postJson({
+                        type: 'portalB',
+                        nombre,
+                        apellido,
+                        codigo,
+                        token
+                    });
+
+                    for (const [columna, puntos] of entries) {
+                        await postJson({
+                            type: 'lesson_points',
+                            nombre,
+                            apellido,
+                            columna,
+                            puntos
+                        });
+                    }
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Sincronización completada',
+                        text: `Se enviaron ${entries.length} columnas desde localStorage.`,
+                        confirmButtonText: 'OK'
+                    });
+                } catch (error) {
+                    console.error('Error sync local -> sheet', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error al sincronizar',
+                        text: 'No se pudieron enviar los datos locales.',
+                        confirmButtonText: 'Cerrar'
+                    });
+                }
+            };
+
+            const openSyncPrompt = () => {
+                Swal.fire({
+                    title: 'Sincronizar datos locales',
+                    input: 'password',
+                    inputLabel: 'Introduce la contraseña',
+                    inputPlaceholder: 'Contraseña',
+                    confirmButtonText: 'Sincronizar',
+                    showCancelButton: true,
+                    cancelButtonText: 'Cancelar',
+                    allowOutsideClick: false,
+                    preConfirm: (value) => {
+                        if (String(value || '') !== SYNC_PASSWORD) {
+                            Swal.showValidationMessage('Contraseña incorrecta.');
+                            return false;
+                        }
+                        return true;
+                    }
+                }).then((result) => {
+                    if (!result.isConfirmed) return;
+                    syncAllLocalData();
+                });
+            };
+
+            const trigger = document.getElementById('studentSyncTrigger');
+            if (!trigger) return;
+            trigger.addEventListener('click', openSyncPrompt);
+            trigger.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openSyncPrompt();
+                }
+            });
         })();
     </script>
     <div id="contactModal" class="contact-modal" aria-hidden="true">

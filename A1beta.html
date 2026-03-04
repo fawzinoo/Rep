@@ -2899,9 +2899,11 @@
             };
             const SESSION_OK_KEY = 'access_gate_ok';
             const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
+            const RESTORE_RETRY_COOLDOWN_MS = 120000;
 
             let gatePromptOpen = false;
             let verificationInterval = null;
+            let lastRestoreAttemptAt = 0;
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
@@ -2928,6 +2930,28 @@
                 }, 30000);
             }
 
+            async function verifyAccess(first, last, code, token = '') {
+                const tokenPart = token ? `&token=${encodeURIComponent(token)}` : '';
+                const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}${tokenPart}&t=${Date.now()}`);
+                return response.json();
+            }
+
+            async function tryRestoreUserFromLocal(first, last, code, token) {
+                const now = Date.now();
+                if (now - lastRestoreAttemptAt < RESTORE_RETRY_COOLDOWN_MS) return false;
+                lastRestoreAttemptAt = now;
+                if (!first || !last || !code) return false;
+
+                try {
+                    await sendPortalData(first, last, code, token || generateToken());
+                    await new Promise(resolve => setTimeout(resolve, 900));
+                    const recheck = await verifyAccess(first, last, code, token || '');
+                    return !!(recheck && recheck.valid && !recheck.blocked);
+                } catch (e) {
+                    return false;
+                }
+            }
+
             async function isStoredAccessValid() {
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
@@ -2937,8 +2961,7 @@
                 if (!storedFirst || !storedLast || !storedCode) return false;
 
                 try {
-                    const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${storedCode}&nombre=${encodeURIComponent(storedFirst)}&apellido=${encodeURIComponent(storedLast)}&token=${encodeURIComponent(storedToken)}&t=${Date.now()}`);
-                    const data = await response.json();
+                    const data = await verifyAccess(storedFirst, storedLast, storedCode, storedToken);
 
                     if (data.blocked) {
                         localStorage.removeItem(STORAGE_KEYS.code);
@@ -2959,6 +2982,14 @@
                         showContent();
                         return true;
                     } else {
+                        const shouldTryRestore = data.reason !== 'already_active';
+                        if (shouldTryRestore) {
+                            const restored = await tryRestoreUserFromLocal(storedFirst, storedLast, storedCode, storedToken);
+                            if (restored) {
+                                showContent();
+                                return true;
+                            }
+                        }
                         localStorage.removeItem(STORAGE_KEYS.code);
                         localStorage.removeItem(STORAGE_KEYS.token);
                         return false;
@@ -3053,8 +3084,7 @@
                             return false;
                         }
                         try {
-                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&t=${Date.now()}`);
-                            const result = await response.json();
+                            const result = await verifyAccess(first, last, code, '');
                             if (result.blocked) {
                                 Swal.showValidationMessage('Usuario bloqueado. Contacta al profesor.');
                                 return false;

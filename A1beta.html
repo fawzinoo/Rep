@@ -3168,7 +3168,7 @@
                 token: 'access_token'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
-            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
+            const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzUOVBthU-PWOXaWCsklJkVV0r90HHkNHrZgPLMW9_IoNfyzLhUcrm0Zu_Lw_EO3a3h/exec';
 
             let gatePromptOpen = false;
             let verificationInterval = null;
@@ -3655,9 +3655,8 @@
     <script>
         (function studentLocalSync() {
             const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
-            const SYNC_PASSWORD = '0000';
+            const SYNC_REQUEST_TYPE = 'sinc_sync';
             const COLUMN_REGEX = /^U\d+L\d+(?:T|E|OT)\d+$/i;
-            const SYNC_SNAPSHOT_PREFIX = 'portalB_sync_snapshot_v1_';
 
             const modalOverlay = document.getElementById('studentSyncModal');
             const trigger = document.getElementById('studentSyncTrigger');
@@ -3707,12 +3706,6 @@
                 return null;
             };
 
-            const toComparableValue = (value) => {
-                const parsed = parseLessonPoints(value);
-                if (parsed !== null) return String(parsed).toLowerCase();
-                return String(value == null ? '' : value).trim().toLowerCase();
-            };
-
             const safeJsonParse = (value) => {
                 try {
                     return JSON.parse(value);
@@ -3759,76 +3752,6 @@
                 }
 
                 return pointsByColumn;
-            };
-
-            const buildSnapshotKey = (nombre, apellido) => {
-                const userId = `${normalizeName(nombre)}_${normalizeName(apellido)}`.replace(/[^a-z0-9_]/g, '');
-                return `${SYNC_SNAPSHOT_PREFIX}${userId}`;
-            };
-
-            const readSnapshot = (snapshotKey) => {
-                try {
-                    const raw = localStorage.getItem(snapshotKey);
-                    if (!raw) return {};
-                    const parsed = JSON.parse(raw);
-                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-                    return parsed;
-                } catch (_) {
-                    return {};
-                }
-            };
-
-            const writeSnapshot = (snapshotKey, map) => {
-                try {
-                    localStorage.setItem(snapshotKey, JSON.stringify(map || {}));
-                } catch (_) { }
-            };
-
-            const fetchServerColumns = async (nombre, apellido, codigo, token) => {
-                try {
-                    const url = new URL(SYNC_SCRIPT_URL);
-                    url.searchParams.set('mode', 'sync_state');
-                    url.searchParams.set('nombre', nombre);
-                    url.searchParams.set('apellido', apellido);
-                    if (codigo) url.searchParams.set('code', codigo);
-                    if (token) url.searchParams.set('token', token);
-                    url.searchParams.set('t', Date.now().toString());
-
-                    const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
-                    if (!response.ok) return null;
-                    const data = await response.json();
-
-                    const candidate = data && typeof data === 'object'
-                        ? (data.columns || data.valores || data.points || null)
-                        : null;
-                    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
-
-                    const normalized = {};
-                    Object.keys(candidate).forEach((column) => {
-                        addPoint(normalized, column, candidate[column]);
-                    });
-                    return normalized;
-                } catch (_) {
-                    return null;
-                }
-            };
-
-            const collectChangedEntries = (entries, baselineColumns) => {
-                const base = baselineColumns && typeof baselineColumns === 'object' ? baselineColumns : {};
-                return entries.filter(([column, value]) => {
-                    const before = toComparableValue(base[column]);
-                    const now = toComparableValue(value);
-                    return before !== now;
-                });
-            };
-
-            const postJson = async (payload) => {
-                await fetch(SYNC_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
             };
 
             const formatDuration = (ms) => {
@@ -3892,7 +3815,7 @@
 
             const resetModal = () => {
                 if (subtitleEl) {
-                    subtitleEl.textContent = 'Introduce la contraseña para enviar los datos locales a tu hoja.';
+                    subtitleEl.textContent = 'Introduce la contraseña para enviar los datos.';
                 }
                 if (passwordInput) passwordInput.value = '';
                 setPasswordError('');
@@ -3920,89 +3843,76 @@
                 modalOverlay.setAttribute('aria-hidden', 'true');
             };
 
+            const postSyncBatch = async (payload) => {
+                const response = await fetch(SYNC_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    data = null;
+                }
+
+                if (!response.ok && (!data || data.success !== true)) {
+                    throw new Error((data && data.message) || 'Error de servidor durante la sincronización.');
+                }
+
+                return data || { success: true };
+            };
+
             const syncAllLocalData = async () => {
                 const nombre = normalizeName(localStorage.getItem('access_first_name') || '');
                 const apellido = normalizeName(localStorage.getItem('access_last_name') || '');
                 const codigo = String(localStorage.getItem('access_code') || '').trim();
                 const token = String(localStorage.getItem('access_token') || '').trim();
+                const password = String(passwordInput?.value || '').trim();
 
                 if (!nombre || !apellido) {
                     throw new Error('No hay nombre/apellido guardado en localStorage.');
                 }
+                if (!password) {
+                    throw new Error('Introduce la contraseña.');
+                }
 
                 const pointsByColumn = collectLocalPointsByColumn();
                 const entries = Object.entries(pointsByColumn);
-                const snapshotKey = buildSnapshotKey(nombre, apellido);
-                const localSnapshot = readSnapshot(snapshotKey);
-                const locallyChangedEntries = collectChangedEntries(entries, localSnapshot);
-
-                if (Object.keys(localSnapshot).length > 0 && locallyChangedEntries.length === 0) {
-                    currentTotalSteps = 1;
-                    startedAt = Date.now();
-                    updateProgress(1, 'Sin cambios locales. Sincronización rápida completada.');
-                    return {
-                        totalColumns: entries.length,
-                        sentColumns: 0,
-                        comparedWithSheet: false,
-                        fastPath: true
-                    };
-                }
-
-                updateProgress(0, 'Comparando columnas con datos existentes...');
-                const serverColumns = await fetchServerColumns(nombre, apellido, codigo, token);
-                const baselineColumns = serverColumns || localSnapshot;
-                const changedEntries = collectChangedEntries(entries, baselineColumns);
-
-                currentTotalSteps = changedEntries.length + 1;
+                currentTotalSteps = 3;
                 startedAt = Date.now();
 
-                updateProgress(0, 'Iniciando sincronización...');
+                updateProgress(1, 'Validando credenciales de sincronización...');
+                updateProgress(2, 'Enviando lote al script sinc...');
 
-                await postJson({
-                    type: 'portalB',
+                const result = await postSyncBatch({
+                    type: SYNC_REQUEST_TYPE,
                     nombre,
                     apellido,
                     codigo,
-                    token
+                    token,
+                    password,
+                    points: pointsByColumn
                 });
-                updateProgress(1, 'Sesión del estudiante enviada.');
 
-                if (changedEntries.length === 0) {
-                    writeSnapshot(snapshotKey, pointsByColumn);
-                    updateProgress(1, 'No hay cambios nuevos en columnas.');
-                    return {
-                        totalColumns: entries.length,
-                        sentColumns: 0,
-                        comparedWithSheet: Boolean(serverColumns)
-                    };
-                }
-
-                let completed = 1;
-                for (const [columna, puntos] of changedEntries) {
-                    await postJson({
-                        type: 'lesson_points',
-                        nombre,
-                        apellido,
-                        columna,
-                        puntos
-                    });
-                    completed += 1;
-                    updateProgress(completed, `Enviando columna ${columna}...`);
+                if (result.success !== true) {
+                    throw new Error(result.message || 'La sincronización fue rechazada.');
                 }
 
                 updateProgress(currentTotalSteps, 'Sincronización finalizada.');
-                writeSnapshot(snapshotKey, pointsByColumn);
                 return {
                     totalColumns: entries.length,
-                    sentColumns: changedEntries.length,
-                    comparedWithSheet: Boolean(serverColumns)
+                    sentColumns: Number(result.changedCount || result.updatedCount || 0),
+                    skippedColumns: Number(result.skippedCount || 0),
+                    fastPath: Boolean(result.fastPath)
                 };
             };
 
             const startSync = async () => {
                 if (isSyncing) return;
-                if (String(passwordInput?.value || '') !== SYNC_PASSWORD) {
-                    setPasswordError('Contraseña incorrecta.');
+                if (!String(passwordInput?.value || '').trim()) {
+                    setPasswordError('Introduce la contraseña.');
                     if (passwordInput) passwordInput.focus();
                     return;
                 }
@@ -4015,12 +3925,11 @@
                 try {
                     const result = await syncAllLocalData();
                     if (subtitleEl) subtitleEl.textContent = 'Sincronización completada correctamente.';
-                    const compareLabel = result.comparedWithSheet ? 'hoja remota' : 'cache local';
                     if (result.fastPath) {
                         setResult('Sin cambios detectados. Finalizado en modo rápido.', 'success');
                     } else {
                         setResult(
-                            `Comparadas: ${result.totalColumns}. Enviadas: ${result.sentColumns}. Base: ${compareLabel}.`,
+                            `Comparadas: ${result.totalColumns}. Actualizadas: ${result.sentColumns}. Sin cambios: ${result.skippedColumns}.`,
                             'success'
                         );
                     }

@@ -3183,7 +3183,9 @@
                 document.body.classList.add('content-visible');
                 document.body.classList.remove('content-hidden');
                 const overlay = document.querySelector('.global-loading-overlay');
-                if (overlay) {
+                const overlayContext = String(overlay?.dataset?.loadingContext || '');
+                // El loading de sincronización se cierra desde refreshDynamicCandados.
+                if (overlay && overlayContext !== 'topic-sync') {
                     overlay.style.opacity = '0';
                     setTimeout(() => overlay.remove(), 500);
                 }
@@ -5407,18 +5409,21 @@
             const message = options?.message || GLOBAL_LOADING_CONFIG.message;
             const detailText = options?.detail || GLOBAL_LOADING_CONFIG.detail;
             const fallbackMs = Number.isFinite(options?.fallbackMs) ? Number(options.fallbackMs) : 20000;
+            const context = String(options?.context || 'generic');
 
             if (globalLoadingOverlay) {
                 const titleEl = globalLoadingOverlay.querySelector('.global-loading-message');
                 const detailEl = globalLoadingOverlay.querySelector('.global-loading-detail');
                 if (titleEl) titleEl.textContent = message;
                 if (detailEl) detailEl.textContent = detailText;
+                globalLoadingOverlay.dataset.loadingContext = context;
                 if (globalLoadingHideTimeout) clearTimeout(globalLoadingHideTimeout);
                 globalLoadingHideTimeout = setTimeout(() => hideGlobalLoading(true), fallbackMs);
                 return;
             }
             const overlay = document.createElement('div');
             overlay.className = 'global-loading-overlay';
+            overlay.dataset.loadingContext = context;
             overlay.setAttribute('role', 'status');
             overlay.setAttribute('aria-live', 'polite');
 
@@ -6886,12 +6891,14 @@
                 ? [...allColumns]
                 : allColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
             const student = getCurrentStudentFromStorage();
+            let remoteSuccessCount = 0;
             if (columnsNeedingFetch.length > 0 && student) {
                 await Promise.all(
                     columnsNeedingFetch.map(async (column) => {
                         try {
                             const ranking = await fetchRankingByColumn(column);
                             pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
+                            remoteSuccessCount += 1;
                         } catch (error) {
                             // Si falla la consulta de una columna, no forzamos bloqueo.
                             pointsByColumn[column] = null;
@@ -6917,6 +6924,12 @@
                     CANDADOS[unlockTitle] = false;
                 }
             });
+
+            return {
+                didRemoteHydrate: remoteSuccessCount > 0,
+                columnsRequested: columnsNeedingFetch.length,
+                hasStudent: Boolean(student)
+            };
         }
 
         function applyCandadosToCards() {
@@ -7014,17 +7027,22 @@
         });
 
         let candadosRefreshInFlight = false;
-        async function refreshDynamicCandados() {
+        async function refreshDynamicCandados(options = {}) {
+            const isContentVisible = document.body.classList.contains('content-visible');
+            const allowBeforeVisible = Boolean(options && options.allowBeforeVisible);
+            if (!isContentVisible && !allowBeforeVisible) return;
+
             if (candadosRefreshInFlight) return;
             candadosRefreshInFlight = true;
-            const forceRemoteFirst = !hasPriorityRemoteHydration;
-            const shouldBlockUntilHydration = forceRemoteFirst;
+            const forceRemoteFirst = Boolean(options && options.forceRemoteFirst) || !hasPriorityRemoteHydration;
+            const shouldBlockUntilHydration = Boolean(options && options.showLoading) || forceRemoteFirst;
 
             if (shouldBlockUntilHydration) {
                 showGlobalLoading({
                     message: 'Sincronizando progreso…',
                     detail: 'Estamos actualizando tus puntos y desbloqueos.',
-                    fallbackMs: 25000
+                    fallbackMs: 25000,
+                    context: 'topic-sync'
                 });
             }
             try {
@@ -7033,8 +7051,10 @@
                     syncCandadosFromLocalProgress();
                     applyCandadosToCards();
                 }
-                await updateCandadosFromT4Progress({ forceRemoteFirst });
-                if (forceRemoteFirst) hasPriorityRemoteHydration = true;
+                const syncResult = await updateCandadosFromT4Progress({ forceRemoteFirst });
+                if (forceRemoteFirst && syncResult?.didRemoteHydrate) {
+                    hasPriorityRemoteHydration = true;
+                }
             } catch (error) {
                 console.warn('No se pudieron actualizar candados por progreso:', error);
             } finally {
@@ -7064,7 +7084,10 @@
         // Si el access gate desbloquea contenido sin recargar, refrescar candados.
         const accessStateObserver = new MutationObserver(() => {
             if (document.body.classList.contains('content-visible')) {
-                refreshDynamicCandados();
+                refreshDynamicCandados({
+                    forceRemoteFirst: !hasPriorityRemoteHydration,
+                    showLoading: !hasPriorityRemoteHydration
+                });
             }
         });
         accessStateObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });

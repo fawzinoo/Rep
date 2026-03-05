@@ -3654,7 +3654,7 @@
     </script>
     <script>
         (function studentLocalSync() {
-            const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyfp27XqwAIqcYsqWZx6uexq2GddYkXbtUpzibmvtmiOwjg7_4x-NuAlXcKD_bS71i2/exec';
+            const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbze-mrfWfvMkXSnqkeMxxspBKCmlo9sMhHuYUK7l1OIhiizLqc9mELxtrkpfEodw3X4/exec';
             const SYNC_REQUEST_TYPE = 'sinc_sync';
             const COLUMN_REGEX = /^U\d+L\d+(?:T|E|OT)\d+$/i;
 
@@ -6250,6 +6250,7 @@
         ];
         const TOPIC_POINTS_CACHE_KEY = 'a1beta-topic-points-cache-v1';
         let latestTopicPointsByColumn = readTopicPointsCache();
+        let hasPriorityRemoteHydration = false;
         const LOCKED_CARD_VISUAL_THEMES = [
             { bg: 'linear-gradient(145deg, #0b132b 0%, #1c2541 55%, #3a506b 100%)', glow: 'rgba(56, 189, 248, 0.32)' },
             { bg: 'linear-gradient(145deg, #1f2937 0%, #111827 56%, #0f172a 100%)', glow: 'rgba(250, 204, 21, 0.28)' },
@@ -6384,6 +6385,17 @@
                     if (points !== null) payload[column] = points;
                 });
                 localStorage.setItem(TOPIC_POINTS_CACHE_KEY, JSON.stringify(payload));
+            } catch (_) { }
+        }
+
+        function saveTopicPointsToLocalColumns(pointsByColumn) {
+            try {
+                Object.keys(pointsByColumn || {}).forEach((column) => {
+                    const normalizedColumn = String(column || '').trim().toUpperCase();
+                    const points = sanitizeTopicPoints(pointsByColumn[column]);
+                    if (!normalizedColumn || points === null) return;
+                    localStorage.setItem(`martillo-${normalizedColumn}`, String(points));
+                });
             } catch (_) { }
         }
 
@@ -6776,7 +6788,8 @@
             requestAnimationFrame(() => positionTopicTotalBadge(card, badge, panel));
         }
 
-        async function updateCandadosFromT4Progress() {
+        async function updateCandadosFromT4Progress(options = {}) {
+            const forceRemoteFirst = Boolean(options && options.forceRemoteFirst);
             const uniqueColumns = [...new Set(TOPIC_UNLOCK_RULES.map((rule) => rule.column))];
             const semaphoreColumns = TOPIC_SEMAPHORE_CONFIG.flatMap((config) => config.columns || []);
             const allColumns = [...new Set([...uniqueColumns, ...semaphoreColumns])];
@@ -6806,7 +6819,9 @@
                 applyCandadosToCards();
             }
 
-            const columnsNeedingFetch = allColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
+            const columnsNeedingFetch = forceRemoteFirst
+                ? [...allColumns]
+                : allColumns.filter((column) => !Number.isFinite(pointsByColumn[column]));
             const student = getCurrentStudentFromStorage();
             if (columnsNeedingFetch.length > 0 && student) {
                 await Promise.all(
@@ -6829,6 +6844,7 @@
                 }
             });
             saveTopicPointsCache(latestTopicPointsByColumn);
+            saveTopicPointsToLocalColumns(latestTopicPointsByColumn);
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
@@ -6940,7 +6956,9 @@
                 // Aplicar estado base local al instante (evita flicker inicial)
                 syncCandadosFromLocalProgress();
                 applyCandadosToCards();
-                await updateCandadosFromT4Progress();
+                const forceRemoteFirst = !hasPriorityRemoteHydration;
+                await updateCandadosFromT4Progress({ forceRemoteFirst });
+                if (forceRemoteFirst) hasPriorityRemoteHydration = true;
             } catch (error) {
                 console.warn('No se pudieron actualizar candados por progreso:', error);
             } finally {

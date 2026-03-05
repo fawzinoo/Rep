@@ -6257,8 +6257,52 @@
             { column: 'U1L7T4', unlockTitle: 'El fin de semana I' }
         ];
         const TOPIC_POINTS_CACHE_KEY = 'a1beta-topic-points-cache-v1';
+        const TOPIC_REMOTE_HYDRATION_FLAG_PREFIX = `${PARENT_ID}_topic_remote_hydrated_v1`;
+
+        function getTopicRemoteHydrationScopeKey() {
+            const token = String(localStorage.getItem('access_token') || '').trim();
+            if (token) return `token:${token}`;
+            const code = String(localStorage.getItem('access_code') || '').trim().toUpperCase();
+            if (code) return `code:${code}`;
+            return 'anonymous';
+        }
+
+        function getTopicRemoteHydrationFlagKey() {
+            return `${TOPIC_REMOTE_HYDRATION_FLAG_PREFIX}:${getTopicRemoteHydrationScopeKey()}`;
+        }
+
+        function readTopicRemoteHydrationFlag() {
+            try {
+                return sessionStorage.getItem(getTopicRemoteHydrationFlagKey()) === '1';
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function writeTopicRemoteHydrationFlag(isHydrated) {
+            try {
+                const key = getTopicRemoteHydrationFlagKey();
+                if (!key) return;
+                if (isHydrated) {
+                    sessionStorage.setItem(key, '1');
+                } else {
+                    sessionStorage.removeItem(key);
+                }
+            } catch (_) { }
+        }
+
         let latestTopicPointsByColumn = readTopicPointsCache();
-        let hasPriorityRemoteHydration = false;
+        let topicRemoteHydrationScopeSnapshot = getTopicRemoteHydrationScopeKey();
+        // Persistir por sesión para evitar doGet completo en cada refresh.
+        let hasPriorityRemoteHydration = readTopicRemoteHydrationFlag();
+
+        function syncTopicRemoteHydrationScopeState() {
+            const currentScope = getTopicRemoteHydrationScopeKey();
+            if (currentScope === topicRemoteHydrationScopeSnapshot) return;
+            topicRemoteHydrationScopeSnapshot = currentScope;
+            hasPriorityRemoteHydration = readTopicRemoteHydrationFlag();
+        }
+
         const LOCKED_CARD_VISUAL_THEMES = [
             { bg: 'linear-gradient(145deg, #0b132b 0%, #1c2541 55%, #3a506b 100%)', glow: 'rgba(56, 189, 248, 0.32)' },
             { bg: 'linear-gradient(145deg, #1f2937 0%, #111827 56%, #0f172a 100%)', glow: 'rgba(250, 204, 21, 0.28)' },
@@ -7028,6 +7072,7 @@
 
         let candadosRefreshInFlight = false;
         async function refreshDynamicCandados(options = {}) {
+            syncTopicRemoteHydrationScopeState();
             const isContentVisible = document.body.classList.contains('content-visible');
             const allowBeforeVisible = Boolean(options && options.allowBeforeVisible);
             if (!isContentVisible && !allowBeforeVisible) return;
@@ -7054,6 +7099,7 @@
                 const syncResult = await updateCandadosFromT4Progress({ forceRemoteFirst });
                 if (forceRemoteFirst && syncResult?.didRemoteHydrate) {
                     hasPriorityRemoteHydration = true;
+                    writeTopicRemoteHydrationFlag(true);
                 }
             } catch (error) {
                 console.warn('No se pudieron actualizar candados por progreso:', error);

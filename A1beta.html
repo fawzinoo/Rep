@@ -6390,6 +6390,41 @@
             }
         }
 
+        function getMissingTopicUnlockStatePrefixes() {
+            const missing = new Set();
+            try {
+                Object.entries(TOPIC_UNLOCK_STATE_KEYS || {}).forEach(([lessonPrefix, storageKey]) => {
+                    if (!storageKey) return;
+                    const raw = localStorage.getItem(storageKey);
+                    if (!raw) {
+                        missing.add(String(lessonPrefix || '').toUpperCase());
+                        return;
+                    }
+                    let parsed = null;
+                    try {
+                        parsed = JSON.parse(raw);
+                    } catch (_) {
+                        missing.add(String(lessonPrefix || '').toUpperCase());
+                        return;
+                    }
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                        missing.add(String(lessonPrefix || '').toUpperCase());
+                        return;
+                    }
+
+                    const scoresNode = parsed.scores;
+                    const testsNode = parsed.tests;
+                    const hasScores = scoresNode && typeof scoresNode === 'object' && !Array.isArray(scoresNode) && Object.keys(scoresNode).length > 0;
+                    const hasTests = testsNode && typeof testsNode === 'object' && !Array.isArray(testsNode) && Object.keys(testsNode).length > 0;
+                    const hasLegacyTests = ['test1', 'test2', 'test3', 'test4'].some((key) => parsed[key] != null);
+                    if (!hasScores && !hasTests && !hasLegacyTests) {
+                        missing.add(String(lessonPrefix || '').toUpperCase());
+                    }
+                });
+            } catch (_) { }
+            return missing;
+        }
+
         function sanitizeTopicPoints(value) {
             if (value === null || value === undefined) return null;
             if (typeof value === 'boolean') return null;
@@ -6910,11 +6945,16 @@
                 pointsByColumn[column] = getLocalTopicPointsByColumn(column);
             });
 
-            // Requisito alfabeto: si no existe su unlock-state en localStorage, forzar doGet de U1L0T1..U1L0T4.
-            const hasAlfabetoUnlockState = Boolean(parseTopicUnlockStateByColumn('U1L0T1'));
-            if (!hasAlfabetoUnlockState) {
-                ['U1L0T1', 'U1L0T2', 'U1L0T3', 'U1L0T4'].forEach((column) => {
-                    pointsByColumn[column] = null;
+            // Si falta cualquier unlock-state local (U1Lx), invalidar T1..T4 y forzar hidratación remota.
+            // También limpiamos cache local de esas columnas para no "resucitar" datos antiguos.
+            const missingUnlockStatePrefixes = getMissingTopicUnlockStatePrefixes();
+            if (missingUnlockStatePrefixes.size > 0) {
+                missingUnlockStatePrefixes.forEach((lessonPrefix) => {
+                    for (let testIndex = 1; testIndex <= 4; testIndex += 1) {
+                        const column = `${lessonPrefix}T${testIndex}`;
+                        pointsByColumn[column] = null;
+                        delete latestTopicPointsByColumn[column];
+                    }
                 });
             }
 

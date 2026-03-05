@@ -6388,6 +6388,77 @@
             } catch (_) { }
         }
 
+        function parseStoredUnlockState(rawValue) {
+            try {
+                const parsed = JSON.parse(rawValue || '{}');
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function saveTopicUnlockStateKeysFromPoints(pointsByColumn) {
+            try {
+                const source = (pointsByColumn && typeof pointsByColumn === 'object') ? pointsByColumn : {};
+                const lessonPrefixes = Object.keys(TOPIC_UNLOCK_STATE_KEYS || {});
+
+                lessonPrefixes.forEach((lessonPrefix) => {
+                    const storageKey = TOPIC_UNLOCK_STATE_KEYS[lessonPrefix];
+                    if (!storageKey) return;
+
+                    const existing = parseStoredUnlockState(localStorage.getItem(storageKey));
+                    const mergedScores = {};
+                    const mergedUnlocks = {};
+                    const testsNode = {};
+
+                    let hasAnyValue = false;
+
+                    for (let i = 1; i <= 4; i += 1) {
+                        const column = `${lessonPrefix}T${i}`;
+                        const remoteScore = sanitizeTopicPoints(source[column]);
+                        const existingScore = sanitizeTopicPoints(
+                            existing?.scores?.[column] ??
+                            existing?.[column] ??
+                            existing?.[`test${i}`]?.score ??
+                            existing?.[`test${i}`]?.points ??
+                            existing?.tests?.[`test${i}`]?.score ??
+                            existing?.tests?.[`test${i}`]?.points
+                        );
+                        const score = remoteScore !== null ? remoteScore : existingScore;
+                        if (score === null) continue;
+
+                        hasAnyValue = true;
+                        const unlocked = score >= TOPIC_UNLOCK_THRESHOLD;
+                        const testKey = `test${i}`;
+
+                        mergedScores[column] = score;
+                        mergedUnlocks[column] = unlocked;
+                        testsNode[testKey] = {
+                            score: score,
+                            points: score,
+                            unlocked: unlocked
+                        };
+                    }
+
+                    if (!hasAnyValue) return;
+
+                    const payload = {
+                        updatedAt: Date.now(),
+                        scores: mergedScores,
+                        unlocksByColumn: mergedUnlocks,
+                        tests: testsNode
+                    };
+
+                    // Compatibilidad con lectores legacy que esperan test1/test2... al nivel raíz.
+                    Object.keys(testsNode).forEach((testKey) => {
+                        payload[testKey] = testsNode[testKey];
+                    });
+
+                    localStorage.setItem(storageKey, JSON.stringify(payload));
+                });
+            } catch (_) { }
+        }
+
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
@@ -6825,6 +6896,8 @@
                         }
                     })
                 );
+                // Persistir inmediatamente el estado de tests desbloqueados con los datos hidratados desde doGet.
+                saveTopicUnlockStateKeysFromPoints(pointsByColumn);
             }
 
             allColumns.forEach((column) => {
@@ -6833,6 +6906,7 @@
                 }
             });
             saveTopicPointsCache(latestTopicPointsByColumn);
+            saveTopicUnlockStateKeysFromPoints(latestTopicPointsByColumn);
 
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];

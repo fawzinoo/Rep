@@ -5403,8 +5403,20 @@
         // inicializar/renovar la sesión al cargar
         ensureParentSession();
 
-        function showGlobalLoading() {
-            if (globalLoadingOverlay) return;
+        function showGlobalLoading(options = {}) {
+            const message = options?.message || GLOBAL_LOADING_CONFIG.message;
+            const detailText = options?.detail || GLOBAL_LOADING_CONFIG.detail;
+            const fallbackMs = Number.isFinite(options?.fallbackMs) ? Number(options.fallbackMs) : 20000;
+
+            if (globalLoadingOverlay) {
+                const titleEl = globalLoadingOverlay.querySelector('.global-loading-message');
+                const detailEl = globalLoadingOverlay.querySelector('.global-loading-detail');
+                if (titleEl) titleEl.textContent = message;
+                if (detailEl) detailEl.textContent = detailText;
+                if (globalLoadingHideTimeout) clearTimeout(globalLoadingHideTimeout);
+                globalLoadingHideTimeout = setTimeout(() => hideGlobalLoading(true), fallbackMs);
+                return;
+            }
             const overlay = document.createElement('div');
             overlay.className = 'global-loading-overlay';
             overlay.setAttribute('role', 'status');
@@ -5418,11 +5430,11 @@
 
             const title = document.createElement('div');
             title.className = 'global-loading-message';
-            title.textContent = GLOBAL_LOADING_CONFIG.message;
+            title.textContent = message;
 
             const detail = document.createElement('div');
             detail.className = 'global-loading-detail';
-            detail.textContent = GLOBAL_LOADING_CONFIG.detail;
+            detail.textContent = detailText;
 
             card.appendChild(spinner);
             card.appendChild(title);
@@ -5432,10 +5444,8 @@
 
             globalLoadingOverlay = overlay;
 
-            // Fallback: asegurar que se oculta tras cierto tiempo aunque falle load
-            globalLoadingHideTimeout = setTimeout(() => hideGlobalLoading(true), 10000);
-
-            setTimeout(() => hideGlobalLoading(false), 1200);
+            // Fallback: asegurar que se oculta aunque falle la hidratación remota.
+            globalLoadingHideTimeout = setTimeout(() => hideGlobalLoading(true), fallbackMs);
         }
 
         function hideGlobalLoading(isFallback = false) {
@@ -5455,15 +5465,8 @@
             }, isFallback ? 0 : 400);
         }
 
-        // Solo mostrar el loading si NO es un auto-reload
-        const isAutoReload = sessionStorage.getItem('auto_reload_flag') === 'true';
-        if (!isAutoReload) {
-            showGlobalLoading();
-        }
-        // Limpiar el flag después de usarlo
+        // Limpiar el flag después de usarlo (la apertura/cierre del loading se controla desde refreshDynamicCandados).
         sessionStorage.removeItem('auto_reload_flag');
-
-        window.addEventListener('load', () => hideGlobalLoading(false));
 
 
         const CANDADOS = {
@@ -7014,11 +7017,22 @@
         async function refreshDynamicCandados() {
             if (candadosRefreshInFlight) return;
             candadosRefreshInFlight = true;
+            const forceRemoteFirst = !hasPriorityRemoteHydration;
+            const shouldBlockUntilHydration = forceRemoteFirst;
+
+            if (shouldBlockUntilHydration) {
+                showGlobalLoading({
+                    message: 'Sincronizando progreso…',
+                    detail: 'Estamos actualizando tus puntos y desbloqueos.',
+                    fallbackMs: 25000
+                });
+            }
             try {
-                // Aplicar estado base local al instante (evita flicker inicial)
-                syncCandadosFromLocalProgress();
-                applyCandadosToCards();
-                const forceRemoteFirst = !hasPriorityRemoteHydration;
+                // En la primera carga esperamos a doGet para evitar mostrar píldoras con datos antiguos.
+                if (!forceRemoteFirst) {
+                    syncCandadosFromLocalProgress();
+                    applyCandadosToCards();
+                }
                 await updateCandadosFromT4Progress({ forceRemoteFirst });
                 if (forceRemoteFirst) hasPriorityRemoteHydration = true;
             } catch (error) {
@@ -7026,6 +7040,9 @@
             } finally {
                 applyCandadosToCards();
                 requestAnimationFrame(refreshTopicTotalBadgePositions);
+                if (shouldBlockUntilHydration) {
+                    requestAnimationFrame(() => hideGlobalLoading(false));
+                }
                 candadosRefreshInFlight = false;
             }
         }

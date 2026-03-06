@@ -3168,7 +3168,8 @@
                 first: 'access_first_name',
                 last: 'access_last_name',
                 code: 'access_code',
-                token: 'access_token'
+                token: 'access_token',
+                tokenBackup: 'access_token_backup'
             };
             const SESSION_OK_KEY = 'access_gate_ok';
             const G_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLuK0Ln04gH9iC3eeodjfsd57-GuGNGfgjDjYXb1_yI6l5rbrgrhm8SkrL_UawZMvq/exec';
@@ -3178,9 +3179,25 @@
 
             const normalizeName = (name) => (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const normalizeCode = (code) => (code || '').trim().toUpperCase();
+            const readStoredToken = () => String(localStorage.getItem(STORAGE_KEYS.token) || '').trim();
+            const readStoredTokenBackup = () => String(localStorage.getItem(STORAGE_KEYS.tokenBackup) || '').trim();
 
             // Generar token aleatorio
             const generateToken = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+            const keepAccessTokenPersistent = () => {
+                const token = readStoredToken();
+                if (token) {
+                    localStorage.setItem(STORAGE_KEYS.tokenBackup, token);
+                    return token;
+                }
+                const backup = readStoredTokenBackup();
+                if (backup) {
+                    localStorage.setItem(STORAGE_KEYS.token, backup);
+                    return backup;
+                }
+                return '';
+            };
 
             function showContent() {
                 document.body.classList.add('content-visible');
@@ -3207,7 +3224,7 @@
                 const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                 const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                 const storedCode = normalizeCode(localStorage.getItem(STORAGE_KEYS.code) || '');
-                const storedToken = localStorage.getItem(STORAGE_KEYS.token) || '';
+                const storedToken = keepAccessTokenPersistent();
 
                 if (!storedFirst || !storedLast || !storedCode) return false;
 
@@ -3235,7 +3252,8 @@
                         return true;
                     } else {
                         localStorage.removeItem(STORAGE_KEYS.code);
-                        localStorage.removeItem(STORAGE_KEYS.token);
+                        // Mantener el token local para permitir revalidación de la misma sesión
+                        // cuando se vuelve a pedir el código.
                         return false;
                     }
                 } catch (e) {
@@ -3269,6 +3287,7 @@
                 localStorage.setItem(STORAGE_KEYS.last, last);
                 localStorage.setItem(STORAGE_KEYS.code, code);
                 localStorage.setItem(STORAGE_KEYS.token, newToken);
+                localStorage.setItem(STORAGE_KEYS.tokenBackup, newToken);
 
                 if (typeof window.refreshStudentIdentityCard === 'function') {
                     window.refreshStudentIdentityCard();
@@ -3317,7 +3336,7 @@
                         const first = normalizeName(document.getElementById('swal-first-name')?.value || '');
                         const last = normalizeName(document.getElementById('swal-last-name')?.value || '');
                         const code = normalizeCode(document.getElementById('swal-code')?.value || '');
-                        const storedTokenForLogin = String(localStorage.getItem(STORAGE_KEYS.token) || '').trim();
+                        const storedTokenForLogin = keepAccessTokenPersistent();
                         const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                         const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                         if (!first || !last || !code) {

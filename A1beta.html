@@ -3317,6 +3317,7 @@
                         const first = normalizeName(document.getElementById('swal-first-name')?.value || '');
                         const last = normalizeName(document.getElementById('swal-last-name')?.value || '');
                         const code = normalizeCode(document.getElementById('swal-code')?.value || '');
+                        const storedTokenForLogin = String(localStorage.getItem(STORAGE_KEYS.token) || '').trim();
                         const storedFirst = normalizeName(localStorage.getItem(STORAGE_KEYS.first) || '');
                         const storedLast = normalizeName(localStorage.getItem(STORAGE_KEYS.last) || '');
                         if (!first || !last || !code) {
@@ -3328,14 +3329,14 @@
                             return false;
                         }
                         try {
-                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&t=${Date.now()}`);
+                            const response = await fetch(`${G_SCRIPT_URL}?mode=verify&code=${code}&nombre=${encodeURIComponent(first)}&apellido=${encodeURIComponent(last)}&token=${encodeURIComponent(storedTokenForLogin)}&t=${Date.now()}`);
                             const result = await response.json();
                             if (result.blocked) {
                                 Swal.showValidationMessage('Usuario bloqueado. Contacta al profesor.');
                                 return false;
                             }
                             if (!result.valid) {
-                                if (result.reason === 'already_active') {
+                                if (result.reason === 'already_active' || result.reason === 'session_mismatch') {
                                     Swal.showValidationMessage('Ya hay una sesión activa para este usuario. El acceso es único.');
                                 } else {
                                     Swal.showValidationMessage('Código incorrecto.');

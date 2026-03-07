@@ -3696,10 +3696,11 @@
 
             const parseLessonPoints = (value) => {
                 const raw = String(value == null ? '' : value).trim();
-                const match = raw.match(/^([0-5])(?:\.0+)?([fF])?$/);
+                const match = raw.match(/^([0-5])(?:\.0+)?([fFtT])?$/);
                 if (match) {
                     const base = Number(match[1]);
-                    return match[2] ? `${base}f` : base;
+                    const marker = match[2] ? String(match[2]).toLowerCase() : '';
+                    return marker ? `${base}${marker}` : base;
                 }
 
                 if (
@@ -6498,7 +6499,7 @@
                 const trimmed = value.trim();
                 if (!trimmed) return { points: null, forcedUnlock: false };
 
-                const finalMatch = trimmed.match(/^(-?\d+(?:[.,]\d+)?)\s*[fF]$/);
+                const finalMatch = trimmed.match(/^(-?\d+(?:[.,]\d+)?)\s*[fFtT]$/);
                 if (finalMatch) {
                     numeric = Number(String(finalMatch[1]).replace(',', '.'));
                     forcedUnlock = true;
@@ -6535,8 +6536,11 @@
 
                 const out = {};
                 Object.keys(parsed).forEach((column) => {
-                    const points = sanitizeTopicPoints(parsed[column]);
-                    if (points !== null) out[column] = points;
+                    const parsedValue = parseTopicPointValue(parsed[column]);
+                    if (parsedValue.points === null) return;
+                    out[column] = parsedValue.forcedUnlock
+                        ? `${parsedValue.points}t`
+                        : parsedValue.points;
                 });
                 return out;
             } catch (e) {
@@ -6548,8 +6552,11 @@
             try {
                 const payload = {};
                 Object.keys(pointsByColumn || {}).forEach((column) => {
-                    const points = sanitizeTopicPoints(pointsByColumn[column]);
-                    if (points !== null) payload[column] = points;
+                    const parsedValue = parseTopicPointValue(pointsByColumn[column]);
+                    if (parsedValue.points === null) return;
+                    payload[column] = parsedValue.forcedUnlock
+                        ? `${parsedValue.points}t`
+                        : parsedValue.points;
                 });
                 localStorage.setItem(TOPIC_POINTS_CACHE_KEY, JSON.stringify(payload));
             } catch (_) { }
@@ -6643,7 +6650,7 @@
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
-            if (typeof value === 'string' && /[fF]\s*$/.test(value.trim())) return true;
+            if (typeof value === 'string' && /[fFtT]\s*$/.test(value.trim())) return true;
             const numeric = Number(value);
             if (Number.isFinite(numeric)) return numeric >= TOPIC_UNLOCK_THRESHOLD;
             return null;
@@ -6861,7 +6868,7 @@
 
             // La luz del semáforo refleja el resultado actual (4/5 encendido, <4 apagado).
             // El desbloqueo del siguiente tema se gestiona aparte con lógica one-way.
-            // Si existe sufijo "f" (ej: 1f, 2f...), se considera desbloqueo forzado.
+            // Si existe sufijo "f/t" (ej: 1f, 2t...), se considera desbloqueo forzado.
             const test1Unlocked = isForced(columns[0]) || t1Score >= TOPIC_UNLOCK_THRESHOLD;
             const test2Unlocked = isForced(columns[1]) || t2Score >= TOPIC_UNLOCK_THRESHOLD;
             const test3Unlocked = isForced(columns[2]) || t3Score >= TOPIC_UNLOCK_THRESHOLD;

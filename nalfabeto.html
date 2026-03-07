@@ -3378,9 +3378,13 @@
             const pointsByColumn = { U1L0T1: 0, U1L0T2: 0, U1L0T3: 0, U1L0T4: 0 };
             const forcedUnlockByColumn = { U1L0T1: false, U1L0T2: false, U1L0T3: false, U1L0T4: false };
             TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
+            const missingColumns = [];
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                 const localPoints = getLocalPointsByColumn(columna);
-                if (localPoints === null) return;
+                if (localPoints === null) {
+                    missingColumns.push(columna);
+                    return;
+                }
                 pointsByColumn[columna] = localPoints;
                 forcedUnlockByColumn[columna] = getLocalForcedUnlockByColumn(columna);
                 setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
@@ -3399,13 +3403,18 @@
                 return;
             }
 
-            let hydratedFromUserPoints = false;
+            if (!missingColumns.length) {
+                applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
+                return;
+            }
+
+            const missingColumnsSet = new Set(missingColumns);
             const hydratedColumns = {};
             try {
-                const columnas = TEST_SCORE_COLUMNS.map(({ columna }) => columna);
-                const remotePointsByColumn = await fetchUserPointsByColumns(student, columnas);
+                const remotePointsByColumn = await fetchUserPointsByColumns(student, missingColumns);
                 if (remotePointsByColumn && typeof remotePointsByColumn === 'object') {
                     TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                        if (!missingColumnsSet.has(columna)) return;
                         if (!(columna in remotePointsByColumn)) return;
                         const parsed = parseLessonPointsPayload(remotePointsByColumn[columna]);
                         if (!Number.isFinite(parsed.points)) return;
@@ -3414,34 +3423,30 @@
                         forcedUnlockByColumn[columna] = Boolean(parsed.forced);
                         hydratedColumns[columna] = true;
                         setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
-                        hydratedFromUserPoints = true;
                     });
                 }
             } catch (error) {
-                console.warn('No se pudo hidratar con user_points, se usara ranking por columna:', error);
+                console.warn('No se pudo hidratar con user_points para columnas faltantes, se usara ranking:', error);
             }
 
             await Promise.all(
-                TEST_SCORE_COLUMNS.map(async ({ pillId, columna }) => {
-                    const remoteAlreadySet = hydratedFromUserPoints && hydratedColumns[columna] === true;
-                    if (remoteAlreadySet) return;
-                    const localPoints = getLocalPointsByColumn(columna);
-                    if (localPoints !== null) return;
+                TEST_SCORE_COLUMNS.filter(({ columna }) => missingColumnsSet.has(columna) && hydratedColumns[columna] !== true)
+                    .map(async ({ pillId, columna }) => {
 
-                    try {
-                        const ranking = await fetchRankingByColumn(columna);
-                        const rowData = getStudentPointsFromRanking(ranking, student);
-                        const points = toLessonPointsNumber(rowData?.points) ?? 0;
-                        pointsByColumn[columna] = points;
-                        forcedUnlockByColumn[columna] = Boolean(rowData?.forcedUnlock);
-                        setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
-                    } catch (error) {
-                        console.warn(`No se pudo cargar puntos de ${columna}:`, error);
-                        setTestScorePillText(pillId, '--');
-                        pointsByColumn[columna] = 0;
-                        forcedUnlockByColumn[columna] = false;
-                    }
-                })
+                        try {
+                            const ranking = await fetchRankingByColumn(columna);
+                            const rowData = getStudentPointsFromRanking(ranking, student);
+                            const points = toLessonPointsNumber(rowData?.points) ?? 0;
+                            pointsByColumn[columna] = points;
+                            forcedUnlockByColumn[columna] = Boolean(rowData?.forcedUnlock);
+                            setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                        } catch (error) {
+                            console.warn(`No se pudo cargar puntos de ${columna}:`, error);
+                            setTestScorePillText(pillId, '--');
+                            pointsByColumn[columna] = 0;
+                            forcedUnlockByColumn[columna] = false;
+                        }
+                    })
             );
             applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
         }

@@ -3663,7 +3663,7 @@
     </script>
     <script>
         (function studentLocalSync() {
-            const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbze-mrfWfvMkXSnqkeMxxspBKCmlo9sMhHuYUK7l1OIhiizLqc9mELxtrkpfEodw3X4/exec';
+            const SYNC_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzszHDA9g4_wHCvt7yMJOLe8soBevpmhvMUqENyr2D1JWLHrnVhSPyuj8gq2uTM4F4R/exec';
             const SYNC_REQUEST_TYPE = 'sinc_sync';
             const COLUMN_REGEX = /^U\d+L\d+(?:T|E|OT)\d+$/i;
 
@@ -6351,17 +6351,54 @@
             return data.ranking;
         }
 
+        async function fetchUserPointsByColumns(columns) {
+            const requested = Array.isArray(columns)
+                ? columns.map((c) => String(c || '').trim().toUpperCase()).filter(Boolean)
+                : [];
+            if (requested.length === 0) return null;
+
+            const nombre = String(localStorage.getItem('access_first_name') || '').trim();
+            const apellido = String(localStorage.getItem('access_last_name') || '').trim();
+            if (!nombre || !apellido) return null;
+
+            const code = String(localStorage.getItem('access_code') || '').trim().toUpperCase();
+            const token = String(localStorage.getItem('access_token') || '').trim();
+
+            const params = new URLSearchParams();
+            params.set('mode', 'user_points');
+            params.set('nombre', nombre);
+            params.set('apellido', apellido);
+            if (code) params.set('code', code);
+            if (token) params.set('token', token);
+            params.set('columns', requested.join(','));
+            params.set('t', String(Date.now()));
+
+            const url = `${TOPIC_LOCK_SCRIPT_URL}?${params.toString()}`;
+            const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (!data || data.ok !== true || data.blocked === true || typeof data.pointsByColumn !== 'object') {
+                throw new Error('user_points inválido');
+            }
+            return data.pointsByColumn || {};
+        }
+
         function getStudentPointsFromRanking(rows, student) {
             if (!student || !Array.isArray(rows)) return 0;
             const row = rows.find((item) =>
                 normalizeStudentNameForMatch(item?.nombre) === student.nombre &&
                 normalizeStudentNameForMatch(item?.apellido) === student.apellido
             );
-            const rawPoints = row?.puntos;
-            if (hasTopicForcedUnlock(rawPoints)) {
-                return String(rawPoints || '').trim();
-            }
+            if (!row) return 0;
+
+            const rawPoints = row?.puntosRaw ?? row?.puntos_raw ?? row?.puntos;
             const points = sanitizeTopicPoints(rawPoints);
+            const forcedUnlock = Boolean(row?.forcedUnlock) || hasTopicForcedUnlock(rawPoints);
+
+            if (forcedUnlock) {
+                if (points !== null) return `${points}f`;
+                return '0f';
+            }
             return points !== null ? points : 0;
         }
 
@@ -7021,8 +7058,25 @@
             const student = getCurrentStudentFromStorage();
             let remoteSuccessCount = 0;
             if (columnsNeedingFetch.length > 0 && student) {
+                const hydratedByUserPoints = {};
+                try {
+                    const bulkPoints = await fetchUserPointsByColumns(columnsNeedingFetch);
+                    if (bulkPoints && typeof bulkPoints === 'object') {
+                        columnsNeedingFetch.forEach((column) => {
+                            const value = bulkPoints[column];
+                            if (value === null || value === undefined) return;
+                            pointsByColumn[column] = value;
+                            hydratedByUserPoints[column] = true;
+                            remoteSuccessCount += 1;
+                        });
+                    }
+                } catch (bulkError) {
+                    console.warn('Fallback a ranking por columna (user_points no disponible):', bulkError);
+                }
+
+                const columnsForRankingFallback = columnsNeedingFetch.filter((column) => !hydratedByUserPoints[column]);
                 await Promise.all(
-                    columnsNeedingFetch.map(async (column) => {
+                    columnsForRankingFallback.map(async (column) => {
                         try {
                             const ranking = await fetchRankingByColumn(column);
                             pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);

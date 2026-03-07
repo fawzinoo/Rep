@@ -2942,6 +2942,46 @@
             if (pill) pill.textContent = text;
         }
 
+        function parseLessonPointsValue(value) {
+            const raw = String(value ?? '').trim().toLowerCase().replace(',', '.');
+            if (!raw) return { points: null, forced: false };
+
+            const exact = raw.match(/^([0-5])(?:\.0+)?(f)?$/);
+            if (exact) {
+                return {
+                    points: Number(exact[1]),
+                    forced: Boolean(exact[2])
+                };
+            }
+
+            const forced = raw.match(/([0-5])(?:\.0+)?f/);
+            if (forced) {
+                return {
+                    points: Number(forced[1]),
+                    forced: true
+                };
+            }
+
+            const numeric = raw.match(/([0-5])(?:\.0+)?/);
+            if (numeric) {
+                return {
+                    points: Number(numeric[1]),
+                    forced: false
+                };
+            }
+
+            return { points: null, forced: false };
+        }
+
+        function toLessonPointsNumber(value) {
+            const parsed = parseLessonPointsValue(value);
+            return Number.isFinite(parsed.points) ? parsed.points : null;
+        }
+
+        function hasForcedUnlockMarker(value) {
+            return parseLessonPointsValue(value).forced === true;
+        }
+
         function getStoredScoresFromUnlockState() {
             try {
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
@@ -2950,10 +2990,10 @@
                 const scores = parsed?.scores;
                 if (!scores || typeof scores !== 'object') return {};
                 return {
-                    U1L0T1: Number.isFinite(Number(scores.U1L0T1)) ? Number(scores.U1L0T1) : null,
-                    U1L0T2: Number.isFinite(Number(scores.U1L0T2)) ? Number(scores.U1L0T2) : null,
-                    U1L0T3: Number.isFinite(Number(scores.U1L0T3)) ? Number(scores.U1L0T3) : null,
-                    U1L0T4: Number.isFinite(Number(scores.U1L0T4)) ? Number(scores.U1L0T4) : null
+                    U1L0T1: toLessonPointsNumber(scores.U1L0T1),
+                    U1L0T2: toLessonPointsNumber(scores.U1L0T2),
+                    U1L0T3: toLessonPointsNumber(scores.U1L0T3),
+                    U1L0T4: toLessonPointsNumber(scores.U1L0T4)
                 };
             } catch (e) {
                 return {};
@@ -2963,7 +3003,9 @@
         function getLocalPointsByColumn(columna) {
             try {
                 const fallbackScores = getStoredScoresFromUnlockState();
-                const fallback = Number(fallbackScores[columna]);
+                const rawValue = fallbackScores[columna];
+                if (rawValue === null || typeof rawValue === 'undefined') return null;
+                const fallback = toLessonPointsNumber(rawValue);
                 if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
                 return null;
             } catch (e) {
@@ -2974,8 +3016,9 @@
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
-            const numeric = Number(value);
-            if (Number.isFinite(numeric)) return numeric >= 4;
+            const parsed = parseLessonPointsValue(value);
+            if (parsed.forced) return true;
+            if (Number.isFinite(parsed.points)) return parsed.points >= 4;
             return false;
         }
 
@@ -2992,6 +3035,8 @@
                 if (typeof unlocksByColumn[columna] === 'boolean') {
                     return unlocksByColumn[columna];
                 }
+                const scoreValue = parsed?.scores?.[columna];
+                if (hasForcedUnlockMarker(scoreValue)) return true;
                 if (columna === 'U1L0T1') return parseUnlockFlag(parsed?.test2);
                 if (columna === 'U1L0T2') return parseUnlockFlag(parsed?.test3);
                 if (columna === 'U1L0T3') return parseUnlockFlag(parsed?.test4);
@@ -3037,9 +3082,9 @@
 
                 const prevScores = current.scores && typeof current.scores === 'object' ? current.scores : {};
                 const normalizeScore = (value, fallback = 0) => {
-                    const numeric = Number(value);
+                    const numeric = toLessonPointsNumber(value);
                     if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return numeric;
-                    const backup = Number(fallback);
+                    const backup = toLessonPointsNumber(fallback);
                     return Number.isFinite(backup) && backup >= 0 && backup <= 5 ? backup : 0;
                 };
 
@@ -3223,6 +3268,32 @@
             }
         }
 
+        async function fetchUserPointsByColumns(student, columnas) {
+            if (!student || !Array.isArray(columnas) || !columnas.length) {
+                return null;
+            }
+            const qs = new URLSearchParams();
+            qs.set('mode', 'user_points');
+            qs.set('nombre', student.nombre);
+            qs.set('apellido', student.apellido);
+            qs.set('columns', columnas.join(','));
+            qs.set('t', String(Date.now()));
+            const url = `${PORTALB_SCRIPT_URL}?${qs.toString()}`;
+            const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+            let data = null;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(`Respuesta no JSON: ${text.slice(0, 80)}`);
+            }
+            if (!data || data.ok !== true || !data.pointsByColumn || typeof data.pointsByColumn !== 'object') {
+                throw new Error('user_points invalido');
+            }
+            return data.pointsByColumn;
+        }
+
         function getStudentPointsFromRanking(rankingRows, student) {
             if (!student || !Array.isArray(rankingRows)) {
                 return { points: 0, forcedUnlock: false };
@@ -3231,20 +3302,16 @@
                 normalizeStudentName(item?.nombre) === student.nombre &&
                 normalizeStudentName(item?.apellido) === student.apellido
             );
-            const parseRankingPoints = (value) => {
-                const numeric = Number(value);
-                if (Number.isFinite(numeric) && numeric >= 0) return numeric;
-                const raw = String(value ?? '').trim().toLowerCase().replace(',', '.');
-                if (!raw) return 0;
-                const exact = raw.match(/^([0-5])(?:\.0+)?(?:f)?$/);
-                if (exact) return Number(exact[1]);
-                const embedded = raw.match(/([0-5])(?:\.0+)?/);
-                return embedded ? Number(embedded[1]) : 0;
-            };
-            const points = parseRankingPoints(row?.puntos);
+            const parsedRaw = parseLessonPointsValue(row?.puntosRaw);
+            const parsedPoints = parseLessonPointsValue(row?.puntos);
+            const points = Number.isFinite(parsedRaw.points)
+                ? parsedRaw.points
+                : (Number.isFinite(parsedPoints.points) ? parsedPoints.points : 0);
             const rawValue = String(row?.puntosRaw ?? row?.puntos ?? '').trim().toLowerCase();
             const forcedUnlock = Boolean(
                 row?.forcedUnlock === true ||
+                parsedRaw.forced ||
+                parsedPoints.forced ||
                 (/^([0-5])(?:\.0+)?f$/.test(rawValue)) ||
                 (/\b([0-5])(?:\.0+)?f\b/.test(rawValue))
             );
@@ -3279,15 +3346,35 @@
                 return;
             }
 
+            let hydratedFromUserPoints = false;
+            const hydratedColumns = {};
+            try {
+                const columnas = TEST_SCORE_COLUMNS.map(({ columna }) => columna);
+                const remotePointsByColumn = await fetchUserPointsByColumns(student, columnas);
+                if (remotePointsByColumn && typeof remotePointsByColumn === 'object') {
+                    TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                        if (!(columna in remotePointsByColumn)) return;
+                        const parsed = parseLessonPointsValue(remotePointsByColumn[columna]);
+                        if (!Number.isFinite(parsed.points)) return;
+                        const points = parsed.points;
+                        pointsByColumn[columna] = points;
+                        forcedUnlockByColumn[columna] = Boolean(parsed.forced);
+                        hydratedColumns[columna] = true;
+                        setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                        hydratedFromUserPoints = true;
+                    });
+                }
+            } catch (error) {
+                console.warn('No se pudo hidratar con user_points, se usara ranking por columna:', error);
+            }
+
             await Promise.all(
                 TEST_SCORE_COLUMNS.map(async ({ pillId, columna }) => {
+                    const remoteAlreadySet = hydratedFromUserPoints && hydratedColumns[columna] === true;
+                    if (remoteAlreadySet) return;
                     const localPoints = getLocalPointsByColumn(columna);
-                    if (localPoints !== null) {
-                        pointsByColumn[columna] = localPoints;
-                        forcedUnlockByColumn[columna] = getLocalForcedUnlockByColumn(columna);
-                        setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
-                        return;
-                    }
+                    if (localPoints !== null) return;
+
                     try {
                         const ranking = await fetchRankingByColumn(columna);
                         const rowData = getStudentPointsFromRanking(ranking, student);

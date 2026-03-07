@@ -6357,8 +6357,12 @@
                 normalizeStudentNameForMatch(item?.nombre) === student.nombre &&
                 normalizeStudentNameForMatch(item?.apellido) === student.apellido
             );
-            const points = Number(row?.puntos);
-            return Number.isFinite(points) ? points : 0;
+            const rawPoints = row?.puntos;
+            if (hasTopicForcedUnlock(rawPoints)) {
+                return String(rawPoints || '').trim();
+            }
+            const points = sanitizeTopicPoints(rawPoints);
+            return points !== null ? points : 0;
         }
 
         function getLockedCardTheme(cardTitle, cardId = '') {
@@ -6432,25 +6436,45 @@
             return missing;
         }
 
-        function sanitizeTopicPoints(value) {
-            if (value === null || value === undefined) return null;
-            if (typeof value === 'boolean') return null;
+        function parseTopicPointValue(value) {
+            if (value === null || value === undefined) return { points: null, forcedUnlock: false };
+            if (typeof value === 'boolean') return { points: null, forcedUnlock: false };
 
             let numeric = null;
+            let forcedUnlock = false;
+
             if (typeof value === 'number') {
                 numeric = value;
             } else if (typeof value === 'string') {
                 const trimmed = value.trim();
-                if (!trimmed) return null;
-                const match = trimmed.replace(',', '.').match(/-?\d+(\.\d+)?/);
-                if (!match) return null;
-                numeric = Number(match[0]);
+                if (!trimmed) return { points: null, forcedUnlock: false };
+
+                const finalMatch = trimmed.match(/^(-?\d+(?:[.,]\d+)?)\s*[fF]$/);
+                if (finalMatch) {
+                    numeric = Number(String(finalMatch[1]).replace(',', '.'));
+                    forcedUnlock = true;
+                } else {
+                    const match = trimmed.replace(',', '.').match(/-?\d+(\.\d+)?/);
+                    if (!match) return { points: null, forcedUnlock: false };
+                    numeric = Number(match[0]);
+                }
             } else {
-                return null;
+                return { points: null, forcedUnlock: false };
             }
 
-            if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) return Math.round(numeric);
-            return null;
+            if (!Number.isFinite(numeric) || numeric < 0 || numeric > 5) {
+                return { points: null, forcedUnlock: forcedUnlock };
+            }
+
+            return { points: Math.round(numeric), forcedUnlock };
+        }
+
+        function sanitizeTopicPoints(value) {
+            return parseTopicPointValue(value).points;
+        }
+
+        function hasTopicForcedUnlock(value) {
+            return parseTopicPointValue(value).forcedUnlock;
         }
 
         function readTopicPointsCache() {
@@ -6509,7 +6533,9 @@
 
                     for (let i = 1; i <= 4; i += 1) {
                         const column = `${lessonPrefix}T${i}`;
-                        const remoteScore = sanitizeTopicPoints(source[column]);
+                        const remoteRaw = source[column];
+                        const remoteScore = sanitizeTopicPoints(remoteRaw);
+                        const remoteForcedUnlock = hasTopicForcedUnlock(remoteRaw);
                         const existingScore = sanitizeTopicPoints(
                             existing?.scores?.[column] ??
                             existing?.[column] ??
@@ -6518,18 +6544,30 @@
                             existing?.tests?.[`test${i}`]?.score ??
                             existing?.tests?.[`test${i}`]?.points
                         );
+                        const testKey = `test${i}`;
+                        const existingUnlockCandidates = [
+                            parseUnlockFlag(existing?.unlocksByColumn?.[column]),
+                            parseUnlockFlag(existing?.tests?.[testKey]),
+                            parseUnlockFlag(existing?.tests?.[testKey]?.unlocked),
+                            parseUnlockFlag(existing?.[testKey]),
+                            parseUnlockFlag(existing?.[testKey]?.unlocked),
+                            parseUnlockFlag(existing?.[column])
+                        ].filter((value) => value !== null);
+                        const existingUnlock = existingUnlockCandidates.length > 0
+                            ? existingUnlockCandidates.some(Boolean)
+                            : null;
                         const score = remoteScore !== null ? remoteScore : existingScore;
-                        if (score === null) continue;
+                        if (score === null && existingUnlock !== true && !remoteForcedUnlock) continue;
 
                         hasAnyValue = true;
-                        const unlocked = score >= TOPIC_UNLOCK_THRESHOLD;
-                        const testKey = `test${i}`;
+                        const normalizedScore = score === null ? 0 : score;
+                        const unlocked = remoteForcedUnlock || existingUnlock === true || normalizedScore >= TOPIC_UNLOCK_THRESHOLD;
 
-                        mergedScores[column] = score;
+                        mergedScores[column] = normalizedScore;
                         mergedUnlocks[column] = unlocked;
                         testsNode[testKey] = {
-                            score: score,
-                            points: score,
+                            score: normalizedScore,
+                            points: normalizedScore,
                             unlocked: unlocked
                         };
                     }
@@ -6556,6 +6594,7 @@
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
+            if (typeof value === 'string' && /[fF]\s*$/.test(value.trim())) return true;
             const numeric = Number(value);
             if (Number.isFinite(numeric)) return numeric >= TOPIC_UNLOCK_THRESHOLD;
             return null;
@@ -6620,8 +6659,11 @@
         function isColumnUnlockedByLocalStateOrScore(column, points = null) {
             const localUnlock = getLocalTopicUnlockedByColumn(column);
             if (localUnlock === true) return true;
-            const numericPoints = Number.isFinite(points) ? points : getLocalTopicPointsByColumn(column);
-            return Number.isFinite(numericPoints) && numericPoints >= TOPIC_UNLOCK_THRESHOLD;
+            if (hasTopicForcedUnlock(points)) return true;
+            const incomingPoints = sanitizeTopicPoints(points);
+            if (incomingPoints !== null) return incomingPoints >= TOPIC_UNLOCK_THRESHOLD;
+            const localPoints = getLocalTopicPointsByColumn(column);
+            return Number.isFinite(localPoints) && localPoints >= TOPIC_UNLOCK_THRESHOLD;
         }
 
         function getLocalTopicPointsByColumn(column) {
@@ -6997,8 +7039,9 @@
             }
 
             allColumns.forEach((column) => {
-                if (Number.isFinite(pointsByColumn[column])) {
-                    latestTopicPointsByColumn[column] = pointsByColumn[column];
+                const normalizedPoints = sanitizeTopicPoints(pointsByColumn[column]);
+                if (normalizedPoints !== null) {
+                    latestTopicPointsByColumn[column] = normalizedPoints;
                 }
             });
             saveTopicPointsCache(latestTopicPointsByColumn);

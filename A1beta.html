@@ -6850,6 +6850,9 @@
                 if (remoteScore !== null) return remoteScore;
                 return null;
             };
+            const isForced = (column) =>
+                getLocalTopicForcedUnlockByColumn(column) ||
+                hasTopicForcedUnlock(pointsByColumn?.[column]);
 
             const t1Score = Number(getScore(columns[0])) || 0;
             const t2Score = Number(getScore(columns[1])) || 0;
@@ -6858,10 +6861,11 @@
 
             // La luz del semáforo refleja el resultado actual (4/5 encendido, <4 apagado).
             // El desbloqueo del siguiente tema se gestiona aparte con lógica one-way.
-            const test1Unlocked = t1Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test2Unlocked = t2Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test3Unlocked = t3Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test4Unlocked = t4Score >= TOPIC_UNLOCK_THRESHOLD;
+            // Si existe sufijo "f" (ej: 1f, 2f...), se considera desbloqueo forzado.
+            const test1Unlocked = isForced(columns[0]) || t1Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test2Unlocked = isForced(columns[1]) || t2Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test3Unlocked = isForced(columns[2]) || t3Score >= TOPIC_UNLOCK_THRESHOLD;
+            const test4Unlocked = isForced(columns[3]) || t4Score >= TOPIC_UNLOCK_THRESHOLD;
 
             return {
                 test1: test1Unlocked,
@@ -6993,9 +6997,9 @@
 
         function getTopicScoreValue(column, pointsByColumn = {}) {
             const localScore = getLocalTopicPointsByColumn(column);
-            if (localScore !== null) return Number(localScore) || 0;
+            if (localScore !== null) return localScore;
             const remoteScore = sanitizeTopicPoints(pointsByColumn?.[column]);
-            if (remoteScore !== null) return Number(remoteScore) || 0;
+            if (remoteScore !== null) return remoteScore;
             return null;
         }
 
@@ -7007,7 +7011,7 @@
                 const score = getTopicScoreValue(column, pointsByColumn);
                 if (score === null) return;
                 hasAnyScore = true;
-                total += Number(score) || 0;
+                total += score;
             });
             return hasAnyScore ? total : null;
         }
@@ -7020,7 +7024,7 @@
                 const remoteScore = sanitizeTopicPoints(pointsByColumn?.[column]);
                 if (remoteScore === null) return;
                 hasAnyScore = true;
-                total += Number(remoteScore) || 0;
+                total += remoteScore;
             });
             return hasAnyScore ? total : null;
         }
@@ -7056,7 +7060,7 @@
             const localScores = semaphoreConfig.columns.map((column) => getUnlockStateScoreOnly(column));
             const hasLocalUnlockStateScores = localScores.some((score) => score !== null);
             const localTotal = hasLocalUnlockStateScores
-                ? localScores.reduce((sum, score) => sum + (Number(score) || 0), 0)
+                ? localScores.reduce((sum, score) => sum + (score === null ? 0 : score), 0)
                 : null;
             const remoteTotal = getRemoteTopicTotalPoints(semaphoreConfig.columns, latestTopicPointsByColumn);
             const totalPoints = localTotal !== null ? localTotal : remoteTotal;

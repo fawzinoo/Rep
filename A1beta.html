@@ -6516,6 +6516,10 @@
                 return { points: null, forcedUnlock: forcedUnlock };
             }
 
+            if (forcedUnlock && numeric < TOPIC_UNLOCK_THRESHOLD) {
+                forcedUnlock = false;
+            }
+
             return { points: Math.round(numeric), forcedUnlock };
         }
 
@@ -6600,27 +6604,16 @@
                             existing?.tests?.[`test${i}`]?.score ??
                             existing?.tests?.[`test${i}`]?.points
                         );
-                        const testKey = `test${i}`;
-                        const existingUnlockCandidates = [
-                            parseUnlockFlag(existing?.unlocksByColumn?.[column]),
-                            parseUnlockFlag(existing?.tests?.[testKey]),
-                            parseUnlockFlag(existing?.tests?.[testKey]?.unlocked),
-                            parseUnlockFlag(existing?.[testKey]),
-                            parseUnlockFlag(existing?.[testKey]?.unlocked),
-                            parseUnlockFlag(existing?.[column])
-                        ].filter((value) => value !== null);
-                        const existingUnlock = existingUnlockCandidates.length > 0
-                            ? existingUnlockCandidates.some(Boolean)
-                            : null;
                         const score = remoteScore !== null ? remoteScore : existingScore;
-                        if (score === null && existingUnlock !== true && !remoteForcedUnlock) continue;
+                        if (score === null && !remoteForcedUnlock) continue;
 
                         hasAnyValue = true;
                         const normalizedScore = score === null ? 0 : score;
-                        const unlocked = remoteForcedUnlock || existingUnlock === true || normalizedScore >= TOPIC_UNLOCK_THRESHOLD;
+                        const unlocked = remoteForcedUnlock || normalizedScore >= TOPIC_UNLOCK_THRESHOLD;
 
                         mergedScores[column] = normalizedScore;
                         mergedUnlocks[column] = unlocked;
+                        const testKey = `test${i}`;
                         testsNode[testKey] = {
                             score: normalizedScore,
                             points: normalizedScore,
@@ -6650,9 +6643,10 @@
         function parseUnlockFlag(value) {
             if (typeof value === 'boolean') return value;
             if (value && typeof value === 'object' && 'unlocked' in value) return Boolean(value.unlocked);
-            if (typeof value === 'string' && /[fFtT]\s*$/.test(value.trim())) return true;
-            const numeric = Number(value);
-            if (Number.isFinite(numeric)) return numeric >= TOPIC_UNLOCK_THRESHOLD;
+            const parsed = parseTopicPointValue(value);
+            if (parsed.points !== null) {
+                return parsed.points >= TOPIC_UNLOCK_THRESHOLD;
+            }
             return null;
         }
 

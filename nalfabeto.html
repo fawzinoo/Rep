@@ -2931,8 +2931,16 @@
         }
 
         function getCurrentStudentFromStorage() {
-            const nombre = normalizeStudentName(localStorage.getItem('access_first_name') || '');
-            const apellido = normalizeStudentName(localStorage.getItem('access_last_name') || '');
+            const nombre = normalizeStudentName(
+                localStorage.getItem('access_first_name') ||
+                sessionStorage.getItem('nombreUsuario') ||
+                ''
+            );
+            const apellido = normalizeStudentName(
+                localStorage.getItem('access_last_name') ||
+                sessionStorage.getItem('apellidoUsuario') ||
+                ''
+            );
             if (!nombre || !apellido) return null;
             return { nombre, apellido };
         }
@@ -2946,7 +2954,7 @@
             const raw = String(value ?? '').trim().toLowerCase().replace(',', '.');
             if (!raw) return { points: null, forced: false };
 
-            const exact = raw.match(/^([0-5])(?:\.0+)?(f)?$/);
+            const exact = raw.match(/^([0-5])(?:\.0+)?\s*(f)?$/);
             if (exact) {
                 return {
                     points: Number(exact[1]),
@@ -2954,7 +2962,7 @@
                 };
             }
 
-            const forced = raw.match(/([0-5])(?:\.0+)?f/);
+            const forced = raw.match(/([0-5])(?:\.0+)?\s*f/);
             if (forced) {
                 return {
                     points: Number(forced[1]),
@@ -2976,6 +2984,50 @@
         function toLessonPointsNumber(value) {
             const parsed = parseLessonPointsValue(value);
             return Number.isFinite(parsed.points) ? parsed.points : null;
+        }
+
+        function toLooseBoolean(value) {
+            if (typeof value === 'boolean') return value;
+            const raw = String(value ?? '').trim().toLowerCase();
+            return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'si' || raw === 'sí';
+        }
+
+        function parseLessonPointsPayload(payload) {
+            const obj = payload && typeof payload === 'object' ? payload : null;
+            const forcedFromFlags = obj
+                ? (
+                    toLooseBoolean(obj.forcedUnlock) ||
+                    toLooseBoolean(obj.forced) ||
+                    toLooseBoolean(obj.unlockForced) ||
+                    toLooseBoolean(obj.isForced)
+                )
+                : false;
+
+            const candidates = obj
+                ? [
+                    obj.puntosRaw,
+                    obj.puntos,
+                    obj.pointsRaw,
+                    obj.points,
+                    obj.value,
+                    obj.score,
+                    obj.resultado,
+                    obj.nota,
+                    obj.calificacion,
+                    obj.valor
+                ]
+                : [payload];
+
+            for (const candidate of candidates) {
+                const parsed = parseLessonPointsValue(candidate);
+                if (!Number.isFinite(parsed.points)) continue;
+                return {
+                    points: parsed.points,
+                    forced: Boolean(parsed.forced || forcedFromFlags)
+                };
+            }
+
+            return { points: null, forced: forcedFromFlags };
         }
 
         function hasForcedUnlockMarker(value) {
@@ -3302,18 +3354,19 @@
                 normalizeStudentName(item?.nombre) === student.nombre &&
                 normalizeStudentName(item?.apellido) === student.apellido
             );
-            const parsedRaw = parseLessonPointsValue(row?.puntosRaw);
-            const parsedPoints = parseLessonPointsValue(row?.puntos);
-            const points = Number.isFinite(parsedRaw.points)
-                ? parsedRaw.points
-                : (Number.isFinite(parsedPoints.points) ? parsedPoints.points : 0);
+            const parsedRow = parseLessonPointsPayload({
+                puntosRaw: row?.puntosRaw,
+                puntos: row?.puntos,
+                pointsRaw: row?.pointsRaw,
+                points: row?.points,
+                forcedUnlock: row?.forcedUnlock
+            });
+            const points = Number.isFinite(parsedRow.points) ? parsedRow.points : 0;
             const rawValue = String(row?.puntosRaw ?? row?.puntos ?? '').trim().toLowerCase();
             const forcedUnlock = Boolean(
-                row?.forcedUnlock === true ||
-                parsedRaw.forced ||
-                parsedPoints.forced ||
-                (/^([0-5])(?:\.0+)?f$/.test(rawValue)) ||
-                (/\b([0-5])(?:\.0+)?f\b/.test(rawValue))
+                parsedRow.forced ||
+                (/^([0-5])(?:\.0+)?\s*f$/.test(rawValue)) ||
+                (/\b([0-5])(?:\.0+)?\s*f\b/.test(rawValue))
             );
             return {
                 points: Number.isFinite(points) ? points : 0,
@@ -3354,7 +3407,7 @@
                 if (remotePointsByColumn && typeof remotePointsByColumn === 'object') {
                     TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                         if (!(columna in remotePointsByColumn)) return;
-                        const parsed = parseLessonPointsValue(remotePointsByColumn[columna]);
+                        const parsed = parseLessonPointsPayload(remotePointsByColumn[columna]);
                         if (!Number.isFinite(parsed.points)) return;
                         const points = parsed.points;
                         pointsByColumn[columna] = points;

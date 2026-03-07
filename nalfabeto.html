@@ -2872,6 +2872,7 @@
             U1L0T4: ['u1l0t4']
         };
         const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
+        const TOPIC_POINTS_CACHE_KEY = 'a1beta-topic-points-cache-v1';
         const TEST_UNLOCK_COPY = {
             test2: {
                 title: 'Nivel 2 desbloqueado',
@@ -2954,7 +2955,7 @@
             const raw = String(value ?? '').trim().toLowerCase().replace(',', '.');
             if (!raw) return { points: null, forced: false };
 
-            const exact = raw.match(/^([0-5])(?:\.0+)?\s*(f)?$/);
+            const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
             if (exact) {
                 return {
                     points: Number(exact[1]),
@@ -2962,7 +2963,7 @@
                 };
             }
 
-            const forced = raw.match(/([0-5])(?:\.0+)?\s*f/);
+            const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
             if (forced) {
                 return {
                     points: Number(forced[1]),
@@ -3052,6 +3053,34 @@
             }
         }
 
+        function readA1BetaTopicPointsCache() {
+            try {
+                const raw = localStorage.getItem(TOPIC_POINTS_CACHE_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveA1BetaTopicPointsCache(pointsByColumn, forcedUnlockByColumn = {}) {
+            try {
+                const merged = {
+                    ...readA1BetaTopicPointsCache()
+                };
+                TEST_SCORE_COLUMNS.forEach(({ columna }) => {
+                    const points = toLessonPointsNumber(pointsByColumn?.[columna]);
+                    if (!Number.isFinite(points)) return;
+                    const forcedUnlock =
+                        Boolean(forcedUnlockByColumn?.[columna]) ||
+                        hasForcedUnlockMarker(pointsByColumn?.[columna]);
+                    merged[columna] = forcedUnlock ? `${points}t` : points;
+                });
+                localStorage.setItem(TOPIC_POINTS_CACHE_KEY, JSON.stringify(merged));
+            } catch (_) { }
+        }
+
         function getLocalPointsByColumn(columna) {
             try {
                 const fallbackScores = getStoredScoresFromUnlockState();
@@ -3122,7 +3151,7 @@
             }
         }
 
-        function saveStoredUnlockState(state, pointsByColumn) {
+        function saveStoredUnlockState(state, pointsByColumn, forcedUnlockByColumn = {}) {
             try {
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
                 const parsed = raw ? JSON.parse(raw) : {};
@@ -3150,12 +3179,15 @@
                 const prevUnlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
                     ? current.unlocksByColumn
                     : {};
+                const forcedUnlockT4 =
+                    Boolean(forcedUnlockByColumn?.U1L0T4) ||
+                    hasForcedUnlockMarker(pointsByColumn?.U1L0T4);
                 const unlocksByColumn = {
                     ...prevUnlocksByColumn,
                     U1L0T1: Boolean(prevUnlocksByColumn?.U1L0T1 || mergedTest2),
                     U1L0T2: Boolean(prevUnlocksByColumn?.U1L0T2 || mergedTest3),
                     U1L0T3: Boolean(prevUnlocksByColumn?.U1L0T3 || mergedTest4),
-                    U1L0T4: Boolean(prevUnlocksByColumn?.U1L0T4)
+                    U1L0T4: Boolean(prevUnlocksByColumn?.U1L0T4 || forcedUnlockT4)
                 };
 
                 localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
@@ -3285,7 +3317,8 @@
             }
 
             if (persist) {
-                saveStoredUnlockState(currentState, pointsByColumn);
+                saveStoredUnlockState(currentState, pointsByColumn, forcedUnlockByColumn);
+                saveA1BetaTopicPointsCache(pointsByColumn, forcedUnlockByColumn);
             }
         }
 
@@ -3365,8 +3398,8 @@
             const rawValue = String(row?.puntosRaw ?? row?.puntos ?? '').trim().toLowerCase();
             const forcedUnlock = Boolean(
                 parsedRow.forced ||
-                (/^([0-5])(?:\.0+)?\s*f$/.test(rawValue)) ||
-                (/\b([0-5])(?:\.0+)?\s*f\b/.test(rawValue))
+                (/^([0-5])(?:\.0+)?\s*[ft]$/.test(rawValue)) ||
+                (/\b([0-5])(?:\.0+)?\s*[ft]\b/.test(rawValue))
             );
             return {
                 points: Number.isFinite(points) ? points : 0,

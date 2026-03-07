@@ -6577,6 +6577,7 @@
                     const mergedScores = {};
                     const mergedUnlocks = {};
                     const testsNode = {};
+                    const perTestUnlock = {};
 
                     let hasAnyValue = false;
 
@@ -6585,22 +6586,27 @@
                         const remoteRaw = source[column];
                         const remoteScore = sanitizeTopicPoints(remoteRaw);
                         const remoteForcedUnlock = hasTopicForcedUnlock(remoteRaw);
+                        const legacyRootNode = i <= 3
+                            ? existing?.[`test${i + 1}`]
+                            : existing?.[`test${i}`];
                         const existingScore = sanitizeTopicPoints(
                             existing?.scores?.[column] ??
                             existing?.[column] ??
-                            existing?.[`test${i}`]?.score ??
-                            existing?.[`test${i}`]?.points ??
                             existing?.tests?.[`test${i}`]?.score ??
-                            existing?.tests?.[`test${i}`]?.points
+                            existing?.tests?.[`test${i}`]?.points ??
+                            legacyRootNode?.score ??
+                            legacyRootNode?.points
                         );
                         const testKey = `test${i}`;
                         const existingUnlockCandidates = [
                             parseUnlockFlag(existing?.unlocksByColumn?.[column]),
                             parseUnlockFlag(existing?.tests?.[testKey]),
                             parseUnlockFlag(existing?.tests?.[testKey]?.unlocked),
-                            parseUnlockFlag(existing?.[testKey]),
-                            parseUnlockFlag(existing?.[testKey]?.unlocked),
-                            parseUnlockFlag(existing?.[column])
+                            parseUnlockFlag(existing?.[column]),
+                            // Compatibilidad: si existe estado legado de "siguiente test abierto"
+                            // (test2/test3/test4) y no hay unlocksByColumn/tests, usarlo.
+                            parseUnlockFlag(i <= 3 ? existing?.[`test${i + 1}`] : null),
+                            parseUnlockFlag(i <= 3 ? existing?.[`test${i + 1}`]?.unlocked : null)
                         ].filter((value) => value !== null);
                         const existingUnlock = existingUnlockCandidates.length > 0
                             ? existingUnlockCandidates.some(Boolean)
@@ -6614,6 +6620,7 @@
 
                         mergedScores[column] = normalizedScore;
                         mergedUnlocks[column] = unlocked;
+                        perTestUnlock[testKey] = unlocked;
                         testsNode[testKey] = {
                             score: normalizedScore,
                             points: normalizedScore,
@@ -6623,6 +6630,23 @@
 
                     if (!hasAnyValue) return;
 
+                    // Estado encadenado de apertura de tests (T1 abre test2, T2 abre test3, T3 abre test4).
+                    const prevOpen2 = parseUnlockFlag(existing?.test2) === true || parseUnlockFlag(existing?.test2?.unlocked) === true;
+                    const prevOpen3 = parseUnlockFlag(existing?.test3) === true || parseUnlockFlag(existing?.test3?.unlocked) === true;
+                    const prevOpen4 = parseUnlockFlag(existing?.test4) === true || parseUnlockFlag(existing?.test4?.unlocked) === true;
+
+                    let openTest2 = prevOpen2 || Boolean(perTestUnlock.test1);
+                    let openTest3 = prevOpen3 || (openTest2 && Boolean(perTestUnlock.test2));
+                    let openTest4 = prevOpen4 || (openTest3 && Boolean(perTestUnlock.test3));
+
+                    // Consistencia one-way: si un test más alto está abierto, los anteriores también.
+                    if (openTest4) {
+                        openTest3 = true;
+                        openTest2 = true;
+                    } else if (openTest3) {
+                        openTest2 = true;
+                    }
+
                     const payload = {
                         updatedAt: Date.now(),
                         scores: mergedScores,
@@ -6630,10 +6654,20 @@
                         tests: testsNode
                     };
 
-                    // Compatibilidad con lectores legacy que esperan test1/test2... al nivel raíz.
-                    Object.keys(testsNode).forEach((testKey) => {
-                        payload[testKey] = testsNode[testKey];
-                    });
+                    // Compatibilidad con páginas de tema que leen test2/test3/test4 al nivel raíz.
+                    payload.test1 = testsNode.test1 || { score: 0, points: 0, unlocked: false };
+                    payload.test2 = {
+                        unlocked: openTest2,
+                        points: mergedScores[`${lessonPrefix}T1`] ?? 0
+                    };
+                    payload.test3 = {
+                        unlocked: openTest3,
+                        points: mergedScores[`${lessonPrefix}T2`] ?? 0
+                    };
+                    payload.test4 = {
+                        unlocked: openTest4,
+                        points: mergedScores[`${lessonPrefix}T3`] ?? 0
+                    };
 
                     localStorage.setItem(storageKey, JSON.stringify(payload));
                 });

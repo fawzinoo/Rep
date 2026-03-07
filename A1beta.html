@@ -6966,17 +6966,12 @@
             }
 
             // Aplicar desbloqueos disponibles en localStorage al instante (sin esperar doGet)
-            let unlockedFromLocal = false;
             TOPIC_UNLOCK_RULES.forEach(({ column, unlockTitle }) => {
                 const points = pointsByColumn[column];
                 if (isColumnUnlockedByLocalStateOrScore(column, points)) {
-                    if (CANDADOS[unlockTitle] !== false) unlockedFromLocal = true;
                     CANDADOS[unlockTitle] = false;
                 }
             });
-            if (unlockedFromLocal) {
-                applyCandadosToCards();
-            }
 
             const columnsNeedingFetch = forceRemoteFirst
                 ? [...allColumns]
@@ -7037,10 +7032,6 @@
                 if (!target || target.classList.contains('locked-card')) {
                     badge.remove();
                 }
-            });
-            document.querySelectorAll('.locked-card .topic-test-semaphore').forEach((panel) => panel.remove());
-            document.querySelectorAll('.locked-card.next-topic-semaphore-card').forEach((card) => {
-                card.classList.remove('next-topic-semaphore-card');
             });
 
             // Procesar cada tarjeta según el objeto CANDADOS
@@ -7122,12 +7113,18 @@
             syncTopicRemoteHydrationScopeState();
             const isContentVisible = document.body.classList.contains('content-visible');
             const allowBeforeVisible = Boolean(options && options.allowBeforeVisible);
-            if (!isContentVisible && !allowBeforeVisible) return;
+            if (!isContentVisible && !allowBeforeVisible) {
+                // Pre-render local inmediato para evitar parpadeo al terminar el access gate.
+                syncCandadosFromLocalProgress();
+                applyCandadosToCards();
+                requestAnimationFrame(refreshTopicTotalBadgePositions);
+                return;
+            }
 
             if (candadosRefreshInFlight) return;
             candadosRefreshInFlight = true;
             const forceRemoteFirst = Boolean(options && options.forceRemoteFirst) || !hasPriorityRemoteHydration;
-            const shouldBlockUntilHydration = Boolean(options && options.showLoading) || forceRemoteFirst;
+            const shouldBlockUntilHydration = Boolean(options && options.showLoading);
 
             if (shouldBlockUntilHydration) {
                 showGlobalLoading({
@@ -7138,11 +7135,9 @@
                 });
             }
             try {
-                // En la primera carga esperamos a doGet para evitar mostrar píldoras con datos antiguos.
-                if (!forceRemoteFirst) {
-                    syncCandadosFromLocalProgress();
-                    applyCandadosToCards();
-                }
+                // Render inmediato con datos locales/cache para evitar parpadeo visual.
+                syncCandadosFromLocalProgress();
+                applyCandadosToCards();
                 const syncResult = await updateCandadosFromT4Progress({ forceRemoteFirst });
                 if (forceRemoteFirst && syncResult?.didRemoteHydrate) {
                     hasPriorityRemoteHydration = true;
@@ -7161,10 +7156,16 @@
         }
 
         // Event listener para manejar los candados dinámicamente
-        document.addEventListener('DOMContentLoaded', refreshDynamicCandados);
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshDynamicCandados({ allowBeforeVisible: true });
+        });
         window.addEventListener('load', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
         window.addEventListener('focus', refreshDynamicCandados);
-        window.addEventListener('pageshow', refreshDynamicCandados);
+        window.addEventListener('pageshow', (event) => {
+            if (event && event.persisted) {
+                refreshDynamicCandados();
+            }
+        });
         window.addEventListener('resize', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
         window.addEventListener('orientationchange', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
         if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
@@ -7172,14 +7173,13 @@
                 .then(() => requestAnimationFrame(refreshTopicTotalBadgePositions))
                 .catch(() => {});
         }
-        refreshDynamicCandados();
 
         // Si el access gate desbloquea contenido sin recargar, refrescar candados.
         const accessStateObserver = new MutationObserver(() => {
             if (document.body.classList.contains('content-visible')) {
                 refreshDynamicCandados({
                     forceRemoteFirst: !hasPriorityRemoteHydration,
-                    showLoading: !hasPriorityRemoteHydration
+                    showLoading: false
                 });
             }
         });

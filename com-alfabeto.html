@@ -5503,6 +5503,7 @@
         const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
         const LESSON_COLUMN_KEY = 'U1L0T2';
         const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
+        const LESSON_UNLOCK_THRESHOLD = 4;
         const RANKING_TEST2_MODE = 'ranking_test2';
         const RANKING_ALFABETO_MODE = 'ranking_alfabeto';
         
@@ -5511,6 +5512,12 @@ const RANKING_SCOPE = 'alfabeto';
 
         function normalizeStudentName(name) {
             return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        function normalizeLessonPoints(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return 0;
+            return Math.max(0, Math.min(5, Math.round(numeric)));
         }
 
         function saveUnlockStateScore(columna, puntos) {
@@ -5525,6 +5532,46 @@ const RANKING_SCOPE = 'alfabeto';
                 current.scores = scores;
                 localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
             } catch (e) { }
+        }
+
+        function markColumnPermanentUnlock(columna) {
+            if (!columna) return;
+            try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                const current = parsed && typeof parsed === 'object' ? parsed : {};
+                const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+                    ? current.unlocksByColumn
+                    : {};
+                if (unlocksByColumn[columna] === true) return;
+                unlocksByColumn[columna] = true;
+                current.unlocksByColumn = unlocksByColumn;
+                localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+            } catch (e) { }
+        }
+
+        function hasColumnPermanentUnlock(columna) {
+            if (!columna) return false;
+            try {
+                const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return false;
+                const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+                    ? parsed.unlocksByColumn
+                    : {};
+                if (unlocksByColumn[columna] === true) return true;
+                const score = Number(parsed?.scores?.[columna]);
+                return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function serializeLessonPointsForServer(columna, puntos) {
+            const numericPoints = normalizeLessonPoints(puntos);
+            const unlocked = hasColumnPermanentUnlock(columna) || numericPoints >= LESSON_UNLOCK_THRESHOLD;
+            return unlocked ? `${numericPoints}f` : numericPoints;
         }
 
         function getStudentFromStorage() {
@@ -5550,6 +5597,7 @@ const RANKING_SCOPE = 'alfabeto';
                 console.warn('No se enviaron puntos: faltan nombre/apellido en localStorage.');
                 return;
             }
+            const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
             try {
                 await fetch(PORTALB_SCRIPT_URL, {
                     method: 'POST',
@@ -5561,10 +5609,10 @@ const RANKING_SCOPE = 'alfabeto';
                         apellido: student.apellido,
                         columna: LESSON_COLUMN_KEY,
                         porcentaje: percentage,
-                        puntos: puntos
+                        puntos: puntosPayload
                     })
                 });
-                console.log(`Puntos enviados a Google Sheet (${LESSON_COLUMN_KEY}): ${puntos}`);
+                console.log(`Puntos enviados a Google Sheet (${LESSON_COLUMN_KEY}): ${puntosPayload}`);
             } catch (error) {
                 console.warn('Error al enviar puntos a Google Sheet:', error);
             }
@@ -9865,6 +9913,9 @@ const RANKING_SCOPE = 'alfabeto';
             const gamePercentage = totalCards > 0 ? Math.round((correctCount / totalCards) * 100) : 0;
             const puntosObtenidos = pointsFromPercentage(gamePercentage);
             saveUnlockStateScore('U1L0T2', puntosObtenidos);
+            if (puntosObtenidos >= LESSON_UNLOCK_THRESHOLD) {
+                markColumnPermanentUnlock('U1L0T2');
+            }
 
             // Guardar porcentaje del último partido jugado
             localStorage.setItem('alfabeto4', gamePercentage.toString());

@@ -6784,7 +6784,7 @@
                 badge.innerHTML = `
                     <img class="topic-test-total-crown" src="https://fawzinoo.github.io/Fotos/corona.webp" alt="" aria-hidden="true" loading="eager" decoding="async" fetchpriority="high">
                     <i class="fas fa-trophy" aria-hidden="true"></i>
-                    <span data-topic-total-text>-- pts</span>
+                    <span data-topic-total-text>0 pts</span>
                 `;
                 gallery.appendChild(badge);
             }
@@ -6899,8 +6899,7 @@
             return hasAnyScore ? total : null;
         }
 
-        function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked, options = {}) {
-            const placeholderMode = Boolean(options && options.placeholderMode);
+        function syncNextTopicSemaphore(card, cardTitle, shouldBeLocked) {
             const semaphoreConfig = TOPIC_SEMAPHORE_CONFIG.find((config) =>
                 config.cardId === card?.dataset?.cardId && config.title === cardTitle
             );
@@ -6913,19 +6912,6 @@
             const panel = ensureNextTopicSemaphore(card, false);
             if (!panel) return;
             card.classList.add('next-topic-semaphore-card');
-            const badge = ensureTopicTotalBadge(card);
-            if (!badge) return;
-            const totalText = badge.querySelector('[data-topic-total-text]');
-            if (placeholderMode) {
-                panel.querySelectorAll('.topic-test-light').forEach((light) => {
-                    light.classList.remove('is-on');
-                });
-                if (totalText) totalText.textContent = '-- pts';
-                positionTopicTotalBadge(card, badge, panel);
-                requestAnimationFrame(() => positionTopicTotalBadge(card, badge, panel));
-                return;
-            }
-
             const state = getTopicSemaphoreState(semaphoreConfig.columns, latestTopicPointsByColumn);
             const stateByTest = {
                 1: Boolean(state.test1),
@@ -6939,6 +6925,8 @@
                 light.classList.toggle('is-on', Boolean(stateByTest[testNumber]));
             });
 
+            const badge = ensureTopicTotalBadge(card);
+            if (!badge) return;
             const localScores = semaphoreConfig.columns.map((column) => getUnlockStateScoreOnly(column));
             const hasLocalUnlockStateScores = localScores.some((score) => score !== null);
             const localTotal = hasLocalUnlockStateScores
@@ -6946,7 +6934,10 @@
                 : null;
             const remoteTotal = getRemoteTopicTotalPoints(semaphoreConfig.columns, latestTopicPointsByColumn);
             const totalPoints = localTotal !== null ? localTotal : remoteTotal;
-            if (totalText) totalText.textContent = `${Number.isFinite(totalPoints) ? totalPoints : 0} pts`;
+            const totalText = badge.querySelector('[data-topic-total-text]');
+            if (totalText) {
+                totalText.textContent = `${Number.isFinite(totalPoints) ? totalPoints : 0} pts`;
+            }
             positionTopicTotalBadge(card, badge, panel);
             requestAnimationFrame(() => positionTopicTotalBadge(card, badge, panel));
         }
@@ -7032,7 +7023,7 @@
             };
         }
 
-        function applyCandadosToCards(options = {}) {
+        function applyCandadosToCards() {
             // Limpiar restos visuales huérfanos (píldoras/semaforos) antes de re-sincronizar.
             document.querySelectorAll('.topic-test-total-floating').forEach((badge) => {
                 const gallery = badge.closest('.gallery');
@@ -7086,7 +7077,7 @@
                         // Asegurar URL con sesión sobre la tarjeta viva en el DOM.
                         ensureNormalCardSessionLink(cardForSync, cardTitle);
                     }
-                    syncNextTopicSemaphore(cardForSync, cardTitle, shouldBeLocked, options);
+                    syncNextTopicSemaphore(cardForSync, cardTitle, shouldBeLocked);
                     // Si no está en CANDADOS, dejar como está
                 }
             });
@@ -7147,8 +7138,8 @@
                 });
             }
             try {
-                // Render inmediato: mostrar formas (corona/píldora/semaforo) antes de la llamada remota.
-                // Si es primera hidratación, se muestran placeholders hasta recibir datos.
+                // Render inmediato: mostrar estructura (semaforo/corona/pildora) al instante.
+                // Si es primera hidratación, se muestran placeholders y luego se sustituyen con datos remotos.
                 syncCandadosFromLocalProgress();
                 applyCandadosToCards({ placeholderMode: forceRemoteFirst });
                 const syncResult = await updateCandadosFromT4Progress({ forceRemoteFirst });

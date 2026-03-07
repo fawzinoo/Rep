@@ -6364,26 +6364,35 @@
             const code = String(localStorage.getItem('access_code') || '').trim().toUpperCase();
             const token = String(localStorage.getItem('access_token') || '').trim();
 
-            const params = new URLSearchParams();
-            params.set('mode', 'user_points');
-            params.set('nombre', nombre);
-            params.set('apellido', apellido);
-            if (code) params.set('code', code);
-            if (token) params.set('token', token);
-            params.set('columns', requested.join(','));
-            params.set('t', String(Date.now()));
+            const fetchBulk = async (includeSession = true) => {
+                const params = new URLSearchParams();
+                params.set('mode', 'user_points');
+                params.set('nombre', nombre);
+                params.set('apellido', apellido);
+                if (includeSession && code) params.set('code', code);
+                if (includeSession && token) params.set('token', token);
+                params.set('columns', requested.join(','));
+                params.set('t', String(Date.now()));
 
-            const url = `${TOPIC_LOCK_SCRIPT_URL}?${params.toString()}`;
-            const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            if (!data || data.ok !== true || data.blocked === true || typeof data.pointsByColumn !== 'object') {
-                throw new Error('user_points inválido');
+                const url = `${TOPIC_LOCK_SCRIPT_URL}?${params.toString()}`;
+                const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (!data || data.ok !== true || data.blocked === true || typeof data.pointsByColumn !== 'object') {
+                    throw new Error('user_points inválido');
+                }
+                return data.pointsByColumn || {};
+            };
+
+            try {
+                return await fetchBulk(true);
+            } catch (_) {
+                // Fallback defensivo: si code/token local quedaron desfasados, reintentar por nombre/apellido.
+                return await fetchBulk(false);
             }
-            return data.pointsByColumn || {};
         }
 
-        function getStudentPointsFromRanking(rows, student) {
+        function getStudentPointsFromRanking(rows, student, column = '') {
             if (!student || !Array.isArray(rows)) return 0;
             const row = rows.find((item) =>
                 normalizeStudentNameForMatch(item?.nombre) === student.nombre &&
@@ -6393,7 +6402,10 @@
 
             const rawPoints = row?.puntosRaw ?? row?.puntos_raw ?? row?.puntos;
             const points = sanitizeTopicPoints(rawPoints);
-            const forcedUnlock = Boolean(row?.forcedUnlock) || hasTopicForcedUnlock(rawPoints);
+            const forcedUnlock =
+                Boolean(row?.forcedUnlock) ||
+                hasTopicForcedUnlock(rawPoints) ||
+                getLocalTopicUnlockedByColumn(column) === true;
 
             if (forcedUnlock) {
                 if (points !== null) return `${points}f`;
@@ -6638,7 +6650,7 @@
         }
 
         function isLocalOneWayUnlockColumn(column) {
-            return /^U1L0T[1-4]$/i.test(String(column || '').trim());
+            return /^U1L\d+T[1-4]$/i.test(String(column || '').trim());
         }
 
         function getLocalTopicUnlockedByColumn(column) {
@@ -6696,6 +6708,7 @@
         function isColumnUnlockedByLocalStateOrScore(column, points = null) {
             const localUnlock = getLocalTopicUnlockedByColumn(column);
             if (localUnlock === true) return true;
+            if (getLocalTopicForcedUnlockByColumn(column)) return true;
             if (hasTopicForcedUnlock(points)) return true;
             const incomingPoints = sanitizeTopicPoints(points);
             if (incomingPoints !== null) return incomingPoints >= TOPIC_UNLOCK_THRESHOLD;
@@ -6743,6 +6756,40 @@
                 return null;
             } catch (e) {
                 return null;
+            }
+        }
+
+        function getLocalTopicForcedUnlockByColumn(column) {
+            try {
+                const normalizedColumn = String(column || '').toUpperCase().trim();
+                const parsed = parseTopicUnlockStateByColumn(column);
+                if (parsed && typeof parsed === 'object') {
+                    const columnMatch = String(column || '').match(/^U\d+L\d+T(\d+)$/i);
+                    const testIndex = columnMatch ? Number(columnMatch[1]) : NaN;
+                    const testKey = Number.isFinite(testIndex) && testIndex >= 1 && testIndex <= 4
+                        ? `test${testIndex}`
+                        : null;
+
+                    if (hasTopicForcedUnlock(parsed?.scores?.[normalizedColumn])) return true;
+                    if (hasTopicForcedUnlock(parsed?.[normalizedColumn])) return true;
+
+                    if (testKey) {
+                        const testNode = parsed?.[testKey] ?? parsed?.tests?.[testKey];
+                        if (hasTopicForcedUnlock(testNode?.points)) return true;
+                        if (hasTopicForcedUnlock(testNode?.score)) return true;
+                        if (hasTopicForcedUnlock(testNode?.value)) return true;
+                        if (hasTopicForcedUnlock(testNode?.puntos)) return true;
+                        if (typeof testNode !== 'boolean' && hasTopicForcedUnlock(testNode)) return true;
+                    }
+                }
+
+                const legacyColumnKey = `martillo-${normalizedColumn}`;
+                if (hasTopicForcedUnlock(localStorage.getItem(legacyColumnKey))) return true;
+
+                if (hasTopicForcedUnlock(latestTopicPointsByColumn?.[normalizedColumn])) return true;
+                return false;
+            } catch (_) {
+                return false;
             }
         }
 
@@ -7079,7 +7126,7 @@
                     columnsForRankingFallback.map(async (column) => {
                         try {
                             const ranking = await fetchRankingByColumn(column);
-                            pointsByColumn[column] = getStudentPointsFromRanking(ranking, student);
+                            pointsByColumn[column] = getStudentPointsFromRanking(ranking, student, column);
                             remoteSuccessCount += 1;
                         } catch (error) {
                             // Si falla la consulta de una columna, no forzamos bloqueo.

@@ -7318,7 +7318,7 @@ document.addEventListener('keydown', function(e) {
   if (window.__PAISES_RANKING_ENHANCED__) return;
   window.__PAISES_RANKING_ENHANCED__ = true;
 
-  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6ZUoIftYMxzP1l__gIl5yeEKixNNgPBbBA5hn4NGlJsE-IdqUifluf8QY2uvlztb0/exec';
+  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
   const LESSON_COLUMN_KEY = 'U1L3T1';
   const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
@@ -7529,22 +7529,70 @@ document.addEventListener('keydown', function(e) {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  function parseLessonPointsValue(value) {
+    const raw = String(value ?? '').trim().toLowerCase().replace(',', '.');
+    if (!raw) return { points: null, forced: false };
+
+    const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
+    if (exact) {
+      return {
+        points: Number(exact[1]),
+        forced: Boolean(exact[2])
+      };
+    }
+
+    const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
+    if (forced) {
+      return {
+        points: Number(forced[1]),
+        forced: true
+      };
+    }
+
+    const numeric = raw.match(/([0-5])(?:\.0+)?/);
+    if (numeric) {
+      return {
+        points: Number(numeric[1]),
+        forced: false
+      };
+    }
+
+    return { points: null, forced: false };
+  }
+
   function saveUnlockStateScore(columna, puntos) {
-    const numericPoints = Number(puntos);
+    const parsedInput = parseLessonPointsValue(puntos);
+    const numericPoints = parsedInput.points;
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
     try {
       const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
       const parsed = raw ? JSON.parse(raw) : {};
       const current = parsed && typeof parsed === 'object' ? parsed : {};
       const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
-      scores[columna] = numericPoints;
+      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+        ? current.unlocksByColumn
+        : {};
+      const previousScore = scores[columna];
+      const previousForced = parseLessonPointsValue(previousScore).forced;
+      const keepForced =
+        unlocksByColumn[columna] === true ||
+        previousForced ||
+        parsedInput.forced ||
+        numericPoints >= LESSON_UNLOCK_THRESHOLD;
+
+      scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
       current.scores = scores;
+      if (keepForced) {
+        unlocksByColumn[columna] = true;
+      }
+      current.unlocksByColumn = unlocksByColumn;
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
     } catch (e) { }
   }
 
   function normalizeLessonPoints(value) {
-    const numeric = Number(value);
+    const parsed = parseLessonPointsValue(value);
+    const numeric = Number(parsed.points);
     if (!Number.isFinite(numeric)) return 0;
     return Math.max(0, Math.min(5, Math.round(numeric)));
   }
@@ -7576,8 +7624,9 @@ document.addEventListener('keydown', function(e) {
         ? parsed.unlocksByColumn
         : {};
       if (unlocksByColumn[columna] === true) return true;
-      const score = Number(parsed?.scores?.[columna]);
-      return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+      const scoreParsed = parseLessonPointsValue(parsed?.scores?.[columna]);
+      if (scoreParsed.forced) return true;
+      return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
     } catch (_) {
       return false;
     }

@@ -6495,6 +6495,37 @@
 
             if (typeof value === 'number') {
                 numeric = value;
+            } else if (typeof value === 'object') {
+                const forcedFromFlags = Boolean(
+                    value?.forcedUnlock ||
+                    value?.forced ||
+                    value?.unlockForced ||
+                    value?.isForced ||
+                    value?.unlocked === true
+                );
+                const candidates = [
+                    value?.puntosRaw,
+                    value?.puntos,
+                    value?.pointsRaw,
+                    value?.points,
+                    value?.score,
+                    value?.value,
+                    value?.resultado,
+                    value?.nota,
+                    value?.calificacion,
+                    value?.valor
+                ];
+                for (const candidate of candidates) {
+                    if (candidate === null || candidate === undefined) continue;
+                    if (typeof candidate === 'object') continue;
+                    const parsedCandidate = parseTopicPointValue(candidate);
+                    if (parsedCandidate.points === null) continue;
+                    return {
+                        points: parsedCandidate.points,
+                        forcedUnlock: forcedFromFlags || parsedCandidate.forcedUnlock
+                    };
+                }
+                return { points: null, forcedUnlock: forcedFromFlags };
             } else if (typeof value === 'string') {
                 const trimmed = value.trim();
                 if (!trimmed) return { points: null, forcedUnlock: false };
@@ -6592,6 +6623,11 @@
                         const remoteRaw = source[column];
                         const remoteScore = sanitizeTopicPoints(remoteRaw);
                         const remoteForcedUnlock = hasTopicForcedUnlock(remoteRaw);
+                        const existingUnlock =
+                            parseUnlockFlag(existing?.unlocksByColumn?.[column]) === true ||
+                            parseUnlockFlag(existing?.[column]) === true ||
+                            parseUnlockFlag(existing?.[`test${i}`]) === true ||
+                            parseUnlockFlag(existing?.tests?.[`test${i}`]) === true;
                         const existingScore = sanitizeTopicPoints(
                             existing?.scores?.[column] ??
                             existing?.[column] ??
@@ -6601,11 +6637,12 @@
                             existing?.tests?.[`test${i}`]?.points
                         );
                         const score = remoteScore !== null ? remoteScore : existingScore;
-                        if (score === null && !remoteForcedUnlock) continue;
+                        if (score === null && !remoteForcedUnlock && !existingUnlock) continue;
 
                         hasAnyValue = true;
                         const normalizedScore = score === null ? 0 : score;
-                        const unlocked = remoteForcedUnlock || normalizedScore >= TOPIC_UNLOCK_THRESHOLD;
+                        // One-way unlock: nunca retroceder de desbloqueado a bloqueado.
+                        const unlocked = existingUnlock || remoteForcedUnlock || normalizedScore >= TOPIC_UNLOCK_THRESHOLD;
 
                         mergedScores[column] = normalizedScore;
                         mergedUnlocks[column] = unlocked;
@@ -7142,9 +7179,12 @@
             }
 
             allColumns.forEach((column) => {
-                const normalizedPoints = sanitizeTopicPoints(pointsByColumn[column]);
-                if (normalizedPoints !== null) {
-                    latestTopicPointsByColumn[column] = normalizedPoints;
+                const parsedValue = parseTopicPointValue(pointsByColumn[column]);
+                if (parsedValue.points !== null) {
+                    const keepForcedUnlock = parsedValue.forcedUnlock || getLocalTopicForcedUnlockByColumn(column);
+                    latestTopicPointsByColumn[column] = keepForcedUnlock
+                        ? `${parsedValue.points}t`
+                        : parsedValue.points;
                 }
             });
             saveTopicPointsCache(latestTopicPointsByColumn);

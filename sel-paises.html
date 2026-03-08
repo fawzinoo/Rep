@@ -7332,6 +7332,7 @@ document.addEventListener('keydown', function(e) {
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
+  let forcedUnlockSyncPromise = null;
 
   function injectEnhancementStyles() {
     if (document.getElementById('paises-ranking-enhancement-style')) return;
@@ -7697,6 +7698,40 @@ document.addEventListener('keydown', function(e) {
     return { nombre, apellido };
   }
 
+  async function syncForcedUnlockFromSheetOnce() {
+    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
+    forcedUnlockSyncPromise = (async () => {
+      const student = getStudentFromStorage();
+      if (!student) return;
+      try {
+        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
+        const row = rankingRows.find((item) =>
+          normalizeStudentName(item?.nombre) === student.nombre &&
+          normalizeStudentName(item?.apellido) === student.apellido
+        );
+        if (!row) return;
+
+        const parsedPoints = parseLessonPointsValue({
+          puntosRaw: row?.puntosRaw,
+          puntos: row?.puntos,
+          pointsRaw: row?.pointsRaw,
+          points: row?.points,
+          forcedUnlock: row?.forcedUnlock
+        });
+
+        if (!Number.isFinite(parsedPoints.points)) return;
+        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
+        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
+          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+        }
+      } catch (error) {
+        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
+      }
+    })();
+    return forcedUnlockSyncPromise;
+  }
+
   function pointsFromPercentage(percentageValue) {
     const percentage = Number(percentageValue) || 0;
     if (percentage === 100) return 5;
@@ -7744,6 +7779,7 @@ document.addEventListener('keydown', function(e) {
     }
 
     try {
+      await syncForcedUnlockFromSheetOnce();
       const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
       await fetch(PORTALB_SCRIPT_URL, {
         method: 'POST',
@@ -8061,6 +8097,7 @@ document.addEventListener('keydown', function(e) {
 
   function initEnhancements() {
     injectEnhancementStyles();
+    void syncForcedUnlockFromSheetOnce();
     ensurePointsPill();
     ensureRankingButton();
     installPointsHooks();

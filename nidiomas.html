@@ -3358,6 +3358,27 @@
         });
         void loadTestScoresIntoPills();
 
+        let testScoresRefreshInFlight = false;
+        let lastTestScoresRefreshTs = 0;
+        function refreshTestScoresOnReturn() {
+            const now = Date.now();
+            if (testScoresRefreshInFlight) return;
+            if (now - lastTestScoresRefreshTs < 700) return;
+            lastTestScoresRefreshTs = now;
+            testScoresRefreshInFlight = true;
+            Promise.resolve(loadTestScoresIntoPills()).finally(() => {
+                testScoresRefreshInFlight = false;
+            });
+        }
+        window.addEventListener('focus', refreshTestScoresOnReturn);
+        window.addEventListener('pageshow', refreshTestScoresOnReturn);
+        window.addEventListener('popstate', refreshTestScoresOnReturn);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                refreshTestScoresOnReturn();
+            }
+        });
+
         let lastModalSoundTs = 0;
         const playModalButtonSound = () => {
             const now = Date.now();

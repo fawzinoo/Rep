@@ -7332,6 +7332,7 @@ document.addEventListener('keydown', function(e) {
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
+  const lessonUnlockStateMemory = { scores: {}, unlocksByColumn: {} };
   let forcedUnlockSyncPromise = null;
 
   function injectEnhancementStyles() {
@@ -7607,34 +7608,17 @@ document.addEventListener('keydown', function(e) {
     const parsedInput = parseLessonPointsValue(puntos);
     const numericPoints = parsedInput.points;
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = (() => {
-        if (!raw) return {};
-        try { return JSON.parse(raw); } catch (_) { return {}; }
-      })();
-      const current = parsed && typeof parsed === 'object' ? parsed : {};
-      const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
-      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
-        ? current.unlocksByColumn
-        : {};
-      const previousScore = scores[columna];
-      const previousForced = parseLessonPointsValue(previousScore).forced;
-      const keepForced =
-        unlocksByColumn[columna] === true ||
-        previousForced ||
-        parsedInput.forced ||
-        numericPoints >= LESSON_UNLOCK_THRESHOLD;
+    const previousScore = lessonUnlockStateMemory.scores[columna];
+    const previousForced = parseLessonPointsValue(previousScore).forced;
+    const keepForced =
+      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
+      previousForced ||
+      parsedInput.forced ||
+      numericPoints >= LESSON_UNLOCK_THRESHOLD;
 
-      scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
-      current.scores = scores;
-      if (keepForced) {
-        unlocksByColumn[columna] = true;
-      }
-      current.unlocksByColumn = unlocksByColumn;
-      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) {
-      console.warn('saveUnlockStateScore error:', e);
+    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
+    if (keepForced) {
+      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
     }
   }
 
@@ -7647,42 +7631,15 @@ document.addEventListener('keydown', function(e) {
 
   function markColumnPermanentUnlock(columna) {
     if (!columna) return;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = (() => {
-        if (!raw) return {};
-        try { return JSON.parse(raw); } catch (_) { return {}; }
-      })();
-      const current = parsed && typeof parsed === 'object' ? parsed : {};
-      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
-        ? current.unlocksByColumn
-        : {};
-      if (unlocksByColumn[columna] === true) return;
-      unlocksByColumn[columna] = true;
-      current.unlocksByColumn = unlocksByColumn;
-      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) {
-      console.warn('markColumnPermanentUnlock error:', e);
-    }
+    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
   }
 
   function hasColumnPermanentUnlock(columna) {
     if (!columna) return false;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return false;
-      const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
-        ? parsed.unlocksByColumn
-        : {};
-      if (unlocksByColumn[columna] === true) return true;
-      const scoreParsed = parseLessonPointsValue(parsed?.scores?.[columna]);
-      if (scoreParsed.forced) return true;
-      return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
-    } catch (_) {
-      return false;
-    }
+    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
+    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
+    if (scoreParsed.forced) return true;
+    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
   }
 
   function serializeLessonPointsForServer(columna, puntos) {

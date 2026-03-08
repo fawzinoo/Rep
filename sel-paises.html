@@ -7608,7 +7608,10 @@ document.addEventListener('keydown', function(e) {
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
     try {
       const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
+      const parsed = (() => {
+        if (!raw) return {};
+        try { return JSON.parse(raw); } catch (_) { return {}; }
+      })();
       const current = parsed && typeof parsed === 'object' ? parsed : {};
       const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
       const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
@@ -7629,7 +7632,9 @@ document.addEventListener('keydown', function(e) {
       }
       current.unlocksByColumn = unlocksByColumn;
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    } catch (e) {
+      console.warn('saveUnlockStateScore error:', e);
+    }
   }
 
   function normalizeLessonPoints(value) {
@@ -7643,7 +7648,10 @@ document.addEventListener('keydown', function(e) {
     if (!columna) return;
     try {
       const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
+      const parsed = (() => {
+        if (!raw) return {};
+        try { return JSON.parse(raw); } catch (_) { return {}; }
+      })();
       const current = parsed && typeof parsed === 'object' ? parsed : {};
       const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
         ? current.unlocksByColumn
@@ -7652,7 +7660,9 @@ document.addEventListener('keydown', function(e) {
       unlocksByColumn[columna] = true;
       current.unlocksByColumn = unlocksByColumn;
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    } catch (e) {
+      console.warn('markColumnPermanentUnlock error:', e);
+    }
   }
 
   function hasColumnPermanentUnlock(columna) {
@@ -7728,7 +7738,10 @@ document.addEventListener('keydown', function(e) {
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
-    if (!student) return;
+    if (!student) {
+      console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
+      return;
+    }
 
     try {
       const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);

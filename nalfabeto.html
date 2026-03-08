@@ -3411,13 +3411,18 @@
             const missingColumns = [];
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                 const localPoints = getLocalPointsByColumn(columna);
-                if (localPoints === null) {
-                    missingColumns.push(columna);
-                    return;
+                const localForcedUnlock = getLocalForcedUnlockByColumn(columna);
+                forcedUnlockByColumn[columna] = localForcedUnlock;
+
+                if (localPoints !== null) {
+                    pointsByColumn[columna] = localPoints;
+                    setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
                 }
-                pointsByColumn[columna] = localPoints;
-                forcedUnlockByColumn[columna] = getLocalForcedUnlockByColumn(columna);
-                setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+
+                // Si hay puntaje bajo sin unlock local, rehidratar desde remoto (caso 0f/1f/2f/3f).
+                if (localPoints === null || (localPoints < 4 && !localForcedUnlock)) {
+                    missingColumns.push(columna);
+                }
             });
             applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false }, forcedUnlockByColumn);
             const student = getCurrentStudentFromStorage();

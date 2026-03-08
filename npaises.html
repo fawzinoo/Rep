@@ -3109,6 +3109,14 @@
             }
         }
 
+        function hasStoredUnlockState() {
+            try {
+                return localStorage.getItem(TEST_UNLOCK_STATE_KEY) !== null;
+            } catch (e) {
+                return false;
+            }
+        }
+
         function readA1BetaTopicPointsCache() {
             try {
                 const raw = localStorage.getItem(TOPIC_POINTS_CACHE_KEY);
@@ -3500,6 +3508,7 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1L3T1: 0, U1L3T2: 0, U1L3T3: 0, U1L3T4: 0 };
             const forcedUnlockByColumn = { U1L3T1: false, U1L3T2: false, U1L3T3: false, U1L3T4: false };
+            const shouldForceRemoteHydration = !hasStoredUnlockState();
             const missingColumns = [];
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                 const localPoints = getLocalPointsByColumn(columna);
@@ -3537,15 +3546,19 @@
                 return;
             }
 
-            if (!missingColumns.length) {
+            const columnsToHydrate = shouldForceRemoteHydration
+                ? TEST_SCORE_COLUMNS.map(({ columna }) => columna)
+                : missingColumns.slice();
+
+            if (!columnsToHydrate.length) {
                 applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
                 return;
             }
 
-            const missingColumnsSet = new Set(missingColumns);
+            const missingColumnsSet = new Set(columnsToHydrate);
             const hydratedColumns = {};
             try {
-                const remotePointsByColumn = await fetchUserPointsByColumns(student, missingColumns);
+                const remotePointsByColumn = await fetchUserPointsByColumns(student, columnsToHydrate);
                 if (remotePointsByColumn && typeof remotePointsByColumn === 'object') {
                     TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                         if (!missingColumnsSet.has(columna)) return;

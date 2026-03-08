@@ -3588,14 +3588,27 @@
         }
     </style>
 
-    <!-- Override: cambiar icono del porcentaje de aciertos -->
+    <!-- Override: estilo de porcentaje y progreso como en esc-alfabeto -->
     <style>
+        #porcentaje-guardado,
+        #last-game-pill {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%) !important;
+            color: #2d3748 !important;
+            font-weight: 700 !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3) !important;
+        }
+        #porcentaje-guardado i,
+        #last-game-pill i {
+            color: inherit !important;
+        }
         #porcentaje-guardado::before {
-            content: "\f091"; /* fa-trophy */
+            content: "\f295"; /* fa-percent */
             font-family: "Font Awesome 6 Free";
             font-weight: 900;
             font-size: 16px;
             margin-right: 6px;
+            color: currentColor;
         }
         /* Transición para ocultar/mostrar el cuadro de stats */
         #stats-box {
@@ -3704,10 +3717,11 @@
     ">
     <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
     <div class="pill" id="porcentaje-guardado" style="
-        background: #6b7280;
-        color: #FFD700;
-        font-weight: 600;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
         min-width: 65px;
         text-align: center;
     "><span id="current-percentage">0%</span></div>
@@ -3721,10 +3735,11 @@
 
     <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
     <div class="pill" id="last-game-pill" style="
-        background: #6b7280;
-        color: #FFD700;
-        font-weight: 600;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
         min-width: 65px;
         position: relative; /* Para hints posicionados */
         overflow: visible;
@@ -7609,5 +7624,663 @@ document.addEventListener('keydown', function(e) {
     </script>
     
     
+
+<script>
+(function () {
+  if (window.__PAISES_RANKING_ENHANCED__) return;
+  window.__PAISES_RANKING_ENHANCED__ = true;
+
+  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
+  const LESSON_COLUMN_KEY = 'U1L3T1';
+  const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v2';
+  const LESSON_UNLOCK_THRESHOLD = 4;
+  const RANKING_TEST_MODE = 'ranking_test1';
+  const RANKING_PAISES_MODE = 'ranking_paises';
+  const RANKING_GENERAL_MODE = 'ranking_general';
+  const RANKING_SCOPE = 'paises';
+  const TEST_ICON_HTML = '<i class="fas fa-list-check" aria-hidden="true"></i> Test1';
+  const PAISES_LABEL = 'Los paises';
+  const RANKING_TITLE = 'Ranking U1L3T1';
+  const SEND_THROTTLE_MS = 1500;
+
+  let lastSentAt = 0;
+
+  function injectEnhancementStyles() {
+    if (document.getElementById('paises-ranking-enhancement-style')) return;
+    const style = document.createElement('style');
+    style.id = 'paises-ranking-enhancement-style';
+    style.textContent = `
+      .button.ranking {
+        background: linear-gradient(135deg, #f6c453 0%, #e0a106 100%);
+        color: #ffffff;
+      }
+
+      .ranking-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 12000;
+        padding: 14px;
+      }
+
+      .ranking-modal {
+        width: min(92vw, 620px);
+        max-height: 82vh;
+        background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+        color: #fff;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .ranking-header {
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: linear-gradient(135deg, #f6c453 0%, #e0a106 100%);
+        color: #1f2937;
+      }
+
+      .ranking-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .ranking-close-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        background: rgba(31, 41, 55, 0.16);
+        color: #111827;
+      }
+
+      .ranking-body {
+        padding: 14px;
+        overflow: auto;
+      }
+
+      .ranking-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 12px;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .ranking-mode-btn {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #d1d5db;
+        font-size: 14px;
+        font-weight: 700;
+        padding: 10px 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .ranking-mode-btn:hover {
+        transform: translateY(-1px);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .ranking-mode-btn.is-active {
+        color: #111827;
+        border-color: rgba(246, 196, 83, 0.85);
+        background: linear-gradient(135deg, #f6c453 0%, #e0a106 100%);
+      }
+
+      .ranking-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      .ranking-table th,
+      .ranking-table td {
+        padding: 10px 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        text-align: left;
+      }
+
+      .ranking-table th {
+        color: #d1d5db;
+        font-weight: 700;
+      }
+
+      .ranking-table tbody tr.ranking-current-user-row td {
+        background: linear-gradient(135deg, #22d3ee 0%, #14b8a6 100%);
+        color: #06202a;
+        font-weight: 800;
+        border-bottom-color: rgba(6, 32, 42, 0.28);
+      }
+
+      .ranking-table tbody tr.ranking-current-user-row td:first-child {
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+      }
+
+      .ranking-table tbody tr.ranking-current-user-row td:last-child {
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+      }
+
+      .ranking-center {
+        text-align: center !important;
+      }
+
+      .ranking-empty {
+        padding: 14px;
+        text-align: center;
+        color: #d1d5db;
+      }
+
+      #points-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #6b7280 !important;
+        color: #FFD700 !important;
+        font-weight: 600;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      }
+
+      #points-pill::before {
+        content: "\\f091";
+        font-family: "Font Awesome 6 Free";
+        font-weight: 900;
+        color: #FFD700;
+        margin-right: 6px;
+      }
+
+      #porcentaje-guardado,
+      #last-game-pill {
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%) !important;
+        color: #2d3748 !important;
+        font-weight: 700 !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3) !important;
+      }
+
+      #porcentaje-guardado::before {
+        content: "\\f295" !important;
+        font-family: "Font Awesome 6 Free";
+        font-weight: 900;
+        font-size: 16px;
+        margin-right: 6px;
+        color: currentColor !important;
+      }
+
+      #porcentaje-guardado i,
+      #last-game-pill i {
+        color: currentColor !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+  }
+
+  function normalizeStudentName(name) {
+    return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function saveUnlockStateScore(columna, puntos) {
+    const numericPoints = Number(puntos);
+    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+      scores[columna] = numericPoints;
+      current.scores = scores;
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+    } catch (e) { }
+  }
+
+  function normalizeLessonPoints(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(5, Math.round(numeric)));
+  }
+
+  function markColumnPermanentUnlock(columna) {
+    if (!columna) return;
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+        ? current.unlocksByColumn
+        : {};
+      if (unlocksByColumn[columna] === true) return;
+      unlocksByColumn[columna] = true;
+      current.unlocksByColumn = unlocksByColumn;
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+    } catch (e) { }
+  }
+
+  function hasColumnPermanentUnlock(columna) {
+    if (!columna) return false;
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return false;
+      const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+        ? parsed.unlocksByColumn
+        : {};
+      if (unlocksByColumn[columna] === true) return true;
+      const score = Number(parsed?.scores?.[columna]);
+      return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function serializeLessonPointsForServer(columna, puntos) {
+    const numericPoints = normalizeLessonPoints(puntos);
+    const unlocked = hasColumnPermanentUnlock(columna) || numericPoints >= LESSON_UNLOCK_THRESHOLD;
+    return unlocked ? `${numericPoints}f` : numericPoints;
+  }
+
+  function getStudentFromStorage() {
+    const nombre = normalizeStudentName(localStorage.getItem('access_first_name') || sessionStorage.getItem('nombreUsuario') || '');
+    const apellido = normalizeStudentName(localStorage.getItem('access_last_name') || sessionStorage.getItem('apellidoUsuario') || '');
+    if (!nombre || !apellido) return null;
+    return { nombre, apellido };
+  }
+
+  function pointsFromPercentage(percentageValue) {
+    const percentage = Number(percentageValue) || 0;
+    if (percentage === 100) return 5;
+    if (percentage >= 70 && percentage < 100) return 4;
+    if (percentage >= 50 && percentage < 70) return 3;
+    if (percentage >= 30 && percentage < 50) return 2;
+    if (percentage >= 10 && percentage < 30) return 1;
+    return 0;
+  }
+
+  function calcPointsFromPercentage(percentageValue) {
+    return pointsFromPercentage(percentageValue);
+  }
+
+  function resolveCurrentPercentage() {
+    try {
+      if (typeof flashcards !== 'undefined' && Array.isArray(flashcards) && flashcards.length > 0) {
+        const totalCards = flashcards.length;
+        const aciertos = (typeof correctCount !== 'undefined') ? (Number(correctCount) || 0) : 0;
+        const percentage = totalCards > 0 ? Math.round((aciertos / totalCards) * 100) : 0;
+        return { percentage, hasCards: true };
+      }
+    } catch (_) {}
+
+    const percentageText = String((document.getElementById('current-percentage') || {}).textContent || '')
+      .replace(/[^\d.-]/g, '');
+    const parsedPercentage = Number(percentageText);
+    const percentage = isNaN(parsedPercentage) ? 0 : parsedPercentage;
+
+    const totalCardsText = String((document.getElementById('total-cards') || {}).textContent || '')
+      .replace(/[^\d.-]/g, '');
+    const totalCards = Number(totalCardsText);
+    const hasCards = !isNaN(totalCards) ? totalCards > 0 : percentage > 0;
+
+    return { percentage, hasCards };
+  }
+
+  async function sendLessonPointsToSheet(percentage, puntos) {
+    const now = Date.now();
+    if (now - lastSentAt < SEND_THROTTLE_MS) return;
+    const student = getStudentFromStorage();
+    if (!student) return;
+
+    try {
+      const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
+      await fetch(PORTALB_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'lesson_points',
+          nombre: student.nombre,
+          apellido: student.apellido,
+          columna: LESSON_COLUMN_KEY,
+          porcentaje: Number(percentage) || 0,
+          puntos: puntosPayload
+        })
+      });
+      lastSentAt = now;
+    } catch (error) {
+      console.warn('Error al enviar puntos a Google Sheet:', error);
+    }
+  }
+
+  function ensurePointsPill() {
+    const statsBox = document.getElementById('stats-box');
+    const porcentajePill = document.getElementById('porcentaje-guardado');
+    if (!statsBox || !porcentajePill) return;
+    if (document.getElementById('points-pill')) return;
+
+    const pointsPill = document.createElement('div');
+    pointsPill.className = 'pill';
+    pointsPill.id = 'points-pill';
+    pointsPill.style.minWidth = '65px';
+    pointsPill.style.textAlign = 'center';
+    pointsPill.innerHTML = '<span id="current-points">0 pts</span>';
+
+    const separator = document.createElement('div');
+    separator.style.width = '100%';
+    separator.style.height = '1px';
+    separator.style.background = 'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.35), rgba(255,255,255,0))';
+
+    statsBox.insertBefore(separator, porcentajePill);
+    statsBox.insertBefore(pointsPill, separator);
+  }
+
+  function updatePointsPillFromCurrentPercentage() {
+    const pointsPill = document.getElementById('points-pill');
+    const pointsSpan = document.getElementById('current-points');
+    if (!pointsPill || !pointsSpan) return;
+
+    const stats = resolveCurrentPercentage();
+    const points = pointsFromPercentage(stats.percentage);
+
+    pointsSpan.textContent = `${points} ${points === 1 ? 'pt' : 'pts'}`;
+
+    if (!stats.hasCards) {
+      pointsPill.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      pointsPill.style.boxShadow = 'none';
+      return;
+    }
+
+    if (points >= 4) {
+      pointsPill.style.borderColor = 'rgba(0, 200, 81, 0.6)';
+      pointsPill.style.boxShadow = '0 4px 12px rgba(0, 200, 81, 0.25)';
+    } else if (points >= 2) {
+      pointsPill.style.borderColor = 'rgba(255, 215, 0, 0.6)';
+      pointsPill.style.boxShadow = '0 4px 12px rgba(255, 215, 0, 0.25)';
+    } else if (points >= 1) {
+      pointsPill.style.borderColor = 'rgba(255, 140, 0, 0.6)';
+      pointsPill.style.boxShadow = '0 4px 12px rgba(255, 140, 0, 0.25)';
+    } else {
+      pointsPill.style.borderColor = 'rgba(255, 53, 71, 0.6)';
+      pointsPill.style.boxShadow = '0 4px 12px rgba(255, 53, 71, 0.25)';
+    }
+  }
+
+  function installPointsHooks() {
+    if (typeof window.updateSuccessPercentage === 'function' && !window.updateSuccessPercentage.__pointsWrapped) {
+      const originalUpdateSuccessPercentage = window.updateSuccessPercentage;
+      window.updateSuccessPercentage = function (...args) {
+        const result = originalUpdateSuccessPercentage.apply(this, args);
+        updatePointsPillFromCurrentPercentage();
+        return result;
+      };
+      window.updateSuccessPercentage.__pointsWrapped = true;
+    }
+
+    const completionFns = [
+      'showCompletioneuforia',
+      'showCompletionEuforia',
+      'showCompletionEuforiaMaxima',
+      'showCompletionPerdida',
+      'showCompletionEmpate'
+    ];
+
+    completionFns.forEach((fnName) => {
+      const fn = window[fnName];
+      if (typeof fn !== 'function' || fn.__pointsWrapped) return;
+      window[fnName] = function (...args) {
+        const out = fn.apply(this, args);
+        try {
+          const stats = resolveCurrentPercentage();
+          const points = pointsFromPercentage(stats.percentage);
+          saveUnlockStateScore(LESSON_COLUMN_KEY, points);
+          if (points >= LESSON_UNLOCK_THRESHOLD) {
+            markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          }
+          void sendLessonPointsToSheet(stats.percentage, points);
+        } catch (e) {
+          console.warn('No se pudo enviar puntuacion final:', e);
+        }
+        return out;
+      };
+      window[fnName].__pointsWrapped = true;
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getRankingBadge(pos) {
+    if (pos === 1) return '🥇';
+    if (pos === 2) return '🥈';
+    if (pos === 3) return '🥉';
+    return String(pos);
+  }
+
+  async function fetchRankingByMode(modeValue) {
+    const url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(modeValue)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+      throw new Error('No se pudo obtener el ranking.');
+    }
+    return data.ranking;
+  }
+
+  async function fetchRankingByColumn(columna) {
+    const url = `${PORTALB_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+      throw new Error('No se pudo obtener el ranking.');
+    }
+    const expected = String(columna || '').trim().toUpperCase();
+    const received = String(data.columna || '').trim().toUpperCase();
+    if (expected && received && expected !== received) {
+      throw new Error(`Columna inesperada: ${data.columna}`);
+    }
+    return data.ranking;
+  }
+
+  async function fetchRankingData(modeKey = 'test') {
+    if (modeKey === 'test') {
+      return fetchRankingByColumn(LESSON_COLUMN_KEY);
+    }
+    let mode = RANKING_TEST_MODE;
+    if (modeKey === 'paises') mode = RANKING_PAISES_MODE;
+    if (modeKey === 'global') mode = RANKING_GENERAL_MODE;
+    return fetchRankingByMode(mode);
+  }
+
+  function closeRankingModal() {
+    const overlay = document.getElementById('ranking-overlay');
+    if (overlay) overlay.remove();
+  }
+
+  function renderRankingTable(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return '<div class="ranking-empty">No hay datos de ranking todavia.</div>';
+    }
+
+    const currentStudent = getStudentFromStorage();
+    const tbody = rows.map((item, idx) => {
+      const puesto = Number(item.puesto) || (idx + 1);
+      const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
+      const puntos = Number(item.puntos) || 0;
+      const isCurrentUser = !!currentStudent &&
+        normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
+        normalizeStudentName(item.apellido || '') === currentStudent.apellido;
+      return `
+        <tr class="${isCurrentUser ? 'ranking-current-user-row' : ''}">
+          <td class="ranking-center">${getRankingBadge(puesto)}</td>
+          <td>${escapeHtml(nombre)}</td>
+          <td class="ranking-center">${puntos}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <table class="ranking-table">
+        <thead>
+          <tr>
+            <th class="ranking-center">Puesto</th>
+            <th>Estudiante</th>
+            <th class="ranking-center">Pts.</th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    `;
+  }
+
+  async function refreshRankingTable(modeKey) {
+    const tableContainer = document.getElementById('ranking-table-container');
+    if (!tableContainer) return;
+    tableContainer.innerHTML = '<div class="ranking-empty">Cargando ranking...</div>';
+
+    try {
+      const rankingRows = await fetchRankingData(modeKey);
+      tableContainer.innerHTML = renderRankingTable(rankingRows);
+    } catch (error) {
+      tableContainer.innerHTML = '<div class="ranking-empty">No se pudo cargar el ranking. Intenta de nuevo.</div>';
+      console.warn('Error cargando ranking:', error);
+    }
+  }
+
+  async function openRankingModal() {
+    closeRankingModal();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ranking-overlay';
+    overlay.className = 'ranking-overlay';
+    overlay.innerHTML = `
+      <div class="ranking-modal" role="dialog" aria-modal="true" aria-label="${RANKING_TITLE}">
+        <div class="ranking-header">
+          <h3 class="ranking-title"><i class="fas fa-trophy"></i> CLASIFICACIÓN</h3>
+          <button class="ranking-close-btn" id="ranking-close-btn" aria-label="Cerrar ranking">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="ranking-body" id="ranking-body">
+          <div class="ranking-controls">
+            <button type="button" class="ranking-mode-btn is-active" id="ranking-mode-test">${TEST_ICON_HTML}</button>
+            <button type="button" class="ranking-mode-btn" id="ranking-mode-paises">${PAISES_LABEL}</button>
+            <button type="button" class="ranking-mode-btn" id="ranking-mode-general">Global</button>
+          </div>
+          <div id="ranking-table-container">
+            <div class="ranking-empty">Cargando ranking...</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const closeBtn = document.getElementById('ranking-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', closeRankingModal);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeRankingModal();
+    });
+
+    const testBtn = document.getElementById('ranking-mode-test');
+    const paisesBtn = document.getElementById('ranking-mode-paises');
+    const generalBtn = document.getElementById('ranking-mode-general');
+
+    function setModeButtons(modeKey) {
+      if (testBtn) testBtn.classList.toggle('is-active', modeKey === 'test');
+      if (paisesBtn) paisesBtn.classList.toggle('is-active', modeKey === 'paises');
+      if (generalBtn) generalBtn.classList.toggle('is-active', modeKey === 'global');
+    }
+
+    if (testBtn) {
+      testBtn.addEventListener('click', () => {
+        setModeButtons('test');
+        void refreshRankingTable('test');
+      });
+    }
+    if (paisesBtn) {
+      paisesBtn.addEventListener('click', () => {
+        setModeButtons('paises');
+        void refreshRankingTable('paises');
+      });
+    }
+    if (generalBtn) {
+      generalBtn.addEventListener('click', () => {
+        setModeButtons('global');
+        void refreshRankingTable('global');
+      });
+    }
+
+    await refreshRankingTable('test');
+  }
+
+  function ensureRankingButton() {
+    const container = document.querySelector('.button-container');
+    if (!container) return;
+
+    let rankingBtn = document.getElementById('ranking-button');
+    if (!rankingBtn) {
+      rankingBtn = document.createElement('button');
+      rankingBtn.className = 'button ranking';
+      rankingBtn.id = 'ranking-button';
+      rankingBtn.title = RANKING_TITLE;
+      rankingBtn.setAttribute('aria-label', RANKING_TITLE);
+      rankingBtn.innerHTML = '<i class="fas fa-trophy" aria-hidden="true"></i>';
+      container.insertBefore(rankingBtn, container.firstElementChild || null);
+    }
+
+    if (rankingBtn.dataset.rankingHandlerInstalled === '1') return;
+    rankingBtn.dataset.rankingHandlerInstalled = '1';
+    rankingBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof window.vibrar === 'function') window.vibrar(50);
+      if (typeof window.playButtonSound === 'function') window.playButtonSound();
+      void openRankingModal();
+    });
+  }
+
+  function initEnhancements() {
+    injectEnhancementStyles();
+    ensurePointsPill();
+    ensureRankingButton();
+    installPointsHooks();
+    updatePointsPillFromCurrentPercentage();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEnhancements);
+  } else {
+    initEnhancements();
+  }
+})();
+</script>
+
 </body>
 </html>

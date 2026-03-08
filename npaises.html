@@ -3499,7 +3499,6 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1L3T1: 0, U1L3T2: 0, U1L3T3: 0, U1L3T4: 0 };
             const forcedUnlockByColumn = { U1L3T1: false, U1L3T2: false, U1L3T3: false, U1L3T4: false };
-            TEST_SCORE_COLUMNS.forEach(({ pillId }) => setTestScorePillText(pillId, '...'));
             const missingColumns = [];
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                 const localPoints = getLocalPointsByColumn(columna);
@@ -3512,10 +3511,18 @@
                 }
 
                 if (localPoints === null) {
+                    // Mantener el valor visible en vez de parpadear con "..."
+                    const currentText = (document.getElementById(pillId)?.textContent || '').trim();
+                    if (!currentText || currentText === '...') {
+                        setTestScorePillText(pillId, '0 pts');
+                    }
                     missingColumns.push(columna);
                 }
             });
-            applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false }, forcedUnlockByColumn);
+            // Evita bloqueo/parpadeo temporal cuando no hay ningún dato local y estamos hidratando remoto.
+            if (missingColumns.length < TEST_SCORE_COLUMNS.length) {
+                applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false }, forcedUnlockByColumn);
+            }
             const student = getCurrentStudentFromStorage();
             if (!student) {
                 TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {

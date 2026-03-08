@@ -3139,10 +3139,17 @@
         function getLocalPointsByColumn(columna) {
             try {
                 const fallbackScores = getStoredScoresFromUnlockState();
-                const rawValue = fallbackScores[columna];
-                if (rawValue === null || typeof rawValue === 'undefined') return null;
-                const fallback = toLessonPointsNumber(rawValue);
-                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
+                const unlockStatePoints = toLessonPointsNumber(fallbackScores[columna]);
+                if (Number.isFinite(unlockStatePoints) && unlockStatePoints >= 0 && unlockStatePoints <= 5) {
+                    return unlockStatePoints;
+                }
+
+                const topicCache = readA1BetaTopicPointsCache();
+                const topicCachePoints = toLessonPointsNumber(topicCache?.[columna]);
+                if (Number.isFinite(topicCachePoints) && topicCachePoints >= 0 && topicCachePoints <= 5) {
+                    return topicCachePoints;
+                }
+
                 return null;
             } catch (e) {
                 return null;
@@ -3161,22 +3168,24 @@
         function getLocalForcedUnlockByColumn(columna) {
             if (!columna) return false;
             try {
+                const topicCache = readA1BetaTopicPointsCache();
+                const topicCacheForced = hasForcedUnlockMarker(topicCache?.[columna]);
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-                if (!raw) return false;
+                if (!raw) return topicCacheForced;
                 const parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed !== 'object') return false;
+                if (!parsed || typeof parsed !== 'object') return topicCacheForced;
                 const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
                     ? parsed.unlocksByColumn
                     : {};
                 if (typeof unlocksByColumn[columna] === 'boolean') {
-                    return unlocksByColumn[columna];
+                    return unlocksByColumn[columna] || topicCacheForced;
                 }
                 const scoreValue = parsed?.scores?.[columna];
                 if (hasForcedUnlockMarker(scoreValue)) return true;
-                if (columna === 'U1L3T1') return parseUnlockFlag(parsed?.test2);
-                if (columna === 'U1L3T2') return parseUnlockFlag(parsed?.test3);
-                if (columna === 'U1L3T3') return parseUnlockFlag(parsed?.test4);
-                return false;
+                if (columna === 'U1L3T1') return parseUnlockFlag(parsed?.test2) || topicCacheForced;
+                if (columna === 'U1L3T2') return parseUnlockFlag(parsed?.test3) || topicCacheForced;
+                if (columna === 'U1L3T3') return parseUnlockFlag(parsed?.test4) || topicCacheForced;
+                return topicCacheForced;
             } catch (e) {
                 return false;
             }

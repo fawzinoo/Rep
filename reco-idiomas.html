@@ -4127,13 +4127,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
         setTimeout(() => {
             const idx = flashcards.indexOf(card);
-            if (hasValidAudio(idx)) {
-                stopAllAudios();
-                audios[idx].play().catch(() => {});
-                audios[idx].addEventListener('ended', () => showCountdown(card), { once: true });
-            } else {
-                showCountdown(card);
-            }
+            playCardAudioThen(idx, () => showCountdown(card));
         }, 1000);
 
         // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -4253,13 +4247,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
                 // Reproduce el audio si existe y después muestra countdown
                 const audioIndex = flashcards.indexOf(card);
-                if (hasValidAudio(audioIndex)) {
-                    stopAllAudios();
-                    audios[audioIndex].play().catch(() => {});
-                    audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                } else {
-                    showCountdown(card);
-                }
+                playCardAudioThen(audioIndex, () => showCountdown(card));
             }, 2000);
 
             // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -6278,6 +6266,58 @@ function hasValidAudio(index) {
     return !!(a && a.src && a.src.trim() !== '');
 }
 
+// Reproduce audio y garantiza avanzar aunque el evento 'ended' no llegue.
+function playCardAudioThen(index, onDone) {
+    let finished = false;
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        try { onDone && onDone(); } catch (e) {}
+    };
+
+    if (!hasValidAudio(index)) {
+        finish();
+        return;
+    }
+
+    stopAllAudios();
+    const audio = audios[index];
+    let safetyTimeoutId = null;
+
+    const cleanup = () => {
+        if (safetyTimeoutId) {
+            clearTimeout(safetyTimeoutId);
+            safetyTimeoutId = null;
+        }
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+    };
+
+    const onEnded = () => {
+        cleanup();
+        finish();
+    };
+
+    const onError = () => {
+        cleanup();
+        finish();
+    };
+
+    audio.addEventListener('ended', onEnded, { once: true });
+    audio.addEventListener('error', onError, { once: true });
+
+    // Fallback por si el audio no termina o no emite eventos.
+    safetyTimeoutId = setTimeout(() => {
+        cleanup();
+        finish();
+    }, 5000);
+
+    audio.play().catch(() => {
+        cleanup();
+        finish();
+    });
+}
+
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
 let originalFlashcardsHTML = null;
 const flashcards = Array.from(document.querySelectorAll('.flashcard'));
@@ -6460,13 +6500,7 @@ function attachFlashcardHandlers() {
                     
                     // Reproducir audio si existe y después mostrar countdown
                     const audioIndex = flashcards.indexOf(card);
-                        if (hasValidAudio(audioIndex)) {
-                            stopAllAudios();
-                            audios[audioIndex].play().catch(() => {});
-                            audios[audioIndex].addEventListener('ended', () => showCountdown(card), { once: true });
-                        } else {
-                            showCountdown(card);
-                        }
+                        playCardAudioThen(audioIndex, () => showCountdown(card));
                 }
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();
@@ -7585,7 +7619,7 @@ function goToNextCardWithDebug() {
   if (window.__IDIOMAS_RANKING_ENHANCED__) return;
   window.__IDIOMAS_RANKING_ENHANCED__ = true;
 
-  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVfUZFG4cwuqj8zbwte0dd6HsT5uCV1bd6lv8Bed9VL_MiS3uq0w3KkBFDvw4TZdk/exec';
+  const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby20hep2bbC0w1_tLcTym_VYdavRzzz5lSJVKC5wkpqA2Y4SDmAsQY6eQ-xj4Itf82C/exec';
   const LESSON_COLUMN_KEY = 'U1L5T4';
   const TEST_UNLOCK_STATE_KEY = 'idiomas-test-unlock-state-v2';
   const U1L5T4_UNLOCK_OVERLAY_ID = 'unlock-profesiones1-overlay';

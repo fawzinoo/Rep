@@ -2736,11 +2736,20 @@
             width: 15px;
             height: 15px;
             border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.9);
-            background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f1f5f9 72%);
-            box-shadow: inset 0 -2px 5px rgba(148, 163, 184, 0.32);
+            border: 1px solid rgba(255, 255, 255, 0.95);
+            background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f8fafc 72%);
+            box-shadow: inset 0 -2px 5px rgba(148, 163, 184, 0.34);
             opacity: 0.95;
             transition: transform 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease, filter 0.28s ease;
+        }
+
+        .topic-test-light[data-state="off"] {
+            border-color: rgba(255, 255, 255, 0.95);
+            background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f8fafc 72%);
+            box-shadow: inset 0 -2px 5px rgba(148, 163, 184, 0.34);
+            opacity: 0.95;
+            transform: scale(1);
+            animation: none;
         }
 
         .topic-test-light.is-on {
@@ -2749,25 +2758,13 @@
             animation: semaphorePulse 1.9s ease-in-out infinite;
         }
 
-        .topic-test-light.is-on[data-test="1"] {
-            border-color: rgba(244, 63, 94, 0.95);
-            background: radial-gradient(circle at 30% 28%, #ffe4e6 0%, #f43f5e 68%);
-            box-shadow: inset 0 -3px 7px rgba(136, 19, 55, 0.42);
+        .topic-test-light[data-state="yellow"] {
+            border-color: rgba(250, 204, 21, 0.95);
+            background: radial-gradient(circle at 30% 28%, #fef9c3 0%, #facc15 68%);
+            box-shadow: inset 0 -3px 7px rgba(133, 77, 14, 0.42);
         }
 
-        .topic-test-light.is-on[data-test="2"] {
-            border-color: rgba(249, 115, 22, 0.95);
-            background: radial-gradient(circle at 30% 28%, #ffedd5 0%, #f97316 68%);
-            box-shadow: inset 0 -3px 7px rgba(124, 45, 18, 0.42);
-        }
-
-        .topic-test-light.is-on[data-test="3"] {
-            border-color: rgba(59, 130, 246, 0.95);
-            background: radial-gradient(circle at 30% 28%, #dbeafe 0%, #3b82f6 68%);
-            box-shadow: inset 0 -3px 7px rgba(30, 58, 138, 0.42);
-        }
-
-        .topic-test-light.is-on[data-test="4"] {
+        .topic-test-light[data-state="green"] {
             border-color: rgba(34, 197, 94, 0.95);
             background: radial-gradient(circle at 30% 28%, #dcfce7 0%, #22c55e 68%);
             box-shadow: inset 0 -3px 7px rgba(20, 83, 45, 0.42);
@@ -6876,7 +6873,7 @@
 
         function getTopicSemaphoreState(columns, pointsByColumn = {}) {
             if (!Array.isArray(columns) || columns.length !== 4) {
-                return { test1: false, test2: false, test3: false, test4: false };
+                return { test1: 'off', test2: 'off', test3: 'off', test4: 'off' };
             }
             const getScore = (column) => {
                 const localScore = getLocalTopicPointsByColumn(column);
@@ -6885,28 +6882,22 @@
                 if (remoteScore !== null) return remoteScore;
                 return null;
             };
-            const isForced = (column) =>
-                getLocalTopicForcedUnlockByColumn(column) ||
-                hasTopicForcedUnlock(pointsByColumn?.[column]);
+            const toLightState = (score) => {
+                if (score >= 5) return 'green';
+                if (score >= 4) return 'yellow';
+                return 'off';
+            };
 
             const t1Score = Number(getScore(columns[0])) || 0;
             const t2Score = Number(getScore(columns[1])) || 0;
             const t3Score = Number(getScore(columns[2])) || 0;
             const t4Score = Number(getScore(columns[3])) || 0;
 
-            // La luz del semáforo refleja el resultado actual (4/5 encendido, <4 apagado).
-            // El desbloqueo del siguiente tema se gestiona aparte con lógica one-way.
-            // Si existe sufijo "f/t" (ej: 1f, 2t...), se considera desbloqueo forzado.
-            const test1Unlocked = isForced(columns[0]) || t1Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test2Unlocked = isForced(columns[1]) || t2Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test3Unlocked = isForced(columns[2]) || t3Score >= TOPIC_UNLOCK_THRESHOLD;
-            const test4Unlocked = isForced(columns[3]) || t4Score >= TOPIC_UNLOCK_THRESHOLD;
-
             return {
-                test1: test1Unlocked,
-                test2: test2Unlocked,
-                test3: test3Unlocked,
-                test4: test4Unlocked
+                test1: toLightState(t1Score),
+                test2: toLightState(t2Score),
+                test3: toLightState(t3Score),
+                test4: toLightState(t4Score)
             };
         }
 
@@ -7079,15 +7070,17 @@
             card.classList.add('next-topic-semaphore-card');
             const state = getTopicSemaphoreState(semaphoreConfig.columns, latestTopicPointsByColumn);
             const stateByTest = {
-                1: Boolean(state.test1),
-                2: Boolean(state.test2),
-                3: Boolean(state.test3),
-                4: Boolean(state.test4)
+                1: state.test1 || 'off',
+                2: state.test2 || 'off',
+                3: state.test3 || 'off',
+                4: state.test4 || 'off'
             };
 
             panel.querySelectorAll('.topic-test-light').forEach((light) => {
                 const testNumber = Number(light.dataset.test);
-                light.classList.toggle('is-on', Boolean(stateByTest[testNumber]));
+                const lightState = stateByTest[testNumber] || 'off';
+                light.dataset.state = lightState;
+                light.classList.toggle('is-on', lightState !== 'off');
             });
 
             const badge = ensureTopicTotalBadge(card);

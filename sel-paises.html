@@ -7620,6 +7620,7 @@ document.addEventListener('keydown', function(e) {
     if (keepForced) {
       lessonUnlockStateMemory.unlocksByColumn[columna] = true;
     }
+    persistUnlockStateToLocalStorage();
   }
 
   function normalizeLessonPoints(value) {
@@ -7632,6 +7633,7 @@ document.addEventListener('keydown', function(e) {
   function markColumnPermanentUnlock(columna) {
     if (!columna) return;
     lessonUnlockStateMemory.unlocksByColumn[columna] = true;
+    persistUnlockStateToLocalStorage();
   }
 
   function hasColumnPermanentUnlock(columna) {
@@ -7654,6 +7656,71 @@ document.addEventListener('keydown', function(e) {
     if (!nombre || !apellido) return null;
     return { nombre, apellido };
   }
+
+  function parseStoredPointsForColumn(scores, columna) {
+    const parsed = parseLessonPointsValue(scores?.[columna]);
+    if (!Number.isFinite(parsed.points)) return 0;
+    return Math.max(0, Math.min(5, Math.round(parsed.points)));
+  }
+
+  function persistUnlockStateToLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const previousScores = (current.scores && typeof current.scores === 'object') ? current.scores : {};
+      const previousUnlocks = (current.unlocksByColumn && typeof current.unlocksByColumn === 'object') ? current.unlocksByColumn : {};
+
+      const scores = { ...previousScores, ...lessonUnlockStateMemory.scores };
+      const unlocksByColumn = { ...previousUnlocks, ...lessonUnlockStateMemory.unlocksByColumn };
+      const lessonParsed = parseLessonPointsValue(scores[LESSON_COLUMN_KEY]);
+      if (lessonParsed.forced || (Number.isFinite(lessonParsed.points) && lessonParsed.points >= LESSON_UNLOCK_THRESHOLD)) {
+        unlocksByColumn[LESSON_COLUMN_KEY] = true;
+      }
+
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
+        ...current,
+        test2: {
+          unlocked: Boolean(unlocksByColumn.U1L3T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T1')
+        },
+        test3: {
+          unlocked: Boolean(unlocksByColumn.U1L3T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T2')
+        },
+        test4: {
+          unlocked: Boolean(unlocksByColumn.U1L3T3 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T3')
+        },
+        scores,
+        unlocksByColumn
+      }));
+
+      lessonUnlockStateMemory.scores = scores;
+      lessonUnlockStateMemory.unlocksByColumn = unlocksByColumn;
+    } catch (error) {
+      console.warn('No se pudo persistir el estado de desbloqueo local:', error);
+    }
+  }
+
+  function hydrateUnlockStateFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.scores && typeof parsed.scores === 'object') {
+        lessonUnlockStateMemory.scores = { ...parsed.scores, ...lessonUnlockStateMemory.scores };
+      }
+      if (parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object') {
+        lessonUnlockStateMemory.unlocksByColumn = { ...parsed.unlocksByColumn, ...lessonUnlockStateMemory.unlocksByColumn };
+      }
+    } catch (error) {
+      console.warn('No se pudo leer el estado de desbloqueo local:', error);
+    }
+  }
+
+  hydrateUnlockStateFromLocalStorage();
 
   async function syncForcedUnlockFromSheetOnce() {
     if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;

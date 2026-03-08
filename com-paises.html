@@ -9318,6 +9318,7 @@ function goToNextCardWithDebug() {
   const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjG7cVir5PQRL5CKqOxuqE2he0hHAdEgiZkAXUXnv6R6J8RSqtyVLZ_peswAxvPX1h/exec';
   const LESSON_COLUMN_KEY = 'U1L3T2';
   const TEST_UNLOCK_STATE_KEY = 'paises-test-unlock-state-v2';
+  const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test2';
   const RANKING_PAISES_MODE = 'ranking_paises';
   const RANKING_GENERAL_MODE = 'ranking_general';
@@ -9539,6 +9540,52 @@ function goToNextCardWithDebug() {
     } catch (e) { }
   }
 
+  function normalizeLessonPoints(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(5, Math.round(numeric)));
+  }
+
+  function markColumnPermanentUnlock(columna) {
+    if (!columna) return;
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+        ? current.unlocksByColumn
+        : {};
+      if (unlocksByColumn[columna] === true) return;
+      unlocksByColumn[columna] = true;
+      current.unlocksByColumn = unlocksByColumn;
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+    } catch (e) { }
+  }
+
+  function hasColumnPermanentUnlock(columna) {
+    if (!columna) return false;
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return false;
+      const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+        ? parsed.unlocksByColumn
+        : {};
+      if (unlocksByColumn[columna] === true) return true;
+      const score = Number(parsed?.scores?.[columna]);
+      return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function serializeLessonPointsForServer(columna, puntos) {
+    const numericPoints = normalizeLessonPoints(puntos);
+    const unlocked = hasColumnPermanentUnlock(columna) || numericPoints >= LESSON_UNLOCK_THRESHOLD;
+    return unlocked ? `${numericPoints}f` : numericPoints;
+  }
+
   function getStudentFromStorage() {
     const nombre = normalizeStudentName(localStorage.getItem('access_first_name') || sessionStorage.getItem('nombreUsuario') || '');
     const apellido = normalizeStudentName(localStorage.getItem('access_last_name') || sessionStorage.getItem('apellidoUsuario') || '');
@@ -9590,6 +9637,7 @@ function goToNextCardWithDebug() {
     if (!student) return;
 
     try {
+      const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
       await fetch(PORTALB_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors',
@@ -9601,7 +9649,7 @@ function goToNextCardWithDebug() {
           apellido: student.apellido,
           columna: LESSON_COLUMN_KEY,
           porcentaje: Number(percentage) || 0,
-          puntos: Number(puntos) || 0
+          puntos: puntosPayload
         })
       });
       lastSentAt = now;
@@ -9691,6 +9739,9 @@ function goToNextCardWithDebug() {
           const stats = resolveCurrentPercentage();
           const points = pointsFromPercentage(stats.percentage);
           saveUnlockStateScore(LESSON_COLUMN_KEY, points);
+          if (points >= LESSON_UNLOCK_THRESHOLD) {
+            markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          }
           void sendLessonPointsToSheet(stats.percentage, points);
         } catch (e) {
           console.warn('No se pudo enviar puntuacion final:', e);
@@ -9727,7 +9778,25 @@ function goToNextCardWithDebug() {
     return data.ranking;
   }
 
+  async function fetchRankingByColumn(columna) {
+    const url = `${PORTALB_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+      throw new Error('No se pudo obtener el ranking.');
+    }
+    const expected = String(columna || '').trim().toUpperCase();
+    const received = String(data.columna || '').trim().toUpperCase();
+    if (expected && received && expected !== received) {
+      throw new Error(`Columna inesperada: ${data.columna}`);
+    }
+    return data.ranking;
+  }
+
   async function fetchRankingData(modeKey = 'test') {
+    if (modeKey === 'test') {
+      return fetchRankingByColumn(LESSON_COLUMN_KEY);
+    }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'paises') mode = RANKING_PAISES_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;

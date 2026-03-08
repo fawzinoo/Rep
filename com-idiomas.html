@@ -9118,6 +9118,7 @@ function goToNextCardWithDebug() {
   const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby20hep2bbC0w1_tLcTym_VYdavRzzz5lSJVKC5wkpqA2Y4SDmAsQY6eQ-xj4Itf82C/exec';
   const LESSON_COLUMN_KEY = 'U1L5T2';
   const TEST_UNLOCK_STATE_KEY = 'idiomas-test-unlock-state-v2';
+  const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test2';
   const RANKING_IDIOMAS_MODE = 'ranking_idiomas';
   const RANKING_GENERAL_MODE = 'ranking_general';
@@ -9128,6 +9129,8 @@ function goToNextCardWithDebug() {
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
+  const lessonUnlockStateMemory = { scores: {}, unlocksByColumn: {} };
+  let forcedUnlockSyncPromise = null;
 
   function injectEnhancementStyles() {
     if (document.getElementById('idiomas-ranking-enhancement-style')) return;
@@ -9325,18 +9328,123 @@ function goToNextCardWithDebug() {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  function toLooseBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    const raw = String(value ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'si' || raw === 'sí';
+  }
+
+  function parseLessonPointsValue(value) {
+    const parseRaw = (rawValue) => {
+      const raw = String(rawValue ?? '').trim().toLowerCase().replace(',', '.');
+      if (!raw) return { points: null, forced: false };
+
+      const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
+      if (exact) {
+        return {
+          points: Number(exact[1]),
+          forced: Boolean(exact[2])
+        };
+      }
+
+      const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
+      if (forced) {
+        return {
+          points: Number(forced[1]),
+          forced: true
+        };
+      }
+
+      const numeric = raw.match(/([0-5])(?:\.0+)?/);
+      if (numeric) {
+        return {
+          points: Number(numeric[1]),
+          forced: false
+        };
+      }
+
+      return { points: null, forced: false };
+    };
+
+    if (value && typeof value === 'object') {
+      const forcedFromFlags =
+        toLooseBoolean(value.forcedUnlock) ||
+        toLooseBoolean(value.forced) ||
+        toLooseBoolean(value.unlockForced) ||
+        toLooseBoolean(value.isForced);
+
+      const candidates = [
+        value.puntosRaw,
+        value.puntos,
+        value.pointsRaw,
+        value.points,
+        value.value,
+        value.score,
+        value.resultado,
+        value.nota,
+        value.calificacion,
+        value.valor
+      ];
+
+      for (const candidate of candidates) {
+        const parsed = parseRaw(candidate);
+        if (!Number.isFinite(parsed.points)) continue;
+        return {
+          points: parsed.points,
+          forced: Boolean(parsed.forced || forcedFromFlags)
+        };
+      }
+
+      return { points: null, forced: forcedFromFlags };
+    }
+
+    return parseRaw(value);
+  }
+
   function saveUnlockStateScore(columna, puntos) {
-    const numericPoints = Number(puntos);
+    const parsedInput = parseLessonPointsValue(puntos);
+    const numericPoints = parsedInput.points;
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      const current = parsed && typeof parsed === 'object' ? parsed : {};
-      const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
-      scores[columna] = numericPoints;
-      current.scores = scores;
-      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    const previousScore = lessonUnlockStateMemory.scores[columna];
+    const previousForced = parseLessonPointsValue(previousScore).forced;
+    const keepForced =
+      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
+      previousForced ||
+      parsedInput.forced ||
+      numericPoints >= LESSON_UNLOCK_THRESHOLD;
+
+    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
+    if (keepForced) {
+      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
+    }
+    persistUnlockStateToLocalStorage();
+  }
+
+  function normalizeLessonPoints(value) {
+    const parsed = parseLessonPointsValue(value);
+    const numeric = Number(parsed.points);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(5, Math.round(numeric)));
+  }
+
+  function markColumnPermanentUnlock(columna) {
+    if (!columna) return;
+    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
+    persistUnlockStateToLocalStorage();
+  }
+
+  function hasColumnPermanentUnlock(columna) {
+    if (!columna) return false;
+    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
+    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
+    if (scoreParsed.forced) return true;
+    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
+  }
+
+  function serializeLessonPointsForServer(columna, puntos) {
+    const numericPoints = normalizeLessonPoints(puntos);
+    const unlocked = hasColumnPermanentUnlock(columna) || numericPoints >= LESSON_UNLOCK_THRESHOLD;
+    return unlocked ? `${numericPoints}f` : numericPoints;
   }
 
   function getStudentFromStorage() {
@@ -9344,6 +9452,105 @@ function goToNextCardWithDebug() {
     const apellido = normalizeStudentName(localStorage.getItem('access_last_name') || sessionStorage.getItem('apellidoUsuario') || '');
     if (!nombre || !apellido) return null;
     return { nombre, apellido };
+  }
+
+  function parseStoredPointsForColumn(scores, columna) {
+    const parsed = parseLessonPointsValue(scores?.[columna]);
+    if (!Number.isFinite(parsed.points)) return 0;
+    return Math.max(0, Math.min(5, Math.round(parsed.points)));
+  }
+
+  function persistUnlockStateToLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const previousScores = (current.scores && typeof current.scores === 'object') ? current.scores : {};
+      const previousUnlocks = (current.unlocksByColumn && typeof current.unlocksByColumn === 'object') ? current.unlocksByColumn : {};
+
+      const scores = { ...previousScores, ...lessonUnlockStateMemory.scores };
+      const unlocksByColumn = { ...previousUnlocks, ...lessonUnlockStateMemory.unlocksByColumn };
+      const lessonParsed = parseLessonPointsValue(scores[LESSON_COLUMN_KEY]);
+      if (lessonParsed.forced || (Number.isFinite(lessonParsed.points) && lessonParsed.points >= LESSON_UNLOCK_THRESHOLD)) {
+        unlocksByColumn[LESSON_COLUMN_KEY] = true;
+      }
+
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
+        ...current,
+        test2: {
+          unlocked: Boolean(unlocksByColumn.U1L5T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L5T1')
+        },
+        test3: {
+          unlocked: Boolean(unlocksByColumn.U1L5T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L5T2')
+        },
+        test4: {
+          unlocked: Boolean(unlocksByColumn.U1L5T3 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L5T3')
+        },
+        scores,
+        unlocksByColumn
+      }));
+
+      lessonUnlockStateMemory.scores = scores;
+      lessonUnlockStateMemory.unlocksByColumn = unlocksByColumn;
+    } catch (error) {
+      console.warn('No se pudo persistir el estado de desbloqueo local:', error);
+    }
+  }
+
+  function hydrateUnlockStateFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.scores && typeof parsed.scores === 'object') {
+        lessonUnlockStateMemory.scores = { ...parsed.scores, ...lessonUnlockStateMemory.scores };
+      }
+      if (parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object') {
+        lessonUnlockStateMemory.unlocksByColumn = { ...parsed.unlocksByColumn, ...lessonUnlockStateMemory.unlocksByColumn };
+      }
+    } catch (error) {
+      console.warn('No se pudo leer el estado de desbloqueo local:', error);
+    }
+  }
+
+  hydrateUnlockStateFromLocalStorage();
+
+  async function syncForcedUnlockFromSheetOnce() {
+    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
+    forcedUnlockSyncPromise = (async () => {
+      const student = getStudentFromStorage();
+      if (!student) return;
+      try {
+        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
+        const row = rankingRows.find((item) =>
+          normalizeStudentName(item?.nombre) === student.nombre &&
+          normalizeStudentName(item?.apellido) === student.apellido
+        );
+        if (!row) return;
+
+        const parsedPoints = parseLessonPointsValue({
+          puntosRaw: row?.puntosRaw,
+          puntos: row?.puntos,
+          pointsRaw: row?.pointsRaw,
+          points: row?.points,
+          forcedUnlock: row?.forcedUnlock
+        });
+
+        if (!Number.isFinite(parsedPoints.points)) return;
+        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
+        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
+          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+        }
+      } catch (error) {
+        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
+      }
+    })();
+    return forcedUnlockSyncPromise;
   }
 
   function pointsFromPercentage(percentageValue) {
@@ -9387,9 +9594,14 @@ function goToNextCardWithDebug() {
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
-    if (!student) return;
+    if (!student) {
+      console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
+      return;
+    }
 
     try {
+      await syncForcedUnlockFromSheetOnce();
+      const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
       await fetch(PORTALB_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors',
@@ -9401,7 +9613,7 @@ function goToNextCardWithDebug() {
           apellido: student.apellido,
           columna: LESSON_COLUMN_KEY,
           porcentaje: Number(percentage) || 0,
-          puntos: Number(puntos) || 0
+          puntos: puntosPayload
         })
       });
       lastSentAt = now;
@@ -9491,6 +9703,9 @@ function goToNextCardWithDebug() {
           const stats = resolveCurrentPercentage();
           const points = pointsFromPercentage(stats.percentage);
           saveUnlockStateScore(LESSON_COLUMN_KEY, points);
+          if (points >= LESSON_UNLOCK_THRESHOLD) {
+            markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          }
           void sendLessonPointsToSheet(stats.percentage, points);
         } catch (e) {
           console.warn('No se pudo enviar puntuacion final:', e);
@@ -9566,7 +9781,8 @@ function goToNextCardWithDebug() {
     const tbody = rows.map((item, idx) => {
       const puesto = Number(item.puesto) || (idx + 1);
       const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
-      const puntos = Number(item.puntos) || 0;
+      const parsedPuntos = parseLessonPointsValue(item.puntos);
+      const puntos = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
       const isCurrentUser = !!currentStudent &&
         normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
         normalizeStudentName(item.apellido || '') === currentStudent.apellido;
@@ -9702,6 +9918,7 @@ function goToNextCardWithDebug() {
 
   function initEnhancements() {
     injectEnhancementStyles();
+    void syncForcedUnlockFromSheetOnce();
     ensurePointsPill();
     ensureRankingButton();
     installPointsHooks();

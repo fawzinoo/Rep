@@ -7533,10 +7533,17 @@ document.addEventListener('keydown', function(e) {
   const LUGARES_LABEL = 'Lugares de trabajo';
   const RANKING_TITLE = 'Ranking U1L7T1';
   const SEND_THROTTLE_MS = 1500;
+  const POINTS_QUEUE_KEY = `lugares-${LESSON_COLUMN_KEY.toLowerCase()}-sheet-queue-v1`;
+  const POINTS_RETRY_ATTEMPTS = 3;
+  const POINTS_RETRY_BASE_DELAY_MS = 900;
+  const POINTS_REQUEST_TIMEOUT_MS = 7000;
 
   let lastSentAt = 0;
+  let lastSentFingerprint = '';
   const lessonUnlockStateMemory = { scores: {}, unlocksByColumn: {} };
   let forcedUnlockSyncPromise = null;
+  let pointsQueueListenersInstalled = false;
+  let queueFlushPromise = null;
 
   function injectEnhancementStyles() {
     if (document.getElementById('lugares-ranking-enhancement-style')) return;
@@ -7996,9 +8003,144 @@ document.addEventListener('keydown', function(e) {
     return { percentage, hasCards };
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function buildLessonPointsPayload(student, percentage, puntosPayload) {
+    const normalizedPercentage = Number(percentage) || 0;
+    const payload = {
+      type: 'lesson_points',
+      nombre: student.nombre,
+      apellido: student.apellido,
+      columna: LESSON_COLUMN_KEY,
+      porcentaje: normalizedPercentage,
+      puntos: puntosPayload,
+      sentAt: Date.now()
+    };
+    payload.fingerprint = `${payload.nombre}|${payload.apellido}|${payload.columna}|${payload.porcentaje}|${payload.puntos}`;
+    return payload;
+  }
+
+  function readQueuedLessonPayload() {
+    try {
+      const raw = localStorage.getItem(POINTS_QUEUE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!parsed.fingerprint) {
+        parsed.fingerprint = `${parsed.nombre || ''}|${parsed.apellido || ''}|${parsed.columna || ''}|${Number(parsed.porcentaje) || 0}|${parsed.puntos || ''}`;
+      }
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function queueLessonPayload(payload) {
+    try {
+      localStorage.setItem(POINTS_QUEUE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn('No se pudo guardar la cola de puntos en localStorage:', error);
+    }
+  }
+
+  function clearQueuedLessonPayloadIfMatch(fingerprint) {
+    const queued = readQueuedLessonPayload();
+    if (!queued) return;
+    if (fingerprint && queued.fingerprint && queued.fingerprint !== fingerprint) return;
+    try {
+      localStorage.removeItem(POINTS_QUEUE_KEY);
+    } catch (_) {}
+  }
+
+  async function postLessonPayload(payload) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), POINTS_REQUEST_TIMEOUT_MS) : null;
+    try {
+      await fetch(PORTALB_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        cache: 'no-store',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller ? controller.signal : undefined,
+        body: JSON.stringify({
+          type: 'lesson_points',
+          nombre: payload.nombre,
+          apellido: payload.apellido,
+          columna: payload.columna,
+          porcentaje: Number(payload.porcentaje) || 0,
+          puntos: payload.puntos
+        })
+      });
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  async function postLessonPayloadWithRetry(payload) {
+    let lastError = null;
+    for (let attempt = 0; attempt < POINTS_RETRY_ATTEMPTS; attempt++) {
+      try {
+        await postLessonPayload(payload);
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (attempt < POINTS_RETRY_ATTEMPTS - 1) {
+          const waitMs = POINTS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+          await sleep(waitMs);
+        }
+      }
+    }
+    throw lastError || new Error('No se pudo enviar puntos al Sheet.');
+  }
+
+  async function flushQueuedLessonPoints() {
+    if (queueFlushPromise) return queueFlushPromise;
+    if (navigator.onLine === false) return false;
+    const queued = readQueuedLessonPayload();
+    if (!queued) return false;
+
+    queueFlushPromise = (async () => {
+      try {
+        await postLessonPayloadWithRetry(queued);
+        clearQueuedLessonPayloadIfMatch(queued.fingerprint);
+        lastSentAt = Date.now();
+        lastSentFingerprint = queued.fingerprint || '';
+        return true;
+      } catch (error) {
+        console.warn('No se pudo vaciar la cola de puntos al Sheet:', error);
+        return false;
+      } finally {
+        queueFlushPromise = null;
+      }
+    })();
+
+    return queueFlushPromise;
+  }
+
+  function installPointsQueueAutoFlush() {
+    if (pointsQueueListenersInstalled) return;
+    pointsQueueListenersInstalled = true;
+
+    window.addEventListener('online', () => {
+      void flushQueuedLessonPoints();
+    });
+
+    window.addEventListener('pageshow', () => {
+      void flushQueuedLessonPoints();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void flushQueuedLessonPoints();
+      }
+    });
+  }
+
   async function sendLessonPointsToSheet(percentage, puntos) {
     const now = Date.now();
-    if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
     if (!student) {
       console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
@@ -8008,23 +8150,27 @@ document.addEventListener('keydown', function(e) {
     try {
       await syncForcedUnlockFromSheetOnce();
       const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
-      await fetch(PORTALB_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'lesson_points',
-          nombre: student.nombre,
-          apellido: student.apellido,
-          columna: LESSON_COLUMN_KEY,
-          porcentaje: Number(percentage) || 0,
-          puntos: puntosPayload
-        })
-      });
-      lastSentAt = now;
+      const payload = buildLessonPointsPayload(student, percentage, puntosPayload);
+
+      if (now - lastSentAt < SEND_THROTTLE_MS && payload.fingerprint === lastSentFingerprint) {
+        return;
+      }
+
+      queueLessonPayload(payload);
+
+      try {
+        await postLessonPayloadWithRetry(payload);
+        clearQueuedLessonPayloadIfMatch(payload.fingerprint);
+        lastSentAt = now;
+        lastSentFingerprint = payload.fingerprint;
+      } catch (error) {
+        console.warn('Error al enviar puntos a Google Sheet (queda en cola):', error);
+        setTimeout(() => {
+          void flushQueuedLessonPoints();
+        }, POINTS_RETRY_BASE_DELAY_MS);
+      }
     } catch (error) {
-      console.warn('Error al enviar puntos a Google Sheet:', error);
+      console.warn('Error al preparar envio de puntos a Google Sheet:', error);
     }
   }
 
@@ -8324,7 +8470,9 @@ document.addEventListener('keydown', function(e) {
 
   function initEnhancements() {
     injectEnhancementStyles();
+    installPointsQueueAutoFlush();
     void syncForcedUnlockFromSheetOnce();
+    void flushQueuedLessonPoints();
     ensurePointsPill();
     ensureRankingButton();
     installPointsHooks();

@@ -3642,27 +3642,6 @@
         <div class="back">enfermero</div>
     </div>
 
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://fawzinoo.github.io/Fotos/farmaceutico.webp" alt="Farmacéutico">
-        </div>
-        <div class="back">farmacéutico</div>
-    </div>
-
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://fawzinoo.github.io/Fotos/profesor.webp" alt="Profesor">
-        </div>
-        <div class="back">profesor</div>
-    </div>
-
-    <div class="flashcard">
-        <div class="front">
-            <img src="https://fawzinoo.github.io/Fotos/Estudiante.webp" alt="Estudiante">
-        </div>
-        <div class="back">estudiante</div>
-    </div>
-
 
 
     
@@ -9399,6 +9378,24 @@ function goToNextCardWithDebug() {
     return unlocked ? `${numericPoints}f` : numericPoints;
   }
 
+  function mergeLessonPointsKeepingBest(currentValue, incomingValue) {
+    const current = parseLessonPointsValue(currentValue);
+    const incoming = parseLessonPointsValue(incomingValue);
+
+    const currentPoints = Number.isFinite(current.points) ? current.points : null;
+    const incomingPoints = Number.isFinite(incoming.points) ? incoming.points : null;
+    if (currentPoints === null && incomingPoints === null) return null;
+
+    const bestPoints = Math.max(currentPoints ?? -1, incomingPoints ?? -1);
+    const forced = Boolean(
+      current.forced ||
+      incoming.forced ||
+      bestPoints >= LESSON_UNLOCK_THRESHOLD
+    );
+
+    return { points: bestPoints, forced };
+  }
+
   function getStudentFromStorage() {
     const nombre = normalizeStudentName(localStorage.getItem('access_first_name') || sessionStorage.getItem('nombreUsuario') || '');
     const apellido = normalizeStudentName(localStorage.getItem('access_last_name') || sessionStorage.getItem('apellidoUsuario') || '');
@@ -9493,9 +9490,14 @@ function goToNextCardWithDebug() {
           forcedUnlock: row?.forcedUnlock
         });
 
-        if (!Number.isFinite(parsedPoints.points)) return;
-        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
-        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
+        const mergedPoints = mergeLessonPointsKeepingBest(
+          lessonUnlockStateMemory.scores[LESSON_COLUMN_KEY],
+          parsedPoints
+        );
+        if (!mergedPoints || !Number.isFinite(mergedPoints.points)) return;
+
+        saveUnlockStateScore(LESSON_COLUMN_KEY, mergedPoints);
+        if (mergedPoints.forced || mergedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
           markColumnPermanentUnlock(LESSON_COLUMN_KEY);
         }
       } catch (error) {

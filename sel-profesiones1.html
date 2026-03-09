@@ -3250,6 +3250,21 @@
     </div>
 
 
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/enfermo.webp" alt="Enfermero">
+        </div>
+        <div class="back">Enfermero</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/farmaceutico.webp" alt="Farmacéutico">
+        </div>
+        <div class="back">Farmacéutico</div>
+    </div>
+
+
 
 
     
@@ -7873,22 +7888,34 @@ document.addEventListener('keydown', function(e) {
     }
 
     try {
-      await syncForcedUnlockFromSheetOnce();
+      // No bloquear el envio: la sincronizacion puede tardar segun la columna.
+      void syncForcedUnlockFromSheetOnce();
       const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
-      await fetch(PORTALB_SCRIPT_URL, {
+      const requestBody = JSON.stringify({
+        type: 'lesson_points',
+        nombre: student.nombre,
+        apellido: student.apellido,
+        columna: LESSON_COLUMN_KEY,
+        porcentaje: Number(percentage) || 0,
+        puntos: puntosPayload
+      });
+      const requestInit = {
         method: 'POST',
         mode: 'no-cors',
         cache: 'no-store',
+        keepalive: true,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'lesson_points',
-          nombre: student.nombre,
-          apellido: student.apellido,
-          columna: LESSON_COLUMN_KEY,
-          porcentaje: Number(percentage) || 0,
-          puntos: puntosPayload
-        })
-      });
+        body: requestBody
+      };
+
+      try {
+        await fetch(PORTALB_SCRIPT_URL, requestInit);
+      } catch (firstError) {
+        // Reintento corto para mitigar cortes de red puntuales.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        await fetch(PORTALB_SCRIPT_URL, requestInit);
+      }
+
       lastSentAt = now;
     } catch (error) {
       console.warn('Error al enviar puntos a Google Sheet:', error);

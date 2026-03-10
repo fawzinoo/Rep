@@ -692,6 +692,11 @@
     padding: 10px 12px;
 }
 
+.chat-message-item.is-self {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.18);
+}
+
 .chat-message-line {
     display: flex;
     align-items: flex-start;
@@ -712,6 +717,14 @@
     font-weight: 800;
 }
 
+.chat-user-label-self {
+    color: #0f766e;
+}
+
+.chat-user-label-other {
+    color: #93c5fd;
+}
+
 .chat-teacher-label {
     display: inline-flex;
     align-items: center;
@@ -723,6 +736,14 @@
 .chat-teacher-label i {
     color: #22d3ee;
     font-size: 0.9em;
+}
+
+.chat-teacher-label.chat-user-label-other {
+    color: #93c5fd;
+}
+
+.chat-teacher-label.chat-user-label-other i {
+    color: #93c5fd;
 }
 
 .chat-message-text {
@@ -773,6 +794,17 @@
     flex: 1;
     min-width: 0;
     margin-left: 2px;
+}
+
+.chat-message-item.is-self .chat-message-user,
+.chat-message-item.is-self .chat-message-text,
+.chat-message-item.is-self .chat-message-reply-text,
+.chat-message-item.is-self .chat-message-reply-arrow {
+    color: #111827;
+}
+
+.chat-message-item.is-self .chat-message-reply {
+    border-top-color: rgba(15, 23, 42, 0.2);
 }
 .chat-empty,
 .chat-loading,
@@ -4284,14 +4316,7 @@ const CHAT_MODE = 'chat_messages';
 const CHAT_COLUMN_KEY = 'U1L0T1';
 const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
-const CHAT_USER_COLOR_MAP_KEY = 'chat_u1l0t1_user_colors_v1';
-const CHAT_USER_COLOR_PALETTE = [
-    '#93c5fd', '#fca5a5', '#86efac', '#f9a8d4', '#fcd34d',
-    '#a5b4fc', '#67e8f9', '#fdba74', '#5eead4', '#d8b4fe',
-    '#bef264', '#f0abfc'
-];
 let chatRefreshIntervalId = null;
-let chatUserColorMap = {};
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
 let chatHasLoadedOnce = false;
@@ -4397,39 +4422,6 @@ function scrollChatToLatestMessage(useSmooth = false) {
 
     // Extra pequeño para que el ultimo mensaje no quede pegado/oculto cerca del footer.
     chatBody.scrollTop = chatBody.scrollHeight + 14;
-}
-
-function loadChatUserColorMap() {
-    try {
-        const raw = localStorage.getItem(CHAT_USER_COLOR_MAP_KEY);
-        const parsed = raw ? JSON.parse(raw) : {};
-        chatUserColorMap = parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (e) {
-        chatUserColorMap = {};
-    }
-}
-
-function saveChatUserColorMap() {
-    try {
-        localStorage.setItem(CHAT_USER_COLOR_MAP_KEY, JSON.stringify(chatUserColorMap));
-    } catch (e) { }
-}
-
-function pickRandomColorForUser() {
-    const used = new Set(Object.values(chatUserColorMap || {}));
-    const available = CHAT_USER_COLOR_PALETTE.filter(color => !used.has(color));
-    const pool = available.length > 0 ? available : CHAT_USER_COLOR_PALETTE;
-    return pool[Math.floor(Math.random() * pool.length)];
-}
-
-function getChatUserColor(userLabel) {
-    const key = normalizeChatUserLabel(userLabel || '').toLowerCase();
-    if (!key || key === CHAT_DEFAULT_USER.toLowerCase()) return '#93c5fd';
-    if (!chatUserColorMap[key]) {
-        chatUserColorMap[key] = pickRandomColorForUser();
-        saveChatUserColorMap();
-    }
-    return chatUserColorMap[key];
 }
 
 function normalizeStudentName(name) {
@@ -4802,15 +4794,18 @@ function renderChatMessages(messages) {
         return;
     }
 
+    const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
     messagesEl.innerHTML = messages.map((msg) => {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = userLabel === CHAT_DEFAULT_USER;
-        const userColor = getChatUserColor(userLabel);
+        const isCurrentSender = userLabel === currentUserLabel;
+        const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
         const renderedUser = isTeacherUser
-            ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}:</span></span>`
-            : `<span class="chat-user-label" style="color: ${userColor};">${escapeHtml(userLabel)}:</span>`;
+            ? `<span class="chat-teacher-label ${labelClass}"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}:</span></span>`
+            : `<span class="chat-user-label ${labelClass}">${escapeHtml(userLabel)}:</span>`;
+        const messageItemClass = isCurrentSender ? 'chat-message-item is-self' : 'chat-message-item';
         return `
-        <div class="chat-message-item">
+        <div class="${messageItemClass}">
             <div class="chat-message-line">
                 <div class="chat-message-user">${renderedUser}</div>
                 ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
@@ -4818,7 +4813,7 @@ function renderChatMessages(messages) {
             ${msg.teacherReply ? `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>
-                    <span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>
+                    <span class="chat-teacher-label chat-user-label-other"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>
                     <span class="chat-message-reply-text">${formatChatMessageHtml(msg.teacherReply)}</span>
                 </div>
             ` : ''}
@@ -5204,7 +5199,7 @@ function disableShuffleForFinals() {
 
 // Cargar estado y preparar handler al iniciar
 loadShuffleCount();
-loadChatUserColorMap();
+try { localStorage.removeItem('chat_u1l0t1_user_colors_v1'); } catch (e) {}
 installShuffleButtonHandler();
 installChatButtonHandler();
 installRankingButtonHandler();

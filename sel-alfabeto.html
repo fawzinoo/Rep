@@ -695,8 +695,13 @@
 .chat-message-user {
     font-size: 0.95rem;
     font-weight: 800;
-    color: #93c5fd;
     margin-bottom: 4px;
+}
+
+.chat-user-label {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 800;
 }
 
 .chat-teacher-label {
@@ -4255,8 +4260,48 @@ const CHAT_MODE = 'chat_messages';
 const CHAT_COLUMN_KEY = 'U1L0T1';
 const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
+const CHAT_USER_COLOR_MAP_KEY = 'chat_u1l0t1_user_colors_v1';
+const CHAT_USER_COLOR_PALETTE = [
+    '#93c5fd', '#fca5a5', '#86efac', '#f9a8d4', '#fcd34d',
+    '#a5b4fc', '#67e8f9', '#fdba74', '#5eead4', '#d8b4fe',
+    '#bef264', '#f0abfc'
+];
 let chatRefreshIntervalId = null;
 let chatIsSending = false;
+let chatUserColorMap = {};
+
+function loadChatUserColorMap() {
+    try {
+        const raw = localStorage.getItem(CHAT_USER_COLOR_MAP_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        chatUserColorMap = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        chatUserColorMap = {};
+    }
+}
+
+function saveChatUserColorMap() {
+    try {
+        localStorage.setItem(CHAT_USER_COLOR_MAP_KEY, JSON.stringify(chatUserColorMap));
+    } catch (e) { }
+}
+
+function pickRandomColorForUser() {
+    const used = new Set(Object.values(chatUserColorMap || {}));
+    const available = CHAT_USER_COLOR_PALETTE.filter(color => !used.has(color));
+    const pool = available.length > 0 ? available : CHAT_USER_COLOR_PALETTE;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function getChatUserColor(userLabel) {
+    const key = normalizeChatUserLabel(userLabel || '').toLowerCase();
+    if (!key || key === CHAT_DEFAULT_USER.toLowerCase()) return '#93c5fd';
+    if (!chatUserColorMap[key]) {
+        chatUserColorMap[key] = pickRandomColorForUser();
+        saveChatUserColorMap();
+    }
+    return chatUserColorMap[key];
+}
 
 function normalizeStudentName(name) {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -4552,7 +4597,11 @@ function parseChatCellValue(rawValue) {
 }
 
 function normalizeChatUserLabel(rawUser) {
-    const user = String(rawUser || '').trim();
+    const user = String(rawUser || '')
+        .trim()
+        .replace(/^-+/, '')
+        .replace(/-+$/, '')
+        .trim();
     if (!user || /^anonimo$/i.test(user)) return CHAT_DEFAULT_USER;
     return user;
 }
@@ -4627,9 +4676,10 @@ function renderChatMessages(messages) {
     messagesEl.innerHTML = messages.map((msg) => {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = userLabel === CHAT_DEFAULT_USER;
+        const userColor = getChatUserColor(userLabel);
         const renderedUser = isTeacherUser
-            ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}</span></span>`
-            : `-${escapeHtml(userLabel)}-`;
+            ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}:</span></span>`
+            : `<span class="chat-user-label" style="color: ${userColor};">${escapeHtml(userLabel)}:</span>`;
         return `
         <div class="chat-message-item">
             <div class="chat-message-user">${renderedUser}</div>
@@ -5021,6 +5071,7 @@ function disableShuffleForFinals() {
 
 // Cargar estado y preparar handler al iniciar
 loadShuffleCount();
+loadChatUserColorMap();
 installShuffleButtonHandler();
 installChatButtonHandler();
 installRankingButtonHandler();

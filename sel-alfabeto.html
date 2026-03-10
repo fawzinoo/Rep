@@ -708,6 +708,29 @@
     overflow-wrap: anywhere;
 }
 
+.chat-message-reply {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.18);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: #fef08a;
+}
+
+.chat-message-reply-arrow {
+    color: #a7f3d0;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.chat-message-reply-text {
+    font-size: 0.95rem;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 .chat-empty,
 .chat-loading,
 .chat-error {
@@ -4206,6 +4229,7 @@ const RANKING_SCOPE = 'alfabeto';
 const CHAT_MODE = 'chat_messages';
 const CHAT_COLUMN_KEY = 'U1L0T1';
 const CHAT_REFRESH_INTERVAL_MS = 10000;
+const CHAT_DEFAULT_USER = 'Profe Faouzi';
 let chatRefreshIntervalId = null;
 let chatIsSending = false;
 
@@ -4491,14 +4515,44 @@ function getStudentIdentityForChat() {
 function parseChatCellValue(rawValue) {
     const text = String(rawValue || '').trim();
     if (!text) return null;
-    const firstBreak = text.indexOf('\n');
-    if (firstBreak === -1) {
-        return { user: 'Anonimo', message: text, raw: text };
-    }
-    const userRaw = text.slice(0, firstBreak).trim();
-    const message = text.slice(firstBreak + 1).trim();
-    const user = userRaw.replace(/^-+/, '').replace(/-+$/, '').trim() || 'Anonimo';
-    return { user, message, raw: text };
+    const lines = text.split(/\r?\n/);
+    const firstLine = (lines[0] || '').trim();
+    const hasExplicitUser = /^-.*-$/.test(firstLine);
+    const user = hasExplicitUser
+        ? normalizeChatUserLabel(firstLine.replace(/^-+/, '').replace(/-+$/, '').trim())
+        : CHAT_DEFAULT_USER;
+    const bodyText = hasExplicitUser ? lines.slice(1).join('\n').trim() : text;
+    const { message, teacherReply } = extractChatMessageAndReply(bodyText);
+    return { user, message, teacherReply, raw: text };
+}
+
+function normalizeChatUserLabel(rawUser) {
+    const user = String(rawUser || '').trim();
+    if (!user || /^anonimo$/i.test(user)) return CHAT_DEFAULT_USER;
+    return user;
+}
+
+function extractChatMessageAndReply(rawMessage) {
+    const sourceLines = String(rawMessage || '').split(/\r?\n/);
+    const messageLines = [];
+    const replyLines = [];
+
+    sourceLines.forEach((lineRaw) => {
+        const line = String(lineRaw || '').trim();
+        if (!line) return;
+        const replyMatch = line.match(/^\((.*)\)$/);
+        if (replyMatch) {
+            const replyText = String(replyMatch[1] || '').trim();
+            if (replyText) replyLines.push(replyText);
+            return;
+        }
+        messageLines.push(line);
+    });
+
+    return {
+        message: messageLines.join('\n').trim(),
+        teacherReply: replyLines.join('\n').trim()
+    };
 }
 
 function formatChatMessageHtml(text) {
@@ -4515,14 +4569,16 @@ async function fetchChatMessages() {
     return data.messages
         .map((entry) => {
             if (entry && typeof entry === 'object' && (entry.user || entry.message)) {
+                const extracted = extractChatMessageAndReply(String(entry.message || '').trim());
                 return {
-                    user: String(entry.user || 'Anonimo').trim() || 'Anonimo',
-                    message: String(entry.message || '').trim()
+                    user: normalizeChatUserLabel(entry.user),
+                    message: extracted.message,
+                    teacherReply: extracted.teacherReply
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
             if (!parsed) return null;
-            return { user: parsed.user, message: parsed.message };
+            return { user: parsed.user, message: parsed.message, teacherReply: parsed.teacherReply };
         })
         .filter(Boolean);
 }
@@ -4539,7 +4595,13 @@ function renderChatMessages(messages) {
     messagesEl.innerHTML = messages.map((msg) => `
         <div class="chat-message-item">
             <div class="chat-message-user">-${escapeHtml(msg.user)}-</div>
-            <div class="chat-message-text">${formatChatMessageHtml(msg.message)}</div>
+            ${msg.message ? `<div class="chat-message-text">${formatChatMessageHtml(msg.message)}</div>` : ''}
+            ${msg.teacherReply ? `
+                <div class="chat-message-reply">
+                    <span class="chat-message-reply-arrow">↳</span>
+                    <div class="chat-message-reply-text"><strong>Profe Faouzi:</strong> ${formatChatMessageHtml(msg.teacherReply)}</div>
+                </div>
+            ` : ''}
         </div>
     `).join('');
     messagesEl.scrollTop = messagesEl.scrollHeight;

@@ -4540,13 +4540,20 @@ function extractChatMessageAndReply(rawMessage) {
     sourceLines.forEach((lineRaw) => {
         const line = String(lineRaw || '').trim();
         if (!line) return;
-        const replyMatch = line.match(/^\((.*)\)$/);
-        if (replyMatch) {
-            const replyText = String(replyMatch[1] || '').trim();
-            if (replyText) replyLines.push(replyText);
-            return;
+        // Extrae cualquier comentario entre parentesis, tanto en linea completa "(...)" como inline "texto (...)"
+        const inlineReplies = [];
+        const lineWithoutReplies = line.replace(/\(([^()]*)\)/g, (_, commentRaw) => {
+            const comment = String(commentRaw || '').trim();
+            if (comment) inlineReplies.push(comment);
+            return ' ';
+        }).replace(/\s+/g, ' ').trim();
+
+        if (inlineReplies.length > 0) {
+            replyLines.push(...inlineReplies);
         }
-        messageLines.push(line);
+        if (lineWithoutReplies) {
+            messageLines.push(lineWithoutReplies);
+        }
     });
 
     return {

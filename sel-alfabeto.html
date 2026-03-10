@@ -462,6 +462,11 @@
     color: #ffffff;
 }
 
+.button.chat {
+    background: linear-gradient(135deg, #2f6f5b 0%, #275d4d 100%);
+    color: #ffffff;
+}
+
 .button.sound-toggle {
     background: #f0f0f0;
     color: #4b5563;
@@ -613,6 +618,147 @@
     padding: 14px;
     text-align: center;
     color: #d1d5db;
+}
+
+.chat-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 12500;
+    padding: 14px;
+}
+
+.chat-modal {
+    width: min(92vw, 680px);
+    max-height: 84vh;
+    background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+    color: #fff;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.chat-header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #2f6f5b 0%, #275d4d 100%);
+    color: #e5f7f0;
+}
+
+.chat-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.chat-close-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #e5f7f0;
+}
+
+.chat-body {
+    padding: 14px;
+    overflow: auto;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 160px;
+}
+
+.chat-message-item {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.chat-message-user {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #93c5fd;
+    margin-bottom: 4px;
+}
+
+.chat-message-text {
+    font-size: 1rem;
+    line-height: 1.35;
+    color: #f9fafb;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.chat-empty,
+.chat-loading,
+.chat-error {
+    padding: 14px;
+    text-align: center;
+    color: #d1d5db;
+}
+
+.chat-footer {
+    padding: 12px 14px 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.chat-input {
+    flex: 1;
+    min-height: 50px;
+    max-height: 140px;
+    resize: vertical;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    padding: 10px 12px;
+    font-size: 0.98rem;
+    line-height: 1.3;
+    outline: none;
+}
+
+.chat-input::placeholder {
+    color: #9ca3af;
+}
+
+.chat-send-btn {
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+    background: linear-gradient(135deg, #f6c453 0%, #e0a106 100%);
+    min-width: 96px;
+    height: 50px;
+}
+
+.chat-send-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 
@@ -3940,6 +4086,9 @@
     <audio id="buttonClickSound" src="https://fawzinoo.github.io/audios/botonn.mp3" preload="auto"></audio>
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
+        <button class="button chat" id="chat-button" title="Chat U1L0T1" aria-label="Chat U1L0T1">
+            <i class="fas fa-comments" aria-hidden="true"></i>
+        </button>
         <button class="button ranking" id="ranking-button" title="Ranking U1L0T1" aria-label="Ranking U1L0T1">
             <i class="fas fa-trophy" aria-hidden="true"></i>
         </button>
@@ -4054,6 +4203,11 @@ const RANKING_ALFABETO_MODE = 'ranking_alfabeto';
 
 const RANKING_GENERAL_MODE = 'ranking_general';
 const RANKING_SCOPE = 'alfabeto';
+const CHAT_MODE = 'chat_messages';
+const CHAT_COLUMN_KEY = 'U1L0T1';
+const CHAT_REFRESH_INTERVAL_MS = 10000;
+let chatRefreshIntervalId = null;
+let chatIsSending = false;
 
 function normalizeStudentName(name) {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -4326,6 +4480,225 @@ function installRankingButtonHandler() {
     });
 }
 
+// ==================== CHAT U1L0T1 ====================
+function getStudentIdentityForChat() {
+    const firstName = (localStorage.getItem('access_first_name') || '').trim();
+    const lastName = (localStorage.getItem('access_last_name') || '').trim();
+    const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'Anonimo';
+    return { firstName, lastName, displayName };
+}
+
+function parseChatCellValue(rawValue) {
+    const text = String(rawValue || '').trim();
+    if (!text) return null;
+    const firstBreak = text.indexOf('\n');
+    if (firstBreak === -1) {
+        return { user: 'Anonimo', message: text, raw: text };
+    }
+    const userRaw = text.slice(0, firstBreak).trim();
+    const message = text.slice(firstBreak + 1).trim();
+    const user = userRaw.replace(/^-+/, '').replace(/-+$/, '').trim() || 'Anonimo';
+    return { user, message, raw: text };
+}
+
+function formatChatMessageHtml(text) {
+    return escapeHtml(String(text || '')).replace(/\n/g, '<br>');
+}
+
+async function fetchChatMessages() {
+    const url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(CHAT_MODE)}&columna=${encodeURIComponent(CHAT_COLUMN_KEY)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.messages)) {
+        throw new Error('No se pudieron cargar los mensajes del chat.');
+    }
+    return data.messages
+        .map((entry) => {
+            if (entry && typeof entry === 'object' && (entry.user || entry.message)) {
+                return {
+                    user: String(entry.user || 'Anonimo').trim() || 'Anonimo',
+                    message: String(entry.message || '').trim()
+                };
+            }
+            const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
+            if (!parsed) return null;
+            return { user: parsed.user, message: parsed.message };
+        })
+        .filter(Boolean);
+}
+
+function renderChatMessages(messages) {
+    const messagesEl = document.getElementById('chat-messages-list');
+    if (!messagesEl) return;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+        messagesEl.innerHTML = `<div class="chat-empty">Todavia no hay mensajes en U1L0T1.</div>`;
+        return;
+    }
+
+    messagesEl.innerHTML = messages.map((msg) => `
+        <div class="chat-message-item">
+            <div class="chat-message-user">-${escapeHtml(msg.user)}-</div>
+            <div class="chat-message-text">${formatChatMessageHtml(msg.message)}</div>
+        </div>
+    `).join('');
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function refreshChatMessages(showLoading = true) {
+    const messagesEl = document.getElementById('chat-messages-list');
+    if (!messagesEl) return;
+    if (showLoading) {
+        messagesEl.innerHTML = `<div class="chat-loading">Cargando mensajes...</div>`;
+    }
+    try {
+        const messages = await fetchChatMessages();
+        renderChatMessages(messages);
+    } catch (error) {
+        messagesEl.innerHTML = `<div class="chat-error">No se pudo cargar el chat. Intenta de nuevo.</div>`;
+        console.warn('Error cargando chat:', error);
+    }
+}
+
+function stopChatAutoRefresh() {
+    if (chatRefreshIntervalId) {
+        clearInterval(chatRefreshIntervalId);
+        chatRefreshIntervalId = null;
+    }
+}
+
+function startChatAutoRefresh() {
+    stopChatAutoRefresh();
+    chatRefreshIntervalId = setInterval(() => {
+        if (!document.getElementById('chat-overlay') || chatIsSending) return;
+        void refreshChatMessages(false);
+    }, CHAT_REFRESH_INTERVAL_MS);
+}
+
+function closeChatModal() {
+    stopChatAutoRefresh();
+    const overlay = document.getElementById('chat-overlay');
+    if (overlay) overlay.remove();
+}
+
+async function submitChatMessage() {
+    if (chatIsSending) return;
+    const inputEl = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    if (!inputEl || !sendBtn) return;
+
+    const message = inputEl.value.trim();
+    if (!message) return;
+
+    const identity = getStudentIdentityForChat();
+    chatIsSending = true;
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Enviando...';
+
+    try {
+        await fetch(PORTALB_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'chat_message',
+                columna: CHAT_COLUMN_KEY,
+                nombre: identity.firstName,
+                apellido: identity.lastName,
+                userDisplayName: identity.displayName,
+                mensaje: message
+            })
+        });
+        inputEl.value = '';
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await refreshChatMessages(false);
+    } catch (error) {
+        console.warn('Error enviando mensaje al chat:', error);
+    } finally {
+        chatIsSending = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Enviar';
+    }
+}
+
+async function openChatModal() {
+    closeChatModal();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chat-overlay';
+    overlay.className = 'chat-overlay';
+    overlay.innerHTML = `
+        <div class="chat-modal" role="dialog" aria-modal="true" aria-label="Chat U1L0T1">
+            <div class="chat-header">
+                <h3 class="chat-title"><i class="fas fa-comments"></i> CHAT U1L0T1</h3>
+                <button class="chat-close-btn" id="chat-close-btn" aria-label="Cerrar chat">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="chat-body">
+                <div id="chat-messages-list" class="chat-messages">
+                    <div class="chat-loading">Cargando mensajes...</div>
+                </div>
+            </div>
+            <div class="chat-footer">
+                <textarea id="chat-input" class="chat-input" maxlength="280" placeholder="Escribe tu mensaje..."></textarea>
+                <button id="chat-send-btn" class="chat-send-btn" type="button">Enviar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closeChatModal();
+    });
+
+    const closeBtn = document.getElementById('chat-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            vibrar(40);
+            playButtonSound();
+            closeChatModal();
+        });
+    }
+
+    const sendBtn = document.getElementById('chat-send-btn');
+    if (sendBtn) {
+        sendBtn.addEventListener('click', () => {
+            vibrar(40);
+            playButtonSound();
+            void submitChatMessage();
+        });
+    }
+
+    const inputEl = document.getElementById('chat-input');
+    if (inputEl) {
+        inputEl.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                vibrar(40);
+                playButtonSound();
+                void submitChatMessage();
+            }
+        });
+    }
+
+    await refreshChatMessages(true);
+    startChatAutoRefresh();
+}
+
+function installChatButtonHandler() {
+    const chatBtn = document.getElementById('chat-button');
+    if (!chatBtn || chatBtn.dataset.chatHandlerInstalled === '1') return;
+    chatBtn.dataset.chatHandlerInstalled = '1';
+    chatBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vibrar(60);
+        playButtonSound();
+        void openChatModal();
+    });
+}
+
 function setSkipEnabled(enabled) {
     const skipBtn = document.getElementById('skip-button');
     if (!skipBtn) return;
@@ -4547,6 +4920,7 @@ function disableShuffleForFinals() {
 // Cargar estado y preparar handler al iniciar
 loadShuffleCount();
 installShuffleButtonHandler();
+installChatButtonHandler();
 installRankingButtonHandler();
 updateShuffleButtonState();
 

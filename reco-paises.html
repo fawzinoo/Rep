@@ -3121,6 +3121,8 @@
         <div class="back">Argentina</div>
     </div>
 
+
+
     
     <style>
         /* Icono solo para el de arriba; no rompe el texto que actualiza el JS */
@@ -7497,6 +7499,8 @@ function goToNextCardWithDebug() {
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
+  const lessonUnlockStateMemory = { scores: {}, unlocksByColumn: {} };
+  let forcedUnlockSyncPromise = null;
   let unlockGentiliciosAnnouncedThisGame = false;
   let pendingU1L3T4UnlockPoints = null;
 
@@ -7707,94 +7711,139 @@ function goToNextCardWithDebug() {
       .unlock-celebration-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(5, 10, 24, 0.62);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 12500;
-        padding: 14px;
+        z-index: 120000;
         opacity: 0;
-        transition: opacity 0.28s ease;
+        transition: opacity 320ms ease;
+        background: rgba(7, 12, 24, 0.58);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        padding: 20px;
       }
 
       .unlock-celebration-overlay.show { opacity: 1; }
       .unlock-celebration-overlay.hide { opacity: 0; }
 
       .unlock-celebration-card {
-        width: min(92vw, 700px);
-        border-radius: 24px;
-        border: 2px solid rgba(255, 255, 255, 0.45);
-        background: linear-gradient(135deg, #304ac8 0%, #6f4fb0 52%, #f06b6f 100%);
-        color: #fff;
-        text-align: center;
+        width: min(92vw, 440px);
+        border-radius: 22px;
+        padding: 20px 20px 16px 20px;
         position: relative;
-        box-shadow: 0 28px 70px rgba(2, 6, 23, 0.55);
-        padding: 28px 22px 24px;
-        transform: translateY(18px) scale(0.98);
-        transition: transform 0.3s ease;
-      }
-
-      .unlock-celebration-overlay.show .unlock-celebration-card {
-        transform: translateY(0) scale(1);
+        text-align: center;
+        color: #fff;
+        background: linear-gradient(135deg, #1f2a56 0%, #2d3f8f 45%, #ff7a45 100%);
+        border: 1px solid rgba(255, 255, 255, 0.34);
+        box-shadow: 0 20px 52px rgba(0, 0, 0, 0.38);
+        transform: translateY(18px) scale(0.9);
+        animation: unlockCardIn 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
 
       .unlock-celebration-emoji {
-        font-size: clamp(34px, 6vw, 50px);
-        margin-bottom: 10px;
+        font-size: 2rem;
+        margin-bottom: 8px;
+        letter-spacing: 2px;
+        animation: unlockForgeSpark 1.2s ease-in-out infinite;
       }
 
       .unlock-celebration-title {
-        margin: 0 0 10px 0;
-        font-size: clamp(36px, 5.6vw, 58px);
-        line-height: 1.05;
+        margin: 0;
+        font-size: 1.3rem;
         font-weight: 900;
+        letter-spacing: 0.2px;
+        text-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
       }
 
       .unlock-celebration-text {
-        margin: 0;
-        font-size: clamp(17px, 2.5vw, 30px);
+        margin: 9px 0 10px 0;
+        font-size: 0.96rem;
         font-weight: 700;
+        opacity: 0.93;
+        line-height: 1.35;
       }
 
       .unlock-topic-highlight {
-        margin: 16px auto 0;
-        width: fit-content;
-        padding: 12px 24px;
-        border-radius: 16px;
-        border: 2px solid rgba(255, 255, 255, 0.45);
-        background: rgba(255, 255, 255, 0.14);
-        font-size: clamp(31px, 5.4vw, 52px);
+        margin: 0 auto 8px;
+        display: inline-block;
+        padding: 10px 16px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 214, 107, 0.2) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.38);
+        font-size: 1.26rem;
         font-weight: 900;
-        line-height: 1;
-        color: #fff8d6;
-        text-shadow: 0 2px 12px rgba(255, 200, 0, 0.48);
+        letter-spacing: 0.3px;
+        color: #ffffff;
+        text-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
       }
 
       .unlock-celebration-close {
         position: absolute;
-        right: 18px;
-        top: 18px;
-        width: 56px;
-        height: 56px;
-        border-radius: 18px;
-        border: 2px solid rgba(255, 255, 255, 0.42);
-        background: rgba(255, 255, 255, 0.1);
+        top: 10px;
+        right: 10px;
+        width: 44px;
+        height: 44px;
+        border: 1px solid rgba(255, 255, 255, 0.38);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.15);
         color: #fff;
-        font-size: 40px;
-        font-weight: 700;
+        font-size: 1.35rem;
+        font-weight: 900;
         line-height: 1;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        padding: 0;
+        pointer-events: auto;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        z-index: 2;
         transition: transform 0.18s ease, background 0.18s ease;
       }
 
       .unlock-celebration-close:hover {
         transform: scale(1.05);
-        background: rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      .unlock-celebration-close:focus-visible {
+        outline: 2px solid rgba(255, 255, 255, 0.85);
+        outline-offset: 2px;
+      }
+
+      @media (hover: none) and (pointer: coarse) {
+        .unlock-celebration-close {
+          width: 48px;
+          height: 48px;
+          font-size: 1.45rem;
+        }
+      }
+
+      @keyframes unlockCardIn {
+        0% {
+          opacity: 0;
+          transform: translateY(18px) scale(0.9);
+        }
+
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes unlockForgeSpark {
+        0%,
+        100% {
+          transform: scale(1);
+          filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0));
+        }
+
+        50% {
+          transform: scale(1.12);
+          filter: drop-shadow(0 0 9px rgba(255, 255, 255, 0.7));
+        }
       }
     `;
     document.head.appendChild(style);
@@ -7804,58 +7853,117 @@ function goToNextCardWithDebug() {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  function toLooseBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    const raw = String(value ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'si' || raw === 'sí';
+  }
+
+  function parseLessonPointsValue(value) {
+    const parseRaw = (rawValue) => {
+      const raw = String(rawValue ?? '').trim().toLowerCase().replace(',', '.');
+      if (!raw) return { points: null, forced: false };
+
+      const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
+      if (exact) {
+        return {
+          points: Number(exact[1]),
+          forced: Boolean(exact[2])
+        };
+      }
+
+      const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
+      if (forced) {
+        return {
+          points: Number(forced[1]),
+          forced: true
+        };
+      }
+
+      const numeric = raw.match(/([0-5])(?:\.0+)?/);
+      if (numeric) {
+        return {
+          points: Number(numeric[1]),
+          forced: false
+        };
+      }
+
+      return { points: null, forced: false };
+    };
+
+    if (value && typeof value === 'object') {
+      const forcedFromFlags =
+        toLooseBoolean(value.forcedUnlock) ||
+        toLooseBoolean(value.forced) ||
+        toLooseBoolean(value.unlockForced) ||
+        toLooseBoolean(value.isForced);
+
+      const candidates = [
+        value.puntosRaw,
+        value.puntos,
+        value.pointsRaw,
+        value.points,
+        value.value,
+        value.score,
+        value.resultado,
+        value.nota,
+        value.calificacion,
+        value.valor
+      ];
+
+      for (const candidate of candidates) {
+        const parsed = parseRaw(candidate);
+        if (!Number.isFinite(parsed.points)) continue;
+        return {
+          points: parsed.points,
+          forced: Boolean(parsed.forced || forcedFromFlags)
+        };
+      }
+
+      return { points: null, forced: forcedFromFlags };
+    }
+
+    return parseRaw(value);
+  }
+
   function saveUnlockStateScore(columna, puntos) {
-    const numericPoints = Number(puntos);
+    const parsedInput = parseLessonPointsValue(puntos);
+    const numericPoints = parsedInput.points;
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      const current = parsed && typeof parsed === 'object' ? parsed : {};
-      const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
-      scores[columna] = numericPoints;
-      current.scores = scores;
-      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    const previousScore = lessonUnlockStateMemory.scores[columna];
+    const previousForced = parseLessonPointsValue(previousScore).forced;
+    const keepForced =
+      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
+      previousForced ||
+      parsedInput.forced ||
+      numericPoints >= LESSON_UNLOCK_THRESHOLD;
+
+    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
+    if (keepForced) {
+      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
+    }
+    persistUnlockStateToLocalStorage();
   }
 
   function normalizeLessonPoints(value) {
-    const numeric = Number(value);
+    const parsed = parseLessonPointsValue(value);
+    const numeric = Number(parsed.points);
     if (!Number.isFinite(numeric)) return 0;
     return Math.max(0, Math.min(5, Math.round(numeric)));
   }
 
   function markColumnPermanentUnlock(columna) {
     if (!columna) return;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      const current = parsed && typeof parsed === 'object' ? parsed : {};
-      const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
-        ? current.unlocksByColumn
-        : {};
-      if (unlocksByColumn[columna] === true) return;
-      unlocksByColumn[columna] = true;
-      current.unlocksByColumn = unlocksByColumn;
-      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
+    persistUnlockStateToLocalStorage();
   }
 
   function hasColumnPermanentUnlock(columna) {
     if (!columna) return false;
-    try {
-      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return false;
-      const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
-        ? parsed.unlocksByColumn
-        : {};
-      if (unlocksByColumn[columna] === true) return true;
-      const score = Number(parsed?.scores?.[columna]);
-      return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
-    } catch (_) {
-      return false;
-    }
+    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
+    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
+    if (scoreParsed.forced) return true;
+    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
   }
 
   function serializeLessonPointsForServer(columna, puntos) {
@@ -7931,6 +8039,105 @@ function goToNextCardWithDebug() {
     return { nombre, apellido };
   }
 
+  function parseStoredPointsForColumn(scores, columna) {
+    const parsed = parseLessonPointsValue(scores?.[columna]);
+    if (!Number.isFinite(parsed.points)) return 0;
+    return Math.max(0, Math.min(5, Math.round(parsed.points)));
+  }
+
+  function persistUnlockStateToLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = parsed && typeof parsed === 'object' ? parsed : {};
+      const previousScores = (current.scores && typeof current.scores === 'object') ? current.scores : {};
+      const previousUnlocks = (current.unlocksByColumn && typeof current.unlocksByColumn === 'object') ? current.unlocksByColumn : {};
+
+      const scores = { ...previousScores, ...lessonUnlockStateMemory.scores };
+      const unlocksByColumn = { ...previousUnlocks, ...lessonUnlockStateMemory.unlocksByColumn };
+      const lessonParsed = parseLessonPointsValue(scores[LESSON_COLUMN_KEY]);
+      if (lessonParsed.forced || (Number.isFinite(lessonParsed.points) && lessonParsed.points >= LESSON_UNLOCK_THRESHOLD)) {
+        unlocksByColumn[LESSON_COLUMN_KEY] = true;
+      }
+
+      localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
+        ...current,
+        test2: {
+          unlocked: Boolean(unlocksByColumn.U1L3T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T1')
+        },
+        test3: {
+          unlocked: Boolean(unlocksByColumn.U1L3T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T2')
+        },
+        test4: {
+          unlocked: Boolean(unlocksByColumn.U1L3T3 === true),
+          points: parseStoredPointsForColumn(scores, 'U1L3T3')
+        },
+        scores,
+        unlocksByColumn
+      }));
+
+      lessonUnlockStateMemory.scores = scores;
+      lessonUnlockStateMemory.unlocksByColumn = unlocksByColumn;
+    } catch (error) {
+      console.warn('No se pudo persistir el estado de desbloqueo local:', error);
+    }
+  }
+
+  function hydrateUnlockStateFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.scores && typeof parsed.scores === 'object') {
+        lessonUnlockStateMemory.scores = { ...parsed.scores, ...lessonUnlockStateMemory.scores };
+      }
+      if (parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object') {
+        lessonUnlockStateMemory.unlocksByColumn = { ...parsed.unlocksByColumn, ...lessonUnlockStateMemory.unlocksByColumn };
+      }
+    } catch (error) {
+      console.warn('No se pudo leer el estado de desbloqueo local:', error);
+    }
+  }
+
+  hydrateUnlockStateFromLocalStorage();
+
+  async function syncForcedUnlockFromSheetOnce() {
+    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
+    forcedUnlockSyncPromise = (async () => {
+      const student = getStudentFromStorage();
+      if (!student) return;
+      try {
+        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
+        const row = rankingRows.find((item) =>
+          normalizeStudentName(item?.nombre) === student.nombre &&
+          normalizeStudentName(item?.apellido) === student.apellido
+        );
+        if (!row) return;
+
+        const parsedPoints = parseLessonPointsValue({
+          puntosRaw: row?.puntosRaw,
+          puntos: row?.puntos,
+          pointsRaw: row?.pointsRaw,
+          points: row?.points,
+          forcedUnlock: row?.forcedUnlock
+        });
+
+        if (!Number.isFinite(parsedPoints.points)) return;
+        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
+        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
+          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+        }
+      } catch (error) {
+        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
+      }
+    })();
+    return forcedUnlockSyncPromise;
+  }
+
   function pointsFromPercentage(percentageValue) {
     const percentage = Number(percentageValue) || 0;
     if (percentage === 100) return 5;
@@ -7972,9 +8179,13 @@ function goToNextCardWithDebug() {
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
-    if (!student) return;
+    if (!student) {
+      console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
+      return;
+    }
 
     try {
+      await syncForcedUnlockFromSheetOnce();
       const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
       await fetch(PORTALB_SCRIPT_URL, {
         method: 'POST',
@@ -8155,7 +8366,8 @@ function goToNextCardWithDebug() {
     const tbody = rows.map((item, idx) => {
       const puesto = Number(item.puesto) || (idx + 1);
       const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
-      const puntos = Number(item.puntos) || 0;
+      const parsedPuntos = parseLessonPointsValue(item.puntos);
+      const puntos = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
       const isCurrentUser = !!currentStudent &&
         normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
         normalizeStudentName(item.apellido || '') === currentStudent.apellido;
@@ -8304,6 +8516,7 @@ function goToNextCardWithDebug() {
   function initEnhancements() {
     injectEnhancementStyles();
     injectUnlockCelebrationStyles();
+    void syncForcedUnlockFromSheetOnce();
     ensurePointsPill();
     ensureRankingButton();
     installResetGameHook();

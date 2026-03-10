@@ -4319,6 +4319,21 @@ function updateChatNotificationState(messages, notifyOnNewMessage) {
     chatHasLoadedOnce = true;
 
     if (hasNewMessage) playChatNotificationSound();
+    return hasNewMessage;
+}
+
+function scrollChatToLatestMessage(useSmooth = false) {
+    const chatBody = document.querySelector('#chat-overlay .chat-body');
+    const messagesEl = document.getElementById('chat-messages-list');
+    if (!chatBody || !messagesEl) return;
+
+    const lastItem = messagesEl.lastElementChild;
+    if (lastItem && typeof lastItem.scrollIntoView === 'function') {
+        lastItem.scrollIntoView({ behavior: useSmooth ? 'smooth' : 'auto', block: 'end' });
+    }
+
+    // Extra pequeño para que el ultimo mensaje no quede pegado/oculto cerca del footer.
+    chatBody.scrollTop = chatBody.scrollHeight + 14;
 }
 
 function loadChatUserColorMap() {
@@ -4747,7 +4762,6 @@ function renderChatMessages(messages) {
         </div>
     `;
     }).join('');
-    messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 async function refreshChatMessages(showLoading = true, notifyOnNewMessage = false) {
@@ -4758,8 +4772,11 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     }
     try {
         const messages = await fetchChatMessages();
-        updateChatNotificationState(messages, notifyOnNewMessage);
+        const hasNewMessage = updateChatNotificationState(messages, notifyOnNewMessage);
         renderChatMessages(messages);
+        requestAnimationFrame(() => {
+            scrollChatToLatestMessage(hasNewMessage && !showLoading);
+        });
     } catch (error) {
         messagesEl.innerHTML = `<div class="chat-error">No se pudo cargar el chat. Intenta de nuevo.</div>`;
         console.warn('Error cargando chat:', error);

@@ -4137,6 +4137,7 @@
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="shuffleSound" src="https://fawzinoo.github.io/audios/naipe.mp3" preload="auto"></audio>
     <audio id="buttonClickSound" src="https://fawzinoo.github.io/audios/botonn.mp3" preload="auto"></audio>
+    <audio id="chatNotificationSound" src="https://fawzinoo.github.io/audios/noti.mp3" preload="auto"></audio>
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
         <button class="button chat" id="chat-button" title="Chat U1L0T1" aria-label="Chat U1L0T1">
@@ -4269,6 +4270,43 @@ const CHAT_USER_COLOR_PALETTE = [
 let chatRefreshIntervalId = null;
 let chatIsSending = false;
 let chatUserColorMap = {};
+let chatLastMessagesSignature = '';
+let chatLastMessagesCount = 0;
+let chatHasLoadedOnce = false;
+
+function buildChatMessagesSignature(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return '';
+    return messages.map(msg => {
+        const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+        const message = String(msg && msg.message ? msg.message : '');
+        const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '');
+        return `${user}::${message}::${teacherReply}`;
+    }).join('||');
+}
+
+function playChatNotificationSound() {
+    const audio = document.getElementById('chatNotificationSound');
+    if (audio) {
+        audio.currentTime = 0;
+        audio.volume = 0.9;
+        audio.play().catch(() => {});
+    }
+}
+
+function updateChatNotificationState(messages, notifyOnNewMessage) {
+    const currentCount = Array.isArray(messages) ? messages.length : 0;
+    const currentSignature = buildChatMessagesSignature(messages);
+    const hasNewMessage = chatHasLoadedOnce &&
+        notifyOnNewMessage &&
+        currentCount > chatLastMessagesCount &&
+        currentSignature !== chatLastMessagesSignature;
+
+    chatLastMessagesCount = currentCount;
+    chatLastMessagesSignature = currentSignature;
+    chatHasLoadedOnce = true;
+
+    if (hasNewMessage) playChatNotificationSound();
+}
 
 function loadChatUserColorMap() {
     try {
@@ -4697,7 +4735,7 @@ function renderChatMessages(messages) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-async function refreshChatMessages(showLoading = true) {
+async function refreshChatMessages(showLoading = true, notifyOnNewMessage = false) {
     const messagesEl = document.getElementById('chat-messages-list');
     if (!messagesEl) return;
     if (showLoading) {
@@ -4705,6 +4743,7 @@ async function refreshChatMessages(showLoading = true) {
     }
     try {
         const messages = await fetchChatMessages();
+        updateChatNotificationState(messages, notifyOnNewMessage);
         renderChatMessages(messages);
     } catch (error) {
         messagesEl.innerHTML = `<div class="chat-error">No se pudo cargar el chat. Intenta de nuevo.</div>`;
@@ -4723,7 +4762,7 @@ function startChatAutoRefresh() {
     stopChatAutoRefresh();
     chatRefreshIntervalId = setInterval(() => {
         if (!document.getElementById('chat-overlay') || chatIsSending) return;
-        void refreshChatMessages(false);
+        void refreshChatMessages(false, true);
     }, CHAT_REFRESH_INTERVAL_MS);
 }
 
@@ -4763,7 +4802,7 @@ async function submitChatMessage() {
         });
         inputEl.value = '';
         await new Promise((resolve) => setTimeout(resolve, 300));
-        await refreshChatMessages(false);
+        await refreshChatMessages(false, false);
     } catch (error) {
         console.warn('Error enviando mensaje al chat:', error);
     } finally {
@@ -4834,7 +4873,7 @@ async function openChatModal() {
         });
     }
 
-    await refreshChatMessages(true);
+    await refreshChatMessages(true, false);
     startChatAutoRefresh();
 }
 

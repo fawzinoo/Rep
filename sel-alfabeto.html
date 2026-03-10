@@ -822,6 +822,16 @@
     height: 50px;
 }
 
+.chat-send-btn.send-flash {
+    animation: chatSendFlash 160ms ease-out;
+}
+
+@keyframes chatSendFlash {
+    0% { transform: translateY(0) scale(1); filter: brightness(1); }
+    50% { transform: translateY(1px) scale(0.97); filter: brightness(1.08); }
+    100% { transform: translateY(0) scale(1); filter: brightness(1); }
+}
+
 .chat-send-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -4281,11 +4291,12 @@ const CHAT_USER_COLOR_PALETTE = [
     '#bef264', '#f0abfc'
 ];
 let chatRefreshIntervalId = null;
-let chatIsSending = false;
 let chatUserColorMap = {};
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
 let chatHasLoadedOnce = false;
+let chatLatestServerMessages = [];
+let chatLocalEchoMessages = [];
 
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -4320,6 +4331,58 @@ function updateChatNotificationState(messages, notifyOnNewMessage) {
 
     if (hasNewMessage) playChatNotificationSound();
     return hasNewMessage;
+}
+
+function buildChatMessageKey(msg) {
+    const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const message = String(msg && msg.message ? msg.message : '').trim();
+    const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '').trim();
+    return `${user}::${message}::${teacherReply}`;
+}
+
+function reconcileLocalEchoWithServer(serverMessages) {
+    const keyCounts = new Map();
+    (Array.isArray(serverMessages) ? serverMessages : []).forEach((msg) => {
+        const key = buildChatMessageKey(msg);
+        keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
+    });
+
+    chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => {
+        const key = buildChatMessageKey(msg);
+        const remaining = keyCounts.get(key) || 0;
+        if (remaining > 0) {
+            keyCounts.set(key, remaining - 1);
+            return false;
+        }
+        return true;
+    });
+}
+
+function renderMergedChatMessages(serverMessages) {
+    const base = Array.isArray(serverMessages) ? serverMessages : [];
+    const merged = [...base, ...chatLocalEchoMessages];
+    renderChatMessages(merged);
+}
+
+function appendLocalEchoMessage(userLabel, messageText) {
+    const cleanMessage = String(messageText || '').trim();
+    if (!cleanMessage) return;
+    chatLocalEchoMessages.push({
+        user: normalizeChatUserLabel(userLabel || ''),
+        message: cleanMessage,
+        teacherReply: ''
+    });
+    renderMergedChatMessages(chatLatestServerMessages);
+    requestAnimationFrame(() => {
+        scrollChatToLatestMessage(true);
+    });
+}
+
+function animateChatSendButton(buttonEl) {
+    if (!buttonEl) return;
+    buttonEl.classList.remove('send-flash');
+    void buttonEl.offsetWidth;
+    buttonEl.classList.add('send-flash');
 }
 
 function scrollChatToLatestMessage(useSmooth = false) {
@@ -4772,8 +4835,10 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     }
     try {
         const messages = await fetchChatMessages();
+        chatLatestServerMessages = Array.isArray(messages) ? messages : [];
         const hasNewMessage = updateChatNotificationState(messages, notifyOnNewMessage);
-        renderChatMessages(messages);
+        reconcileLocalEchoWithServer(chatLatestServerMessages);
+        renderMergedChatMessages(chatLatestServerMessages);
         requestAnimationFrame(() => {
             scrollChatToLatestMessage(hasNewMessage && !showLoading);
         });
@@ -4793,7 +4858,7 @@ function stopChatAutoRefresh() {
 function startChatAutoRefresh() {
     stopChatAutoRefresh();
     chatRefreshIntervalId = setInterval(() => {
-        if (!document.getElementById('chat-overlay') || chatIsSending) return;
+        if (!document.getElementById('chat-overlay')) return;
         void refreshChatMessages(false, true);
     }, CHAT_REFRESH_INTERVAL_MS);
 }
@@ -4805,7 +4870,6 @@ function closeChatModal() {
 }
 
 async function submitChatMessage() {
-    if (chatIsSending) return;
     const inputEl = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
     if (!inputEl || !sendBtn) return;
@@ -4814,9 +4878,9 @@ async function submitChatMessage() {
     if (!message) return;
 
     const identity = getStudentIdentityForChat();
-    chatIsSending = true;
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Enviando...';
+    inputEl.value = '';
+    animateChatSendButton(sendBtn);
+    appendLocalEchoMessage(identity.displayName, message);
 
     try {
         await fetch(PORTALB_SCRIPT_URL, {
@@ -4832,15 +4896,13 @@ async function submitChatMessage() {
                 mensaje: message
             })
         });
-        inputEl.value = '';
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await refreshChatMessages(false, false);
+        setTimeout(() => {
+            if (document.getElementById('chat-overlay')) {
+                void refreshChatMessages(false, false);
+            }
+        }, 450);
     } catch (error) {
         console.warn('Error enviando mensaje al chat:', error);
-    } finally {
-        chatIsSending = false;
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Enviar';
     }
 }
 

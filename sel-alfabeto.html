@@ -4490,7 +4490,9 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
     }));
 
     prepared.forEach((msg) => {
-        if (msg.teacherReply) msg.attachedReplies.push(msg.teacherReply);
+        if (msg.teacherReply) {
+            msg.attachedReplies.push({ author: CHAT_DEFAULT_USER, text: msg.teacherReply });
+        }
     });
 
     prepared.forEach((msg, idx) => {
@@ -4543,8 +4545,13 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         if (targetIndex === -1) return;
 
         const targetMsg = prepared[targetIndex];
-        const existing = new Set(targetMsg.attachedReplies.map((text) => String(text || '').trim()));
-        if (!existing.has(msg.message)) targetMsg.attachedReplies.push(msg.message);
+        const existing = new Set(
+            targetMsg.attachedReplies.map((entry) => `${normalizeChatUserLabel(entry.author)}::${String(entry.text || '').trim()}`)
+        );
+        const nextKey = `${normalizeChatUserLabel(msg.user)}::${msg.message}`;
+        if (!existing.has(nextKey)) {
+            targetMsg.attachedReplies.push({ author: msg.user, text: msg.message });
+        }
         msg.__hidden = true;
     });
 
@@ -5059,15 +5066,22 @@ function renderChatMessages(messages) {
         ].filter(Boolean).join(' ');
         const quotedReply = String(msg.quotedReply || '').trim();
         const attachedReplies = Array.isArray(msg.attachedReplies)
-            ? msg.attachedReplies.filter((text) => String(text || '').trim())
+            ? msg.attachedReplies.filter((entry) => String(entry && entry.text ? entry.text : '').trim())
             : [];
-        const attachedRepliesHtml = attachedReplies.map((replyText) => `
+        const attachedRepliesHtml = attachedReplies.map((replyEntry) => {
+            const replyAuthor = normalizeChatUserLabel(replyEntry.author || CHAT_DEFAULT_USER);
+            const isTeacherReply = replyAuthor === CHAT_DEFAULT_USER;
+            const replyAuthorLabel = isTeacherReply
+                ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(replyAuthor)}:</span></span>`
+                : `<span class="chat-user-label ${replyAuthor === currentUserLabel ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
+            return `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>
-                    <span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>
-                    <span class="chat-message-reply-text">${formatChatMessageHtml(replyText)}</span>
+                    ${replyAuthorLabel}
+                    <span class="chat-message-reply-text">${formatChatMessageHtml(replyEntry.text)}</span>
                 </div>
-            `).join('');
+            `;
+        }).join('');
         return `
         <div class="${messageItemClass}" data-msg-index="${idx}">
             <div class="chat-message-line">

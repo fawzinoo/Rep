@@ -692,6 +692,22 @@
     padding: 10px 12px;
 }
 
+.chat-message-item.is-replyable {
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat-message-item.is-replyable:hover {
+    transform: translateY(-1px);
+    border-color: rgba(125, 211, 252, 0.65);
+    box-shadow: 0 8px 18px rgba(2, 132, 199, 0.2);
+}
+
+.chat-message-item.reply-target {
+    border-color: rgba(45, 212, 191, 0.92);
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.28), 0 10px 20px rgba(13, 148, 136, 0.2);
+}
+
 .chat-message-item.is-self {
     background: #ffffff;
     border-color: rgba(15, 23, 42, 0.18);
@@ -810,8 +826,61 @@
     padding: 12px 14px 14px;
     border-top: 1px solid rgba(255, 255, 255, 0.12);
     display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.chat-compose-row {
+    display: flex;
     gap: 10px;
     align-items: flex-end;
+}
+
+.chat-reply-preview {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: rgba(45, 212, 191, 0.14);
+    border: 1px solid rgba(45, 212, 191, 0.42);
+    border-radius: 12px;
+    padding: 8px 10px;
+}
+
+.chat-reply-preview[hidden] {
+    display: none !important;
+}
+
+.chat-reply-preview-arrow {
+    color: #5eead4;
+    font-weight: 900;
+    line-height: 1.3;
+}
+
+.chat-reply-preview-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.92rem;
+    color: #d1fae5;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-reply-cancel-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ecfeff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .chat-input {
@@ -4314,6 +4383,7 @@ let chatLastMessagesCount = 0;
 let chatHasLoadedOnce = false;
 let chatLatestServerMessages = [];
 let chatLocalEchoMessages = [];
+let chatReplyTarget = null;
 
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -4321,7 +4391,8 @@ function buildChatMessagesSignature(messages) {
         const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
         const message = String(msg && msg.message ? msg.message : '');
         const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '');
-        return `${user}::${message}::${teacherReply}`;
+        const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '');
+        return `${user}::${message}::${teacherReply}::${quotedReply}`;
     }).join('||');
 }
 
@@ -4354,7 +4425,8 @@ function buildChatMessageKey(msg) {
     const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const message = String(msg && msg.message ? msg.message : '').trim();
     const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '').trim();
-    return `${user}::${message}::${teacherReply}`;
+    const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '').trim();
+    return `${user}::${message}::${teacherReply}::${quotedReply}`;
 }
 
 function reconcileLocalEchoWithServer(serverMessages) {
@@ -4381,13 +4453,69 @@ function renderMergedChatMessages(serverMessages) {
     renderChatMessages(merged);
 }
 
-function appendLocalEchoMessage(userLabel, messageText) {
+function canReplyToRecipientMessage(msg, currentUserLabel) {
+    const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const messageText = String(msg && msg.message ? msg.message : '').trim();
+    return !!messageText && userLabel !== currentUserLabel && userLabel !== CHAT_DEFAULT_USER;
+}
+
+function getReplyTargetFromMessage(msg) {
+    return {
+        user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
+        message: String(msg && msg.message ? msg.message : '').trim()
+    };
+}
+
+function isSameReplyTarget(a, b) {
+    if (!a || !b) return false;
+    return normalizeChatUserLabel(a.user) === normalizeChatUserLabel(b.user)
+        && String(a.message || '').trim() === String(b.message || '').trim();
+}
+
+function updateChatReplyPreview() {
+    const previewEl = document.getElementById('chat-reply-preview');
+    const previewTextEl = document.getElementById('chat-reply-preview-text');
+    if (!previewEl || !previewTextEl) return;
+    if (!chatReplyTarget || !chatReplyTarget.user || !chatReplyTarget.message) {
+        previewEl.hidden = true;
+        previewTextEl.textContent = '';
+        return;
+    }
+    previewEl.hidden = false;
+    previewTextEl.textContent = `${chatReplyTarget.user}: ${chatReplyTarget.message}`;
+}
+
+function clearChatReplyTarget(shouldRerender = true) {
+    chatReplyTarget = null;
+    updateChatReplyPreview();
+    if (shouldRerender && document.getElementById('chat-overlay')) {
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+}
+
+function toggleChatReplyTarget(msg, currentUserLabel) {
+    if (!canReplyToRecipientMessage(msg, currentUserLabel)) return;
+    const nextTarget = getReplyTargetFromMessage(msg);
+    if (isSameReplyTarget(nextTarget, chatReplyTarget)) {
+        clearChatReplyTarget(true);
+        return;
+    }
+    chatReplyTarget = nextTarget;
+    updateChatReplyPreview();
+    renderMergedChatMessages(chatLatestServerMessages);
+}
+
+function appendLocalEchoMessage(userLabel, messageText, replyTarget = null) {
     const cleanMessage = String(messageText || '').trim();
     if (!cleanMessage) return;
+    const replyPreview = replyTarget && replyTarget.message
+        ? `${normalizeChatUserLabel(replyTarget.user)}: ${String(replyTarget.message || '').trim()}`
+        : '';
     chatLocalEchoMessages.push({
         user: normalizeChatUserLabel(userLabel || ''),
         message: cleanMessage,
-        teacherReply: ''
+        teacherReply: '',
+        quotedReply: replyPreview
     });
     renderMergedChatMessages(chatLatestServerMessages);
     requestAnimationFrame(() => {
@@ -4713,8 +4841,8 @@ function parseChatCellValue(rawValue) {
     const bodyText = hasExplicitUser
         ? [inlineMessage, ...lines.slice(1)].filter(Boolean).join('\n').trim()
         : text;
-    const { message, teacherReply } = extractChatMessageAndReply(bodyText);
-    return { user, message, teacherReply, raw: text, hasExplicitUser };
+    const { message, teacherReply, quotedReply } = extractChatMessageAndReply(bodyText);
+    return { user, message, teacherReply, quotedReply, raw: text, hasExplicitUser };
 }
 
 function normalizeChatUserLabel(rawUser) {
@@ -4731,10 +4859,20 @@ function extractChatMessageAndReply(rawMessage) {
     const sourceLines = String(rawMessage || '').split(/\r?\n/);
     const messageLines = [];
     const replyLines = [];
+    const quotedReplyLines = [];
 
     sourceLines.forEach((lineRaw) => {
-        const line = String(lineRaw || '').trim();
+        let line = String(lineRaw || '').trim();
         if (!line) return;
+
+        // Soporte para replies guardadas como: <mensaje de contestacion>
+        const quotedMatch = line.match(/^<([^<>]+)>\s*(.*)$/);
+        if (quotedMatch) {
+            const quotedText = String(quotedMatch[1] || '').trim();
+            if (quotedText) quotedReplyLines.push(quotedText);
+            line = String(quotedMatch[2] || '').trim();
+        }
+
         // Extrae cualquier comentario entre parentesis, tanto en linea completa "(...)" como inline "texto (...)"
         const inlineReplies = [];
         const lineWithoutReplies = line.replace(/\(([^()]*)\)/g, (_, commentRaw) => {
@@ -4753,7 +4891,8 @@ function extractChatMessageAndReply(rawMessage) {
 
     return {
         message: messageLines.join('\n').trim(),
-        teacherReply: replyLines.join('\n').trim()
+        teacherReply: replyLines.join('\n').trim(),
+        quotedReply: quotedReplyLines.join('\n').trim()
     };
 }
 
@@ -4778,12 +4917,13 @@ async function fetchChatMessages() {
                         ? parsed.user
                         : normalizeChatUserLabel(entry.user || parsed.user),
                     message: parsed.message,
-                    teacherReply: parsed.teacherReply
+                    teacherReply: parsed.teacherReply,
+                    quotedReply: parsed.quotedReply
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
             if (!parsed) return null;
-            return { user: parsed.user, message: parsed.message, teacherReply: parsed.teacherReply };
+            return { user: parsed.user, message: parsed.message, teacherReply: parsed.teacherReply, quotedReply: parsed.quotedReply };
         })
         .filter(Boolean);
 }
@@ -4798,21 +4938,35 @@ function renderChatMessages(messages) {
     }
 
     const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
-    messagesEl.innerHTML = messages.map((msg) => {
+    messagesEl.innerHTML = messages.map((msg, idx) => {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = userLabel === CHAT_DEFAULT_USER;
         const isCurrentSender = userLabel === currentUserLabel;
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
+        const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
+        const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const renderedUser = isTeacherUser
             ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}:</span></span>`
             : `<span class="chat-user-label ${labelClass}">${escapeHtml(userLabel)}:</span>`;
-        const messageItemClass = isCurrentSender ? 'chat-message-item is-self' : 'chat-message-item';
+        const messageItemClass = [
+            'chat-message-item',
+            isCurrentSender ? 'is-self' : '',
+            isReplyable ? 'is-replyable' : '',
+            isSelectedTarget ? 'reply-target' : ''
+        ].filter(Boolean).join(' ');
+        const quotedReply = String(msg.quotedReply || '').trim();
         return `
-        <div class="${messageItemClass}">
+        <div class="${messageItemClass}" data-msg-index="${idx}">
             <div class="chat-message-line">
                 <div class="chat-message-user">${renderedUser}</div>
                 ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
             </div>
+            ${quotedReply ? `
+                <div class="chat-message-reply">
+                    <span class="chat-message-reply-arrow">↳</span>
+                    <span class="chat-message-reply-text">${formatChatMessageHtml(quotedReply)}</span>
+                </div>
+            ` : ''}
             ${msg.teacherReply ? `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>
@@ -4823,6 +4977,16 @@ function renderChatMessages(messages) {
         </div>
     `;
     }).join('');
+
+    const replyableItems = messagesEl.querySelectorAll('.chat-message-item.is-replyable');
+    replyableItems.forEach((item) => {
+        item.addEventListener('click', () => {
+            const idx = Number(item.dataset.msgIndex);
+            const targetMessage = Number.isFinite(idx) ? messages[idx] : null;
+            if (!targetMessage) return;
+            toggleChatReplyTarget(targetMessage, currentUserLabel);
+        });
+    });
 }
 
 async function refreshChatMessages(showLoading = true, notifyOnNewMessage = false) {
@@ -4863,6 +5027,7 @@ function startChatAutoRefresh() {
 
 function closeChatModal() {
     stopChatAutoRefresh();
+    chatReplyTarget = null;
     const overlay = document.getElementById('chat-overlay');
     if (overlay) overlay.remove();
 }
@@ -4876,9 +5041,16 @@ async function submitChatMessage() {
     if (!message) return;
 
     const identity = getStudentIdentityForChat();
+    const activeReplyTarget = chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message
+        ? { user: chatReplyTarget.user, message: chatReplyTarget.message }
+        : null;
+    const payloadMessage = activeReplyTarget
+        ? `<${activeReplyTarget.user}: ${activeReplyTarget.message}> ${message}`
+        : message;
     inputEl.value = '';
+    clearChatReplyTarget(false);
     animateChatSendButton(sendBtn);
-    appendLocalEchoMessage(identity.displayName, message);
+    appendLocalEchoMessage(identity.displayName, message, activeReplyTarget);
 
     try {
         await fetch(PORTALB_SCRIPT_URL, {
@@ -4891,7 +5063,7 @@ async function submitChatMessage() {
                 nombre: identity.firstName,
                 apellido: identity.lastName,
                 userDisplayName: identity.displayName,
-                mensaje: message
+                mensaje: payloadMessage
             })
         });
         setTimeout(() => {
@@ -4906,6 +5078,7 @@ async function submitChatMessage() {
 
 async function openChatModal() {
     closeChatModal();
+    chatReplyTarget = null;
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-overlay';
@@ -4924,8 +5097,17 @@ async function openChatModal() {
                 </div>
             </div>
             <div class="chat-footer">
-                <textarea id="chat-input" class="chat-input" maxlength="280" placeholder="Escribe tu mensaje..."></textarea>
-                <button id="chat-send-btn" class="chat-send-btn" type="button">Enviar</button>
+                <div id="chat-reply-preview" class="chat-reply-preview" hidden>
+                    <span class="chat-reply-preview-arrow">↳</span>
+                    <span id="chat-reply-preview-text" class="chat-reply-preview-text"></span>
+                    <button type="button" id="chat-reply-cancel-btn" class="chat-reply-cancel-btn" aria-label="Cancelar respuesta">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="chat-compose-row">
+                    <textarea id="chat-input" class="chat-input" maxlength="280" placeholder="Escribe tu mensaje..."></textarea>
+                    <button id="chat-send-btn" class="chat-send-btn" type="button">Enviar</button>
+                </div>
             </div>
         </div>
     `;
@@ -4953,6 +5135,14 @@ async function openChatModal() {
         });
     }
 
+    const cancelReplyBtn = document.getElementById('chat-reply-cancel-btn');
+    if (cancelReplyBtn) {
+        cancelReplyBtn.addEventListener('click', () => {
+            vibrar(30);
+            clearChatReplyTarget(true);
+        });
+    }
+
     const inputEl = document.getElementById('chat-input');
     if (inputEl) {
         inputEl.addEventListener('keydown', (event) => {
@@ -4965,6 +5155,7 @@ async function openChatModal() {
         });
     }
 
+    updateChatReplyPreview();
     await refreshChatMessages(true, false);
     startChatAutoRefresh();
 }

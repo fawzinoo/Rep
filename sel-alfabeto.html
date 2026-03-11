@@ -4706,7 +4706,7 @@ function parseChatCellValue(rawValue) {
         : CHAT_DEFAULT_USER;
     const bodyText = hasExplicitUser ? lines.slice(1).join('\n').trim() : text;
     const { message, teacherReply } = extractChatMessageAndReply(bodyText);
-    return { user, message, teacherReply, raw: text };
+    return { user, message, teacherReply, raw: text, hasExplicitUser };
 }
 
 function normalizeChatUserLabel(rawUser) {
@@ -4763,11 +4763,14 @@ async function fetchChatMessages() {
     return data.messages
         .map((entry) => {
             if (entry && typeof entry === 'object' && (entry.user || entry.message)) {
-                const extracted = extractChatMessageAndReply(String(entry.message || '').trim());
+                const parsed = parseChatCellValue(String(entry.message || '').trim());
+                if (!parsed) return null;
                 return {
-                    user: normalizeChatUserLabel(entry.user),
-                    message: extracted.message,
-                    teacherReply: extracted.teacherReply
+                    user: parsed.hasExplicitUser
+                        ? parsed.user
+                        : normalizeChatUserLabel(entry.user || parsed.user),
+                    message: parsed.message,
+                    teacherReply: parsed.teacherReply
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);

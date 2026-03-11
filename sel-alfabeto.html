@@ -697,6 +697,7 @@
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
     align-self: flex-start;
     margin-right: auto;
+    margin-left: 0;
 }
 
 .chat-message-item::after {
@@ -738,15 +739,20 @@
 }
 
 .chat-message-line {
-    display: block;
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    flex-wrap: wrap;
 }
 
 .chat-message-user {
-    font-size: 0.82rem;
+    font-size: 0.84rem;
     font-weight: 800;
     color: #2563eb;
-    margin-bottom: 4px;
-    display: block;
+    margin-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
 }
 
 .chat-user-label {
@@ -786,7 +792,9 @@
 }
 
 .chat-message-text-inline {
-    display: block;
+    display: inline;
+    flex: 1;
+    min-width: 0;
 }
 
 .chat-message-reply {
@@ -4489,7 +4497,7 @@ function renderMergedChatMessages(serverMessages) {
 function canReplyToRecipientMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const messageText = String(msg && msg.message ? msg.message : '').trim();
-    return !!messageText && userLabel !== currentUserLabel && !isTeacherChatUserLabel(userLabel);
+    return !!messageText && !areSameChatUserLabels(userLabel, currentUserLabel) && !isTeacherChatUserLabel(userLabel);
 }
 
 function parseQuotedReplyTarget(quotedReplyText) {
@@ -4516,6 +4524,10 @@ function isTeacherChatUserLabel(userLabel) {
     return normalizeChatUserLabel(userLabel || '').toLowerCase() === CHAT_DEFAULT_USER.toLowerCase();
 }
 
+function areSameChatUserLabels(a, b) {
+    return normalizeChatUserLabel(a || '').toLowerCase() === normalizeChatUserLabel(b || '').toLowerCase();
+}
+
 function prepareChatMessagesForRender(messages, currentUserLabel) {
     const prepared = (Array.isArray(messages) ? messages : []).map((msg) => ({
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
@@ -4534,7 +4546,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
 
     prepared.forEach((msg, idx) => {
         if (!msg.quotedReply || !msg.message) return;
-        if (msg.user !== currentUserLabel) return;
+        if (!areSameChatUserLabels(msg.user, currentUserLabel)) return;
         const target = parseQuotedReplyTarget(msg.quotedReply);
         const normalizedQuoted = normalizeChatComparisonText(msg.quotedReply);
 
@@ -4559,7 +4571,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
             for (let i = prepared.length - 1; i >= 0; i--) {
                 if (i === idx) continue;
                 const candidate = prepared[i];
-                const candidateIsRecipient = candidate.user !== currentUserLabel && !isTeacherChatUserLabel(candidate.user);
+                const candidateIsRecipient = !areSameChatUserLabels(candidate.user, currentUserLabel) && !isTeacherChatUserLabel(candidate.user);
                 if (!candidateIsRecipient) continue;
                 if (normalizeChatComparisonText(candidate.message) === normalizedQuoted) {
                     targetIndex = i;
@@ -4572,7 +4584,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         if (targetIndex === -1) {
             for (let i = idx - 1; i >= 0; i--) {
                 const candidate = prepared[i];
-                const candidateIsRecipient = candidate.user !== currentUserLabel && !isTeacherChatUserLabel(candidate.user);
+                const candidateIsRecipient = !areSameChatUserLabels(candidate.user, currentUserLabel) && !isTeacherChatUserLabel(candidate.user);
                 if (candidateIsRecipient && candidate.message) {
                     targetIndex = i;
                     break;
@@ -5100,7 +5112,7 @@ function renderChatMessages(messages) {
     messagesEl.innerHTML = renderMessages.map((msg, idx) => {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = isTeacherChatUserLabel(userLabel);
-        const isCurrentSender = userLabel === currentUserLabel;
+        const isCurrentSender = areSameChatUserLabels(userLabel, currentUserLabel);
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
         const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
         const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
@@ -5122,7 +5134,7 @@ function renderChatMessages(messages) {
             const isTeacherReply = isTeacherChatUserLabel(replyAuthor);
             const replyAuthorLabel = isTeacherReply
                 ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
-                : `<span class="chat-user-label ${replyAuthor === currentUserLabel ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
+                : `<span class="chat-user-label ${areSameChatUserLabels(replyAuthor, currentUserLabel) ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
             return `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>

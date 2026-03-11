@@ -4459,6 +4459,98 @@ function canReplyToRecipientMessage(msg, currentUserLabel) {
     return !!messageText && userLabel !== currentUserLabel && userLabel !== CHAT_DEFAULT_USER;
 }
 
+function parseQuotedReplyTarget(quotedReplyText) {
+    const raw = String(quotedReplyText || '').trim();
+    if (!raw) return null;
+    const separatorIndex = raw.indexOf(':');
+    if (separatorIndex <= 0) return null;
+    const user = normalizeChatUserLabel(raw.slice(0, separatorIndex));
+    const message = raw.slice(separatorIndex + 1).trim();
+    if (!user || !message) return null;
+    return { user, message };
+}
+
+function normalizeChatComparisonText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/\p{Diacritic}+/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+function prepareChatMessagesForRender(messages, currentUserLabel) {
+    const prepared = (Array.isArray(messages) ? messages : []).map((msg) => ({
+        user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
+        message: String(msg && msg.message ? msg.message : '').trim(),
+        teacherReply: String(msg && msg.teacherReply ? msg.teacherReply : '').trim(),
+        quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
+        attachedReplies: [],
+        __hidden: false
+    }));
+
+    prepared.forEach((msg) => {
+        if (msg.teacherReply) msg.attachedReplies.push(msg.teacherReply);
+    });
+
+    prepared.forEach((msg, idx) => {
+        if (!msg.quotedReply || !msg.message) return;
+        if (msg.user !== currentUserLabel) return;
+        const target = parseQuotedReplyTarget(msg.quotedReply);
+        const normalizedQuoted = normalizeChatComparisonText(msg.quotedReply);
+
+        let targetIndex = -1;
+        if (target) {
+            const targetMessageNorm = normalizeChatComparisonText(target.message);
+            for (let i = prepared.length - 1; i >= 0; i--) {
+                if (i === idx) continue;
+                const candidate = prepared[i];
+                if (
+                    candidate.user === target.user &&
+                    normalizeChatComparisonText(candidate.message) === targetMessageNorm
+                ) {
+                    targetIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // Fallback 1: quotedReply solo contiene el texto del mensaje objetivo.
+        if (targetIndex === -1 && normalizedQuoted) {
+            for (let i = prepared.length - 1; i >= 0; i--) {
+                if (i === idx) continue;
+                const candidate = prepared[i];
+                const candidateIsRecipient = candidate.user !== currentUserLabel && candidate.user !== CHAT_DEFAULT_USER;
+                if (!candidateIsRecipient) continue;
+                if (normalizeChatComparisonText(candidate.message) === normalizedQuoted) {
+                    targetIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // Fallback 2: si no se puede identificar exacto, pegar en el ultimo destinatario anterior.
+        if (targetIndex === -1) {
+            for (let i = idx - 1; i >= 0; i--) {
+                const candidate = prepared[i];
+                const candidateIsRecipient = candidate.user !== currentUserLabel && candidate.user !== CHAT_DEFAULT_USER;
+                if (candidateIsRecipient && candidate.message) {
+                    targetIndex = i;
+                    break;
+                }
+            }
+        }
+        if (targetIndex === -1) return;
+
+        const targetMsg = prepared[targetIndex];
+        const existing = new Set(targetMsg.attachedReplies.map((text) => String(text || '').trim()));
+        if (!existing.has(msg.message)) targetMsg.attachedReplies.push(msg.message);
+        msg.__hidden = true;
+    });
+
+    return prepared.filter((msg) => !msg.__hidden);
+}
+
 function getReplyTargetFromMessage(msg) {
     return {
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
@@ -4873,6 +4965,15 @@ function extractChatMessageAndReply(rawMessage) {
             line = String(quotedMatch[2] || '').trim();
         }
 
+        // Si hay bloques <...> dentro de la misma linea, se consideran contestaciones
+        const inlineBracketReplies = [];
+        line = line.replace(/<([^<>]+)>/g, (_, bracketReplyRaw) => {
+            const bracketReply = String(bracketReplyRaw || '').trim();
+            if (bracketReply) inlineBracketReplies.push(bracketReply);
+            return ' ';
+        }).replace(/\s+/g, ' ').trim();
+        if (inlineBracketReplies.length > 0) replyLines.push(...inlineBracketReplies);
+
         // Extrae cualquier comentario entre parentesis, tanto en linea completa "(...)" como inline "texto (...)"
         const inlineReplies = [];
         const lineWithoutReplies = line.replace(/\(([^()]*)\)/g, (_, commentRaw) => {
@@ -4938,7 +5039,9 @@ function renderChatMessages(messages) {
     }
 
     const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
-    messagesEl.innerHTML = messages.map((msg, idx) => {
+    const renderMessages = prepareChatMessagesForRender(messages, currentUserLabel);
+
+    messagesEl.innerHTML = renderMessages.map((msg, idx) => {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = userLabel === CHAT_DEFAULT_USER;
         const isCurrentSender = userLabel === currentUserLabel;
@@ -4955,6 +5058,16 @@ function renderChatMessages(messages) {
             isSelectedTarget ? 'reply-target' : ''
         ].filter(Boolean).join(' ');
         const quotedReply = String(msg.quotedReply || '').trim();
+        const attachedReplies = Array.isArray(msg.attachedReplies)
+            ? msg.attachedReplies.filter((text) => String(text || '').trim())
+            : [];
+        const attachedRepliesHtml = attachedReplies.map((replyText) => `
+                <div class="chat-message-reply">
+                    <span class="chat-message-reply-arrow">↳</span>
+                    <span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>
+                    <span class="chat-message-reply-text">${formatChatMessageHtml(replyText)}</span>
+                </div>
+            `).join('');
         return `
         <div class="${messageItemClass}" data-msg-index="${idx}">
             <div class="chat-message-line">
@@ -4967,13 +5080,7 @@ function renderChatMessages(messages) {
                     <span class="chat-message-reply-text">${formatChatMessageHtml(quotedReply)}</span>
                 </div>
             ` : ''}
-            ${msg.teacherReply ? `
-                <div class="chat-message-reply">
-                    <span class="chat-message-reply-arrow">↳</span>
-                    <span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>
-                    <span class="chat-message-reply-text">${formatChatMessageHtml(msg.teacherReply)}</span>
-                </div>
-            ` : ''}
+            ${attachedRepliesHtml}
         </div>
     `;
     }).join('');
@@ -4982,7 +5089,7 @@ function renderChatMessages(messages) {
     replyableItems.forEach((item) => {
         item.addEventListener('click', () => {
             const idx = Number(item.dataset.msgIndex);
-            const targetMessage = Number.isFinite(idx) ? messages[idx] : null;
+            const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
             toggleChatReplyTarget(targetMessage, currentUserLabel);
         });

@@ -4700,11 +4700,19 @@ function parseChatCellValue(rawValue) {
     if (!text) return null;
     const lines = text.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();
-    const hasExplicitUser = /^-.*-$/.test(firstLine);
+    // Acepta dos formatos:
+    // 1) -usuario-
+    //    mensaje...
+    // 2) -usuario- mensaje...
+    const inlineExplicitUser = firstLine.match(/^\s*-(.+?)-\s*(.*)$/);
+    const hasExplicitUser = !!inlineExplicitUser;
     const user = hasExplicitUser
-        ? normalizeChatUserLabel(firstLine.replace(/^-+/, '').replace(/-+$/, '').trim())
+        ? normalizeChatUserLabel(inlineExplicitUser[1])
         : CHAT_DEFAULT_USER;
-    const bodyText = hasExplicitUser ? lines.slice(1).join('\n').trim() : text;
+    const inlineMessage = hasExplicitUser ? String(inlineExplicitUser[2] || '').trim() : '';
+    const bodyText = hasExplicitUser
+        ? [inlineMessage, ...lines.slice(1)].filter(Boolean).join('\n').trim()
+        : text;
     const { message, teacherReply } = extractChatMessageAndReply(bodyText);
     return { user, message, teacherReply, raw: text, hasExplicitUser };
 }

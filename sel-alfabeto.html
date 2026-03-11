@@ -5024,10 +5024,16 @@ async function fetchChatMessages() {
             if (entry && typeof entry === 'object' && (entry.user || entry.message)) {
                 const parsed = parseChatCellValue(String(entry.message || '').trim());
                 if (!parsed) return null;
-                return {
-                    user: parsed.hasExplicitUser
+                const entryUserRaw = String(entry.user || '').trim();
+                const entryUserClean = entryUserRaw.replace(/^-+/, '').replace(/-+$/, '').trim();
+                const hasAnonEntryUser = /^anonimo$/i.test(entryUserClean);
+                const resolvedUser = parsed.hasExplicitUser
+                    ? parsed.user
+                    : (!entryUserClean || hasAnonEntryUser
                         ? parsed.user
-                        : normalizeChatUserLabel(entry.user || parsed.user),
+                        : normalizeChatUserLabel(entry.user || parsed.user));
+                return {
+                    user: resolvedUser,
                     message: parsed.message,
                     teacherReply: parsed.teacherReply,
                     quotedReply: parsed.quotedReply

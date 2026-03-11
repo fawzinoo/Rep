@@ -4953,8 +4953,20 @@ async function downloadChatImageViaProxy(imageUrl, imageTitle) {
     if (!safeUrl) return false;
     const requestUrl = `${PORTALB_SCRIPT_URL}?mode=chat_image_blob&url=${encodeURIComponent(safeUrl)}&filename=${encodeURIComponent(String(imageTitle || 'imagen-chat').trim() || 'imagen-chat')}&t=${Date.now()}`;
     const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store' });
-    const data = await response.json();
-    if (!data || data.ok !== true || !data.data) return false;
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (err) {
+        throw new Error('proxy_invalid_json');
+    }
+    if (!response.ok) {
+        const reason = data && (data.error || data.message) ? `${data.error || data.message}` : `proxy_http_${response.status}`;
+        throw new Error(reason);
+    }
+    if (!data || data.ok !== true || !data.data) {
+        const reason = data && (data.error || data.message) ? `${data.error || data.message}` : 'proxy_empty_data';
+        throw new Error(reason);
+    }
 
     const blob = base64ToBlob(data.data, data.mimeType || 'application/octet-stream');
     const ext = inferImageExtensionFromMime(blob.type) || inferImageExtensionFromUrl(safeUrl) || 'jpg';
@@ -4974,6 +4986,16 @@ async function downloadChatImageViaProxy(imageUrl, imageTitle) {
 async function downloadChatImageFile(imageUrl, imageTitle) {
     const safeUrl = String(imageUrl || '').trim();
     if (!safeUrl) return false;
+    const isGoogleSheetsImage = /googleusercontent\.com\/sheetsz/i.test(safeUrl);
+
+    // Para URLs de imagen de Google Sheets, evita fetch directo (siempre cae por CORS) y usa proxy primero.
+    if (isGoogleSheetsImage) {
+        try {
+            return await downloadChatImageViaProxy(safeUrl, imageTitle || 'imagen-chat');
+        } catch (proxyError) {
+            console.warn('Fallo descarga por proxy de imagen:', proxyError);
+        }
+    }
 
     try {
         const response = await fetch(safeUrl, { method: 'GET', mode: 'cors', credentials: 'omit' });
@@ -5003,8 +5025,20 @@ async function downloadChatImageFile(imageUrl, imageTitle) {
         return await downloadChatImageViaProxy(safeUrl, imageTitle || 'imagen-chat');
     } catch (proxyError) {
         console.warn('Fallo descarga por proxy de imagen:', proxyError);
-        return false;
     }
+
+    // Último fallback: abrir la imagen para guardado manual.
+    try {
+        const manualLink = document.createElement('a');
+        manualLink.href = safeUrl;
+        manualLink.target = '_blank';
+        manualLink.rel = 'noopener noreferrer';
+        manualLink.style.display = 'none';
+        document.body.appendChild(manualLink);
+        manualLink.click();
+        manualLink.remove();
+    } catch (_) {}
+    return false;
 }
 
 function openChatImageViewer(imageUrl, imageTitle = 'Imagen') {
@@ -5063,7 +5097,10 @@ function openChatImageViewer(imageUrl, imageTitle = 'Imagen') {
             try {
                 const targetUrl = String(btn.getAttribute('data-image-url') || '').trim();
                 const targetTitle = String(btn.getAttribute('data-image-title') || '').trim();
-                await downloadChatImageFile(targetUrl, targetTitle || 'imagen-chat');
+                const downloaded = await downloadChatImageFile(targetUrl, targetTitle || 'imagen-chat');
+                if (!downloaded) {
+                    console.warn('Descarga automática no disponible para esta imagen. Se abrió modo manual.');
+                }
             } finally {
                 btn.disabled = false;
                 if (prevText) prevText.textContent = oldLabel || 'Guardar';

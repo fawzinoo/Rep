@@ -380,7 +380,12 @@ function tryHandleChatImageBlobGet_(e) {
     const resp = UrlFetchApp.fetch(imageUrl, {
       method: 'get',
       muteHttpExceptions: true,
-      followRedirects: true
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ChatImageProxy/1.0)',
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Referer': 'https://docs.google.com/'
+      }
     });
     const status = Number(resp.getResponseCode() || 0);
     if (status < 200 || status >= 300) {

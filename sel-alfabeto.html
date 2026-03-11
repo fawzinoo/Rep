@@ -798,6 +798,116 @@
     min-width: 0;
 }
 
+.chat-image-block {
+    margin-top: 8px;
+}
+
+.chat-image-thumb-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    border-radius: 14px;
+    overflow: hidden;
+    display: inline-block;
+    max-width: min(240px, 72vw);
+}
+
+.chat-image-thumb {
+    display: block;
+    width: 100%;
+    max-width: 220px;
+    max-height: 170px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+}
+
+.chat-message-item.is-self .chat-image-thumb {
+    border-color: rgba(16, 185, 129, 0.45);
+}
+
+.chat-image-viewer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 14000;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.chat-image-viewer-modal {
+    width: min(96vw, 980px);
+    max-height: 94vh;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-image-viewer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: #f9fafb;
+}
+
+.chat-image-viewer-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    opacity: 0.92;
+}
+
+.chat-image-viewer-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-image-viewer-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chat-image-viewer-btn.save {
+    background: #22c55e;
+    color: #052e16;
+}
+
+.chat-image-viewer-btn.close {
+    background: rgba(248, 250, 252, 0.2);
+    color: #f9fafb;
+}
+
+.chat-image-viewer-body {
+    border-radius: 14px;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.chat-image-viewer-full {
+    max-width: 100%;
+    max-height: 82vh;
+    border-radius: 12px;
+    display: block;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+}
+
 .chat-message-reply {
     margin-top: 7px;
     padding-top: 7px;
@@ -4529,7 +4639,8 @@ function buildChatMessagesSignature(messages) {
         const message = String(msg && msg.message ? msg.message : '');
         const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '');
         const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '');
-        return `${user}::${message}::${teacherReply}::${quotedReply}`;
+        const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '');
+        return `${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}`;
     }).join('||');
 }
 
@@ -4563,7 +4674,8 @@ function buildChatMessageKey(msg) {
     const message = String(msg && msg.message ? msg.message : '').trim();
     const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '').trim();
     const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '').trim();
-    return `${user}::${message}::${teacherReply}::${quotedReply}`;
+    const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '').trim();
+    return `${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}`;
 }
 
 function reconcileLocalEchoWithServer(serverMessages) {
@@ -4630,6 +4742,8 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         message: String(msg && msg.message ? msg.message : '').trim(),
         teacherReply: String(msg && msg.teacherReply ? msg.teacherReply : '').trim(),
         quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
+        imageUrl: String(msg && msg.imageUrl ? msg.imageUrl : '').trim(),
+        imageTitle: String(msg && msg.imageTitle ? msg.imageTitle : '').trim(),
         attachedReplies: [],
         __hidden: false
     }));
@@ -4768,7 +4882,9 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null) {
         user: normalizeChatUserLabel(userLabel || ''),
         message: cleanMessage,
         teacherReply: '',
-        quotedReply: replyPreview
+        quotedReply: replyPreview,
+        imageUrl: '',
+        imageTitle: ''
     });
     renderMergedChatMessages(chatLatestServerMessages);
     requestAnimationFrame(() => {
@@ -4781,6 +4897,51 @@ function animateChatSendButton(buttonEl) {
     buttonEl.classList.remove('send-flash');
     void buttonEl.offsetWidth;
     buttonEl.classList.add('send-flash');
+}
+
+function closeChatImageViewer() {
+    const overlay = document.getElementById('chat-image-viewer-overlay');
+    if (overlay) overlay.remove();
+}
+
+function openChatImageViewer(imageUrl, imageTitle = 'Imagen') {
+    const safeUrl = String(imageUrl || '').trim();
+    if (!safeUrl) return;
+    closeChatImageViewer();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chat-image-viewer-overlay';
+    overlay.className = 'chat-image-viewer-overlay';
+    overlay.innerHTML = `
+        <div class="chat-image-viewer-modal" role="dialog" aria-modal="true" aria-label="Vista de imagen">
+            <div class="chat-image-viewer-head">
+                <div class="chat-image-viewer-title">${escapeHtml(imageTitle || 'Imagen')}</div>
+                <div class="chat-image-viewer-actions">
+                    <a class="chat-image-viewer-btn save" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" download>
+                        <i class="fas fa-download" aria-hidden="true"></i>
+                        <span>Guardar</span>
+                    </a>
+                    <button type="button" class="chat-image-viewer-btn close" id="chat-image-viewer-close-btn">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                        <span>Cerrar</span>
+                    </button>
+                </div>
+            </div>
+            <div class="chat-image-viewer-body">
+                <img class="chat-image-viewer-full" src="${escapeHtml(safeUrl)}" alt="${escapeHtml(imageTitle || 'Imagen')}" />
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closeChatImageViewer();
+    });
+    const closeBtn = document.getElementById('chat-image-viewer-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => closeChatImageViewer());
+    }
 }
 
 function scrollChatToLatestMessage(useSmooth = false) {
@@ -5079,6 +5240,16 @@ function getStudentIdentityForChat() {
 function parseChatCellValue(rawValue) {
     const text = String(rawValue || '').trim();
     if (!text) return null;
+    if (/^cellimage$/i.test(text)) {
+        return {
+            user: CHAT_DEFAULT_USER,
+            message: '📷 Imagen',
+            teacherReply: '',
+            quotedReply: '',
+            raw: text,
+            hasExplicitUser: false
+        };
+    }
     const lines = text.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();
     // Acepta dos formatos:
@@ -5171,27 +5342,45 @@ async function fetchChatMessages() {
     }
     return data.messages
         .map((entry) => {
-            if (entry && typeof entry === 'object' && (entry.user || entry.message)) {
-                const parsed = parseChatCellValue(String(entry.message || '').trim());
-                if (!parsed) return null;
+            const entryImageUrl = entry && typeof entry === 'object'
+                ? String(entry.imageUrl || '').trim()
+                : '';
+            const entryImageTitle = entry && typeof entry === 'object'
+                ? String(entry.imageTitle || '').trim()
+                : '';
+            if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl)) {
+                const rawMessage = String(entry.message || '').trim();
+                const parsed = rawMessage
+                    ? parseChatCellValue(rawMessage)
+                    : { user: CHAT_DEFAULT_USER, message: '', teacherReply: '', quotedReply: '', hasExplicitUser: false };
+                if (!parsed && !entryImageUrl) return null;
                 const entryUserRaw = String(entry.user || '').trim();
                 const entryUserClean = entryUserRaw.replace(/^-+/, '').replace(/-+$/, '').trim();
                 const hasAnonEntryUser = /^anonimo$/i.test(entryUserClean);
-                const resolvedUser = parsed.hasExplicitUser
+                const resolvedUser = parsed && parsed.hasExplicitUser
                     ? parsed.user
                     : (!entryUserClean || hasAnonEntryUser
-                        ? parsed.user
-                        : normalizeChatUserLabel(entry.user || parsed.user));
+                        ? (parsed ? parsed.user : CHAT_DEFAULT_USER)
+                        : normalizeChatUserLabel(entry.user || (parsed ? parsed.user : CHAT_DEFAULT_USER)));
                 return {
                     user: resolvedUser,
-                    message: parsed.message,
-                    teacherReply: parsed.teacherReply,
-                    quotedReply: parsed.quotedReply
+                    message: parsed ? parsed.message : '',
+                    teacherReply: parsed ? parsed.teacherReply : '',
+                    quotedReply: parsed ? parsed.quotedReply : '',
+                    imageUrl: entryImageUrl,
+                    imageTitle: entryImageTitle
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
             if (!parsed) return null;
-            return { user: parsed.user, message: parsed.message, teacherReply: parsed.teacherReply, quotedReply: parsed.quotedReply };
+            return {
+                user: parsed.user,
+                message: parsed.message,
+                teacherReply: parsed.teacherReply,
+                quotedReply: parsed.quotedReply,
+                imageUrl: '',
+                imageTitle: ''
+            };
         })
         .filter(Boolean);
 }
@@ -5224,6 +5413,21 @@ function renderChatMessages(messages) {
             isReplyable ? 'is-replyable' : '',
             isSelectedTarget ? 'reply-target' : ''
         ].filter(Boolean).join(' ');
+        const imageUrl = String(msg.imageUrl || '').trim();
+        const imageTitle = String(msg.imageTitle || '').trim() || 'Imagen';
+        const imageThumbHtml = imageUrl ? `
+            <div class="chat-image-block">
+                <button
+                    type="button"
+                    class="chat-image-thumb-btn"
+                    data-image-url="${escapeHtml(imageUrl)}"
+                    data-image-title="${escapeHtml(imageTitle)}"
+                    aria-label="Abrir imagen"
+                >
+                    <img class="chat-image-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageTitle)}" loading="lazy" />
+                </button>
+            </div>
+        ` : '';
         const quotedReply = String(msg.quotedReply || '').trim();
         const attachedReplies = Array.isArray(msg.attachedReplies)
             ? msg.attachedReplies.filter((entry) => String(entry && entry.text ? entry.text : '').trim())
@@ -5248,6 +5452,7 @@ function renderChatMessages(messages) {
                 <div class="chat-message-user">${renderedUser}</div>
                 ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
             </div>
+            ${imageThumbHtml}
             ${quotedReply ? `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>
@@ -5266,6 +5471,18 @@ function renderChatMessages(messages) {
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
             toggleChatReplyTarget(targetMessage, currentUserLabel);
+        });
+    });
+
+    const imageThumbButtons = messagesEl.querySelectorAll('.chat-image-thumb-btn');
+    imageThumbButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const imageUrl = String(button.getAttribute('data-image-url') || '').trim();
+            const imageTitle = String(button.getAttribute('data-image-title') || '').trim();
+            if (!imageUrl) return;
+            openChatImageViewer(imageUrl, imageTitle || 'Imagen');
         });
     });
 }
@@ -5309,6 +5526,7 @@ function startChatAutoRefresh() {
 function closeChatModal() {
     stopChatAutoRefresh();
     chatReplyTarget = null;
+    closeChatImageViewer();
     const overlay = document.getElementById('chat-overlay');
     if (overlay) overlay.remove();
 }

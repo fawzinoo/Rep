@@ -4456,7 +4456,7 @@ function renderMergedChatMessages(serverMessages) {
 function canReplyToRecipientMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const messageText = String(msg && msg.message ? msg.message : '').trim();
-    return !!messageText && userLabel !== currentUserLabel && userLabel !== CHAT_DEFAULT_USER;
+    return !!messageText && userLabel !== currentUserLabel && !isTeacherChatUserLabel(userLabel);
 }
 
 function parseQuotedReplyTarget(quotedReplyText) {
@@ -4477,6 +4477,10 @@ function normalizeChatComparisonText(value) {
         .replace(/\s+/g, ' ')
         .trim()
         .toLowerCase();
+}
+
+function isTeacherChatUserLabel(userLabel) {
+    return normalizeChatUserLabel(userLabel || '').toLowerCase() === CHAT_DEFAULT_USER.toLowerCase();
 }
 
 function prepareChatMessagesForRender(messages, currentUserLabel) {
@@ -4522,7 +4526,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
             for (let i = prepared.length - 1; i >= 0; i--) {
                 if (i === idx) continue;
                 const candidate = prepared[i];
-                const candidateIsRecipient = candidate.user !== currentUserLabel && candidate.user !== CHAT_DEFAULT_USER;
+                const candidateIsRecipient = candidate.user !== currentUserLabel && !isTeacherChatUserLabel(candidate.user);
                 if (!candidateIsRecipient) continue;
                 if (normalizeChatComparisonText(candidate.message) === normalizedQuoted) {
                     targetIndex = i;
@@ -4535,7 +4539,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         if (targetIndex === -1) {
             for (let i = idx - 1; i >= 0; i--) {
                 const candidate = prepared[i];
-                const candidateIsRecipient = candidate.user !== currentUserLabel && candidate.user !== CHAT_DEFAULT_USER;
+                const candidateIsRecipient = candidate.user !== currentUserLabel && !isTeacherChatUserLabel(candidate.user);
                 if (candidateIsRecipient && candidate.message) {
                     targetIndex = i;
                     break;
@@ -5050,13 +5054,13 @@ function renderChatMessages(messages) {
 
     messagesEl.innerHTML = renderMessages.map((msg, idx) => {
         const userLabel = normalizeChatUserLabel(msg.user);
-        const isTeacherUser = userLabel === CHAT_DEFAULT_USER;
+        const isTeacherUser = isTeacherChatUserLabel(userLabel);
         const isCurrentSender = userLabel === currentUserLabel;
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
         const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
         const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const renderedUser = isTeacherUser
-            ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(userLabel)}:</span></span>`
+            ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
             : `<span class="chat-user-label ${labelClass}">${escapeHtml(userLabel)}:</span>`;
         const messageItemClass = [
             'chat-message-item',
@@ -5070,9 +5074,9 @@ function renderChatMessages(messages) {
             : [];
         const attachedRepliesHtml = attachedReplies.map((replyEntry) => {
             const replyAuthor = normalizeChatUserLabel(replyEntry.author || CHAT_DEFAULT_USER);
-            const isTeacherReply = replyAuthor === CHAT_DEFAULT_USER;
+            const isTeacherReply = isTeacherChatUserLabel(replyAuthor);
             const replyAuthorLabel = isTeacherReply
-                ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(replyAuthor)}:</span></span>`
+                ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
                 : `<span class="chat-user-label ${replyAuthor === currentUserLabel ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
             return `
                 <div class="chat-message-reply">

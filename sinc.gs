@@ -182,6 +182,7 @@ function getSyncPassword_(ss) {
 const CHAT_SHEET_NAME_ = 'chat';
 const CHAT_DEFAULT_COLUMN_ = 'U1L0T1';
 const CHAT_MAX_MESSAGE_LENGTH_ = 280;
+const CHAT_IMAGE_PROXY_MAX_BYTES_ = 5 * 1024 * 1024;
 
 function normalizeChatColumn_(columna) {
   const normalized = String(columna || '').trim().toUpperCase();
@@ -343,6 +344,76 @@ function findFirstEmptyChatRow_(sheet, colIndex) {
   return lastRow + 1;
 }
 
+function inferMimeExtension_(mimeType) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.indexOf('png') !== -1) return 'png';
+  if (mime.indexOf('jpeg') !== -1 || mime.indexOf('jpg') !== -1) return 'jpg';
+  if (mime.indexOf('webp') !== -1) return 'webp';
+  if (mime.indexOf('gif') !== -1) return 'gif';
+  if (mime.indexOf('bmp') !== -1) return 'bmp';
+  if (mime.indexOf('svg') !== -1) return 'svg';
+  if (mime.indexOf('heic') !== -1) return 'heic';
+  if (mime.indexOf('heif') !== -1) return 'heif';
+  return 'bin';
+}
+
+function sanitizeFileName_(name, defaultExt) {
+  const ext = String(defaultExt || 'bin').replace(/^\./, '').toLowerCase() || 'bin';
+  const base = String(name || 'imagen-chat')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .trim() || 'imagen-chat';
+  return base + '.' + ext;
+}
+
+function tryHandleChatImageBlobGet_(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_image_blob') return null;
+
+  const imageUrl = String((e && e.parameter && e.parameter.url) || '').trim();
+  if (!imageUrl) {
+    return jsonOut_({ ok: false, error: 'missing_url' });
+  }
+
+  try {
+    const resp = UrlFetchApp.fetch(imageUrl, {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    const status = Number(resp.getResponseCode() || 0);
+    if (status < 200 || status >= 300) {
+      return jsonOut_({ ok: false, error: 'image_fetch_failed', status: status });
+    }
+
+    const blob = resp.getBlob();
+    const bytes = blob.getBytes();
+    if (bytes.length > CHAT_IMAGE_PROXY_MAX_BYTES_) {
+      return jsonOut_({ ok: false, error: 'image_too_large', bytes: bytes.length, maxBytes: CHAT_IMAGE_PROXY_MAX_BYTES_ });
+    }
+
+    const mimeType = String(blob.getContentType() || 'application/octet-stream');
+    const ext = inferMimeExtension_(mimeType);
+    const requestedName = String((e && e.parameter && e.parameter.filename) || '').trim();
+    const fileName = sanitizeFileName_(requestedName || 'imagen-chat', ext);
+    const base64 = Utilities.base64Encode(bytes);
+
+    return jsonOut_({
+      ok: true,
+      mimeType: mimeType,
+      fileName: fileName,
+      data: base64
+    });
+  } catch (error) {
+    return jsonOut_({
+      ok: false,
+      error: 'proxy_exception',
+      message: String(error && error.message ? error.message : error)
+    });
+  }
+}
+
 function tryHandleChatGet_(ss, e) {
   const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
   if (mode !== 'chat_messages') return null;
@@ -397,6 +468,10 @@ function tryHandleChatPost_(ss, data) {
 function doGet(e) {
   const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
   const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+
+  // --- CHAT: proxy de imagen para descarga sin bloqueo CORS ---
+  const chatImageBlobResponse = tryHandleChatImageBlobGet_(e);
+  if (chatImageBlobResponse) return chatImageBlobResponse;
 
   // --- CHAT: leer mensajes por columna ---
   const chatGetResponse = tryHandleChatGet_(ss, e);

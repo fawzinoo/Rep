@@ -4960,11 +4960,15 @@ async function downloadChatImageViaProxy(imageUrl, imageTitle) {
         throw new Error('proxy_invalid_json');
     }
     if (!response.ok) {
-        const reason = data && (data.error || data.message) ? `${data.error || data.message}` : `proxy_http_${response.status}`;
+        const reason = data && (data.error || data.message)
+            ? `${data.error || 'proxy_http'}${data.message ? `: ${data.message}` : ''}`
+            : `proxy_http_${response.status}`;
         throw new Error(reason);
     }
     if (!data || data.ok !== true || !data.data) {
-        const reason = data && (data.error || data.message) ? `${data.error || data.message}` : 'proxy_empty_data';
+        const reason = data && (data.error || data.message)
+            ? `${data.error || 'proxy_failed'}${data.message ? `: ${data.message}` : ''}`
+            : 'proxy_empty_data';
         throw new Error(reason);
     }
 
@@ -4995,6 +4999,17 @@ async function downloadChatImageFile(imageUrl, imageTitle) {
         } catch (proxyError) {
             console.warn('Fallo descarga por proxy de imagen:', proxyError);
         }
+        try {
+            const manualLink = document.createElement('a');
+            manualLink.href = safeUrl;
+            manualLink.target = '_blank';
+            manualLink.rel = 'noopener noreferrer';
+            manualLink.style.display = 'none';
+            document.body.appendChild(manualLink);
+            manualLink.click();
+            manualLink.remove();
+        } catch (_) {}
+        return false;
     }
 
     try {

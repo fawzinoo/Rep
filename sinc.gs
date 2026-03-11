@@ -367,6 +367,38 @@ function sanitizeFileName_(name, defaultExt) {
   return base + '.' + ext;
 }
 
+function fetchChatImageWithFallback_(imageUrl) {
+  const attempts = [
+    {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ChatImageProxy/1.0)',
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Referer': 'https://docs.google.com/'
+      }
+    },
+    {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true
+    }
+  ];
+
+  let lastError = '';
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const resp = UrlFetchApp.fetch(imageUrl, attempts[i]);
+      return { resp: resp, attempt: i + 1 };
+    } catch (err) {
+      lastError = String(err && err.message ? err.message : err);
+    }
+  }
+
+  throw new Error(lastError || 'urlfetch_failed');
+}
+
 function tryHandleChatImageBlobGet_(e) {
   const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
   if (mode !== 'chat_image_blob') return null;
@@ -377,19 +409,16 @@ function tryHandleChatImageBlobGet_(e) {
   }
 
   try {
-    const resp = UrlFetchApp.fetch(imageUrl, {
-      method: 'get',
-      muteHttpExceptions: true,
-      followRedirects: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ChatImageProxy/1.0)',
-        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        'Referer': 'https://docs.google.com/'
-      }
-    });
+    const fetched = fetchChatImageWithFallback_(imageUrl);
+    const resp = fetched.resp;
     const status = Number(resp.getResponseCode() || 0);
     if (status < 200 || status >= 300) {
-      return jsonOut_({ ok: false, error: 'image_fetch_failed', status: status });
+      return jsonOut_({
+        ok: false,
+        error: 'image_fetch_failed',
+        status: status,
+        attempt: fetched.attempt
+      });
     }
 
     const blob = resp.getBlob();
@@ -414,7 +443,8 @@ function tryHandleChatImageBlobGet_(e) {
     return jsonOut_({
       ok: false,
       error: 'proxy_exception',
-      message: String(error && error.message ? error.message : error)
+      message: String(error && error.message ? error.message : error),
+      imageUrl: imageUrl
     });
   }
 }

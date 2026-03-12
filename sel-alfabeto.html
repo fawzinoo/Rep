@@ -4720,7 +4720,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwcNsFU7L71u0XA7FI6ovUg77lz94XJrmCLPm0-MD9fMJbMNFd-E64VkWGzsnNa9qY2/exec';
+const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwioeAjXmGRDQ0JL8zi5oHGJLz1PrPXq98d0yPLZGW0vSH1IF9z0mS2Y3x7JnmpOw/exec';
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
@@ -5091,6 +5091,24 @@ function disableChatAttachmentUI(disabled) {
     if (attachBtn) attachBtn.disabled = !!disabled;
 }
 
+async function checkChatAttachmentHealth() {
+    try {
+        const url = `${PORTALB_SCRIPT_URL}?mode=chat_attachment_health&t=${Date.now()}`;
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) return { ok: false, reason: 'health_http_error' };
+        const payload = await response.json();
+        if (payload && payload.ok === true && payload.driveReady === true) {
+            return { ok: true };
+        }
+        if (payload && payload.error === 'missing_drive_scope') {
+            return { ok: false, reason: 'missing_drive_scope', requiredScope: payload.requiredScope || '' };
+        }
+        return { ok: false, reason: String(payload && payload.error ? payload.error : 'health_unknown') };
+    } catch (error) {
+        return { ok: false, reason: 'health_fetch_failed' };
+    }
+}
+
 async function submitChatAttachment(file) {
     const inputEl = document.getElementById('chat-input');
     if (!file || !inputEl) return;
@@ -5100,6 +5118,12 @@ async function submitChatAttachment(file) {
     if (!fileSize) return;
     if (fileSize > CHAT_ATTACHMENT_MAX_BYTES) {
         alert(`El archivo supera el limite de ${(CHAT_ATTACHMENT_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB.`);
+        return;
+    }
+
+    const attachmentHealth = await checkChatAttachmentHealth();
+    if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
+        alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
         return;
     }
 

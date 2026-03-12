@@ -4720,7 +4720,10 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-d10euD2z0Ina5MOnZhKYtsYHX7HijLNb4WFaMYdyHR_C5dKUjHwuw3EASY-SJiOF/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-d10euD2z0Ina5MOnZhKYtsYHX7HijLNb4WFaMYdyHR_C5dKUjHwuw3EASY-SJiOF/exec';
+const PORTALB_SCRIPT_URL_FALLBACKS = [
+    'https://script.google.com/macros/s/AKfycbw8-svG0ATuzM2xhgmGgdWXg6Sv_pCO1Q19mbNn8fIdO3OcVUcPSc4zgwYFhNRNwOBc/exec'
+];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
@@ -4744,36 +4747,64 @@ let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
 
+function getPortalBCandidateUrls() {
+    const rawList = [PORTALB_SCRIPT_URL, ...PORTALB_SCRIPT_URL_FALLBACKS];
+    const seen = new Set();
+    return rawList
+        .map((entry) => String(entry || '').trim())
+        .filter((entry) => {
+            if (!entry || seen.has(entry)) return false;
+            seen.add(entry);
+            return true;
+        });
+}
+
 async function postToPortalB(payload, options = {}) {
     const allowBeacon = options && options.allowBeacon !== false;
     const requestBody = JSON.stringify(payload || {});
-    try {
-        return await fetch(`${PORTALB_SCRIPT_URL}?_ts=${Date.now()}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            redirect: 'follow',
-            cache: 'no-store',
-            credentials: 'omit',
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: requestBody
-        });
-    } catch (noCorsError) {
+    const urls = getPortalBCandidateUrls();
+    let lastError = null;
+
+    for (const baseUrl of urls) {
+        const requestUrl = `${baseUrl}?_ts=${Date.now()}`;
+        for (const modeValue of ['cors', 'no-cors']) {
+            try {
+                const response = await fetch(requestUrl, {
+                    method: 'POST',
+                    mode: modeValue,
+                    redirect: 'follow',
+                    cache: 'no-store',
+                    credentials: 'omit',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: requestBody
+                });
+                PORTALB_SCRIPT_URL = baseUrl;
+                return response;
+            } catch (error) {
+                lastError = error;
+                console.warn(`POST ${modeValue} fallo (${baseUrl}):`, error);
+            }
+        }
+
         // Fallback útil en móviles/iOS para mensajes pequeños.
         // sendBeacon suele fallar con payloads grandes (adjuntos en base64).
         if (allowBeacon && navigator.sendBeacon && requestBody.length < 60000) {
             try {
                 const blob = new Blob([requestBody], { type: 'text/plain;charset=UTF-8' });
-                const queued = navigator.sendBeacon(PORTALB_SCRIPT_URL, blob);
+                const queued = navigator.sendBeacon(baseUrl, blob);
                 if (queued) {
+                    PORTALB_SCRIPT_URL = baseUrl;
                     return { ok: true, queued: true };
                 }
-            } catch (_) {}
+            } catch (error) {
+                lastError = error;
+            }
         }
-        console.warn('POST no-cors fallo:', noCorsError);
-        throw noCorsError;
     }
+
+    throw lastError || new Error('portalb_post_failed');
 }
 
 function isChatBlobUrl(url) {
@@ -5125,21 +5156,31 @@ function disableChatAttachmentUI(disabled) {
 }
 
 async function checkChatAttachmentHealth() {
-    try {
-        const url = `${PORTALB_SCRIPT_URL}?mode=chat_attachment_health&t=${Date.now()}`;
-        const response = await fetch(url, { cache: 'no-store' });
-        if (!response.ok) return { ok: false, reason: 'health_http_error' };
-        const payload = await response.json();
-        if (payload && payload.ok === true && payload.driveReady === true) {
-            return { ok: true };
+    const urls = getPortalBCandidateUrls();
+    let lastReason = 'health_fetch_failed';
+    for (const baseUrl of urls) {
+        try {
+            const url = `${baseUrl}?mode=chat_attachment_health&t=${Date.now()}`;
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) {
+                lastReason = 'health_http_error';
+                continue;
+            }
+            const payload = await response.json();
+            if (payload && payload.ok === true && payload.driveReady === true) {
+                PORTALB_SCRIPT_URL = baseUrl;
+                return { ok: true };
+            }
+            if (payload && payload.error === 'missing_drive_scope') {
+                PORTALB_SCRIPT_URL = baseUrl;
+                return { ok: false, reason: 'missing_drive_scope', requiredScope: payload.requiredScope || '' };
+            }
+            lastReason = String(payload && payload.error ? payload.error : 'health_unknown');
+        } catch (error) {
+            lastReason = 'health_fetch_failed';
         }
-        if (payload && payload.error === 'missing_drive_scope') {
-            return { ok: false, reason: 'missing_drive_scope', requiredScope: payload.requiredScope || '' };
-        }
-        return { ok: false, reason: String(payload && payload.error ? payload.error : 'health_unknown') };
-    } catch (error) {
-        return { ok: false, reason: 'health_fetch_failed' };
     }
+    return { ok: false, reason: lastReason };
 }
 
 async function submitChatAttachment(file) {
@@ -5157,6 +5198,10 @@ async function submitChatAttachment(file) {
     const attachmentHealth = await checkChatAttachmentHealth();
     if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
         alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
+        return;
+    }
+    if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
+        alert('No se pudo conectar con Apps Script para subir el adjunto. Revisa la URL /exec desplegada y vuelve a intentar.');
         return;
     }
 

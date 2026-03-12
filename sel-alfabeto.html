@@ -4744,7 +4744,8 @@ let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
 
-async function postToPortalB(payload) {
+async function postToPortalB(payload, options = {}) {
+    const allowBeacon = options && options.allowBeacon !== false;
     const requestBody = JSON.stringify(payload || {});
     try {
         return await fetch(`${PORTALB_SCRIPT_URL}?_ts=${Date.now()}`, {
@@ -4756,12 +4757,12 @@ async function postToPortalB(payload) {
             headers: {
                 'Content-Type': 'text/plain;charset=utf-8'
             },
-            keepalive: true,
             body: requestBody
         });
     } catch (noCorsError) {
-        // Fallback útil en móviles/iOS cuando fetch no-cors se corta por navegación o políticas del navegador
-        if (navigator.sendBeacon) {
+        // Fallback útil en móviles/iOS para mensajes pequeños.
+        // sendBeacon suele fallar con payloads grandes (adjuntos en base64).
+        if (allowBeacon && navigator.sendBeacon && requestBody.length < 60000) {
             try {
                 const blob = new Blob([requestBody], { type: 'text/plain;charset=UTF-8' });
                 const queued = navigator.sendBeacon(PORTALB_SCRIPT_URL, blob);
@@ -5206,7 +5207,7 @@ async function submitChatAttachment(file) {
                 kind: kind,
                 dataBase64: dataBase64
             }
-        });
+        }, { allowBeacon: false });
         setTimeout(() => {
             if (document.getElementById('chat-overlay')) {
                 void refreshChatMessages(false, false);

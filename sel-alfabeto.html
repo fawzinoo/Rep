@@ -4720,7 +4720,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-5ZkatXEQVjMOVS8_TIvbx6JQ19A6Yk4L8gHbdKP-dH2wTQuKODCx0rkkR2qIQgMs/exec';
+const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwCODKY2Nno4hJzU0HTG0bEaSwb6kPfUW7jY4aUF0dl0z5Wuw7UV2GOkrOGxAKjRl7v/exec';
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
@@ -4734,6 +4734,7 @@ const CHAT_COLUMN_KEY = 'U1L0T1';
 const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
 const CHAT_ATTACHMENT_MAX_BYTES = 7 * 1024 * 1024;
+const CHAT_ATTACHMENT_V1_PREFIX = '__CHAT_ATTACHMENT_V1__';
 let chatRefreshIntervalId = null;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
@@ -5724,6 +5725,35 @@ function getStudentIdentityForChat() {
 function parseChatCellValue(rawValue) {
     const text = String(rawValue || '').trim();
     if (!text) return null;
+    if (text.startsWith(CHAT_ATTACHMENT_V1_PREFIX)) {
+        const rawPayload = text.slice(CHAT_ATTACHMENT_V1_PREFIX.length).trim();
+        try {
+            const payload = JSON.parse(rawPayload);
+            if (payload && payload.kind === 'attachment' && payload.attachment) {
+                const attachment = payload.attachment || {};
+                const attachmentKind = String(attachment.kind || '').trim().toLowerCase();
+                const attachmentUrl = String(attachment.url || '').trim();
+                const attachmentName = String(attachment.name || '').trim();
+                return {
+                    user: normalizeChatUserLabel(payload.user || CHAT_DEFAULT_USER),
+                    message: String(payload.message || '').trim(),
+                    teacherReply: '',
+                    quotedReply: '',
+                    raw: text,
+                    hasExplicitUser: !!payload.user,
+                    attachmentKind,
+                    attachmentUrl,
+                    attachmentName,
+                    attachmentMimeType: String(attachment.mimeType || '').trim(),
+                    attachmentSize: Number(attachment.size) || 0,
+                    imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
+                    imageTitle: attachmentName
+                };
+            }
+        } catch (error) {
+            return null;
+        }
+    }
     if (/^cellimage$/i.test(text)) {
         return {
             user: CHAT_DEFAULT_USER,
@@ -5861,18 +5891,30 @@ async function fetchChatMessages() {
                     : (!entryUserClean || hasAnonEntryUser
                         ? (parsed ? parsed.user : CHAT_DEFAULT_USER)
                         : normalizeChatUserLabel(entry.user || (parsed ? parsed.user : CHAT_DEFAULT_USER)));
+                const parsedAttachmentKind = parsed && parsed.attachmentKind ? String(parsed.attachmentKind || '').trim().toLowerCase() : '';
+                const parsedAttachmentUrl = parsed && parsed.attachmentUrl ? String(parsed.attachmentUrl || '').trim() : '';
+                const parsedAttachmentName = parsed && parsed.attachmentName ? String(parsed.attachmentName || '').trim() : '';
+                const parsedAttachmentMimeType = parsed && parsed.attachmentMimeType ? String(parsed.attachmentMimeType || '').trim() : '';
+                const parsedAttachmentSize = parsed && parsed.attachmentSize ? Number(parsed.attachmentSize) || 0 : 0;
+                const resolvedAttachmentKind = entryAttachmentKind || parsedAttachmentKind;
+                const resolvedAttachmentUrl = entryAttachmentUrl || parsedAttachmentUrl;
+                const resolvedAttachmentName = entryAttachmentName || parsedAttachmentName;
+                const resolvedAttachmentMimeType = entryAttachmentMimeType || parsedAttachmentMimeType;
+                const resolvedAttachmentSize = entryAttachmentSize || parsedAttachmentSize;
+                const resolvedImageUrl = entryImageUrl || (parsed && parsed.imageUrl ? String(parsed.imageUrl || '').trim() : '');
+                const resolvedImageTitle = entryImageTitle || (parsed && parsed.imageTitle ? String(parsed.imageTitle || '').trim() : '');
                 return {
                     user: resolvedUser,
                     message: parsed ? parsed.message : '',
                     teacherReply: parsed ? parsed.teacherReply : '',
                     quotedReply: parsed ? parsed.quotedReply : '',
-                    imageUrl: entryImageUrl,
-                    imageTitle: entryImageTitle,
-                    attachmentKind: entryAttachmentKind,
-                    attachmentUrl: entryAttachmentUrl,
-                    attachmentName: entryAttachmentName,
-                    attachmentMimeType: entryAttachmentMimeType,
-                    attachmentSize: entryAttachmentSize
+                    imageUrl: resolvedImageUrl,
+                    imageTitle: resolvedImageTitle,
+                    attachmentKind: resolvedAttachmentKind,
+                    attachmentUrl: resolvedAttachmentUrl,
+                    attachmentName: resolvedAttachmentName,
+                    attachmentMimeType: resolvedAttachmentMimeType,
+                    attachmentSize: resolvedAttachmentSize
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
@@ -5882,13 +5924,13 @@ async function fetchChatMessages() {
                 message: parsed.message,
                 teacherReply: parsed.teacherReply,
                 quotedReply: parsed.quotedReply,
-                imageUrl: '',
-                imageTitle: '',
-                attachmentKind: '',
-                attachmentUrl: '',
-                attachmentName: '',
-                attachmentMimeType: '',
-                attachmentSize: 0
+                imageUrl: parsed.imageUrl || '',
+                imageTitle: parsed.imageTitle || '',
+                attachmentKind: parsed.attachmentKind || '',
+                attachmentUrl: parsed.attachmentUrl || '',
+                attachmentName: parsed.attachmentName || '',
+                attachmentMimeType: parsed.attachmentMimeType || '',
+                attachmentSize: parsed.attachmentSize || 0
             };
         })
         .filter(Boolean);

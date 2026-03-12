@@ -4720,7 +4720,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwIZF7vLYcLrvSIGECIL01YZhMu4otCkVDF6XPFKviAUMjlqgli7MPs-aylybXIGtso/exec';
+const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-d10euD2z0Ina5MOnZhKYtsYHX7HijLNb4WFaMYdyHR_C5dKUjHwuw3EASY-SJiOF/exec';
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
@@ -4746,27 +4746,32 @@ let chatAttachmentUploadInProgress = false;
 
 async function postToPortalB(payload) {
     const requestBody = JSON.stringify(payload || {});
-    const corsOptions = {
-        method: 'POST',
-        mode: 'cors',
-        redirect: 'follow',
-        cache: 'no-store',
-        headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
-        },
-        body: requestBody
-    };
     try {
-        return await fetch(PORTALB_SCRIPT_URL, corsOptions);
-    } catch (corsError) {
-        console.warn('POST CORS fallo, reintentando en no-cors...', corsError);
-        return fetch(PORTALB_SCRIPT_URL, {
+        return await fetch(`${PORTALB_SCRIPT_URL}?_ts=${Date.now()}`, {
             method: 'POST',
             mode: 'no-cors',
             redirect: 'follow',
             cache: 'no-store',
+            credentials: 'omit',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            keepalive: true,
             body: requestBody
         });
+    } catch (noCorsError) {
+        // Fallback útil en móviles/iOS cuando fetch no-cors se corta por navegación o políticas del navegador
+        if (navigator.sendBeacon) {
+            try {
+                const blob = new Blob([requestBody], { type: 'text/plain;charset=UTF-8' });
+                const queued = navigator.sendBeacon(PORTALB_SCRIPT_URL, blob);
+                if (queued) {
+                    return { ok: true, queued: true };
+                }
+            } catch (_) {}
+        }
+        console.warn('POST no-cors fallo:', noCorsError);
+        throw noCorsError;
     }
 }
 

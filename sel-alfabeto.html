@@ -633,6 +633,10 @@
     padding: 14px;
 }
 
+.chat-overlay.is-hidden {
+    display: none !important;
+}
+
 .chat-modal {
     width: min(92vw, 680px);
     max-height: 84vh;
@@ -4738,12 +4742,14 @@ const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
 const CHAT_ATTACHMENT_MAX_BYTES = 7 * 1024 * 1024;
 const CHAT_ATTACHMENT_V1_PREFIX = '__CHAT_ATTACHMENT_V1__';
-const CHAT_THUMB_SIZE = 'w160';
+const CHAT_THUMB_SIZE = 'w140';
 const CHAT_THUMB_PRELOAD_LIMIT = 12;
-const CHAT_THUMB_PRELOAD_WAIT_MS = 450;
+const CHAT_THUMB_PRELOAD_WAIT_MS = 850;
+const CHAT_THUMB_LOAD_TIMEOUT_MS = 2200;
 let chatRefreshIntervalId = null;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
+let chatLastRenderedSignature = '';
 let chatHasLoadedOnce = false;
 let chatLatestServerMessages = [];
 let chatLocalEchoMessages = [];
@@ -4751,6 +4757,7 @@ let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
 let chatInitialHydrationPending = false;
 const chatThumbPreloadedUrls = new Set();
+const chatResolvedThumbByImageUrl = new Map();
 
 function getPortalBCandidateUrls() {
     const rawList = [PORTALB_SCRIPT_URL, ...PORTALB_SCRIPT_URL_FALLBACKS];
@@ -4904,6 +4911,7 @@ function renderMergedChatMessages(serverMessages) {
     const base = Array.isArray(serverMessages) ? serverMessages : [];
     const merged = [...base, ...chatLocalEchoMessages];
     renderChatMessages(merged);
+    chatLastRenderedSignature = buildChatMessagesSignature(merged);
 }
 
 function canReplyToRecipientMessage(msg, currentUserLabel) {
@@ -5194,9 +5202,73 @@ function preloadChatThumbUrl(url) {
     });
 }
 
+function probeChatImageUrl(url, timeoutMs = CHAT_THUMB_LOAD_TIMEOUT_MS) {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return Promise.resolve(false);
+    return new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const done = (ok) => {
+            if (settled) return;
+            settled = true;
+            resolve(!!ok);
+        };
+        const timer = setTimeout(() => done(false), timeoutMs);
+        img.onload = () => {
+            clearTimeout(timer);
+            done(true);
+        };
+        img.onerror = () => {
+            clearTimeout(timer);
+            done(false);
+        };
+        img.decoding = 'async';
+        img.src = safeUrl;
+    });
+}
+
+function getResolvedThumbCandidates(imageKey, candidates) {
+    const key = String(imageKey || '').trim();
+    if (!key || !Array.isArray(candidates) || candidates.length === 0) return Array.isArray(candidates) ? candidates : [];
+    const cached = String(chatResolvedThumbByImageUrl.get(key) || '').trim();
+    if (!cached) return candidates;
+    const reordered = [cached, ...candidates.filter((entry) => entry !== cached)];
+    const seen = new Set();
+    return reordered.filter((entry) => {
+        const v = String(entry || '').trim();
+        if (!v || seen.has(v)) return false;
+        seen.add(v);
+        return true;
+    });
+}
+
+async function resolveBestThumbForImage(imageUrl) {
+    const imageKey = String(imageUrl || '').trim();
+    if (!imageKey) return '';
+    const alreadyResolved = String(chatResolvedThumbByImageUrl.get(imageKey) || '').trim();
+    if (alreadyResolved) return alreadyResolved;
+
+    const candidates = buildChatImageUrlCandidates(imageKey, CHAT_THUMB_SIZE);
+    for (let i = 0; i < candidates.length; i++) {
+        const candidate = String(candidates[i] || '').trim();
+        if (!candidate) continue;
+        if (chatThumbPreloadedUrls.has(candidate)) {
+            chatResolvedThumbByImageUrl.set(imageKey, candidate);
+            return candidate;
+        }
+        const ok = await probeChatImageUrl(candidate);
+        if (ok) {
+            chatThumbPreloadedUrls.add(candidate);
+            chatResolvedThumbByImageUrl.set(imageKey, candidate);
+            return candidate;
+        }
+    }
+    return '';
+}
+
 async function preloadChatThumbnails(messages, limit = CHAT_THUMB_PRELOAD_LIMIT) {
     if (!Array.isArray(messages) || messages.length === 0) return;
-    const urls = [];
+    const imageUrls = [];
     const seen = new Set();
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
@@ -5204,15 +5276,13 @@ async function preloadChatThumbnails(messages, limit = CHAT_THUMB_PRELOAD_LIMIT)
         const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim().toLowerCase();
         const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
         const resolvedImageUrl = imageUrl || (attachmentKind === 'image' ? attachmentUrl : '');
-        if (!resolvedImageUrl) continue;
-        const thumbUrl = buildChatImageUrlCandidates(resolvedImageUrl, CHAT_THUMB_SIZE)[0] || '';
-        if (!thumbUrl || seen.has(thumbUrl)) continue;
-        seen.add(thumbUrl);
-        urls.push(thumbUrl);
-        if (urls.length >= limit) break;
+        if (!resolvedImageUrl || seen.has(resolvedImageUrl)) continue;
+        seen.add(resolvedImageUrl);
+        imageUrls.push(resolvedImageUrl);
+        if (imageUrls.length >= limit) break;
     }
-    if (urls.length === 0) return;
-    const preloadTask = Promise.allSettled(urls.map((url) => preloadChatThumbUrl(url)));
+    if (imageUrls.length === 0) return;
+    const preloadTask = Promise.allSettled(imageUrls.map((imgUrl) => resolveBestThumbForImage(imgUrl)));
     await Promise.race([
         preloadTask,
         new Promise((resolve) => setTimeout(resolve, CHAT_THUMB_PRELOAD_WAIT_MS))
@@ -5226,6 +5296,13 @@ function bindChatImageFallbacks(messagesRootEl) {
         if (thumbEl.dataset.fallbackBound === '1') return;
         thumbEl.dataset.fallbackBound = '1';
         thumbEl.dataset.candidateIndex = '0';
+        thumbEl.addEventListener('load', () => {
+            const imageKey = String(thumbEl.dataset.imageKey || '').trim();
+            const src = String(thumbEl.currentSrc || thumbEl.src || '').trim();
+            if (!imageKey || !src) return;
+            chatThumbPreloadedUrls.add(src);
+            chatResolvedThumbByImageUrl.set(imageKey, src);
+        });
         thumbEl.addEventListener('error', () => {
             const rawCandidates = String(thumbEl.dataset.candidates || '')
                 .split('||')
@@ -6162,7 +6239,11 @@ function renderChatMessages(messages) {
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
-        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl, CHAT_THUMB_SIZE);
+        const imageUrlKey = String(imageUrl || '').trim();
+        const imageUrlCandidates = getResolvedThumbCandidates(
+            imageUrlKey,
+            buildChatImageUrlCandidates(imageUrl, CHAT_THUMB_SIZE)
+        );
         const imageThumbSrc = imageUrlCandidates[0] || '';
         const imageViewerCandidates = buildChatImageUrlCandidates(imageUrl, 'w1600');
         const imageViewerSrc = imageUrl || imageViewerCandidates[0] || imageThumbSrc;
@@ -6183,6 +6264,7 @@ function renderChatMessages(messages) {
                         class="chat-image-thumb"
                         src="${escapeHtml(imageThumbSrc)}"
                         data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
+                        data-image-key="${escapeHtml(imageUrlKey)}"
                         alt="${escapeHtml(imageTitle)}"
                         loading="${imageLoadingMode}"
                         fetchpriority="${imageFetchPriority}"
@@ -6286,7 +6368,13 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
         }
         const hasNewMessage = updateChatNotificationState(messages, notifyOnNewMessage);
         reconcileLocalEchoWithServer(chatLatestServerMessages);
-        renderMergedChatMessages(chatLatestServerMessages);
+        const nextRenderSignature = buildChatMessagesSignature([
+            ...chatLatestServerMessages,
+            ...chatLocalEchoMessages
+        ]);
+        if (showLoading || nextRenderSignature !== chatLastRenderedSignature) {
+            renderMergedChatMessages(chatLatestServerMessages);
+        }
         chatInitialHydrationPending = false;
         requestAnimationFrame(() => {
             scrollChatToLatestMessage(hasNewMessage && !showLoading);
@@ -6317,10 +6405,14 @@ function closeChatModal() {
     stopChatAutoRefresh();
     chatReplyTarget = null;
     chatAttachmentUploadInProgress = false;
+    clearChatReplyTarget(false);
     closeChatAttachmentMenu();
     closeChatImageViewer();
     const overlay = document.getElementById('chat-overlay');
-    if (overlay) overlay.remove();
+    if (overlay) {
+        overlay.classList.add('is-hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
 }
 
 async function submitChatMessage() {
@@ -6365,7 +6457,27 @@ async function submitChatMessage() {
 }
 
 async function openChatModal() {
-    closeChatModal();
+    const existingOverlay = document.getElementById('chat-overlay');
+    if (existingOverlay) {
+        existingOverlay.classList.remove('is-hidden');
+        existingOverlay.removeAttribute('aria-hidden');
+        chatReplyTarget = null;
+        chatAttachmentUploadInProgress = false;
+        clearChatReplyTarget(false);
+        closeChatAttachmentMenu();
+        closeChatImageViewer();
+        disableChatAttachmentUI(false);
+        startChatAutoRefresh();
+        if (!chatLastRenderedSignature) {
+            await refreshChatMessages(true, false);
+        } else {
+            requestAnimationFrame(() => {
+                scrollChatToLatestMessage(false);
+            });
+        }
+        return;
+    }
+
     chatReplyTarget = null;
 
     const overlay = document.createElement('div');

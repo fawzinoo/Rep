@@ -4743,6 +4743,18 @@ let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
 
+function isChatBlobUrl(url) {
+    return String(url || '').trim().indexOf('blob:') === 0;
+}
+
+function releaseChatBlobUrl(url) {
+    const safeUrl = String(url || '').trim();
+    if (!isChatBlobUrl(safeUrl)) return;
+    try {
+        URL.revokeObjectURL(safeUrl);
+    } catch (_) {}
+}
+
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
     return messages.map(msg => {
@@ -4810,6 +4822,7 @@ function reconcileLocalEchoWithServer(serverMessages) {
         const remaining = keyCounts.get(key) || 0;
         if (remaining > 0) {
             keyCounts.set(key, remaining - 1);
+            releaseChatBlobUrl(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             return false;
         }
         return true;
@@ -5152,10 +5165,10 @@ async function submitChatAttachment(file) {
         console.warn('Error enviando adjunto al chat:', error);
         chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== localObjectUrl);
         renderMergedChatMessages(chatLatestServerMessages);
+        releaseChatBlobUrl(localObjectUrl);
     } finally {
         chatAttachmentUploadInProgress = false;
         disableChatAttachmentUI(false);
-        setTimeout(() => URL.revokeObjectURL(localObjectUrl), 4000);
     }
 }
 
@@ -10024,11 +10037,10 @@ async function checkInternetConnection() {
     
     console.log('🔍 Verificando conectividad real...');
     
+    const origin = window.location.origin || '';
     const testUrls = [
-        'https://www.google.com/favicon.ico',
-        'https://httpbin.org/status/200',
-        'https://jsonplaceholder.typicode.com/posts/1',
-        'https://api.github.com'
+        `${origin}/favicon.ico`,
+        window.location.href.split('#')[0]
     ];
     
     let connectionSuccessful = false;
@@ -10039,8 +10051,7 @@ async function checkInternetConnection() {
             const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos timeout
             
             const response = await fetch(url, {
-                method: 'HEAD',
-                mode: 'no-cors',
+                method: 'GET',
                 cache: 'no-cache',
                 signal: controller.signal
             });
@@ -10062,7 +10073,7 @@ async function checkInternetConnection() {
         try {
             // Prueba simple con fetch a la misma página
             const response = await fetch(window.location.href, {
-                method: 'HEAD',
+                method: 'GET',
                 cache: 'no-cache'
             });
             

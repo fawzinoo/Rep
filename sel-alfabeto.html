@@ -4738,6 +4738,9 @@ const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
 const CHAT_ATTACHMENT_MAX_BYTES = 7 * 1024 * 1024;
 const CHAT_ATTACHMENT_V1_PREFIX = '__CHAT_ATTACHMENT_V1__';
+const CHAT_THUMB_SIZE = 'w220';
+const CHAT_THUMB_PRELOAD_LIMIT = 12;
+const CHAT_THUMB_PRELOAD_WAIT_MS = 450;
 let chatRefreshIntervalId = null;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
@@ -4746,6 +4749,8 @@ let chatLatestServerMessages = [];
 let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
+let chatInitialHydrationPending = false;
+const chatThumbPreloadedUrls = new Set();
 
 function getPortalBCandidateUrls() {
     const rawList = [PORTALB_SCRIPT_URL, ...PORTALB_SCRIPT_URL_FALLBACKS];
@@ -5138,16 +5143,16 @@ function extractDriveFileIdFromUrl(rawUrl) {
     return '';
 }
 
-function buildChatImageUrlCandidates(rawUrl, preferredSize = 'w320') {
+function buildChatImageUrlCandidates(rawUrl, preferredSize = CHAT_THUMB_SIZE) {
     const source = String(rawUrl || '').trim();
     if (!source) return [];
 
     const fileId = extractDriveFileIdFromUrl(source);
     const candidates = [];
     if (fileId) {
-        const safeSize = String(preferredSize || 'w320').trim();
-        candidates.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=${encodeURIComponent(safeSize)}`);
+        const safeSize = String(preferredSize || CHAT_THUMB_SIZE).trim();
         candidates.push(`https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=${encodeURIComponent(safeSize)}`);
+        candidates.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=${encodeURIComponent(safeSize)}`);
         candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`);
         candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=view`);
     }
@@ -5163,8 +5168,55 @@ function buildChatImageUrlCandidates(rawUrl, preferredSize = 'w320') {
 }
 
 function getPreferredChatImageUrl(rawUrl) {
-    const candidates = buildChatImageUrlCandidates(rawUrl, 'w320');
+    const candidates = buildChatImageUrlCandidates(rawUrl, CHAT_THUMB_SIZE);
     return candidates[0] || '';
+}
+
+function preloadChatThumbUrl(url) {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl || chatThumbPreloadedUrls.has(safeUrl)) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            chatThumbPreloadedUrls.add(safeUrl);
+            resolve();
+        };
+        img.onload = done;
+        img.onerror = done;
+        img.decoding = 'async';
+        img.src = safeUrl;
+        if (img.complete) done();
+    });
+}
+
+async function preloadChatThumbnails(messages, limit = CHAT_THUMB_PRELOAD_LIMIT) {
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    const urls = [];
+    const seen = new Set();
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '').trim();
+        const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim().toLowerCase();
+        const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
+        const resolvedImageUrl = imageUrl || (attachmentKind === 'image' ? attachmentUrl : '');
+        if (!resolvedImageUrl) continue;
+        const thumbUrl = buildChatImageUrlCandidates(resolvedImageUrl, CHAT_THUMB_SIZE)[0] || '';
+        if (!thumbUrl || seen.has(thumbUrl)) continue;
+        seen.add(thumbUrl);
+        urls.push(thumbUrl);
+        if (urls.length >= limit) break;
+    }
+    if (urls.length === 0) return;
+    const preloadTask = Promise.allSettled(urls.map((url) => preloadChatThumbUrl(url)));
+    await Promise.race([
+        preloadTask,
+        new Promise((resolve) => setTimeout(resolve, CHAT_THUMB_PRELOAD_WAIT_MS))
+    ]);
 }
 
 function bindChatImageFallbacks(messagesRootEl) {
@@ -6084,6 +6136,7 @@ function renderChatMessages(messages) {
 
     const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
     const renderMessages = prepareChatMessagesForRender(messages, currentUserLabel);
+    const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
     messagesEl.innerHTML = renderMessages.map((msg, idx) => {
         const userLabel = normalizeChatUserLabel(msg.user);
@@ -6109,12 +6162,13 @@ function renderChatMessages(messages) {
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
-        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl, 'w320');
+        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl, CHAT_THUMB_SIZE);
         const imageThumbSrc = imageUrlCandidates[0] || '';
         const imageViewerCandidates = buildChatImageUrlCandidates(imageUrl, 'w1600');
         const imageViewerSrc = imageUrl || imageViewerCandidates[0] || imageThumbSrc;
-        const imageFetchPriority = idx >= Math.max(0, renderMessages.length - 8) ? 'high' : 'auto';
-        const imageLoadingMode = idx >= Math.max(0, renderMessages.length - 8) ? 'eager' : 'lazy';
+        const shouldBoostThumbLoad = prioritizeInitialThumbs || idx >= Math.max(0, renderMessages.length - 8);
+        const imageFetchPriority = shouldBoostThumbLoad ? 'high' : 'auto';
+        const imageLoadingMode = shouldBoostThumbLoad ? 'eager' : 'lazy';
         const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
         const imageThumbHtml = imageThumbSrc ? `
             <div class="chat-image-block">
@@ -6225,13 +6279,19 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     try {
         const messages = await fetchChatMessages();
         chatLatestServerMessages = Array.isArray(messages) ? messages : [];
+        chatInitialHydrationPending = !!showLoading;
+        if (showLoading) {
+            await preloadChatThumbnails(chatLatestServerMessages);
+        }
         const hasNewMessage = updateChatNotificationState(messages, notifyOnNewMessage);
         reconcileLocalEchoWithServer(chatLatestServerMessages);
         renderMergedChatMessages(chatLatestServerMessages);
+        chatInitialHydrationPending = false;
         requestAnimationFrame(() => {
             scrollChatToLatestMessage(hasNewMessage && !showLoading);
         });
     } catch (error) {
+        chatInitialHydrationPending = false;
         messagesEl.innerHTML = `<div class="chat-error">No se pudo cargar el chat. Intenta de nuevo.</div>`;
         console.warn('Error cargando chat:', error);
     }

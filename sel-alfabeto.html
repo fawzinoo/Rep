@@ -4744,6 +4744,32 @@ let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
 let chatAttachmentUploadInProgress = false;
 
+async function postToPortalB(payload) {
+    const requestBody = JSON.stringify(payload || {});
+    const corsOptions = {
+        method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
+        cache: 'no-store',
+        headers: {
+            'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: requestBody
+    };
+    try {
+        return await fetch(PORTALB_SCRIPT_URL, corsOptions);
+    } catch (corsError) {
+        console.warn('POST CORS fallo, reintentando en no-cors...', corsError);
+        return fetch(PORTALB_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            redirect: 'follow',
+            cache: 'no-store',
+            body: requestBody
+        });
+    }
+}
+
 function isChatBlobUrl(url) {
     return String(url || '').trim().indexOf('blob:') === 0;
 }
@@ -5161,25 +5187,20 @@ async function submitChatAttachment(file) {
 
     try {
         const dataBase64 = await readFileAsDataBase64(file);
-        await fetch(PORTALB_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            redirect: 'follow',
-            body: JSON.stringify({
-                type: 'chat_attachment',
-                columna: CHAT_COLUMN_KEY,
-                nombre: identity.firstName,
-                apellido: identity.lastName,
-                userDisplayName: identity.displayName,
-                mensaje: senderTaggedPayloadMessage,
-                attachment: {
-                    name: String(file.name || `${kind}-adjunto`).trim(),
-                    mimeType: String(file.type || 'application/octet-stream').trim(),
-                    size: fileSize,
-                    kind: kind,
-                    dataBase64: dataBase64
-                }
-            })
+        await postToPortalB({
+            type: 'chat_attachment',
+            columna: CHAT_COLUMN_KEY,
+            nombre: identity.firstName,
+            apellido: identity.lastName,
+            userDisplayName: identity.displayName,
+            mensaje: senderTaggedPayloadMessage,
+            attachment: {
+                name: String(file.name || `${kind}-adjunto`).trim(),
+                mimeType: String(file.type || 'application/octet-stream').trim(),
+                size: fileSize,
+                kind: kind,
+                dataBase64: dataBase64
+            }
         });
         setTimeout(() => {
             if (document.getElementById('chat-overlay')) {
@@ -5533,17 +5554,13 @@ async function sendLessonPointsToSheet(percentage, puntos) {
     const puntosPayload = serializeLessonPointsForServer(LESSON_COLUMN_KEY, puntos);
 
     try {
-        await fetch(PORTALB_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({
-                type: 'lesson_points',
-                nombre: student.nombre,
-                apellido: student.apellido,
-                columna: LESSON_COLUMN_KEY,
-                porcentaje: percentage,
-                puntos: puntosPayload
-            })
+        await postToPortalB({
+            type: 'lesson_points',
+            nombre: student.nombre,
+            apellido: student.apellido,
+            columna: LESSON_COLUMN_KEY,
+            porcentaje: percentage,
+            puntos: puntosPayload
         });
         console.log(`Puntos enviados a Google Sheet (${LESSON_COLUMN_KEY}): ${puntosPayload}`);
     } catch (error) {
@@ -6131,17 +6148,13 @@ async function submitChatMessage() {
     appendLocalEchoMessage(identity.displayName, message, activeReplyTarget);
 
     try {
-        await fetch(PORTALB_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({
-                type: 'chat_message',
-                columna: CHAT_COLUMN_KEY,
-                nombre: identity.firstName,
-                apellido: identity.lastName,
-                userDisplayName: identity.displayName,
-                mensaje: senderTaggedPayloadMessage
-            })
+        await postToPortalB({
+            type: 'chat_message',
+            columna: CHAT_COLUMN_KEY,
+            nombre: identity.firstName,
+            apellido: identity.lastName,
+            userDisplayName: identity.displayName,
+            mensaje: senderTaggedPayloadMessage
         });
         setTimeout(() => {
             if (document.getElementById('chat-overlay')) {

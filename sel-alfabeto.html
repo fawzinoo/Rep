@@ -810,22 +810,32 @@
     border-radius: 14px;
     overflow: hidden;
     display: inline-block;
-    max-width: min(240px, 72vw);
+    width: min(220px, 72vw);
+    max-width: min(220px, 72vw);
+    aspect-ratio: 4 / 3;
+    background: linear-gradient(120deg, rgba(226, 232, 240, 0.85) 30%, rgba(241, 245, 249, 1) 45%, rgba(226, 232, 240, 0.85) 60%);
+    background-size: 200% 100%;
+    animation: chatThumbSkeleton 1.05s ease-in-out infinite;
 }
 
 .chat-image-thumb {
     display: block;
     width: 100%;
-    max-width: 220px;
-    max-height: 170px;
+    height: 100%;
     object-fit: cover;
     border-radius: 12px;
     border: 1px solid rgba(15, 23, 42, 0.18);
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+    background: rgba(241, 245, 249, 0.95);
 }
 
 .chat-message-item.is-self .chat-image-thumb {
     border-color: rgba(16, 185, 129, 0.45);
+}
+
+@keyframes chatThumbSkeleton {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
 
 .chat-audio-block {
@@ -5136,15 +5146,16 @@ function extractDriveFileIdFromUrl(rawUrl) {
     return '';
 }
 
-function buildChatImageUrlCandidates(rawUrl) {
+function buildChatImageUrlCandidates(rawUrl, preferredSize = 'w320') {
     const source = String(rawUrl || '').trim();
     if (!source) return [];
 
     const fileId = extractDriveFileIdFromUrl(source);
     const candidates = [];
     if (fileId) {
-        candidates.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1200`);
-        candidates.push(`https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w1200`);
+        const safeSize = String(preferredSize || 'w320').trim();
+        candidates.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=${encodeURIComponent(safeSize)}`);
+        candidates.push(`https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=${encodeURIComponent(safeSize)}`);
         candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`);
         candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=view`);
     }
@@ -5160,7 +5171,7 @@ function buildChatImageUrlCandidates(rawUrl) {
 }
 
 function getPreferredChatImageUrl(rawUrl) {
-    const candidates = buildChatImageUrlCandidates(rawUrl);
+    const candidates = buildChatImageUrlCandidates(rawUrl, 'w320');
     return candidates[0] || '';
 }
 
@@ -6106,9 +6117,12 @@ function renderChatMessages(messages) {
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
-        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl);
+        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl, 'w320');
         const imageThumbSrc = imageUrlCandidates[0] || '';
-        const imageViewerSrc = imageThumbSrc || imageUrl;
+        const imageViewerCandidates = buildChatImageUrlCandidates(imageUrl, 'w1600');
+        const imageViewerSrc = imageUrl || imageViewerCandidates[0] || imageThumbSrc;
+        const imageFetchPriority = idx >= Math.max(0, renderMessages.length - 8) ? 'high' : 'auto';
+        const imageLoadingMode = idx >= Math.max(0, renderMessages.length - 8) ? 'eager' : 'lazy';
         const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
         const imageThumbHtml = imageThumbSrc ? `
             <div class="chat-image-block">
@@ -6124,7 +6138,9 @@ function renderChatMessages(messages) {
                         src="${escapeHtml(imageThumbSrc)}"
                         data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
                         alt="${escapeHtml(imageTitle)}"
-                        loading="lazy"
+                        loading="${imageLoadingMode}"
+                        fetchpriority="${imageFetchPriority}"
+                        decoding="async"
                     />
                 </button>
             </div>

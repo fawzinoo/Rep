@@ -4720,7 +4720,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwx0uhtJDTUpWLkIWer8mCUB_FV_Iz-RFQVr70fjYunLR6pG-hntoT55fA66Qj42i-2/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5_5i1RjPf_NPISqLduEsRl5umSntoCBPg8pywWJBIbUFvsni4sn48Nz9MVwcOZYYs/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -5120,6 +5120,73 @@ function formatAttachmentSize(bytes) {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function extractDriveFileIdFromUrl(rawUrl) {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+    const patterns = [
+        /[?&]id=([a-zA-Z0-9_-]{10,})/i,
+        /\/d\/([a-zA-Z0-9_-]{10,})/i
+    ];
+    for (let i = 0; i < patterns.length; i++) {
+        const match = value.match(patterns[i]);
+        if (match && match[1]) return String(match[1]).trim();
+    }
+    return '';
+}
+
+function buildChatImageUrlCandidates(rawUrl) {
+    const source = String(rawUrl || '').trim();
+    if (!source) return [];
+
+    const fileId = extractDriveFileIdFromUrl(source);
+    const candidates = [];
+    if (fileId) {
+        candidates.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1200`);
+        candidates.push(`https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w1200`);
+        candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`);
+        candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=view`);
+    }
+    candidates.push(source);
+
+    const seen = new Set();
+    return candidates.filter((entry) => {
+        const normalized = String(entry || '').trim();
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+    });
+}
+
+function getPreferredChatImageUrl(rawUrl) {
+    const candidates = buildChatImageUrlCandidates(rawUrl);
+    return candidates[0] || '';
+}
+
+function bindChatImageFallbacks(messagesRootEl) {
+    if (!messagesRootEl) return;
+    const thumbs = messagesRootEl.querySelectorAll('.chat-image-thumb[data-candidates]');
+    thumbs.forEach((thumbEl) => {
+        if (thumbEl.dataset.fallbackBound === '1') return;
+        thumbEl.dataset.fallbackBound = '1';
+        thumbEl.dataset.candidateIndex = '0';
+        thumbEl.addEventListener('error', () => {
+            const rawCandidates = String(thumbEl.dataset.candidates || '')
+                .split('||')
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean);
+            const currentIndex = Number(thumbEl.dataset.candidateIndex || '0');
+            const nextIndex = currentIndex + 1;
+            if (nextIndex < rawCandidates.length) {
+                thumbEl.dataset.candidateIndex = String(nextIndex);
+                thumbEl.src = rawCandidates[nextIndex];
+                return;
+            }
+            // Si ninguna URL funciona, ocultamos la miniatura rota.
+            thumbEl.style.display = 'none';
+        });
+    });
 }
 
 function closeChatAttachmentMenu() {
@@ -6039,17 +6106,26 @@ function renderChatMessages(messages) {
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
+        const imageUrlCandidates = buildChatImageUrlCandidates(imageUrl);
+        const imageThumbSrc = imageUrlCandidates[0] || '';
+        const imageViewerSrc = imageThumbSrc || imageUrl;
         const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
-        const imageThumbHtml = imageUrl ? `
+        const imageThumbHtml = imageThumbSrc ? `
             <div class="chat-image-block">
                 <button
                     type="button"
                     class="chat-image-thumb-btn"
-                    data-image-url="${escapeHtml(imageUrl)}"
+                    data-image-url="${escapeHtml(imageViewerSrc)}"
                     data-image-title="${escapeHtml(imageTitle)}"
                     aria-label="Abrir imagen"
                 >
-                    <img class="chat-image-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageTitle)}" loading="lazy" />
+                    <img
+                        class="chat-image-thumb"
+                        src="${escapeHtml(imageThumbSrc)}"
+                        data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
+                        alt="${escapeHtml(imageTitle)}"
+                        loading="lazy"
+                    />
                 </button>
             </div>
         ` : '';
@@ -6128,6 +6204,8 @@ function renderChatMessages(messages) {
             openChatImageViewer(imageUrl, imageTitle || 'Imagen');
         });
     });
+
+    bindChatImageFallbacks(messagesEl);
 }
 
 async function refreshChatMessages(showLoading = true, notifyOnNewMessage = false) {

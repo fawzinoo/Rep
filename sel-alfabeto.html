@@ -828,6 +828,48 @@
     border-color: rgba(16, 185, 129, 0.45);
 }
 
+.chat-audio-block {
+    margin-top: 8px;
+}
+
+.chat-audio-player {
+    width: min(260px, 74vw);
+    max-width: 100%;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.22);
+    background: #f8fafc;
+}
+
+.chat-file-block {
+    margin-top: 8px;
+}
+
+.chat-file-link-btn {
+    border: 1px solid rgba(15, 23, 42, 0.15);
+    background: rgba(248, 250, 252, 0.9);
+    color: #0f172a;
+    border-radius: 12px;
+    padding: 8px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    max-width: min(260px, 74vw);
+}
+
+.chat-file-link-btn i {
+    color: #2563eb;
+}
+
+.chat-file-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-image-viewer-overlay {
     position: fixed;
     inset: 0;
@@ -1010,8 +1052,70 @@
     font-size: 1.2rem;
 }
 
+.chat-input-trailing-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 3;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.chat-input-trailing-btn:hover {
+    background: rgba(15, 23, 42, 0.08);
+    color: #334155;
+}
+
 .chat-input-wrap.replying .chat-input-trailing {
     opacity: 0;
+}
+
+.chat-attach-menu {
+    position: absolute;
+    right: 10px;
+    bottom: calc(100% + 8px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+    padding: 8px;
+    z-index: 12;
+    min-width: 150px;
+}
+
+.chat-attach-menu[hidden] {
+    display: none !important;
+}
+
+.chat-attach-option-btn {
+    border: none;
+    background: #f8fafc;
+    color: #0f172a;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-attach-option-btn:hover {
+    background: #eef2ff;
 }
 
 .chat-input-wrap.replying {
@@ -1164,6 +1268,11 @@
     .chat-input-leading,
     .chat-input-trailing {
         font-size: 1.15rem;
+    }
+
+    .chat-input-trailing-btn {
+        width: 32px;
+        height: 32px;
     }
 
     .chat-send-btn {
@@ -4611,7 +4720,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzqcwX5rgRKvzFHjFrb9vsm0vzVE5gikZgkNu-59le0W797nF-3NKtmxYa6sz6vw4aO/exec';
+const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw8-svG0ATuzM2xhgmGgdWXg6Sv_pCO1Q19mbNn8fIdO3OcVUcPSc4zgwYFhNRNwOBc/exec';
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
@@ -4624,6 +4733,7 @@ const CHAT_MODE = 'chat_messages';
 const CHAT_COLUMN_KEY = 'U1L0T1';
 const CHAT_REFRESH_INTERVAL_MS = 10000;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
+const CHAT_ATTACHMENT_MAX_BYTES = 7 * 1024 * 1024;
 let chatRefreshIntervalId = null;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
@@ -4631,6 +4741,7 @@ let chatHasLoadedOnce = false;
 let chatLatestServerMessages = [];
 let chatLocalEchoMessages = [];
 let chatReplyTarget = null;
+let chatAttachmentUploadInProgress = false;
 
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -4640,7 +4751,10 @@ function buildChatMessagesSignature(messages) {
         const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '');
         const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '');
         const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '');
-        return `${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}`;
+        const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '');
+        const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
+        const attachmentName = String(msg && msg.attachmentName ? msg.attachmentName : '');
+        return `${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}::${attachmentKind}::${attachmentUrl}::${attachmentName}`;
     }).join('||');
 }
 
@@ -4675,7 +4789,13 @@ function buildChatMessageKey(msg) {
     const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '').trim();
     const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '').trim();
     const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '').trim();
-    return `${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}`;
+    const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
+    const attachmentMimeType = String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim();
+    const attachmentSize = String(msg && msg.attachmentSize != null ? msg.attachmentSize : '').trim();
+    const mediaFingerprint = attachmentKind
+        ? `${attachmentKind}::${attachmentMimeType}::${attachmentSize}`
+        : (imageUrl ? `imageurl::${imageUrl}` : '');
+    return `${user}::${message}::${teacherReply}::${quotedReply}::${mediaFingerprint}`;
 }
 
 function reconcileLocalEchoWithServer(serverMessages) {
@@ -4744,6 +4864,11 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
         imageUrl: String(msg && msg.imageUrl ? msg.imageUrl : '').trim(),
         imageTitle: String(msg && msg.imageTitle ? msg.imageTitle : '').trim(),
+        attachmentKind: String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim(),
+        attachmentUrl: String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim(),
+        attachmentName: String(msg && msg.attachmentName ? msg.attachmentName : '').trim(),
+        attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
+        attachmentSize: Number(msg && msg.attachmentSize ? msg.attachmentSize : 0) || 0,
         attachedReplies: [],
         __hidden: false
     }));
@@ -4872,9 +4997,10 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
     renderMergedChatMessages(chatLatestServerMessages);
 }
 
-function appendLocalEchoMessage(userLabel, messageText, replyTarget = null) {
+function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, attachment = null) {
     const cleanMessage = String(messageText || '').trim();
-    if (!cleanMessage) return;
+    const hasAttachment = !!(attachment && attachment.url);
+    if (!cleanMessage && !hasAttachment) return;
     const replyPreview = replyTarget && replyTarget.message
         ? `${normalizeChatUserLabel(replyTarget.user)}: ${String(replyTarget.message || '').trim()}`
         : '';
@@ -4884,7 +5010,12 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null) {
         teacherReply: '',
         quotedReply: replyPreview,
         imageUrl: '',
-        imageTitle: ''
+        imageTitle: '',
+        attachmentKind: attachment && attachment.kind ? String(attachment.kind).toLowerCase() : '',
+        attachmentUrl: attachment && attachment.url ? String(attachment.url).trim() : '',
+        attachmentName: attachment && attachment.name ? String(attachment.name).trim() : '',
+        attachmentMimeType: attachment && attachment.mimeType ? String(attachment.mimeType).trim() : '',
+        attachmentSize: attachment && attachment.size ? Number(attachment.size) || 0 : 0
     });
     renderMergedChatMessages(chatLatestServerMessages);
     requestAnimationFrame(() => {
@@ -4897,6 +5028,142 @@ function animateChatSendButton(buttonEl) {
     buttonEl.classList.remove('send-flash');
     void buttonEl.offsetWidth;
     buttonEl.classList.add('send-flash');
+}
+
+function guessAttachmentKindFromMime(mimeType = '') {
+    const mime = String(mimeType || '').toLowerCase();
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('audio/')) return 'audio';
+    return 'file';
+}
+
+function formatAttachmentSize(bytes) {
+    const size = Number(bytes) || 0;
+    if (size <= 0) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function closeChatAttachmentMenu() {
+    const menu = document.getElementById('chat-attach-menu');
+    if (menu) menu.hidden = true;
+}
+
+function toggleChatAttachmentMenu() {
+    const menu = document.getElementById('chat-attach-menu');
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+}
+
+function readFileAsDataBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result || '');
+            const commaIndex = result.indexOf(',');
+            if (commaIndex === -1) {
+                reject(new Error('invalid_data_url'));
+                return;
+            }
+            resolve(result.slice(commaIndex + 1));
+        };
+        reader.onerror = () => reject(new Error('file_read_error'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function disableChatAttachmentUI(disabled) {
+    const attachBtn = document.getElementById('chat-attach-btn');
+    if (attachBtn) attachBtn.disabled = !!disabled;
+}
+
+async function submitChatAttachment(file) {
+    const inputEl = document.getElementById('chat-input');
+    if (!file || !inputEl) return;
+    if (chatAttachmentUploadInProgress) return;
+
+    const fileSize = Number(file.size) || 0;
+    if (!fileSize) return;
+    if (fileSize > CHAT_ATTACHMENT_MAX_BYTES) {
+        alert(`El archivo supera el limite de ${(CHAT_ATTACHMENT_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB.`);
+        return;
+    }
+
+    const identity = getStudentIdentityForChat();
+    const activeReplyTarget = chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message
+        ? { user: chatReplyTarget.user, message: chatReplyTarget.message }
+        : null;
+    const caption = String(inputEl.value || '').trim();
+    const payloadMessage = activeReplyTarget
+        ? `<${activeReplyTarget.user}: ${activeReplyTarget.message}> ${caption}`
+        : caption;
+    const senderTaggedPayloadMessage = `-${normalizeChatUserLabel(identity.displayName)}-\n${payloadMessage}`;
+    const kind = guessAttachmentKindFromMime(file.type);
+    const localObjectUrl = URL.createObjectURL(file);
+
+    chatAttachmentUploadInProgress = true;
+    disableChatAttachmentUI(true);
+    closeChatAttachmentMenu();
+
+    inputEl.value = '';
+    clearChatReplyTarget(false);
+    appendLocalEchoMessage(
+        identity.displayName,
+        caption,
+        activeReplyTarget,
+        {
+            kind,
+            url: localObjectUrl,
+            name: String(file.name || `${kind}-adjunto`).trim(),
+            mimeType: String(file.type || '').trim(),
+            size: fileSize
+        }
+    );
+
+    try {
+        const dataBase64 = await readFileAsDataBase64(file);
+        await fetch(PORTALB_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'chat_attachment',
+                columna: CHAT_COLUMN_KEY,
+                nombre: identity.firstName,
+                apellido: identity.lastName,
+                userDisplayName: identity.displayName,
+                mensaje: senderTaggedPayloadMessage,
+                attachment: {
+                    name: String(file.name || `${kind}-adjunto`).trim(),
+                    mimeType: String(file.type || 'application/octet-stream').trim(),
+                    size: fileSize,
+                    kind: kind,
+                    dataBase64: dataBase64
+                }
+            })
+        });
+        setTimeout(() => {
+            if (document.getElementById('chat-overlay')) {
+                void refreshChatMessages(false, false);
+            }
+        }, 800);
+    } catch (error) {
+        console.warn('Error enviando adjunto al chat:', error);
+        chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== localObjectUrl);
+        renderMergedChatMessages(chatLatestServerMessages);
+    } finally {
+        chatAttachmentUploadInProgress = false;
+        disableChatAttachmentUI(false);
+        setTimeout(() => URL.revokeObjectURL(localObjectUrl), 4000);
+    }
+}
+
+function triggerChatAttachmentInput(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.value = '';
+    input.click();
 }
 
 function closeChatImageViewer() {
@@ -5528,7 +5795,22 @@ async function fetchChatMessages() {
             const entryImageTitle = entry && typeof entry === 'object'
                 ? String(entry.imageTitle || '').trim()
                 : '';
-            if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl)) {
+            const entryAttachmentKind = entry && typeof entry === 'object'
+                ? String(entry.attachmentKind || '').trim().toLowerCase()
+                : '';
+            const entryAttachmentUrl = entry && typeof entry === 'object'
+                ? String(entry.attachmentUrl || '').trim()
+                : '';
+            const entryAttachmentName = entry && typeof entry === 'object'
+                ? String(entry.attachmentName || '').trim()
+                : '';
+            const entryAttachmentMimeType = entry && typeof entry === 'object'
+                ? String(entry.attachmentMimeType || '').trim()
+                : '';
+            const entryAttachmentSize = entry && typeof entry === 'object'
+                ? (Number(entry.attachmentSize) || 0)
+                : 0;
+            if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl || entryAttachmentUrl)) {
                 const rawMessage = String(entry.message || '').trim();
                 const parsed = rawMessage
                     ? parseChatCellValue(rawMessage)
@@ -5548,7 +5830,12 @@ async function fetchChatMessages() {
                     teacherReply: parsed ? parsed.teacherReply : '',
                     quotedReply: parsed ? parsed.quotedReply : '',
                     imageUrl: entryImageUrl,
-                    imageTitle: entryImageTitle
+                    imageTitle: entryImageTitle,
+                    attachmentKind: entryAttachmentKind,
+                    attachmentUrl: entryAttachmentUrl,
+                    attachmentName: entryAttachmentName,
+                    attachmentMimeType: entryAttachmentMimeType,
+                    attachmentSize: entryAttachmentSize
                 };
             }
             const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
@@ -5559,7 +5846,12 @@ async function fetchChatMessages() {
                 teacherReply: parsed.teacherReply,
                 quotedReply: parsed.quotedReply,
                 imageUrl: '',
-                imageTitle: ''
+                imageTitle: '',
+                attachmentKind: '',
+                attachmentUrl: '',
+                attachmentName: '',
+                attachmentMimeType: '',
+                attachmentSize: 0
             };
         })
         .filter(Boolean);
@@ -5593,8 +5885,15 @@ function renderChatMessages(messages) {
             isReplyable ? 'is-replyable' : '',
             isSelectedTarget ? 'reply-target' : ''
         ].filter(Boolean).join(' ');
-        const imageUrl = String(msg.imageUrl || '').trim();
-        const imageTitle = String(msg.imageTitle || '').trim() || 'Imagen';
+        const rawImageUrl = String(msg.imageUrl || '').trim();
+        const attachmentKind = String(msg.attachmentKind || '').trim().toLowerCase();
+        const attachmentUrl = String(msg.attachmentUrl || '').trim();
+        const resolvedAttachmentKind = attachmentKind || (attachmentUrl ? 'file' : '');
+        const attachmentName = String(msg.attachmentName || '').trim();
+        const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
+        const attachmentSize = Number(msg.attachmentSize) || 0;
+        const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
+        const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
         const imageThumbHtml = imageUrl ? `
             <div class="chat-image-block">
                 <button
@@ -5606,6 +5905,22 @@ function renderChatMessages(messages) {
                 >
                     <img class="chat-image-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageTitle)}" loading="lazy" />
                 </button>
+            </div>
+        ` : '';
+        const showAudio = resolvedAttachmentKind === 'audio' && !!attachmentUrl;
+        const audioHtml = showAudio ? `
+            <div class="chat-audio-block">
+                <audio class="chat-audio-player" controls preload="none" src="${escapeHtml(attachmentUrl)}"></audio>
+            </div>
+        ` : '';
+        const showFile = resolvedAttachmentKind && resolvedAttachmentKind !== 'image' && resolvedAttachmentKind !== 'audio' && !!attachmentUrl;
+        const fileLabel = [attachmentName || 'Archivo', formatAttachmentSize(attachmentSize)].filter(Boolean).join(' • ');
+        const fileHtml = showFile ? `
+            <div class="chat-file-block">
+                <a class="chat-file-link-btn" href="${escapeHtml(attachmentUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(attachmentMimeType || 'Archivo')}">
+                    <i class="fas fa-file"></i>
+                    <span class="chat-file-name">${escapeHtml(fileLabel)}</span>
+                </a>
             </div>
         ` : '';
         const quotedReply = String(msg.quotedReply || '').trim();
@@ -5633,6 +5948,8 @@ function renderChatMessages(messages) {
                 ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
             </div>
             ${imageThumbHtml}
+            ${audioHtml}
+            ${fileHtml}
             ${quotedReply ? `
                 <div class="chat-message-reply">
                     <span class="chat-message-reply-arrow">↳</span>
@@ -5706,6 +6023,8 @@ function startChatAutoRefresh() {
 function closeChatModal() {
     stopChatAutoRefresh();
     chatReplyTarget = null;
+    chatAttachmentUploadInProgress = false;
+    closeChatAttachmentMenu();
     closeChatImageViewer();
     const overlay = document.getElementById('chat-overlay');
     if (overlay) overlay.remove();
@@ -5715,6 +6034,7 @@ async function submitChatMessage() {
     const inputEl = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
     if (!inputEl || !sendBtn) return;
+    if (chatAttachmentUploadInProgress) return;
 
     const message = inputEl.value.trim();
     if (!message) return;
@@ -5781,6 +6101,26 @@ async function openChatModal() {
                     <div class="chat-input-wrap">
                         <span class="chat-input-leading" aria-hidden="true"><i class="far fa-face-smile"></i></span>
                         <span class="chat-input-trailing" aria-hidden="true"><i class="fas fa-paperclip"></i></span>
+                        <button type="button" id="chat-attach-btn" class="chat-input-trailing-btn" aria-label="Adjuntar archivo" title="Adjuntar">
+                            <i class="fas fa-paperclip" aria-hidden="true"></i>
+                        </button>
+                        <div id="chat-attach-menu" class="chat-attach-menu" hidden>
+                            <button type="button" class="chat-attach-option-btn" id="chat-attach-photo-btn">
+                                <i class="fas fa-image" aria-hidden="true"></i>
+                                <span>Foto</span>
+                            </button>
+                            <button type="button" class="chat-attach-option-btn" id="chat-attach-audio-btn">
+                                <i class="fas fa-microphone" aria-hidden="true"></i>
+                                <span>Audio</span>
+                            </button>
+                            <button type="button" class="chat-attach-option-btn" id="chat-attach-file-btn">
+                                <i class="fas fa-file" aria-hidden="true"></i>
+                                <span>Archivo</span>
+                            </button>
+                        </div>
+                        <input type="file" id="chat-attach-photo-input" accept="image/*" hidden>
+                        <input type="file" id="chat-attach-audio-input" accept="audio/*" hidden>
+                        <input type="file" id="chat-attach-file-input" hidden>
                         <div id="chat-input-inline-reply" class="chat-input-inline-reply" hidden>
                             <span aria-hidden="true">↳</span>
                             <span id="chat-input-inline-reply-text" class="chat-input-inline-reply-text"></span>
@@ -5841,7 +6181,76 @@ async function openChatModal() {
         });
     }
 
+    const attachBtn = document.getElementById('chat-attach-btn');
+    const attachMenu = document.getElementById('chat-attach-menu');
+    const photoAttachBtn = document.getElementById('chat-attach-photo-btn');
+    const audioAttachBtn = document.getElementById('chat-attach-audio-btn');
+    const fileAttachBtn = document.getElementById('chat-attach-file-btn');
+    const photoAttachInput = document.getElementById('chat-attach-photo-input');
+    const audioAttachInput = document.getElementById('chat-attach-audio-input');
+    const fileAttachInput = document.getElementById('chat-attach-file-input');
+
+    if (attachBtn) {
+        attachBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            vibrar(35);
+            toggleChatAttachmentMenu();
+        });
+    }
+    if (attachMenu) {
+        attachMenu.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+    }
+    if (photoAttachBtn) {
+        photoAttachBtn.addEventListener('click', () => {
+            closeChatAttachmentMenu();
+            triggerChatAttachmentInput('chat-attach-photo-input');
+        });
+    }
+    if (audioAttachBtn) {
+        audioAttachBtn.addEventListener('click', () => {
+            closeChatAttachmentMenu();
+            triggerChatAttachmentInput('chat-attach-audio-input');
+        });
+    }
+    if (fileAttachBtn) {
+        fileAttachBtn.addEventListener('click', () => {
+            closeChatAttachmentMenu();
+            triggerChatAttachmentInput('chat-attach-file-input');
+        });
+    }
+
+    const onAttachmentInputChange = (inputEl) => {
+        if (!inputEl) return;
+        const picked = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
+        inputEl.value = '';
+        if (!picked) return;
+        vibrar(35);
+        playButtonSound();
+        void submitChatAttachment(picked);
+    };
+    if (photoAttachInput) {
+        photoAttachInput.addEventListener('change', () => onAttachmentInputChange(photoAttachInput));
+    }
+    if (audioAttachInput) {
+        audioAttachInput.addEventListener('change', () => onAttachmentInputChange(audioAttachInput));
+    }
+    if (fileAttachInput) {
+        fileAttachInput.addEventListener('change', () => onAttachmentInputChange(fileAttachInput));
+    }
+
+    if (overlay) {
+        overlay.addEventListener('click', (event) => {
+            if (!event.target.closest('#chat-attach-menu') && !event.target.closest('#chat-attach-btn')) {
+                closeChatAttachmentMenu();
+            }
+        });
+    }
+
     updateChatReplyPreview();
+    disableChatAttachmentUI(false);
     await refreshChatMessages(true, false);
     startChatAutoRefresh();
 }

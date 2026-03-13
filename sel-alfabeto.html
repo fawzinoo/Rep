@@ -774,6 +774,10 @@
     filter: saturate(1.04);
 }
 
+.chat-message-item.action-target {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 10px 22px rgba(15, 23, 42, 0.2);
+}
+
 .chat-message-line {
     display: flex;
     align-items: baseline;
@@ -1054,6 +1058,82 @@
     padding: 14px;
     text-align: center;
     color: #d1d5db;
+}
+
+.chat-action-menu {
+    position: fixed;
+    z-index: 14500;
+    min-width: min(92vw, 520px);
+    max-width: min(92vw, 620px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.98);
+    color: #0f172a;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.chat-action-menu[hidden] {
+    display: none !important;
+}
+
+.chat-action-menu-delete {
+    border: none;
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+    border-radius: 999px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.chat-action-menu-delete:hover {
+    background: rgba(239, 68, 68, 0.16);
+}
+
+.chat-action-menu-reactions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.chat-action-menu-reactions::-webkit-scrollbar {
+    display: none;
+}
+
+.chat-action-menu-emoji-btn {
+    border: none;
+    background: transparent;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.65rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.16s ease, background-color 0.16s ease;
+}
+
+.chat-action-menu-emoji-btn:hover {
+    transform: translateY(-1px) scale(1.06);
+    background: rgba(15, 23, 42, 0.06);
 }
 
 .chat-footer {
@@ -4910,6 +4990,7 @@ const CHAT_THUMB_PRELOAD_WAIT_MS = 850;
 const CHAT_THUMB_LOAD_TIMEOUT_MS = 2200;
 const CHAT_NOTIFICATION_SOUND_POOL_SIZE = 3;
 const CHAT_LONG_PRESS_DELETE_MS = 520;
+const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 let chatRefreshIntervalId = null;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
@@ -4928,6 +5009,7 @@ let chatNotificationAudioPrimed = false;
 let chatNotificationAudioPrimingInstalled = false;
 let chatOwnMessageLongPressTimerId = null;
 let chatIgnoreOwnMessageClickUntil = 0;
+let chatMessageActionMenuState = null;
 
 function getPortalBCandidateUrls() {
     const rawList = [PORTALB_SCRIPT_URL, ...PORTALB_SCRIPT_URL_FALLBACKS];
@@ -5155,6 +5237,7 @@ function reconcileLocalEchoWithServer(serverMessages) {
 }
 
 function renderMergedChatMessages(serverMessages) {
+    closeChatMessageActionMenu();
     const base = Array.isArray(serverMessages) ? serverMessages : [];
     const merged = [...base, ...chatLocalEchoMessages];
     renderChatMessages(merged);
@@ -5182,6 +5265,11 @@ function canDeleteOwnChatMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const row = Number(msg && msg.row ? msg.row : 0) || 0;
     return row > 0 && areSameChatUserLabels(userLabel, currentUserLabel);
+}
+
+function canReactToChatMessage(msg) {
+    const messageText = String(msg && msg.message ? msg.message : '').trim();
+    return !!messageText;
 }
 
 function parseQuotedReplyTarget(quotedReplyText) {
@@ -5405,6 +5493,7 @@ function clearChatReplyTarget(shouldRerender = true) {
 
 function toggleChatReplyTarget(msg, currentUserLabel) {
     if (!canReplyToRecipientMessage(msg, currentUserLabel)) return;
+    closeChatMessageActionMenu();
     clearChatEditTarget(false, false);
     closeChatAttachmentMenu();
     const nextTarget = getReplyTargetFromMessage(msg);
@@ -5419,6 +5508,7 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
 
 function clearChatEditTarget(shouldRerender = true, clearInput = true) {
     chatEditTarget = null;
+    closeChatMessageActionMenu();
     closeChatAttachmentMenu();
     if (clearInput) {
         const inputEl = document.getElementById('chat-input');
@@ -5432,6 +5522,7 @@ function clearChatEditTarget(shouldRerender = true, clearInput = true) {
 
 function toggleChatEditTarget(msg, currentUserLabel) {
     if (!canEditOwnChatMessage(msg, currentUserLabel)) return;
+    closeChatMessageActionMenu();
     clearChatReplyTarget(false);
     closeChatAttachmentMenu();
     const nextTarget = getEditTargetFromMessage(msg);
@@ -5510,13 +5601,154 @@ function applyLocalChatMessageDelete(deleteTarget) {
     renderMergedChatMessages(chatLatestServerMessages);
 }
 
+function closeChatMessageActionMenu() {
+    const menuEl = document.getElementById('chat-action-menu');
+    if (menuEl) menuEl.hidden = true;
+
+    if (chatMessageActionMenuState && chatMessageActionMenuState.anchorEl && chatMessageActionMenuState.anchorEl.classList) {
+        chatMessageActionMenuState.anchorEl.classList.remove('action-target');
+    }
+    chatMessageActionMenuState = null;
+}
+
+function positionChatMessageActionMenu(anchorEl) {
+    const menuEl = document.getElementById('chat-action-menu');
+    if (!menuEl || !anchorEl) return;
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const menuRect = menuEl.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const gap = 12;
+
+    let left = anchorRect.left + (anchorRect.width / 2) - (menuRect.width / 2);
+    let top = anchorRect.top - menuRect.height - gap;
+
+    if (left < gap) left = gap;
+    if (left + menuRect.width > viewportWidth - gap) {
+        left = Math.max(gap, viewportWidth - menuRect.width - gap);
+    }
+    if (top < gap) {
+        top = Math.min(viewportHeight - menuRect.height - gap, anchorRect.bottom + gap);
+    }
+
+    menuEl.style.left = `${Math.round(left)}px`;
+    menuEl.style.top = `${Math.round(Math.max(gap, top))}px`;
+}
+
+function buildChatActionMenuHtml(showDelete) {
+    const deleteHtml = showDelete ? `
+        <button type="button" id="chat-action-menu-delete-btn" class="chat-action-menu-delete">
+            <i class="fas fa-trash" aria-hidden="true"></i>
+            <span>Borrar</span>
+        </button>
+    ` : '';
+    const emojiHtml = CHAT_QUICK_REACTION_EMOJIS.map((emoji) => `
+        <button type="button" class="chat-action-menu-emoji-btn" data-emoji="${escapeHtml(emoji)}" aria-label="Reaccionar con ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>
+    `).join('');
+
+    return `
+        ${deleteHtml}
+        <div class="chat-action-menu-reactions">
+            ${emojiHtml}
+        </div>
+    `;
+}
+
+function openChatMessageActionMenu(targetMessage, anchorEl, currentUserLabel) {
+    if (!targetMessage || !anchorEl) return;
+
+    closeChatAttachmentMenu();
+    closeChatImageViewer();
+    if (chatEditTarget) clearChatEditTarget(false, true);
+    if (chatReplyTarget) clearChatReplyTarget(false);
+
+    const showDelete = canDeleteOwnChatMessage(targetMessage, currentUserLabel);
+    const showReactions = canReactToChatMessage(targetMessage);
+    if (!showDelete && !showReactions) return;
+
+    let menuEl = document.getElementById('chat-action-menu');
+    if (!menuEl) {
+        menuEl = document.createElement('div');
+        menuEl.id = 'chat-action-menu';
+        menuEl.className = 'chat-action-menu';
+        menuEl.hidden = true;
+        document.body.appendChild(menuEl);
+    }
+
+    if (chatMessageActionMenuState && chatMessageActionMenuState.anchorEl && chatMessageActionMenuState.anchorEl !== anchorEl) {
+        chatMessageActionMenuState.anchorEl.classList.remove('action-target');
+    }
+
+    anchorEl.classList.add('action-target');
+    menuEl.innerHTML = buildChatActionMenuHtml(showDelete);
+    menuEl.hidden = false;
+    chatMessageActionMenuState = {
+        targetMessage,
+        anchorEl,
+        currentUserLabel
+    };
+    positionChatMessageActionMenu(anchorEl);
+
+    const deleteBtn = document.getElementById('chat-action-menu-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await deleteChatMessageByTarget(targetMessage);
+        });
+    }
+
+    const emojiButtons = menuEl.querySelectorAll('.chat-action-menu-emoji-btn');
+    emojiButtons.forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const emoji = String(button.getAttribute('data-emoji') || '').trim();
+            if (!emoji) return;
+            await sendQuickReactionToChatMessage(targetMessage, emoji);
+        });
+    });
+}
+
+async function sendQuickReactionToChatMessage(targetMessage, emoji) {
+    const cleanEmoji = String(emoji || '').trim();
+    if (!cleanEmoji) return;
+    closeChatMessageActionMenu();
+
+    const identity = getStudentIdentityForChat();
+    const replyTarget = getReplyTargetFromMessage(targetMessage);
+    const payloadMessage = `<${replyTarget.user}: ${replyTarget.message}> ${cleanEmoji}`;
+    const senderTaggedPayloadMessage = `-${normalizeChatUserLabel(identity.displayName)}-\n${payloadMessage}`;
+
+    appendLocalEchoMessage(identity.displayName, cleanEmoji, replyTarget);
+
+    try {
+        await postToPortalB({
+            type: 'chat_message',
+            columna: CHAT_COLUMN_KEY,
+            nombre: identity.firstName,
+            apellido: identity.lastName,
+            userDisplayName: identity.displayName,
+            mensaje: senderTaggedPayloadMessage
+        });
+        if (document.getElementById('chat-overlay')) {
+            setTimeout(() => {
+                void refreshChatMessages(false, false);
+            }, 320);
+        }
+    } catch (error) {
+        console.warn('Error enviando reaccion rapida del chat:', error);
+        if (document.getElementById('chat-overlay')) {
+            void refreshChatMessages(false, false);
+        }
+    }
+}
+
 async function deleteChatMessageByTarget(targetMessage) {
     const target = getEditTargetFromMessage(targetMessage);
     if (!target.row || !target.user) return;
-
-    const previewText = String(target.message || '').trim() || 'este mensaje';
-    const confirmed = window.confirm(`¿Quieres borrar "${previewText}"?`);
-    if (!confirmed) return;
+    closeChatMessageActionMenu();
 
     const identity = getStudentIdentityForChat();
     chatIgnoreOwnMessageClickUntil = Date.now() + 800;
@@ -5549,11 +5781,15 @@ async function deleteChatMessageByTarget(targetMessage) {
 
 function bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabel) {
     if (!messagesEl) return;
-    const ownItems = messagesEl.querySelectorAll('.chat-message-item.is-self');
-    ownItems.forEach((item) => {
+    const actionItems = messagesEl.querySelectorAll('.chat-message-item');
+    actionItems.forEach((item) => {
         const idx = Number(item.dataset.msgIndex);
         const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
-        if (!targetMessage || !canDeleteOwnChatMessage(targetMessage, currentUserLabel)) return;
+        const canOpenMenu = !!targetMessage && (
+            canDeleteOwnChatMessage(targetMessage, currentUserLabel) ||
+            canReactToChatMessage(targetMessage)
+        );
+        if (!canOpenMenu) return;
 
         let longPressTriggered = false;
         const clearTimer = () => {
@@ -5563,7 +5799,7 @@ function bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabe
             }
         };
         const onStart = (event) => {
-            if (event.pointerType === 'mouse' && event.button !== 0) return;
+            if (event.button != null && event.button !== 0) return;
             if (event.target && event.target.closest && event.target.closest('.chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-player, a, audio, button')) {
                 return;
             }
@@ -5573,7 +5809,7 @@ function bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabe
                 longPressTriggered = true;
                 chatIgnoreOwnMessageClickUntil = Date.now() + 900;
                 vibrar(45);
-                void deleteChatMessageByTarget(targetMessage);
+                openChatMessageActionMenu(targetMessage, item, currentUserLabel);
             }, CHAT_LONG_PRESS_DELETE_MS);
         };
         const onEnd = () => {
@@ -5585,10 +5821,15 @@ function bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabe
             }
         };
 
-        item.addEventListener('pointerdown', onStart);
-        item.addEventListener('pointerup', onEnd);
-        item.addEventListener('pointerleave', clearTimer);
-        item.addEventListener('pointercancel', clearTimer);
+        item.addEventListener('mousedown', onStart);
+        item.addEventListener('mouseup', onEnd);
+        item.addEventListener('mouseleave', clearTimer);
+        item.addEventListener('touchstart', onStart, { passive: true });
+        item.addEventListener('touchend', onEnd);
+        item.addEventListener('touchcancel', clearTimer);
+        item.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
     });
 }
 
@@ -6936,6 +7177,7 @@ function closeChatModal() {
         clearTimeout(chatOwnMessageLongPressTimerId);
         chatOwnMessageLongPressTimerId = null;
     }
+    closeChatMessageActionMenu();
     chatReplyTarget = null;
     chatEditTarget = null;
     chatAttachmentUploadInProgress = false;
@@ -7127,6 +7369,9 @@ async function openChatModal() {
 
     overlay.addEventListener('click', (event) => {
         if (event.target === overlay) closeChatModal();
+        if (!event.target.closest('#chat-action-menu')) {
+            closeChatMessageActionMenu();
+        }
     });
 
     const closeBtn = document.getElementById('chat-close-btn');
@@ -7243,8 +7488,34 @@ async function openChatModal() {
             if (!event.target.closest('#chat-attach-menu') && !event.target.closest('#chat-attach-btn')) {
                 closeChatAttachmentMenu();
             }
+            if (!event.target.closest('#chat-action-menu')) {
+                closeChatMessageActionMenu();
+            }
         });
     }
+
+    document.addEventListener('mousedown', (event) => {
+        if (!chatMessageActionMenuState) return;
+        if (event.target.closest && event.target.closest('#chat-action-menu')) return;
+        closeChatMessageActionMenu();
+    });
+
+    document.addEventListener('touchstart', (event) => {
+        if (!chatMessageActionMenuState) return;
+        if (event.target.closest && event.target.closest('#chat-action-menu')) return;
+        closeChatMessageActionMenu();
+    }, { passive: true });
+
+    const chatBodyEl = overlay.querySelector('.chat-body');
+    if (chatBodyEl) {
+        chatBodyEl.addEventListener('scroll', () => {
+            closeChatMessageActionMenu();
+        });
+    }
+
+    window.addEventListener('resize', () => {
+        closeChatMessageActionMenu();
+    });
 
     updateChatReplyPreview();
     disableChatAttachmentUI(false);

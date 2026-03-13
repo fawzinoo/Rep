@@ -811,6 +811,52 @@
     color: #b91c1c;
 }
 
+.chat-own-message-choice-menu {
+    position: fixed;
+    z-index: 14450;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.chat-own-message-choice-menu[hidden] {
+    display: none !important;
+}
+
+.chat-own-message-choice-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.chat-own-message-choice-btn.reply {
+    background: rgba(37, 99, 235, 0.1);
+    color: #1d4ed8;
+}
+
+.chat-own-message-choice-btn.edit {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+}
+
+.chat-own-message-choice-btn:hover {
+    filter: brightness(0.97);
+}
+
 .chat-message-line {
     display: flex;
     align-items: baseline;
@@ -5047,6 +5093,7 @@ let chatIgnoreMessageClickUntil = 0;
 let chatSuppressNextMessageClick = false;
 let chatMessageActionMenuState = null;
 let chatDeleteArmRow = 0;
+let chatOwnMessageChoiceMenuState = null;
 
 function getPortalBCandidateUrls() {
     const rawList = [PORTALB_SCRIPT_URL, ...PORTALB_SCRIPT_URL_FALLBACKS];
@@ -5275,6 +5322,7 @@ function reconcileLocalEchoWithServer(serverMessages) {
 
 function renderMergedChatMessages(serverMessages) {
     closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
     const base = Array.isArray(serverMessages) ? serverMessages : [];
     const merged = [...base, ...chatLocalEchoMessages];
     renderChatMessages(merged);
@@ -5441,6 +5489,14 @@ function getReplyTargetFromMessage(msg) {
     };
 }
 
+function getReplyTargetForOwnMessageChoice(msg) {
+    const quotedTarget = parseQuotedReplyTarget(msg && msg.quotedReply ? msg.quotedReply : '');
+    if (quotedTarget && quotedTarget.user && quotedTarget.message) {
+        return quotedTarget;
+    }
+    return getReplyTargetFromMessage(msg);
+}
+
 function getEditTargetFromMessage(msg) {
     return {
         row: Number(msg && msg.row ? msg.row : 0) || 0,
@@ -5540,6 +5596,7 @@ function clearChatReplyTarget(shouldRerender = true) {
 function toggleChatReplyTarget(msg, currentUserLabel) {
     if (!canReplyToRecipientMessage(msg, currentUserLabel)) return;
     closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
     clearChatDeleteArm(false);
     clearChatEditTarget(false, false);
     closeChatAttachmentMenu();
@@ -5556,6 +5613,7 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
 function clearChatEditTarget(shouldRerender = true, clearInput = true) {
     chatEditTarget = null;
     closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
     clearChatDeleteArm(false);
     closeChatAttachmentMenu();
     if (clearInput) {
@@ -5571,6 +5629,7 @@ function clearChatEditTarget(shouldRerender = true, clearInput = true) {
 function toggleChatEditTarget(msg, currentUserLabel) {
     if (!canEditOwnChatMessage(msg, currentUserLabel)) return;
     closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
     clearChatDeleteArm(false);
     clearChatReplyTarget(false);
     closeChatAttachmentMenu();
@@ -5655,6 +5714,107 @@ function clearChatDeleteArm(shouldRerender = true) {
     chatDeleteArmRow = 0;
     if (shouldRerender && document.getElementById('chat-overlay')) {
         renderMergedChatMessages(chatLatestServerMessages);
+    }
+}
+
+function closeChatOwnMessageChoiceMenu() {
+    const menuEl = document.getElementById('chat-own-message-choice-menu');
+    if (menuEl) menuEl.hidden = true;
+    if (chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.anchorEl && chatOwnMessageChoiceMenuState.anchorEl.classList) {
+        chatOwnMessageChoiceMenuState.anchorEl.classList.remove('action-target');
+    }
+    chatOwnMessageChoiceMenuState = null;
+}
+
+function positionChatOwnMessageChoiceMenu(anchorEl) {
+    const menuEl = document.getElementById('chat-own-message-choice-menu');
+    if (!menuEl || !anchorEl) return;
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const chatModalEl = anchorEl.closest('.chat-modal');
+    const boundsRect = chatModalEl ? chatModalEl.getBoundingClientRect() : {
+        left: 0,
+        top: 0,
+        right: window.innerWidth || document.documentElement.clientWidth || 0,
+        bottom: window.innerHeight || document.documentElement.clientHeight || 0
+    };
+    const menuRect = menuEl.getBoundingClientRect();
+    const gap = 6;
+    const sideGap = 8;
+
+    let left = anchorRect.right - menuRect.width;
+    let top = anchorRect.top - menuRect.height - gap;
+    if (left < boundsRect.left + sideGap) left = boundsRect.left + sideGap;
+    if (left + menuRect.width > boundsRect.right - sideGap) {
+        left = Math.max(boundsRect.left + sideGap, boundsRect.right - menuRect.width - sideGap);
+    }
+    if (top < boundsRect.top + sideGap) {
+        top = Math.min(boundsRect.bottom - menuRect.height - sideGap, anchorRect.bottom + gap);
+    }
+
+    menuEl.style.left = `${Math.round(left)}px`;
+    menuEl.style.top = `${Math.round(Math.max(boundsRect.top + sideGap, top))}px`;
+}
+
+function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel) {
+    if (!targetMessage || !anchorEl) return;
+
+    closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
+    clearChatDeleteArm(false);
+    closeChatAttachmentMenu();
+    closeChatImageViewer();
+
+    let menuEl = document.getElementById('chat-own-message-choice-menu');
+    if (!menuEl) {
+        menuEl = document.createElement('div');
+        menuEl.id = 'chat-own-message-choice-menu';
+        menuEl.className = 'chat-own-message-choice-menu';
+        menuEl.hidden = true;
+        document.body.appendChild(menuEl);
+    }
+
+    if (chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.anchorEl && chatOwnMessageChoiceMenuState.anchorEl !== anchorEl) {
+        chatOwnMessageChoiceMenuState.anchorEl.classList.remove('action-target');
+    }
+
+    anchorEl.classList.add('action-target');
+    menuEl.innerHTML = `
+        <button type="button" class="chat-own-message-choice-btn reply" id="chat-own-choice-reply-btn">
+            <i class="fas fa-reply" aria-hidden="true"></i>
+            <span>Contestar</span>
+        </button>
+        <button type="button" class="chat-own-message-choice-btn edit" id="chat-own-choice-edit-btn">
+            <i class="fas fa-pen" aria-hidden="true"></i>
+            <span>Editar</span>
+        </button>
+    `;
+    menuEl.hidden = false;
+    chatOwnMessageChoiceMenuState = { targetMessage, anchorEl, currentUserLabel };
+    positionChatOwnMessageChoiceMenu(anchorEl);
+
+    const replyBtn = document.getElementById('chat-own-choice-reply-btn');
+    if (replyBtn) {
+        replyBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const replyTarget = getReplyTargetForOwnMessageChoice(targetMessage);
+            closeChatOwnMessageChoiceMenu();
+            clearChatEditTarget(false, false);
+            chatReplyTarget = replyTarget;
+            updateChatReplyPreview();
+            renderMergedChatMessages(chatLatestServerMessages);
+        });
+    }
+
+    const editBtn = document.getElementById('chat-own-choice-edit-btn');
+    if (editBtn) {
+        editBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeChatOwnMessageChoiceMenu();
+            toggleChatEditTarget(targetMessage, currentUserLabel);
+        });
     }
 }
 
@@ -7205,7 +7365,7 @@ function renderChatMessages(messages) {
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
-            toggleChatEditTarget(targetMessage, currentUserLabel);
+            openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
         });
     });
 
@@ -7293,6 +7453,7 @@ function closeChatModal() {
         chatOwnMessageLongPressTimerId = null;
     }
     closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
     clearChatDeleteArm(false);
     chatReplyTarget = null;
     chatEditTarget = null;
@@ -7488,6 +7649,9 @@ async function openChatModal() {
         if (!event.target.closest('#chat-action-menu')) {
             closeChatMessageActionMenu();
         }
+        if (!event.target.closest('#chat-own-message-choice-menu')) {
+            closeChatOwnMessageChoiceMenu();
+        }
         if (!event.target.closest('.chat-message-delete-btn')) {
             clearChatDeleteArm(true);
         }
@@ -7610,6 +7774,9 @@ async function openChatModal() {
             if (!event.target.closest('#chat-action-menu')) {
                 closeChatMessageActionMenu();
             }
+            if (!event.target.closest('#chat-own-message-choice-menu')) {
+                closeChatOwnMessageChoiceMenu();
+            }
             if (!event.target.closest('.chat-message-delete-btn')) {
                 clearChatDeleteArm(true);
             }
@@ -7629,6 +7796,18 @@ async function openChatModal() {
     }, { passive: true });
 
     document.addEventListener('mousedown', (event) => {
+        if (!chatOwnMessageChoiceMenuState) return;
+        if (event.target.closest && event.target.closest('#chat-own-message-choice-menu')) return;
+        closeChatOwnMessageChoiceMenu();
+    });
+
+    document.addEventListener('touchstart', (event) => {
+        if (!chatOwnMessageChoiceMenuState) return;
+        if (event.target.closest && event.target.closest('#chat-own-message-choice-menu')) return;
+        closeChatOwnMessageChoiceMenu();
+    }, { passive: true });
+
+    document.addEventListener('mousedown', (event) => {
         if (!chatDeleteArmRow) return;
         if (event.target.closest && event.target.closest('.chat-message-delete-btn')) return;
         clearChatDeleteArm(true);
@@ -7644,12 +7823,14 @@ async function openChatModal() {
     if (chatBodyEl) {
         chatBodyEl.addEventListener('scroll', () => {
             closeChatMessageActionMenu();
+            closeChatOwnMessageChoiceMenu();
             clearChatDeleteArm(true);
         });
     }
 
     window.addEventListener('resize', () => {
         closeChatMessageActionMenu();
+        closeChatOwnMessageChoiceMenu();
         clearChatDeleteArm(true);
     });
 

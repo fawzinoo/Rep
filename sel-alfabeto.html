@@ -1198,22 +1198,22 @@
 }
 
 .chat-audio-card {
-    width: min(188px, 58vw);
+    width: min(176px, 54vw);
     max-width: 100%;
-    min-height: 48px;
+    min-height: 40px;
     border-radius: 999px;
     border: 1px solid rgba(15, 23, 42, 0.14);
     background: rgba(248, 250, 252, 0.96);
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    gap: 8px;
+    padding: 6px 9px;
+    box-shadow: 0 5px 12px rgba(15, 23, 42, 0.08);
 }
 
 .chat-audio-action-btn {
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
     border: none;
     border-radius: 50%;
     background: transparent;
@@ -1221,9 +1221,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.15rem;
+    font-size: 1rem;
     cursor: pointer;
-    flex: 0 0 34px;
+    flex: 0 0 28px;
     transition: transform 0.16s ease, color 0.16s ease, background-color 0.16s ease;
 }
 
@@ -1250,13 +1250,13 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 5px;
 }
 
 .chat-audio-progress {
     position: relative;
     width: 100%;
-    height: 6px;
+    height: 5px;
     border-radius: 999px;
     overflow: hidden;
     background: rgba(148, 163, 184, 0.26);
@@ -1276,7 +1276,7 @@
     justify-content: space-between;
     gap: 8px;
     color: #475569;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 700;
     line-height: 1;
 }
@@ -5509,7 +5509,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuSDyo-OdQR1pZCtpMCTinJPl6CuxJ3I052SXQ5fm1pYr97_o_H47Xq141Hr_rnYof/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1IujuuH7L56DEAXEUt96LT1esKwplTrCW9M_rVOrkFN4hckgXRjz8xo81oICondVi/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -5560,6 +5560,7 @@ let chatOwnMessageChoiceMenuState = null;
 let chatIgnoreOwnMessageChoiceCloseUntil = 0;
 let chatUnreadIncomingCount = 0;
 const chatAudioUiStateByKey = new Map();
+const chatAudioBlobUrlByFileId = new Map();
 const chatRecentlyConfirmedMessageKeys = new Map();
 const chatRecentlyConfirmedCleanupTimers = new Map();
 
@@ -5904,6 +5905,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         attachmentName: String(msg && msg.attachmentName ? msg.attachmentName : '').trim(),
         attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
         attachmentSize: Number(msg && msg.attachmentSize ? msg.attachmentSize : 0) || 0,
+        attachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
         timeLabel: String(msg && msg.timeLabel ? msg.timeLabel : '').trim(),
         edited: !!(msg && msg.edited),
         pending: !!(msg && msg.pending),
@@ -6179,6 +6181,7 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
         attachmentName: attachment && attachment.name ? String(attachment.name).trim() : '',
         attachmentMimeType: attachment && attachment.mimeType ? String(attachment.mimeType).trim() : '',
         attachmentSize: attachment && attachment.size ? Number(attachment.size) || 0 : 0,
+        attachmentFileId: attachment && attachment.fileId ? String(attachment.fileId).trim() : '',
         timeLabel: timeLabel,
         edited: false,
         pending: true
@@ -6681,17 +6684,17 @@ function formatChatAudioTime(totalSeconds) {
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function buildChatAudioUrlCandidates(rawUrl) {
+function buildChatAudioPlaybackUrlCandidates(rawUrl) {
     const source = String(rawUrl || '').trim();
     if (!source) return [];
 
     const fileId = extractDriveFileIdFromUrl(source);
     const candidates = [];
     if (fileId) {
-        candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download`);
-        candidates.push(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`);
         candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=view`);
         candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`);
+        candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&confirm=t`);
+        candidates.push(`https://drive.google.com/uc?id=${encodeURIComponent(fileId)}`);
     }
     candidates.push(source);
 
@@ -6702,6 +6705,46 @@ function buildChatAudioUrlCandidates(rawUrl) {
         seen.add(normalized);
         return true;
     });
+}
+
+function buildChatAudioDownloadUrl(rawUrl) {
+    const source = String(rawUrl || '').trim();
+    if (!source) return '';
+
+    const fileId = extractDriveFileIdFromUrl(source);
+    if (fileId) {
+        return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download`;
+    }
+    return source;
+}
+
+async function fetchChatAudioBlobUrlByFileId(fileId, fileName = 'audio-chat.mp3') {
+    const safeFileId = String(fileId || '').trim();
+    if (!safeFileId) return '';
+
+    const cachedUrl = String(chatAudioBlobUrlByFileId.get(safeFileId) || '').trim();
+    if (cachedUrl) return cachedUrl;
+
+    const requestUrl = `${PORTALB_SCRIPT_URL}?mode=chat_attachment_blob&fileId=${encodeURIComponent(safeFileId)}&filename=${encodeURIComponent(String(fileName || 'audio-chat.mp3').trim() || 'audio-chat.mp3')}&t=${Date.now()}`;
+    const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store' });
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (_) {
+        throw new Error('audio_blob_invalid_json');
+    }
+
+    if (!response.ok || !data || data.ok !== true || !data.data) {
+        const reason = data && (data.error || data.message)
+            ? `${data.error || 'audio_blob_failed'}${data.message ? `: ${data.message}` : ''}`
+            : `audio_blob_http_${response.status}`;
+        throw new Error(reason);
+    }
+
+    const blob = base64ToBlob(data.data, data.mimeType || 'audio/mpeg');
+    const objectUrl = URL.createObjectURL(blob);
+    chatAudioBlobUrlByFileId.set(safeFileId, objectUrl);
+    return objectUrl;
 }
 
 function downloadChatAudioFile(fileUrl, fileName) {
@@ -6740,6 +6783,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
         const progressFillEl = cardEl.querySelector('.chat-audio-progress-fill');
         const currentTimeEl = cardEl.querySelector('.chat-audio-current-time');
         const totalTimeEl = cardEl.querySelector('.chat-audio-total-time');
+        const audioFileId = String(cardEl.dataset.audioFileId || '').trim();
         if (!audioEl || !actionBtn || !progressFillEl || !currentTimeEl || !totalTimeEl) return;
 
         const existingState = chatAudioUiStateByKey.get(audioKey);
@@ -6748,6 +6792,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
             isPlaying: false,
             currentTime: 0,
             duration: 0,
+            hasEnded: false,
             candidateIndex: Number(audioEl.dataset.candidateIndex || '0') || 0
         };
         if (!requiresDownload) {
@@ -6759,6 +6804,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
             state.isPlaying = !audioEl.paused && !audioEl.ended;
             state.currentTime = Number.isFinite(audioEl.currentTime) ? audioEl.currentTime : 0;
             state.duration = Number.isFinite(audioEl.duration) ? audioEl.duration : state.duration;
+            state.hasEnded = !!audioEl.ended;
             const resolvedSrc = String(audioEl.currentSrc || audioEl.src || '').trim();
             if (resolvedSrc) {
                 audioEl.dataset.resolvedSrc = resolvedSrc;
@@ -6794,6 +6840,99 @@ function bindChatAudioFallbacks(messagesRootEl) {
             actionBtn.innerHTML = `<i class="${iconClass}" aria-hidden="true"></i>`;
         };
 
+        const playAudio = () => {
+            const maybePromise = audioEl.play();
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch(() => {});
+            }
+        };
+
+        const ensureBlobPlaybackSource = async () => {
+            const currentSrc = String(audioEl.currentSrc || audioEl.src || '').trim();
+            if (isChatBlobUrl(currentSrc)) return true;
+            if (!audioFileId) return true;
+
+            let blobUrl = String(cardEl.dataset.audioBlobUrl || '').trim();
+            if (!blobUrl) {
+                blobUrl = String(chatAudioBlobUrlByFileId.get(audioFileId) || '').trim();
+            }
+            if (!blobUrl) {
+                blobUrl = await fetchChatAudioBlobUrlByFileId(
+                    audioFileId,
+                    String(cardEl.dataset.audioName || 'audio-chat.mp3').trim() || 'audio-chat.mp3'
+                );
+            }
+            if (!blobUrl) return false;
+
+            cardEl.dataset.audioBlobUrl = blobUrl;
+            if (audioEl.src !== blobUrl) {
+                audioEl.src = blobUrl;
+                audioEl.dataset.resolvedSrc = blobUrl;
+                audioEl.dataset.candidateIndex = '0';
+                state.candidateIndex = 0;
+                await new Promise((resolve) => {
+                    let settled = false;
+                    const done = () => {
+                        if (settled) return;
+                        settled = true;
+                        resolve();
+                    };
+                    audioEl.addEventListener('loadeddata', done, { once: true });
+                    audioEl.addEventListener('canplay', done, { once: true });
+                    setTimeout(done, 800);
+                    try {
+                        audioEl.load();
+                    } catch (_) {
+                        done();
+                    }
+                });
+            }
+            return true;
+        };
+
+        const restartAudioFromBeginning = () => {
+            state.hasEnded = false;
+            state.isPlaying = false;
+            state.currentTime = 0;
+
+            try {
+                audioEl.pause();
+            } catch (_) {}
+
+            const activeSrc = String(audioEl.currentSrc || audioEl.src || '').trim();
+            if (activeSrc && audioEl.src !== activeSrc) {
+                audioEl.src = activeSrc;
+            }
+
+            try {
+                audioEl.currentTime = 0;
+            } catch (_) {}
+
+            try {
+                audioEl.load();
+            } catch (_) {}
+
+            if (audioEl.readyState >= 2) {
+                playAudio();
+                return;
+            }
+
+            const onReadyToReplay = () => {
+                try {
+                    audioEl.currentTime = 0;
+                } catch (_) {}
+                playAudio();
+            };
+
+            audioEl.addEventListener('loadeddata', onReadyToReplay, { once: true });
+            try {
+                audioEl.load();
+            } catch (_) {
+                audioEl.removeEventListener('loadeddata', onReadyToReplay);
+                playAudio();
+            }
+        };
+
         const tryNextCandidate = () => {
             const candidates = String(audioEl.dataset.candidates || '')
                 .split('||')
@@ -6820,7 +6959,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
         syncStateFromAudio();
         renderAudioUi();
 
-        actionBtn.addEventListener('click', (event) => {
+        actionBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
 
@@ -6836,10 +6975,24 @@ function bindChatAudioFallbacks(messagesRootEl) {
             }
 
             if (audioEl.paused || audioEl.ended) {
-                const maybePromise = audioEl.play();
-                if (maybePromise && typeof maybePromise.catch === 'function') {
-                    maybePromise.catch(() => {});
+                try {
+                    await ensureBlobPlaybackSource();
+                } catch (error) {
+                    console.warn('No se pudo preparar el audio remoto del chat:', error);
                 }
+                const duration = Number.isFinite(audioEl.duration) ? audioEl.duration : 0;
+                const currentTime = Number.isFinite(audioEl.currentTime) ? audioEl.currentTime : 0;
+                const shouldRestartFromStart = state.hasEnded
+                    || audioEl.ended
+                    || (duration > 0 && currentTime >= Math.max(0, duration - 0.12));
+
+                if (shouldRestartFromStart) {
+                    restartAudioFromBeginning();
+                    return;
+                }
+
+                state.hasEnded = false;
+                playAudio();
             } else {
                 audioEl.pause();
             }
@@ -6854,6 +7007,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
             renderAudioUi();
         });
         audioEl.addEventListener('play', () => {
+            state.hasEnded = false;
             syncStateFromAudio();
             renderAudioUi();
         });
@@ -6862,8 +7016,22 @@ function bindChatAudioFallbacks(messagesRootEl) {
             renderAudioUi();
         });
         audioEl.addEventListener('ended', () => {
-            syncStateFromAudio();
+            state.hasEnded = true;
             state.isPlaying = false;
+            state.currentTime = 0;
+            try {
+                audioEl.pause();
+            } catch (_) {}
+            try {
+                audioEl.currentTime = 0;
+            } catch (_) {}
+            try {
+                audioEl.load();
+            } catch (_) {}
+            syncStateFromAudio();
+            state.hasEnded = true;
+            state.isPlaying = false;
+            state.currentTime = 0;
             renderAudioUi();
         });
         audioEl.addEventListener('error', tryNextCandidate);
@@ -7823,6 +7991,7 @@ function parseChatCellValue(rawValue) {
                     attachmentName,
                     attachmentMimeType: String(attachment.mimeType || '').trim(),
                     attachmentSize: Number(attachment.size) || 0,
+                    attachmentFileId: String(attachment.fileId || '').trim(),
                     imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
                     imageTitle: attachmentName
                 };
@@ -7993,6 +8162,9 @@ async function fetchChatMessages() {
             const entryAttachmentSize = entry && typeof entry === 'object'
                 ? (Number(entry.attachmentSize) || 0)
                 : 0;
+            const entryAttachmentFileId = entry && typeof entry === 'object'
+                ? String(entry.attachmentFileId || '').trim()
+                : '';
             if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl || entryAttachmentUrl)) {
                 const rawMessage = String(entry.value || entry.message || '').trim();
                 const parsed = rawMessage
@@ -8012,11 +8184,13 @@ async function fetchChatMessages() {
                 const parsedAttachmentName = parsed && parsed.attachmentName ? String(parsed.attachmentName || '').trim() : '';
                 const parsedAttachmentMimeType = parsed && parsed.attachmentMimeType ? String(parsed.attachmentMimeType || '').trim() : '';
                 const parsedAttachmentSize = parsed && parsed.attachmentSize ? Number(parsed.attachmentSize) || 0 : 0;
+                const parsedAttachmentFileId = parsed && parsed.attachmentFileId ? String(parsed.attachmentFileId || '').trim() : '';
                 const resolvedAttachmentKind = entryAttachmentKind || parsedAttachmentKind;
                 const resolvedAttachmentUrl = entryAttachmentUrl || parsedAttachmentUrl;
                 const resolvedAttachmentName = entryAttachmentName || parsedAttachmentName;
                 const resolvedAttachmentMimeType = entryAttachmentMimeType || parsedAttachmentMimeType;
                 const resolvedAttachmentSize = entryAttachmentSize || parsedAttachmentSize;
+                const resolvedAttachmentFileId = entryAttachmentFileId || parsedAttachmentFileId;
                 const resolvedImageUrl = entryImageUrl || (parsed && parsed.imageUrl ? String(parsed.imageUrl || '').trim() : '');
                 const resolvedImageTitle = entryImageTitle || (parsed && parsed.imageTitle ? String(parsed.imageTitle || '').trim() : '');
                 const resolvedMessage = stripLeadingChatSenderTag(
@@ -8036,6 +8210,7 @@ async function fetchChatMessages() {
                     attachmentName: resolvedAttachmentName,
                     attachmentMimeType: resolvedAttachmentMimeType,
                     attachmentSize: resolvedAttachmentSize,
+                    attachmentFileId: resolvedAttachmentFileId,
                     timeLabel: String(entry.timeLabel || (parsed && parsed.timeLabel) || '').trim(),
                     edited: !!entry.edited
                 };
@@ -8056,6 +8231,7 @@ async function fetchChatMessages() {
                 attachmentName: parsed.attachmentName || '',
                 attachmentMimeType: parsed.attachmentMimeType || '',
                 attachmentSize: parsed.attachmentSize || 0,
+                attachmentFileId: parsed.attachmentFileId || '',
                 timeLabel: String(entry && entry.timeLabel ? entry.timeLabel : (parsed.timeLabel || '')).trim(),
                 edited: !!(entry && entry.edited)
             };
@@ -8105,6 +8281,7 @@ function renderChatMessages(messages) {
         const attachmentName = String(msg.attachmentName || '').trim();
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
+        const attachmentFileId = String(msg.attachmentFileId || '').trim();
         const isEdited = !!msg.edited;
         const isPendingSend = !!msg.pending;
         const isRecentlyConfirmed = isCurrentSender && !isPendingSend && isChatMessageRecentlyConfirmed(msg);
@@ -8150,7 +8327,8 @@ function renderChatMessages(messages) {
             </div>
         ` : '';
         const showAudio = resolvedAttachmentKind === 'audio' && !!attachmentUrl;
-        const audioUrlCandidates = showAudio ? buildChatAudioUrlCandidates(attachmentUrl) : [];
+        const audioUrlCandidates = showAudio ? buildChatAudioPlaybackUrlCandidates(attachmentUrl) : [];
+        const audioDownloadUrl = showAudio ? buildChatAudioDownloadUrl(attachmentUrl) : '';
         const audioKey = showAudio
             ? (String(msg.row || '').trim() ? `row:${Number(msg.row) || 0}` : attachmentUrl)
             : '';
@@ -8182,7 +8360,8 @@ function renderChatMessages(messages) {
                     class="chat-audio-card"
                     data-audio-key="${escapeHtml(audioKey)}"
                     data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
-                    data-audio-download-url="${escapeHtml(audioSrc || attachmentUrl)}"
+                    data-audio-file-id="${escapeHtml(attachmentFileId)}"
+                    data-audio-download-url="${escapeHtml(audioDownloadUrl || attachmentUrl)}"
                     data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
                 >
                     <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
@@ -8199,7 +8378,7 @@ function renderChatMessages(messages) {
                     </div>
                     <audio
                         class="chat-audio-player"
-                        preload="metadata"
+                        preload="auto"
                         playsinline
                         src="${escapeHtml(audioSrc)}"
                         data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"

@@ -2248,6 +2248,83 @@
     text-overflow: ellipsis;
 }
 
+.chat-edit-banner-attachment-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.chat-edit-banner-attachment-slot[hidden] {
+    display: none !important;
+}
+
+.chat-edit-banner-attachment {
+    position: relative;
+    width: 48px;
+    height: 32px;
+    border: 1px solid rgba(140, 111, 76, 0.2);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(244, 236, 224, 0.98) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.72), 0 2px 6px rgba(98, 76, 52, 0.08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.chat-edit-banner-attachment-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.chat-edit-banner-attachment-icon {
+    font-size: 1rem;
+    color: #7c4f2a;
+}
+
+.chat-edit-banner-attachment.is-pdf .chat-edit-banner-attachment-icon {
+    color: #dc2626;
+}
+
+.chat-edit-banner-attachment.is-word .chat-edit-banner-attachment-icon {
+    color: #2563eb;
+}
+
+.chat-edit-banner-attachment.is-archive .chat-edit-banner-attachment-icon {
+    color: #7c3aed;
+}
+
+.chat-edit-banner-attachment.is-audio .chat-edit-banner-attachment-icon {
+    color: #0f766e;
+}
+
+.chat-edit-banner-attachment-remove-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(76, 55, 37, 0.78);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 900;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+
+.chat-edit-banner-attachment-remove-btn:hover {
+    background: #8b5e3c;
+}
+
 .chat-edit-banner-close-btn {
     border: none;
     background: rgba(122, 90, 61, 0.08);
@@ -6054,7 +6131,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLUg_KZ7dOidK68WN5ABGCUgoSi6smbYSZX2XznA0ifZBlCEW7uERpaMEa5VtttCan/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrqdjE7KRE7z4PEm6vEYlLN0LWHCXMSn5XJz2mOqZLrn5Vn_VggKRy8y3aGmOg-h1I/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -6860,7 +6937,7 @@ function getActionTargetFromAttachedReply(parentMsg, replyEntry) {
             || (String(replyEntry && replyEntry.imageUrl ? replyEntry.imageUrl : '').trim() ? 'imagen' : '')
             || String(replyEntry && replyEntry.attachmentKind ? replyEntry.attachmentKind : '').trim()
             || 'adjunto',
-        quotedReply: '',
+        quotedReply: String(replyEntry && replyEntry.quotedReply ? replyEntry.quotedReply : '').trim(),
         imageUrl: String(replyEntry && replyEntry.imageUrl ? replyEntry.imageUrl : '').trim(),
         imageTitle: String(replyEntry && replyEntry.imageTitle ? replyEntry.imageTitle : '').trim(),
         attachmentKind: String(replyEntry && replyEntry.attachmentKind ? replyEntry.attachmentKind : '').trim(),
@@ -6909,7 +6986,17 @@ function getEditTargetFromMessage(msg) {
     return {
         row: Number(msg && msg.row ? msg.row : 0) || 0,
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
-        message: String(msg && typeof msg.__editText === 'string' ? msg.__editText : (msg && msg.message ? msg.message : '')).trim()
+        message: String(msg && typeof msg.__editText === 'string' ? msg.__editText : (msg && msg.message ? msg.message : '')).trim(),
+        quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
+        imageUrl: String(msg && msg.imageUrl ? msg.imageUrl : '').trim(),
+        imageTitle: String(msg && msg.imageTitle ? msg.imageTitle : '').trim(),
+        attachmentKind: String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim(),
+        attachmentUrl: String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim(),
+        attachmentName: String(msg && msg.attachmentName ? msg.attachmentName : '').trim(),
+        attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
+        attachmentSize: Number(msg && msg.attachmentSize ? msg.attachmentSize : 0) || 0,
+        attachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
+        attachmentRemoved: false
     };
 }
 
@@ -6942,6 +7029,39 @@ function isSameEditTarget(a, b) {
         && normalizeChatUserLabel(a.user) === normalizeChatUserLabel(b.user);
 }
 
+function getChatEditAttachmentMeta(target) {
+    if (!target || target.attachmentRemoved) return null;
+    if (target.pendingReplacementAttachment && target.pendingReplacementAttachment.url) {
+        return {
+            kind: String(target.pendingReplacementAttachment.kind || 'file').trim().toLowerCase() || 'file',
+            url: String(target.pendingReplacementAttachment.url || '').trim(),
+            name: String(target.pendingReplacementAttachment.name || '').trim(),
+            mimeType: String(target.pendingReplacementAttachment.mimeType || '').trim(),
+            size: Number(target.pendingReplacementAttachment.size) || 0
+        };
+    }
+    const attachmentKindRaw = String(target.attachmentKind || '').trim().toLowerCase();
+    const imageUrl = String(target.imageUrl || '').trim();
+    const attachmentUrl = String(target.attachmentUrl || '').trim();
+    const hasImage = !!imageUrl || attachmentKindRaw === 'image';
+    const resolvedKind = hasImage ? 'image' : (attachmentKindRaw || (attachmentUrl ? 'file' : ''));
+    const resolvedUrl = hasImage ? (imageUrl || attachmentUrl) : attachmentUrl;
+    if (!resolvedKind || !resolvedUrl) return null;
+    return {
+        kind: resolvedKind,
+        url: resolvedUrl,
+        name: String(target.attachmentName || target.imageTitle || '').trim(),
+        mimeType: String(target.attachmentMimeType || '').trim(),
+        size: Number(target.attachmentSize) || 0
+    };
+}
+
+function clearChatEditPendingReplacementAttachment(target) {
+    if (!target || !target.pendingReplacementAttachment) return;
+    releaseChatBlobUrl(String(target.pendingReplacementAttachment.url || '').trim());
+    delete target.pendingReplacementAttachment;
+}
+
 function updateChatReplyPreview() {
     const inputEl = document.getElementById('chat-input');
     const inputWrapEl = inputEl ? inputEl.closest('.chat-input-wrap') : null;
@@ -6955,6 +7075,7 @@ function updateChatReplyPreview() {
     const attachBtn = document.getElementById('chat-attach-btn');
     const editBannerEl = document.getElementById('chat-edit-banner');
     const editBannerTextEl = document.getElementById('chat-edit-banner-text');
+    const editBannerAttachmentSlotEl = document.getElementById('chat-edit-banner-attachment-slot');
     const replyBannerEl = document.getElementById('chat-reply-banner');
     const replyBannerUserEl = document.getElementById('chat-reply-banner-user');
     const replyBannerMessageEl = document.getElementById('chat-reply-banner-message');
@@ -6962,6 +7083,7 @@ function updateChatReplyPreview() {
 
     const isEditing = !!(chatEditTarget && chatEditTarget.row && chatEditTarget.user);
     const hasReplyTarget = !!(chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message);
+    const activeEditAttachment = isEditing ? getChatEditAttachmentMeta(chatEditTarget) : null;
     if (headerEl) headerEl.classList.toggle('is-editing', isEditing);
     if (inputWrapEl) {
         inputWrapEl.classList.toggle('is-editing', isEditing);
@@ -6969,7 +7091,11 @@ function updateChatReplyPreview() {
     }
     inputEl.classList.toggle('is-editing', isEditing);
     inputEl.classList.toggle('replying', hasReplyTarget && !isEditing);
-    if (attachBtn) attachBtn.disabled = !!chatAttachmentUploadInProgress;
+    if (attachBtn) {
+        attachBtn.disabled = !!chatAttachmentUploadInProgress;
+        attachBtn.hidden = !!(isEditing && activeEditAttachment);
+        if (attachBtn.hidden) closeChatAttachmentMenu();
+    }
 
     if (titleTextEl) {
         titleTextEl.textContent = isEditing ? 'Edita el mensaje' : 'Chat';
@@ -6996,6 +7122,35 @@ function updateChatReplyPreview() {
     }
     if (editBannerTextEl) {
         editBannerTextEl.textContent = isEditing ? String(chatEditTarget.message || '').trim() : '';
+    }
+    if (editBannerAttachmentSlotEl) {
+        if (isEditing && activeEditAttachment) {
+            const attachmentKind = String(activeEditAttachment.kind || '').trim().toLowerCase();
+            const attachmentName = String(activeEditAttachment.name || '').trim();
+            const fileIconClass = getChatFileIconClass(attachmentName, activeEditAttachment.mimeType || '');
+            const attachmentStateClass = attachmentKind === 'image'
+                ? 'is-image'
+                : (attachmentKind === 'audio'
+                    ? 'is-audio'
+                    : (fileIconClass.indexOf('pdf') !== -1
+                        ? 'is-pdf'
+                        : (fileIconClass.indexOf('word') !== -1
+                            ? 'is-word'
+                            : (fileIconClass.indexOf('zipper') !== -1 ? 'is-archive' : 'is-file'))));
+            const attachmentVisual = attachmentKind === 'image'
+                ? `<img class="chat-edit-banner-attachment-thumb" src="${escapeHtml(activeEditAttachment.url)}" alt="${escapeHtml(attachmentName || 'Adjunto actual')}">`
+                : `<i class="chat-edit-banner-attachment-icon ${fileIconClass}" aria-hidden="true"></i>`;
+            editBannerAttachmentSlotEl.hidden = false;
+            editBannerAttachmentSlotEl.innerHTML = `
+                <div class="chat-edit-banner-attachment ${attachmentStateClass}" title="${escapeHtml(attachmentName || 'Adjunto actual')}">
+                    ${attachmentVisual}
+                    <button type="button" id="chat-edit-banner-attachment-remove-btn" class="chat-edit-banner-attachment-remove-btn" aria-label="Quitar adjunto actual" title="Quitar adjunto actual">X</button>
+                </div>
+            `;
+        } else {
+            editBannerAttachmentSlotEl.hidden = true;
+            editBannerAttachmentSlotEl.innerHTML = '';
+        }
     }
 
     if (replyBannerEl) {
@@ -7068,6 +7223,7 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
 }
 
 function clearChatEditTarget(shouldRerender = true, clearInput = true) {
+    clearChatEditPendingReplacementAttachment(chatEditTarget);
     chatEditTarget = null;
     closeChatMessageActionMenu();
     closeChatOwnMessageChoiceMenu();
@@ -7098,6 +7254,7 @@ function toggleChatEditTarget(msg, currentUserLabel) {
         clearChatEditTarget(true, true);
         return;
     }
+    clearChatEditPendingReplacementAttachment(chatEditTarget);
     chatEditTarget = nextTarget;
     if (inputEl) {
         inputEl.value = nextTarget.message || '';
@@ -8481,7 +8638,7 @@ async function submitChatAttachment(file) {
 
     const identity = getStudentIdentityForChat();
     const activeEditTarget = chatEditTarget && chatEditTarget.row && chatEditTarget.user
-        ? { row: chatEditTarget.row, user: chatEditTarget.user, message: chatEditTarget.message }
+        ? { ...chatEditTarget }
         : null;
     const activeReplyTarget = chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message
         ? {
@@ -8492,7 +8649,9 @@ async function submitChatAttachment(file) {
         }
         : null;
     const caption = String(inputEl.value || '').trim();
-    const serializedReplyTarget = activeEditTarget ? '' : serializeQuotedReplyTarget(activeReplyTarget);
+    const serializedReplyTarget = activeEditTarget
+        ? String(activeEditTarget.quotedReply || '').trim()
+        : serializeQuotedReplyTarget(activeReplyTarget);
     const payloadMessage = serializedReplyTarget
         ? `<${serializedReplyTarget}> ${caption}`
         : caption;
@@ -8504,51 +8663,20 @@ async function submitChatAttachment(file) {
     closeChatAttachmentMenu();
 
     if (activeEditTarget) {
-        try {
-            const attachmentHealth = await checkChatAttachmentHealth();
-            if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
-                throw new Error('missing_drive_scope');
-            }
-            if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
-                throw new Error('attachment_health_failed');
-            }
-
-            const dataBase64 = await readFileAsDataBase64(file);
-            await postToPortalB({
-                type: 'chat_edit_message',
-                columna: CHAT_COLUMN_KEY,
-                row: activeEditTarget.row,
-                nombre: identity.firstName,
-                apellido: identity.lastName,
-                userDisplayName: identity.displayName,
-                mensaje: payloadMessage,
-                attachment: {
-                    name: String(file.name || `${kind}-adjunto`).trim(),
-                    mimeType: String(file.type || 'application/octet-stream').trim(),
-                    size: fileSize,
-                    kind: kind,
-                    dataBase64: dataBase64
-                }
-            }, { allowBeacon: false, onlyNoCors: true });
-            inputEl.value = '';
-            clearChatEditTarget(false, true);
-            setTimeout(() => {
-                if (document.getElementById('chat-overlay')) {
-                    void refreshChatMessages(false, false);
-                }
-            }, 800);
-        } catch (error) {
-            console.warn('Error editando adjunto del chat:', error);
-            if (String(error && error.message || '') === 'missing_drive_scope') {
-                alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
-            } else {
-                alert('No se pudo actualizar el adjunto. Intenta de nuevo.');
-            }
-        } finally {
-            releaseChatBlobUrl(localObjectUrl);
-            chatAttachmentUploadInProgress = false;
-            disableChatAttachmentUI(false);
-        }
+        clearChatEditPendingReplacementAttachment(chatEditTarget);
+        chatEditTarget.pendingReplacementAttachment = {
+            file,
+            kind,
+            url: localObjectUrl,
+            name: String(file.name || `${kind}-adjunto`).trim(),
+            mimeType: String(file.type || 'application/octet-stream').trim(),
+            size: fileSize
+        };
+        chatEditTarget.attachmentRemoved = false;
+        updateChatReplyPreview();
+        focusChatInputForReply();
+        chatAttachmentUploadInProgress = false;
+        disableChatAttachmentUI(false);
         return;
     }
 
@@ -9782,6 +9910,7 @@ function renderChatMessages(messages) {
                     <span class="chat-message-reply-arrow">↳</span>
                     ${replyStatusOverlayHtml}
                     ${replyAuthorLabel}
+                    ${String(replyEntry && replyEntry.text ? replyEntry.text : '').trim() ? `<span class="chat-message-reply-text">${formatChatMessageHtml(replyEntry.text)}</span>` : ''}
                     ${replyImageUrl ? `
                         <button
                             type="button"
@@ -9844,7 +9973,6 @@ function renderChatMessages(messages) {
                             <i class="${replyFileIconClass}" aria-hidden="true"></i>
                         </a>
                     ` : ''}
-                    ${(!replyImageUrl && !replyShowAudio && !replyShowFile) ? `<span class="chat-message-reply-text">${formatChatMessageHtml(replyEntry.text)}</span>` : ''}
                     ${replyTimeLabel ? `<span class="chat-message-reply-time">${escapeHtml(replyTimeLabel)}</span>` : ''}
                     ${replyThreadButtonHtml}
                     ${replyReactionBadgeHtml}
@@ -10134,28 +10262,66 @@ async function submitChatMessage() {
     if (chatAttachmentUploadInProgress) return;
 
     const message = inputEl.value.trim();
-    if (!message) return;
-
     const identity = getStudentIdentityForChat();
     const activeEditTarget = chatEditTarget && chatEditTarget.row && chatEditTarget.user
-        ? { row: chatEditTarget.row, user: chatEditTarget.user, message: chatEditTarget.message }
+        ? { ...chatEditTarget }
         : null;
     if (activeEditTarget) {
+        const pendingReplacement = activeEditTarget.pendingReplacementAttachment || null;
+        const hasPendingReplacementFile = !!(pendingReplacement && pendingReplacement.file);
+        if (!message && !activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) return;
+        if (!message && activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) return;
+        const serializedEditReplyTarget = String(activeEditTarget.quotedReply || '').trim();
+        const editPayloadMessage = serializedEditReplyTarget
+            ? `<${serializedEditReplyTarget}> ${message}`
+            : message;
         inputEl.value = '';
         animateChatSendButton(sendBtn);
-        applyLocalChatMessageEdit(activeEditTarget, message);
+        if (!activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) {
+            applyLocalChatMessageEdit(activeEditTarget, message);
+        }
         clearChatEditTarget(false, false);
 
         try {
-            await postToPortalB({
-                type: 'chat_edit_message',
-                columna: CHAT_COLUMN_KEY,
-                row: activeEditTarget.row,
-                nombre: identity.firstName,
-                apellido: identity.lastName,
-                userDisplayName: identity.displayName,
-                mensaje: message
-            });
+            if (hasPendingReplacementFile) {
+                const attachmentHealth = await checkChatAttachmentHealth();
+                if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
+                    throw new Error('missing_drive_scope');
+                }
+                if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
+                    throw new Error('attachment_health_failed');
+                }
+
+                const replacementFile = pendingReplacement.file;
+                const dataBase64 = await readFileAsDataBase64(replacementFile);
+                await postToPortalB({
+                    type: 'chat_edit_message',
+                    columna: CHAT_COLUMN_KEY,
+                    row: activeEditTarget.row,
+                    nombre: identity.firstName,
+                    apellido: identity.lastName,
+                    userDisplayName: identity.displayName,
+                    mensaje: editPayloadMessage,
+                    attachment: {
+                        name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
+                        mimeType: String(pendingReplacement.mimeType || replacementFile.type || 'application/octet-stream').trim(),
+                        size: Number(pendingReplacement.size || replacementFile.size) || 0,
+                        kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type)).trim(),
+                        dataBase64: dataBase64
+                    }
+                }, { allowBeacon: false, onlyNoCors: true });
+            } else {
+                await postToPortalB({
+                    type: 'chat_edit_message',
+                    columna: CHAT_COLUMN_KEY,
+                    row: activeEditTarget.row,
+                    nombre: identity.firstName,
+                    apellido: identity.lastName,
+                    userDisplayName: identity.displayName,
+                    mensaje: editPayloadMessage,
+                    removeAttachment: !!activeEditTarget.attachmentRemoved
+                });
+            }
             setTimeout(() => {
                 if (document.getElementById('chat-overlay')) {
                     void refreshChatMessages(false, false);
@@ -10165,6 +10331,12 @@ async function submitChatMessage() {
             console.warn('Error editando mensaje del chat:', error);
             if (document.getElementById('chat-overlay')) {
                 inputEl.value = message;
+                if (activeEditTarget && activeEditTarget.pendingReplacementAttachment && activeEditTarget.pendingReplacementAttachment.file) {
+                    activeEditTarget.pendingReplacementAttachment = {
+                        ...activeEditTarget.pendingReplacementAttachment,
+                        url: URL.createObjectURL(activeEditTarget.pendingReplacementAttachment.file)
+                    };
+                }
                 chatEditTarget = activeEditTarget;
                 updateChatReplyPreview();
                 void refreshChatMessages(false, false);
@@ -10172,6 +10344,8 @@ async function submitChatMessage() {
         }
         return;
     }
+
+    if (!message) return;
 
     const activeReplyTarget = chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message
         ? {
@@ -10291,6 +10465,7 @@ async function openChatModal() {
                             <div class="chat-edit-banner-title">Editando mensaje</div>
                             <div id="chat-edit-banner-text" class="chat-edit-banner-text"></div>
                         </div>
+                        <div id="chat-edit-banner-attachment-slot" class="chat-edit-banner-attachment-slot" hidden></div>
                     </div>
                     <button type="button" id="chat-edit-banner-close-btn" class="chat-edit-banner-close-btn" aria-label="Cancelar edicion" title="Cancelar edicion">X</button>
                 </div>
@@ -10389,6 +10564,19 @@ async function openChatModal() {
         cancelEditBtn.addEventListener('click', () => {
             vibrar(30);
             clearChatEditTarget(true, true);
+        });
+    }
+    const editAttachmentSlotEl = document.getElementById('chat-edit-banner-attachment-slot');
+    if (editAttachmentSlotEl) {
+        editAttachmentSlotEl.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('#chat-edit-banner-attachment-remove-btn');
+            if (!removeBtn || !chatEditTarget) return;
+            event.preventDefault();
+            event.stopPropagation();
+            chatEditTarget.attachmentRemoved = true;
+            vibrar(25);
+            updateChatReplyPreview();
+            focusChatInputForReply();
         });
     }
 

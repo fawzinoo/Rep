@@ -6747,20 +6747,57 @@ async function fetchChatAudioBlobUrlByFileId(fileId, fileName = 'audio-chat.mp3'
     return objectUrl;
 }
 
-function downloadChatAudioFile(fileUrl, fileName) {
+async function downloadChatAudioFile(fileUrl, fileName, fileId = '') {
     const safeUrl = String(fileUrl || '').trim();
     if (!safeUrl) return false;
     const safeName = String(fileName || 'audio-chat.mp3').trim() || 'audio-chat.mp3';
+    const safeFileId = String(fileId || '').trim();
+    let downloadUrl = '';
+    let shouldRevokeUrl = false;
+
     try {
+        if (safeFileId) {
+            try {
+                downloadUrl = await fetchChatAudioBlobUrlByFileId(safeFileId, safeName);
+            } catch (error) {
+                console.warn('No se pudo preparar el blob de descarga del audio:', error);
+            }
+        }
+
+        if (!downloadUrl && isChatBlobUrl(safeUrl)) {
+            downloadUrl = safeUrl;
+        }
+
+        if (!downloadUrl) {
+            try {
+                const response = await fetch(safeUrl, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
+                if (response.ok) {
+                    const blob = await response.blob();
+                    downloadUrl = URL.createObjectURL(blob);
+                    shouldRevokeUrl = true;
+                }
+            } catch (_) {}
+        }
+
+        if (!downloadUrl) {
+            downloadUrl = safeUrl;
+        }
+
         const link = document.createElement('a');
-        link.href = safeUrl;
+        link.href = downloadUrl;
         link.download = safeName;
-        link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         link.remove();
+        if (shouldRevokeUrl) {
+            setTimeout(() => {
+                try {
+                    URL.revokeObjectURL(downloadUrl);
+                } catch (_) {}
+            }, 1500);
+        }
         return true;
     } catch (_) {
         return false;
@@ -6968,7 +7005,7 @@ function bindChatAudioFallbacks(messagesRootEl) {
                 const preferredUrl = String(audioEl.currentSrc || audioEl.src || '').trim();
                 const fallbackUrl = String(cardEl.dataset.audioDownloadUrl || '').trim();
                 const fileName = String(cardEl.dataset.audioName || 'audio-chat.mp3').trim() || 'audio-chat.mp3';
-                downloadChatAudioFile(preferredUrl || fallbackUrl, fileName);
+                await downloadChatAudioFile(preferredUrl || fallbackUrl, fileName, audioFileId);
                 audioEl.load();
                 renderAudioUi();
                 return;

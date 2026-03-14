@@ -986,8 +986,18 @@
 .chat-message-line {
     display: flex;
     align-items: baseline;
-    gap: 7px;
+    gap: 2px;
     flex-wrap: wrap;
+}
+
+.chat-message-line.is-long-message {
+    display: block;
+}
+
+.chat-message-line.is-long-message::after {
+    content: '';
+    display: block;
+    clear: both;
 }
 
 .chat-message-status-inline {
@@ -1092,6 +1102,11 @@
     align-items: center;
     line-height: 1.2;
     flex-shrink: 0;
+    margin-right: 2px;
+}
+
+.chat-message-line.is-long-message .chat-message-user {
+    float: left;
 }
 
 .chat-user-label {
@@ -1142,6 +1157,10 @@
     min-width: 0;
 }
 
+.chat-message-line.is-long-message .chat-message-text-inline {
+    display: block;
+}
+
 .chat-image-block {
     margin-top: 8px;
 }
@@ -1178,13 +1197,92 @@
     margin-top: 8px;
 }
 
-.chat-audio-player {
-    width: min(260px, 74vw);
+.chat-audio-card {
+    width: min(188px, 58vw);
     max-width: 100%;
-    height: 40px;
+    min-height: 48px;
     border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.22);
-    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    background: rgba(248, 250, 252, 0.96);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.chat-audio-action-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    cursor: pointer;
+    flex: 0 0 34px;
+    transition: transform 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+
+.chat-audio-action-btn:hover {
+    transform: scale(1.04);
+    color: #0f172a;
+    background: rgba(15, 23, 42, 0.06);
+}
+
+.chat-audio-action-btn.is-download {
+    color: #64748b;
+}
+
+.chat-audio-action-btn.is-play {
+    color: #1d4ed8;
+}
+
+.chat-audio-action-btn.is-pause {
+    color: #16a34a;
+}
+
+.chat-audio-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.chat-audio-progress {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.26);
+}
+
+.chat-audio-progress-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #60a5fa 0%, #22c55e 100%);
+}
+
+.chat-audio-times {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.chat-audio-player {
+    display: none;
 }
 
 .chat-file-block {
@@ -5461,6 +5559,7 @@ let chatDeleteArmRow = 0;
 let chatOwnMessageChoiceMenuState = null;
 let chatIgnoreOwnMessageChoiceCloseUntil = 0;
 let chatUnreadIncomingCount = 0;
+const chatAudioUiStateByKey = new Map();
 const chatRecentlyConfirmedMessageKeys = new Map();
 const chatRecentlyConfirmedCleanupTimers = new Map();
 
@@ -6573,6 +6672,208 @@ function getPreferredChatImageUrl(rawUrl) {
     return candidates[0] || '';
 }
 
+function formatChatAudioTime(totalSeconds) {
+    const safeSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0
+        ? Math.floor(totalSeconds)
+        : 0;
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function buildChatAudioUrlCandidates(rawUrl) {
+    const source = String(rawUrl || '').trim();
+    if (!source) return [];
+
+    const fileId = extractDriveFileIdFromUrl(source);
+    const candidates = [];
+    if (fileId) {
+        candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download`);
+        candidates.push(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`);
+        candidates.push(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=view`);
+        candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`);
+    }
+    candidates.push(source);
+
+    const seen = new Set();
+    return candidates.filter((entry) => {
+        const normalized = String(entry || '').trim();
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+    });
+}
+
+function downloadChatAudioFile(fileUrl, fileName) {
+    const safeUrl = String(fileUrl || '').trim();
+    if (!safeUrl) return false;
+    const safeName = String(fileName || 'audio-chat.mp3').trim() || 'audio-chat.mp3';
+    try {
+        const link = document.createElement('a');
+        link.href = safeUrl;
+        link.download = safeName;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function bindChatAudioFallbacks(messagesRootEl) {
+    if (!messagesRootEl) return;
+    const cards = messagesRootEl.querySelectorAll('.chat-audio-card[data-audio-key]');
+    cards.forEach((cardEl) => {
+        if (cardEl.dataset.bound === '1') return;
+        cardEl.dataset.bound = '1';
+
+        const audioKey = String(cardEl.dataset.audioKey || '').trim();
+        const requiresDownload = cardEl.dataset.requiresDownload === '1';
+        if (!audioKey) return;
+
+        const audioEl = cardEl.querySelector('.chat-audio-player');
+        const actionBtn = cardEl.querySelector('.chat-audio-action-btn');
+        const progressFillEl = cardEl.querySelector('.chat-audio-progress-fill');
+        const currentTimeEl = cardEl.querySelector('.chat-audio-current-time');
+        const totalTimeEl = cardEl.querySelector('.chat-audio-total-time');
+        if (!audioEl || !actionBtn || !progressFillEl || !currentTimeEl || !totalTimeEl) return;
+
+        const existingState = chatAudioUiStateByKey.get(audioKey);
+        const state = existingState || {
+            unlocked: !requiresDownload,
+            isPlaying: false,
+            currentTime: 0,
+            duration: 0,
+            candidateIndex: Number(audioEl.dataset.candidateIndex || '0') || 0
+        };
+        if (!requiresDownload) {
+            state.unlocked = true;
+        }
+        chatAudioUiStateByKey.set(audioKey, state);
+
+        const syncStateFromAudio = () => {
+            state.isPlaying = !audioEl.paused && !audioEl.ended;
+            state.currentTime = Number.isFinite(audioEl.currentTime) ? audioEl.currentTime : 0;
+            state.duration = Number.isFinite(audioEl.duration) ? audioEl.duration : state.duration;
+            const resolvedSrc = String(audioEl.currentSrc || audioEl.src || '').trim();
+            if (resolvedSrc) {
+                audioEl.dataset.resolvedSrc = resolvedSrc;
+            }
+        };
+
+        const renderAudioUi = () => {
+            const progress = state.duration > 0
+                ? Math.min(100, Math.max(0, (state.currentTime / state.duration) * 100))
+                : 0;
+            progressFillEl.style.width = `${progress}%`;
+            currentTimeEl.textContent = formatChatAudioTime(state.currentTime);
+            totalTimeEl.textContent = formatChatAudioTime(state.duration);
+
+            let iconClass = 'fas fa-download';
+            let stateClass = 'is-download';
+            let ariaLabel = 'Descargar audio';
+
+            if (state.unlocked) {
+                if (state.isPlaying) {
+                    iconClass = 'fas fa-pause';
+                    stateClass = 'is-pause';
+                    ariaLabel = 'Pausar audio';
+                } else {
+                    iconClass = 'fas fa-play';
+                    stateClass = 'is-play';
+                    ariaLabel = 'Reproducir audio';
+                }
+            }
+
+            actionBtn.className = `chat-audio-action-btn ${stateClass}`;
+            actionBtn.setAttribute('aria-label', ariaLabel);
+            actionBtn.innerHTML = `<i class="${iconClass}" aria-hidden="true"></i>`;
+        };
+
+        const tryNextCandidate = () => {
+            const candidates = String(audioEl.dataset.candidates || '')
+                .split('||')
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean);
+            const nextIndex = (Number(state.candidateIndex) || 0) + 1;
+            if (nextIndex >= candidates.length) return;
+
+            const shouldResume = state.isPlaying;
+            state.candidateIndex = nextIndex;
+            audioEl.dataset.candidateIndex = String(nextIndex);
+            audioEl.src = candidates[nextIndex];
+            audioEl.load();
+            renderAudioUi();
+
+            if (shouldResume) {
+                const maybePromise = audioEl.play();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {});
+                }
+            }
+        };
+
+        syncStateFromAudio();
+        renderAudioUi();
+
+        actionBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (requiresDownload && !state.unlocked) {
+                state.unlocked = true;
+                const preferredUrl = String(audioEl.currentSrc || audioEl.src || '').trim();
+                const fallbackUrl = String(cardEl.dataset.audioDownloadUrl || '').trim();
+                const fileName = String(cardEl.dataset.audioName || 'audio-chat.mp3').trim() || 'audio-chat.mp3';
+                downloadChatAudioFile(preferredUrl || fallbackUrl, fileName);
+                audioEl.load();
+                renderAudioUi();
+                return;
+            }
+
+            if (audioEl.paused || audioEl.ended) {
+                const maybePromise = audioEl.play();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {});
+                }
+            } else {
+                audioEl.pause();
+            }
+        });
+
+        audioEl.addEventListener('loadedmetadata', () => {
+            syncStateFromAudio();
+            renderAudioUi();
+        });
+        audioEl.addEventListener('timeupdate', () => {
+            syncStateFromAudio();
+            renderAudioUi();
+        });
+        audioEl.addEventListener('play', () => {
+            syncStateFromAudio();
+            renderAudioUi();
+        });
+        audioEl.addEventListener('pause', () => {
+            syncStateFromAudio();
+            renderAudioUi();
+        });
+        audioEl.addEventListener('ended', () => {
+            syncStateFromAudio();
+            state.isPlaying = false;
+            renderAudioUi();
+        });
+        audioEl.addEventListener('error', tryNextCandidate);
+        audioEl.addEventListener('stalled', () => {
+            if (audioEl.readyState > 0) return;
+            tryNextCandidate();
+        });
+    });
+}
+
 function preloadChatThumbUrl(url) {
     const safeUrl = String(url || '').trim();
     if (!safeUrl || chatThumbPreloadedUrls.has(safeUrl)) {
@@ -7654,6 +7955,14 @@ function formatChatMessageHtml(text) {
     return escapeHtml(String(text || '')).replace(/\n/g, '<br>');
 }
 
+function shouldUseLongChatLineLayout(text) {
+    const value = String(text || '').trim();
+    if (!value) return false;
+    if (value.length >= 40) return true;
+    if (value.length >= 28 && !/\s/.test(value)) return true;
+    return false;
+}
+
 async function fetchChatMessages() {
     const url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(CHAT_MODE)}&columna=${encodeURIComponent(CHAT_COLUMN_KEY)}&t=${Date.now()}`;
     const response = await fetch(url, { cache: 'no-store' });
@@ -7799,6 +8108,7 @@ function renderChatMessages(messages) {
         const isEdited = !!msg.edited;
         const isPendingSend = !!msg.pending;
         const isRecentlyConfirmed = isCurrentSender && !isPendingSend && isChatMessageRecentlyConfirmed(msg);
+        const useLongMessageLayout = shouldUseLongChatLineLayout(msg.message);
         const messageStatusOverlayHtml = isPendingSend
             ? `<span class="chat-message-status-inline pending" aria-hidden="true"><span class="chat-message-sending-indicator"></span></span>`
             : (isRecentlyConfirmed
@@ -7840,9 +8150,62 @@ function renderChatMessages(messages) {
             </div>
         ` : '';
         const showAudio = resolvedAttachmentKind === 'audio' && !!attachmentUrl;
+        const audioUrlCandidates = showAudio ? buildChatAudioUrlCandidates(attachmentUrl) : [];
+        const audioKey = showAudio
+            ? (String(msg.row || '').trim() ? `row:${Number(msg.row) || 0}` : attachmentUrl)
+            : '';
+        const audioState = showAudio && audioKey
+            ? (chatAudioUiStateByKey.get(audioKey) || null)
+            : null;
+        const audioCandidateIndex = audioState
+            ? Math.max(0, Number(audioState.candidateIndex) || 0)
+            : 0;
+        const audioSrc = audioUrlCandidates[audioCandidateIndex] || audioUrlCandidates[0] || attachmentUrl;
+        const audioProgress = audioState && audioState.duration > 0
+            ? Math.min(100, Math.max(0, (Number(audioState.currentTime || 0) / Number(audioState.duration || 0)) * 100))
+            : 0;
+        const audioCurrentTime = audioState ? formatChatAudioTime(audioState.currentTime) : '0:00';
+        const audioTotalTime = audioState ? formatChatAudioTime(audioState.duration) : '0:00';
+        const audioActionIconClass = !audioState || !audioState.unlocked
+            ? 'fas fa-download'
+            : (audioState.isPlaying ? 'fas fa-pause' : 'fas fa-play');
+        const audioActionStateClass = !audioState || !audioState.unlocked
+            ? 'is-download'
+            : (audioState.isPlaying ? 'is-pause' : 'is-play');
+        const shouldRequireAudioDownload = !isCurrentSender;
+        const audioActionLabel = !audioState || !audioState.unlocked
+            ? 'Descargar audio'
+            : (audioState.isPlaying ? 'Pausar audio' : 'Reproducir audio');
         const audioHtml = showAudio ? `
             <div class="chat-audio-block">
-                <audio class="chat-audio-player" controls preload="none" src="${escapeHtml(attachmentUrl)}"></audio>
+                <div
+                    class="chat-audio-card"
+                    data-audio-key="${escapeHtml(audioKey)}"
+                    data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
+                    data-audio-download-url="${escapeHtml(audioSrc || attachmentUrl)}"
+                    data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
+                >
+                    <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
+                        <i class="${audioActionIconClass}" aria-hidden="true"></i>
+                    </button>
+                    <div class="chat-audio-main">
+                        <div class="chat-audio-progress">
+                            <span class="chat-audio-progress-fill" style="width:${audioProgress}%"></span>
+                        </div>
+                        <div class="chat-audio-times">
+                            <span class="chat-audio-current-time">${audioCurrentTime}</span>
+                            <span class="chat-audio-total-time">${audioTotalTime}</span>
+                        </div>
+                    </div>
+                    <audio
+                        class="chat-audio-player"
+                        preload="metadata"
+                        playsinline
+                        src="${escapeHtml(audioSrc)}"
+                        data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"
+                        data-candidate-index="${audioCandidateIndex}"
+                    ></audio>
+                </div>
             </div>
         ` : '';
         const showFile = resolvedAttachmentKind && resolvedAttachmentKind !== 'image' && resolvedAttachmentKind !== 'audio' && !!attachmentUrl;
@@ -7885,7 +8248,7 @@ function renderChatMessages(messages) {
         }).join('');
         return `
         <div class="${messageItemClass}" data-msg-index="${idx}">
-            <div class="chat-message-line">
+            <div class="chat-message-line ${useLongMessageLayout ? 'is-long-message' : ''}">
                 <div class="chat-message-user">${messageStatusOverlayHtml}${renderedUser}</div>
                 ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
             </div>
@@ -7972,6 +8335,7 @@ function renderChatMessages(messages) {
 
     bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabel);
     bindChatImageFallbacks(messagesEl);
+    bindChatAudioFallbacks(messagesEl);
 }
 
 async function refreshChatMessages(showLoading = true, notifyOnNewMessage = false) {

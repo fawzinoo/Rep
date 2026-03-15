@@ -823,9 +823,10 @@
 
     .chat-modal {
         width: 100vw;
-        height: 100dvh;
-        min-height: 100vh;
-        max-height: 100dvh;
+        height: 100vh;
+        height: 100svh;
+        min-height: 100svh;
+        max-height: 100svh;
         border-radius: 0;
         border: none;
         box-shadow: none;
@@ -7143,6 +7144,7 @@ let chatUnreadIncomingCount = 0;
 let chatDismissUnreadOnManualScroll = false;
 let chatReactionPopoverState = null;
 let chatReplyThreadPopoverState = null;
+let chatRequestedFullscreen = false;
 const chatAudioUiStateByKey = new Map();
 const chatAudioBlobUrlByFileId = new Map();
 const chatRecentlyConfirmedMessageKeys = new Map();
@@ -7186,6 +7188,45 @@ function isChatRowOwnedByCurrentClient(row) {
     return safeRow > 0 && chatOwnedRowIds.has(safeRow);
 }
 let chatShowAnsweredOnly = false;
+
+function shouldChatAttemptFullscreen() {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 640px) and (pointer: coarse)').matches);
+}
+
+async function tryEnterChatFullscreen() {
+    if (!shouldChatAttemptFullscreen()) return;
+    const root = document.documentElement;
+    if (!root) return;
+    const request =
+        root.requestFullscreen
+        || root.webkitRequestFullscreen
+        || root.msRequestFullscreen;
+    if (!request) return;
+    const isAlreadyFullscreen =
+        document.fullscreenElement
+        || document.webkitFullscreenElement
+        || document.msFullscreenElement;
+    if (isAlreadyFullscreen) return;
+    try {
+        const result = request.call(root);
+        if (result && typeof result.then === 'function') {
+            await result;
+        }
+        chatRequestedFullscreen = true;
+    } catch (_) {}
+}
+
+function exitChatFullscreenIfNeeded() {
+    if (!chatRequestedFullscreen) return;
+    const exit =
+        document.exitFullscreen
+        || document.webkitExitFullscreen
+        || document.msExitFullscreen;
+    try {
+        if (exit) exit.call(document);
+    } catch (_) {}
+    chatRequestedFullscreen = false;
+}
 
 function getLocalChatTimeLabel() {
     return formatChatTimeLabelForServerClock(new Date());
@@ -12418,6 +12459,7 @@ function closeChatModal() {
         overlay.classList.remove('is-visible');
         overlay.classList.add('is-closing');
         overlay.setAttribute('aria-hidden', 'true');
+        exitChatFullscreenIfNeeded();
         const timerId = setTimeout(() => {
             overlay.classList.add('is-hidden');
             overlay.classList.remove('is-closing');
@@ -12585,6 +12627,7 @@ async function submitChatMessage() {
 }
 
 async function openChatModal() {
+    void tryEnterChatFullscreen();
     const existingOverlay = document.getElementById('chat-overlay');
     if (existingOverlay) {
         const messagesEl = document.getElementById('chat-messages-list');

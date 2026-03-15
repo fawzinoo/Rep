@@ -833,6 +833,9 @@
 .chat-body {
     padding: 14px;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
     background: linear-gradient(180deg, rgba(248, 239, 224, 0.96) 0%, rgba(243, 231, 214, 0.98) 100%);
     position: relative;
 }
@@ -867,18 +870,32 @@
 .chat-unread-indicator-badge {
     min-width: 30px;
     height: 30px;
-    padding: 0 8px;
+    padding: 0 5px;
     border-radius: 999px;
     background: linear-gradient(180deg, #ffffff 0%, #eef4ff 100%);
     border: 2px solid rgba(59, 130, 246, 0.78);
     color: #1d4ed8;
-    font-size: 0.76rem;
+    font-size: 0.68rem;
     font-weight: 900;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 2px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    box-sizing: border-box;
+}
+
+.chat-unread-indicator-badge i {
+    font-size: 0.68rem;
+    line-height: 1;
+}
+
+.chat-unread-indicator-count-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
 }
 
 .chat-unread-indicator-arrow {
@@ -948,6 +965,7 @@
     -ms-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+    touch-action: pan-y;
 }
 
 .chat-message-item::after {
@@ -2475,6 +2493,7 @@
     gap: 6px;
     flex-wrap: nowrap;
     color: #334155;
+    touch-action: pan-y;
 }
 
 .chat-message-reply-image-btn {
@@ -6975,6 +6994,7 @@ let chatDeleteArmRow = 0;
 let chatOwnMessageChoiceMenuState = null;
 let chatIgnoreOwnMessageChoiceCloseUntil = 0;
 let chatUnreadIncomingCount = 0;
+let chatDismissUnreadOnManualScroll = false;
 let chatReactionPopoverState = null;
 let chatReplyThreadPopoverState = null;
 const chatAudioUiStateByKey = new Map();
@@ -8802,6 +8822,8 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
 
     let longPressTriggered = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
     const clearTimer = () => {
         if (chatOwnMessageLongPressTimerId) {
             clearTimeout(chatOwnMessageLongPressTimerId);
@@ -8818,6 +8840,13 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
         }
         clearTimer();
         longPressTriggered = false;
+        if (event && event.touches && event.touches[0]) {
+            touchStartX = Number(event.touches[0].clientX) || 0;
+            touchStartY = Number(event.touches[0].clientY) || 0;
+        } else {
+            touchStartX = 0;
+            touchStartY = 0;
+        }
         chatOwnMessageLongPressTimerId = setTimeout(() => {
             longPressTriggered = true;
             chatSuppressNextMessageClick = true;
@@ -8841,11 +8870,20 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
             }, 0);
         }
     };
+    const onTouchMove = (event) => {
+        if (!chatOwnMessageLongPressTimerId || !event || !event.touches || !event.touches[0]) return;
+        const currentX = Number(event.touches[0].clientX) || 0;
+        const currentY = Number(event.touches[0].clientY) || 0;
+        if (Math.abs(currentX - touchStartX) > 8 || Math.abs(currentY - touchStartY) > 8) {
+            clearTimer();
+        }
+    };
 
     targetEl.addEventListener('mousedown', onStart);
     targetEl.addEventListener('mouseup', onEnd);
     targetEl.addEventListener('mouseleave', clearTimer);
     targetEl.addEventListener('touchstart', onStart, { passive: false });
+    targetEl.addEventListener('touchmove', onTouchMove, { passive: true });
     targetEl.addEventListener('touchend', onEnd, { passive: false });
     targetEl.addEventListener('touchcancel', clearTimer);
     targetEl.addEventListener('selectstart', (event) => {
@@ -10811,6 +10849,14 @@ function dismissChatUnreadIndicatorFromInteraction(event) {
     if (event && event.target && event.target.closest && event.target.closest('#chat-unread-indicator')) {
         return;
     }
+    if (event && event.type === 'scroll') {
+        const shouldDismiss = chatDismissUnreadOnManualScroll || isChatNearBottom();
+        chatDismissUnreadOnManualScroll = false;
+        if (!shouldDismiss) return;
+    }
+    if (event && event.type !== 'scroll') {
+        chatDismissUnreadOnManualScroll = false;
+    }
     resetChatUnreadIndicator();
 }
 
@@ -12444,7 +12490,10 @@ async function openChatModal() {
                     ${getChatLoadingMarkup()}
                 </div>
                 <button type="button" id="chat-unread-indicator" class="chat-unread-indicator" hidden aria-label="Ir a mensajes nuevos">
-                    <span id="chat-unread-indicator-count" class="chat-unread-indicator-badge">0</span>
+                    <span class="chat-unread-indicator-badge">
+                        <span id="chat-unread-indicator-count" class="chat-unread-indicator-count-inline">0</span>
+                        <i class="far fa-envelope" aria-hidden="true"></i>
+                    </span>
                     <span class="chat-unread-indicator-arrow" aria-hidden="true"></span>
                 </button>
             </div>
@@ -12778,6 +12827,30 @@ async function openChatModal() {
 
     const chatBodyEl = overlay.querySelector('.chat-body');
     if (chatBodyEl) {
+        chatBodyEl.addEventListener('touchstart', () => {
+            if (!chatUnreadIncomingCount) return;
+            chatDismissUnreadOnManualScroll = true;
+        }, { passive: true });
+        chatBodyEl.addEventListener('touchmove', () => {
+            if (!chatUnreadIncomingCount) return;
+            resetChatUnreadIndicator();
+            chatDismissUnreadOnManualScroll = false;
+        }, { passive: true });
+        chatBodyEl.addEventListener('wheel', () => {
+            if (!chatUnreadIncomingCount) return;
+            resetChatUnreadIndicator();
+            chatDismissUnreadOnManualScroll = false;
+        }, { passive: true });
+        chatBodyEl.addEventListener('touchend', () => {
+            setTimeout(() => {
+                chatDismissUnreadOnManualScroll = false;
+            }, 160);
+        }, { passive: true });
+        chatBodyEl.addEventListener('touchcancel', () => {
+            setTimeout(() => {
+                chatDismissUnreadOnManualScroll = false;
+            }, 160);
+        }, { passive: true });
         chatBodyEl.addEventListener('scroll', (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             closeChatEmojiMenu();
@@ -12788,8 +12861,20 @@ async function openChatModal() {
     }
 
     if (chatModalEl) {
-        chatModalEl.addEventListener('pointerdown', dismissChatUnreadIndicatorFromInteraction, true);
-        chatModalEl.addEventListener('touchstart', dismissChatUnreadIndicatorFromInteraction, { passive: true, capture: true });
+        chatModalEl.addEventListener('pointerdown', (event) => {
+            if (!chatUnreadIncomingCount) return;
+            if (!event.target || !event.target.closest) return;
+            if (event.target.closest('.chat-footer, #chat-input, #chat-send-btn, #chat-unread-indicator')) {
+                dismissChatUnreadIndicatorFromInteraction(event);
+            }
+        }, true);
+        chatModalEl.addEventListener('touchstart', (event) => {
+            if (!chatUnreadIncomingCount) return;
+            if (!event.target || !event.target.closest) return;
+            if (event.target.closest('.chat-footer, #chat-input, #chat-send-btn, #chat-unread-indicator')) {
+                dismissChatUnreadIndicatorFromInteraction(event);
+            }
+        }, { passive: true, capture: true });
     }
 
     window.addEventListener('resize', () => {

@@ -7007,6 +7007,7 @@ let chatOwnMessageLongPressTimerId = null;
 let chatIgnoreOwnMessageClickUntil = 0;
 let chatIgnoreMessageClickUntil = 0;
 let chatSuppressNextMessageClick = false;
+let chatSuppressNextMessageClickTimerId = null;
 let chatMessageActionMenuState = null;
 let chatIgnoreMessageActionCloseUntil = 0;
 let chatDeleteArmRow = 0;
@@ -8840,6 +8841,18 @@ async function deleteChatMessageByTarget(targetMessage) {
     }
 }
 
+function scheduleChatSuppressNextMessageClickReset(durationMs = CHAT_TAP_SUPPRESS_CLICK_MS) {
+    if (chatSuppressNextMessageClickTimerId) {
+        clearTimeout(chatSuppressNextMessageClickTimerId);
+        chatSuppressNextMessageClickTimerId = null;
+    }
+    const delayMs = Math.max(0, Number(durationMs) || 0);
+    chatSuppressNextMessageClickTimerId = setTimeout(() => {
+        chatSuppressNextMessageClick = false;
+        chatSuppressNextMessageClickTimerId = null;
+    }, delayMs + 60);
+}
+
 function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, options = {}) {
     if (!targetEl || !targetMessage || !canReactToChatMessage(targetMessage)) return;
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
@@ -8866,6 +8879,7 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
             chatSuppressNextMessageClick = true;
             chatIgnoreMessageClickUntil = Date.now() + 900;
             chatIgnoreOwnMessageClickUntil = Date.now() + 900;
+            scheduleChatSuppressNextMessageClickReset(900);
             vibrar(45);
             openChatMessageActionMenu(targetMessage, targetEl, currentUserLabel);
         }, CHAT_LONG_PRESS_DELETE_MS);
@@ -12027,6 +12041,7 @@ function renderChatMessages(messages) {
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
             chatSuppressNextMessageClick = true;
             chatIgnoreMessageClickUntil = Date.now() + CHAT_TAP_SUPPRESS_CLICK_MS;
+            scheduleChatSuppressNextMessageClickReset(CHAT_TAP_SUPPRESS_CLICK_MS);
             handler();
         };
 

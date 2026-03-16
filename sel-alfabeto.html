@@ -7062,6 +7062,7 @@ let chatOwnedRowIds = loadChatOwnedRowIds();
 let chatKeepKeyboardUntil = 0;
 let chatKeyboardRefocusTimerId = null;
 let chatPinnedToBottom = true;
+let chatReplyTargetVisibilityTimerIds = [];
 
 function loadChatOwnedRowIds() {
     try {
@@ -8240,12 +8241,16 @@ function installChatAnsweredOnlySwitchHandler() {
 }
 
 function clearChatReplyTarget(shouldRerender = true) {
+    clearScheduledChatReplyTargetVisibility();
     chatReplyTarget = null;
     closeChatReplyThreadPopover();
     updateChatReplyPreview();
     if (shouldRerender && document.getElementById('chat-overlay')) {
         renderMergedChatMessages(chatLatestServerMessages);
     }
+    requestAnimationFrame(() => {
+        updateChatPinnedState();
+    });
 }
 
 function focusChatInputForReply() {
@@ -8253,11 +8258,22 @@ function focusChatInputForReply() {
     if (!inputEl) return;
     requestAnimationFrame(() => {
         keepChatKeyboardOpen(inputEl);
+        scheduleKeepActiveChatReplyTargetVisible();
         const valueLength = inputEl.value.length;
         try {
             inputEl.setSelectionRange(valueLength, valueLength);
         } catch (_) {}
     });
+}
+
+function activateChatReplyTarget(nextTarget) {
+    if (!nextTarget || !nextTarget.user || !nextTarget.message) return;
+    chatReplyTarget = nextTarget;
+    chatPinnedToBottom = false;
+    updateChatReplyPreview();
+    focusChatInputForReply();
+    renderMergedChatMessages(chatLatestServerMessages);
+    scheduleKeepActiveChatReplyTargetVisible();
 }
 
 function toggleChatReplyTarget(msg, currentUserLabel) {
@@ -8278,10 +8294,7 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
         clearChatReplyTarget(true);
         return;
     }
-    chatReplyTarget = nextTarget;
-    updateChatReplyPreview();
-    focusChatInputForReply();
-    renderMergedChatMessages(chatLatestServerMessages);
+    activateChatReplyTarget(nextTarget);
 }
 
 function clearChatEditTarget(shouldRerender = true, clearInput = true) {
@@ -8523,10 +8536,7 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel)
         const replyTarget = getReplyTargetForOwnMessageChoice(targetMessage);
         closeChatOwnMessageChoiceMenu();
         clearChatEditTarget(false, false);
-        chatReplyTarget = replyTarget;
-        updateChatReplyPreview();
-        focusChatInputForReply();
-        renderMergedChatMessages(chatLatestServerMessages);
+        activateChatReplyTarget(replyTarget);
     });
 
     const editBtn = document.getElementById('chat-own-choice-edit-btn');
@@ -10836,6 +10846,83 @@ function restoreChatScrollSnapshot(snapshot) {
     setTimeout(applySnapshot, 180);
 }
 
+function clearScheduledChatReplyTargetVisibility() {
+    if (!Array.isArray(chatReplyTargetVisibilityTimerIds) || chatReplyTargetVisibilityTimerIds.length === 0) {
+        chatReplyTargetVisibilityTimerIds = [];
+        return;
+    }
+    chatReplyTargetVisibilityTimerIds.forEach((timerId) => clearTimeout(timerId));
+    chatReplyTargetVisibilityTimerIds = [];
+}
+
+function findChatReplyTargetElement(target = chatReplyTarget) {
+    const chatBody = getChatBodyElement();
+    if (!chatBody || !target) return null;
+
+    const targetKind = String(target && target.kind ? target.kind : 'message').trim() || 'message';
+    const targetRow = Number(target && target.row ? target.row : 0) || 0;
+    const targetEntryToken = String(target && target.entryToken ? target.entryToken : '').trim();
+
+    if (targetKind === 'attached_reply') {
+        const replyEls = Array.from(chatBody.querySelectorAll('.chat-message-reply-reactable'));
+        return replyEls.find((replyEl) => {
+            const replyRow = Number(replyEl.getAttribute('data-source-row') || '0') || 0;
+            const replyEntryToken = String(replyEl.getAttribute('data-entry-token') || '').trim();
+            if (targetRow > 0 && replyRow !== targetRow) return false;
+            if (targetEntryToken) return replyEntryToken === targetEntryToken;
+            return targetRow > 0 && replyRow === targetRow;
+        }) || null;
+    }
+
+    if (targetRow <= 0) return null;
+    return chatBody.querySelector(`.chat-message-item[data-message-row="${targetRow}"]`);
+}
+
+function keepChatElementVisibleInBody(targetEl, topMargin = 14, bottomMargin = 18) {
+    const chatBody = getChatBodyElement();
+    if (!chatBody || !targetEl) return false;
+
+    const bodyRect = chatBody.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+    if (!bodyRect.height || !targetRect.height) return false;
+
+    let nextScrollTop = Number(chatBody.scrollTop) || 0;
+    const minTop = bodyRect.top + Math.max(0, Number(topMargin) || 0);
+    const maxBottom = bodyRect.bottom - Math.max(0, Number(bottomMargin) || 0);
+
+    if (targetRect.top < minTop) {
+        nextScrollTop -= (minTop - targetRect.top);
+    } else if (targetRect.bottom > maxBottom) {
+        nextScrollTop += (targetRect.bottom - maxBottom);
+    }
+
+    const safeScrollTop = Math.max(0, Math.round(nextScrollTop));
+    if (Math.abs(safeScrollTop - ((Number(chatBody.scrollTop) || 0))) < 1) return false;
+    chatBody.scrollTop = safeScrollTop;
+    return true;
+}
+
+function keepActiveChatReplyTargetVisible() {
+    if (!chatReplyTarget || !chatReplyTarget.user || !chatReplyTarget.message) return false;
+    const targetEl = findChatReplyTargetElement(chatReplyTarget);
+    if (!targetEl) return false;
+    return keepChatElementVisibleInBody(targetEl);
+}
+
+function scheduleKeepActiveChatReplyTargetVisible() {
+    clearScheduledChatReplyTargetVisibility();
+    if (!chatReplyTarget || !chatReplyTarget.user || !chatReplyTarget.message) return;
+
+    [0, 70, 170, 320, 520].forEach((delayMs) => {
+        const timerId = setTimeout(() => {
+            const overlay = document.getElementById('chat-overlay');
+            if (!overlay || overlay.classList.contains('is-hidden')) return;
+            keepActiveChatReplyTargetVisible();
+        }, delayMs);
+        chatReplyTargetVisibilityTimerIds.push(timerId);
+    });
+}
+
 function scrollChatThreadToBottom(messageRow, useSmooth = false) {
     const targetRow = Number(messageRow) || 0;
     const chatBody = getChatBodyElement();
@@ -11872,7 +11959,7 @@ function renderChatMessages(messages) {
                 ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
                 : `<span class="chat-user-label ${areSameChatUserLabels(replyAuthor, currentUserLabel) ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
             return `
-                <div class="chat-message-reply chat-message-reply-reactable ${canReplyToThisReply ? 'is-replyable' : ''} ${isSelectedReplyTarget ? 'reply-target' : ''}" data-parent-index="${idx}" data-reply-index="${replyIdx}">
+                <div class="chat-message-reply chat-message-reply-reactable ${canReplyToThisReply ? 'is-replyable' : ''} ${isSelectedReplyTarget ? 'reply-target' : ''}" data-parent-index="${idx}" data-reply-index="${replyIdx}" data-source-row="${Number(replyEntry && replyEntry.sourceRow ? replyEntry.sourceRow : 0) || 0}" data-entry-token="${escapeHtml(buildChatAttachedReplyToken(replyEntry))}">
                     <span class="chat-message-reply-arrow">↳</span>
                     ${replyStatusOverlayHtml}
                     ${replyAuthorLabel}
@@ -12257,10 +12344,7 @@ function renderChatMessages(messages) {
             if (!replyTarget || !replyTarget.user || !replyTarget.message) return;
             closeChatOwnMessageChoiceMenu();
             clearChatEditTarget(false, false);
-            chatReplyTarget = replyTarget;
-            updateChatReplyPreview();
-            focusChatInputForReply();
-            renderMergedChatMessages(chatLatestServerMessages);
+            activateChatReplyTarget(replyTarget);
         };
         item.addEventListener('click', (event) => {
             if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')) {
@@ -12371,6 +12455,7 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
     const previousServerMessages = Array.isArray(chatLatestServerMessages) ? [...chatLatestServerMessages] : [];
     const wasNearBottom = showLoading ? true : isChatNearBottom();
+    const hasActiveReplyTarget = !!(chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message);
     const preserveScrollSnapshot = !showLoading && options && options.preserveScrollSnapshot
         ? options.preserveScrollSnapshot
         : null;
@@ -12401,6 +12486,8 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
         }
         if (preserveScrollSnapshot) {
             restoreChatScrollSnapshot(preserveScrollSnapshot);
+        } else if (hasActiveReplyTarget) {
+            scheduleKeepActiveChatReplyTargetVisible();
         } else if (hasNewMessage && wasNearBottom) {
             requestAnimationFrame(() => {
                 scrollChatToLatestMessage(false);
@@ -12460,8 +12547,16 @@ function setChatViewportVars() {
     }
     updateChatFooterInset();
     const overlay = document.getElementById('chat-overlay');
-    if (overlay && !overlay.classList.contains('is-hidden') && chatPinnedToBottom) {
-        scrollChatToLatestMessage(false);
+    if (overlay && !overlay.classList.contains('is-hidden')) {
+        if (chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message) {
+            requestAnimationFrame(() => {
+                keepActiveChatReplyTargetVisible();
+            });
+            return;
+        }
+        if (chatPinnedToBottom) {
+            scrollChatToLatestMessage(false);
+        }
     }
 }
 
@@ -12593,6 +12688,7 @@ function closeChatModal() {
         clearTimeout(chatOwnMessageLongPressTimerId);
         chatOwnMessageLongPressTimerId = null;
     }
+    clearScheduledChatReplyTargetVisibility();
     closeChatEmojiMenu();
     closeChatMessageActionMenu();
     closeChatReactionPopover();

@@ -6894,9 +6894,9 @@
     errorAudio.play().catch(() => {});
 }
 
-function playButtonSound() {
+function playButtonSound(ms = 50) {
     // Agregar vibración leve a todos los botones
-    vibrar(50); // Vibración más suave que los botones principales
+    vibrar(ms); // Vibración más suave que los botones principales
     
     const buttonAudio = document.getElementById('buttonClickSound');
     if (buttonAudio) {
@@ -6980,7 +6980,9 @@ const CHAT_THUMB_PRELOAD_LIMIT = 12;
 const CHAT_THUMB_PRELOAD_WAIT_MS = 850;
 const CHAT_THUMB_LOAD_TIMEOUT_MS = 2200;
 const CHAT_NOTIFICATION_SOUND_POOL_SIZE = 3;
-const CHAT_LONG_PRESS_DELETE_MS = 520;
+const CHAT_LONG_PRESS_DELETE_MS = 360;
+const CHAT_TAP_MAX_MOVE_PX = 8;
+const CHAT_TAP_SUPPRESS_CLICK_MS = 420;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
 const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 const CHAT_COMPOSER_EMOJIS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤗', '🤔', '😮', '😢', '😭', '😡', '👍', '👏', '🙏', '❤️', '💙', '💚', '💛', '🔥', '✨', '🎉', '🌟', '💯', '🤝', '👌', '🙌', '😉', '😴', '😅'];
@@ -8887,6 +8889,7 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
     targetEl.addEventListener('mouseup', onEnd);
     targetEl.addEventListener('mouseleave', clearTimer);
     targetEl.addEventListener('touchstart', onStart, { passive: false });
+    targetEl.addEventListener('touchmove', clearTimer, { passive: true });
     targetEl.addEventListener('touchend', onEnd, { passive: false });
     targetEl.addEventListener('touchcancel', clearTimer);
     targetEl.addEventListener('selectstart', (event) => {
@@ -12004,25 +12007,53 @@ function renderChatMessages(messages) {
     `;
     }).join('');
 
-    const replyableItems = messagesEl.querySelectorAll('.chat-message-item.is-replyable');
-    replyableItems.forEach((item) => {
-        item.addEventListener('click', (event) => {
-            if (chatSuppressNextMessageClick) {
-                chatSuppressNextMessageClick = false;
-                event.preventDefault();
-                event.stopPropagation();
+    const installFastTap = (item, handler) => {
+        let startX = 0;
+        let startY = 0;
+        let moved = false;
+
+        item.addEventListener('pointerdown', (event) => {
+            if (event.pointerType && event.pointerType !== 'touch') return;
+            startX = Number(event.clientX) || 0;
+            startY = Number(event.clientY) || 0;
+            moved = false;
+        });
+        item.addEventListener('pointermove', (event) => {
+            if (event.pointerType && event.pointerType !== 'touch') return;
+            const dx = Math.abs((Number(event.clientX) || 0) - startX);
+            const dy = Math.abs((Number(event.clientY) || 0) - startY);
+            if (dx > CHAT_TAP_MAX_MOVE_PX || dy > CHAT_TAP_MAX_MOVE_PX) {
+                moved = true;
+            }
+        }, { passive: true });
+        item.addEventListener('pointerup', (event) => {
+            if (event.pointerType && event.pointerType !== 'touch') return;
+            if (moved) return;
+            if (event.target && event.target.closest && event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')) {
                 return;
             }
+            if (chatSuppressNextMessageClick) return;
             if (Date.now() < chatIgnoreMessageClickUntil) return;
+            event.preventDefault();
+            event.stopPropagation();
+            chatSuppressNextMessageClick = true;
+            chatIgnoreMessageClickUntil = Date.now() + CHAT_TAP_SUPPRESS_CLICK_MS;
+            handler();
+        });
+        item.addEventListener('pointercancel', () => {
+            moved = true;
+        });
+    };
+
+    const replyableItems = messagesEl.querySelectorAll('.chat-message-item.is-replyable');
+    replyableItems.forEach((item) => {
+        const handleReply = () => {
+            vibrar(80);
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
             toggleChatReplyTarget(targetMessage, currentUserLabel);
-        });
-    });
-
-    const editableOwnItems = messagesEl.querySelectorAll('.chat-message-item.is-self.is-editable-self');
-    editableOwnItems.forEach((item) => {
+        };
         item.addEventListener('click', (event) => {
             if (chatSuppressNextMessageClick) {
                 chatSuppressNextMessageClick = false;
@@ -12031,6 +12062,15 @@ function renderChatMessages(messages) {
                 return;
             }
             if (Date.now() < chatIgnoreMessageClickUntil) return;
+            handleReply();
+        });
+        installFastTap(item, handleReply);
+    });
+
+    const editableOwnItems = messagesEl.querySelectorAll('.chat-message-item.is-self.is-editable-self');
+    editableOwnItems.forEach((item) => {
+        const handleEditMenu = () => {
+            vibrar(80);
             if (Date.now() < chatIgnoreOwnMessageClickUntil) return;
             if (chatDeleteArmRow) {
                 clearChatDeleteArm(true);
@@ -12039,10 +12079,21 @@ function renderChatMessages(messages) {
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
+            openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
+        };
+        item.addEventListener('click', (event) => {
+            if (chatSuppressNextMessageClick) {
+                chatSuppressNextMessageClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            if (Date.now() < chatIgnoreMessageClickUntil) return;
             event.preventDefault();
             event.stopPropagation();
-            openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
+            handleEditMenu();
         });
+        installFastTap(item, handleEditMenu);
     });
 
     const reactableReplyItems = messagesEl.querySelectorAll('.chat-message-reply-reactable');
@@ -12146,6 +12197,7 @@ function renderChatMessages(messages) {
         button.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
+            vibrar(80);
             const row = Number(button.getAttribute('data-delete-row') || '0') || 0;
             const targetMessage = renderMessages.find((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === row);
             if (!targetMessage) return;
@@ -12738,8 +12790,7 @@ async function openChatModal() {
     const sendBtn = document.getElementById('chat-send-btn');
     if (sendBtn) {
         sendBtn.addEventListener('click', () => {
-            vibrar(40);
-            playButtonSound();
+            playButtonSound(80);
             keepChatKeyboardOpen(document.getElementById('chat-input'));
             void submitChatMessage();
         });
@@ -12779,8 +12830,7 @@ async function openChatModal() {
             dismissChatUnreadIndicatorFromInteraction(event);
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
-                vibrar(40);
-                playButtonSound();
+                playButtonSound(80);
                 keepChatKeyboardOpen(inputEl);
                 void submitChatMessage();
             }

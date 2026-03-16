@@ -7015,6 +7015,7 @@ const chatRecentlyConfirmedCleanupTimers = new Map();
 let chatOwnedRowIds = loadChatOwnedRowIds();
 let chatKeepKeyboardUntil = 0;
 let chatKeyboardRefocusTimerId = null;
+let chatPinnedToBottom = true;
 
 function loadChatOwnedRowIds() {
     try {
@@ -10716,13 +10717,15 @@ function scrollChatToLatestMessage(useSmooth = false) {
     const targetTop = lastVisibleBlock
         ? Math.max(0, lastVisibleBlock.offsetTop + lastVisibleBlock.offsetHeight - chatBody.clientHeight + 12)
         : Math.max(0, chatBody.scrollHeight - chatBody.clientHeight + 12);
+    const bottomTop = Math.max(0, chatBody.scrollHeight - chatBody.clientHeight);
+    const finalTop = Math.max(targetTop, bottomTop);
 
     const applyScroll = (behavior) => {
         if (typeof chatBody.scrollTo === 'function') {
-            chatBody.scrollTo({ top: targetTop, behavior });
+            chatBody.scrollTo({ top: finalTop, behavior });
             return;
         }
-        chatBody.scrollTop = targetTop;
+        chatBody.scrollTop = finalTop;
     };
 
     applyScroll(useSmooth ? 'smooth' : 'auto');
@@ -10731,6 +10734,7 @@ function scrollChatToLatestMessage(useSmooth = false) {
         setTimeout(() => applyScroll('auto'), 80);
         setTimeout(() => applyScroll('auto'), 180);
     }
+    chatPinnedToBottom = true;
 }
 
 function getChatBodyElement() {
@@ -10791,6 +10795,10 @@ function isChatNearBottom(thresholdPx = CHAT_NEAR_BOTTOM_THRESHOLD_PX) {
     if (!chatBody) return true;
     const remaining = chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight;
     return remaining <= Math.max(0, Number(thresholdPx) || 0);
+}
+
+function updateChatPinnedState() {
+    chatPinnedToBottom = isChatNearBottom();
 }
 
 function countIncomingUnreadMessages(previousMessages, nextMessages, currentUserLabel) {
@@ -12255,7 +12263,7 @@ function setChatViewportVars() {
     }
     updateChatFooterInset();
     const overlay = document.getElementById('chat-overlay');
-    if (overlay && !overlay.classList.contains('is-hidden') && isChatNearBottom()) {
+    if (overlay && !overlay.classList.contains('is-hidden') && chatPinnedToBottom) {
         scrollChatToLatestMessage(false);
     }
 }
@@ -12980,6 +12988,7 @@ async function openChatModal() {
         }, { passive: true });
         chatBodyEl.addEventListener('scroll', (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
+            updateChatPinnedState();
             closeChatEmojiMenu();
             closeChatMessageActionMenu();
             closeChatOwnMessageChoiceMenu();
@@ -13012,6 +13021,7 @@ async function openChatModal() {
     });
 
     updateChatReplyPreview();
+    chatPinnedToBottom = true;
     disableChatAttachmentUI(false);
     resetChatUnreadIndicator();
     await refreshChatMessages(true, false);

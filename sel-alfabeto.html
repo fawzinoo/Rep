@@ -695,6 +695,7 @@
 }
 
 .chat-modal {
+    --chat-footer-h: 0px;
     width: 100%;
     height: 100%;
     max-height: none;
@@ -840,12 +841,14 @@
 
 .chat-body {
     padding: 14px;
+    padding-bottom: calc(14px + var(--chat-footer-h, 0px));
     overflow: auto;
     background: linear-gradient(180deg, rgba(248, 239, 224, 0.96) 0%, rgba(243, 231, 214, 0.98) 100%);
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
     overscroll-behavior: contain;
+    scroll-padding-bottom: calc(14px + var(--chat-footer-h, 0px));
 }
 
 .chat-unread-indicator {
@@ -8175,6 +8178,7 @@ function updateChatReplyPreview() {
     }
 
     inputEl.placeholder = isEditing ? 'Edita tu mensaje...' : 'Mensaje...';
+    updateChatFooterInset();
 }
 
 function installChatAnsweredOnlySwitchHandler() {
@@ -12249,6 +12253,21 @@ function setChatViewportVars() {
     if (viewportHeight && document.documentElement) {
         document.documentElement.style.setProperty('--chat-vh', `${Math.round(viewportHeight)}px`);
     }
+    updateChatFooterInset();
+    const overlay = document.getElementById('chat-overlay');
+    if (overlay && !overlay.classList.contains('is-hidden') && isChatNearBottom()) {
+        scrollChatToLatestMessage(false);
+    }
+}
+
+function updateChatFooterInset() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.classList.contains('is-hidden')) return;
+    const modal = overlay.querySelector('.chat-modal');
+    const footer = overlay.querySelector('.chat-footer');
+    if (!modal || !footer) return;
+    const footerHeight = Math.max(0, Math.round(footer.getBoundingClientRect().height || 0));
+    modal.style.setProperty('--chat-footer-h', `${footerHeight}px`);
 }
 
 function installChatViewportHandlers() {
@@ -12666,6 +12685,7 @@ async function openChatModal() {
         </div>
     `;
     document.body.appendChild(overlay);
+    updateChatFooterInset();
     const chatModalEl = overlay.querySelector('.chat-modal');
 
     overlay.addEventListener('click', (event) => {

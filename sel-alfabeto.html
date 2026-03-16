@@ -681,6 +681,8 @@
     justify-content: center;
     z-index: 12500;
     padding: 14px;
+    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
 }
 
 .chat-overlay.is-hidden {
@@ -699,6 +701,8 @@
     flex-direction: column;
     overflow: hidden;
     position: relative;
+    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
 }
 
 @media (max-width: 768px) {
@@ -856,6 +860,8 @@
     overflow: auto;
     background: linear-gradient(180deg, rgba(248, 239, 224, 0.96) 0%, rgba(243, 231, 214, 0.98) 100%);
     position: relative;
+    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
 }
 
 .chat-unread-indicator {
@@ -12245,6 +12251,42 @@ function startChatAutoRefresh() {
     }, CHAT_REFRESH_INTERVAL_MS);
 }
 
+function installChatScrollGuard() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.dataset.scrollGuardInstalled === '1') return;
+    overlay.dataset.scrollGuardInstalled = '1';
+
+    const chatBody = overlay.querySelector('.chat-body');
+    if (!chatBody) return;
+
+    let startY = 0;
+    let startX = 0;
+
+    chatBody.addEventListener('touchstart', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        startY = event.touches[0].clientY;
+        startX = event.touches[0].clientX;
+    }, { passive: true });
+
+    chatBody.addEventListener('touchmove', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        const currentY = event.touches[0].clientY;
+        const currentX = event.touches[0].clientX;
+        const deltaY = currentY - startY;
+        const deltaX = currentX - startX;
+
+        if (Math.abs(deltaY) <= Math.abs(deltaX)) return;
+
+        const maxScrollTop = chatBody.scrollHeight - chatBody.clientHeight;
+        const atTop = chatBody.scrollTop <= 0;
+        const atBottom = chatBody.scrollTop >= maxScrollTop - 1;
+
+        if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+            event.preventDefault();
+        }
+    }, { passive: false });
+}
+
 function closeChatModal() {
     stopChatAutoRefresh();
     if (chatOwnMessageLongPressTimerId) {
@@ -12436,6 +12478,7 @@ async function openChatModal() {
         const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
         existingOverlay.classList.remove('is-hidden');
         existingOverlay.removeAttribute('aria-hidden');
+        installChatScrollGuard();
         chatReplyTarget = null;
         chatEditTarget = null;
         chatAttachmentUploadInProgress = false;
@@ -12561,6 +12604,7 @@ async function openChatModal() {
         </div>
     `;
     document.body.appendChild(overlay);
+    installChatScrollGuard();
     const chatModalEl = overlay.querySelector('.chat-modal');
 
     overlay.addEventListener('click', (event) => {

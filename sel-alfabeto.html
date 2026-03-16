@@ -7010,6 +7010,8 @@ const chatAudioBlobUrlByFileId = new Map();
 const chatRecentlyConfirmedMessageKeys = new Map();
 const chatRecentlyConfirmedCleanupTimers = new Map();
 let chatOwnedRowIds = loadChatOwnedRowIds();
+let chatKeepKeyboardUntil = 0;
+let chatKeyboardRefocusTimerId = null;
 
 function loadChatOwnedRowIds() {
     try {
@@ -8199,7 +8201,7 @@ function focusChatInputForReply() {
     const inputEl = document.getElementById('chat-input');
     if (!inputEl) return;
     requestAnimationFrame(() => {
-        inputEl.focus();
+        keepChatKeyboardOpen(inputEl);
         const valueLength = inputEl.value.length;
         try {
             inputEl.setSelectionRange(valueLength, valueLength);
@@ -12270,6 +12272,36 @@ function removeChatViewportHandlers() {
     }
 }
 
+function keepChatKeyboardOpen(inputEl = null) {
+    const target = inputEl || document.getElementById('chat-input');
+    if (!target) return;
+    chatKeepKeyboardUntil = Date.now() + 1400;
+    const focusTarget = () => {
+        try {
+            target.focus({ preventScroll: true });
+        } catch (_) {
+            target.focus();
+        }
+    };
+    focusTarget();
+    if (chatKeyboardRefocusTimerId) {
+        clearTimeout(chatKeyboardRefocusTimerId);
+        chatKeyboardRefocusTimerId = null;
+    }
+    chatKeyboardRefocusTimerId = setTimeout(() => {
+        if (Date.now() > chatKeepKeyboardUntil) return;
+        const overlay = document.getElementById('chat-overlay');
+        if (!overlay || overlay.classList.contains('is-hidden')) return;
+        focusTarget();
+    }, 80);
+    setTimeout(() => {
+        if (Date.now() > chatKeepKeyboardUntil) return;
+        const overlay = document.getElementById('chat-overlay');
+        if (!overlay || overlay.classList.contains('is-hidden')) return;
+        focusTarget();
+    }, 240);
+}
+
 function lockBodyScrollForChat() {
     if (chatBodyScrollLock) return;
     const scrollY = window.scrollY || window.pageYOffset || 0;
@@ -12307,6 +12339,11 @@ function closeChatModal() {
     stopChatAutoRefresh();
     removeChatViewportHandlers();
     unlockBodyScrollForChat();
+    chatKeepKeyboardUntil = 0;
+    if (chatKeyboardRefocusTimerId) {
+        clearTimeout(chatKeyboardRefocusTimerId);
+        chatKeyboardRefocusTimerId = null;
+    }
     if (chatOwnMessageLongPressTimerId) {
         clearTimeout(chatOwnMessageLongPressTimerId);
         chatOwnMessageLongPressTimerId = null;
@@ -12353,6 +12390,7 @@ async function submitChatMessage() {
             ? `<${serializedEditReplyTarget}> ${message}`
             : message;
         inputEl.value = '';
+        keepChatKeyboardOpen(inputEl);
         focusChatInputForReply();
         animateChatSendButton(sendBtn);
         if (!activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) {
@@ -12444,6 +12482,7 @@ async function submitChatMessage() {
         : message;
     const senderTaggedPayloadMessage = `-${normalizeChatUserLabel(identity.displayName)}-\n${payloadMessage}`;
     inputEl.value = '';
+    keepChatKeyboardOpen(inputEl);
     focusChatInputForReply();
     clearChatReplyTarget(false);
     animateChatSendButton(sendBtn);
@@ -12667,6 +12706,7 @@ async function openChatModal() {
         sendBtn.addEventListener('click', () => {
             vibrar(40);
             playButtonSound();
+            keepChatKeyboardOpen(document.getElementById('chat-input'));
             void submitChatMessage();
         });
     }
@@ -12707,6 +12747,7 @@ async function openChatModal() {
                 event.preventDefault();
                 vibrar(40);
                 playButtonSound();
+                keepChatKeyboardOpen(inputEl);
                 void submitChatMessage();
             }
         });
@@ -12714,6 +12755,15 @@ async function openChatModal() {
         inputEl.addEventListener('focus', (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             setChatViewportVars();
+        });
+        inputEl.addEventListener('blur', () => {
+            if (Date.now() > chatKeepKeyboardUntil) return;
+            const overlay = document.getElementById('chat-overlay');
+            if (!overlay || overlay.classList.contains('is-hidden')) return;
+            setTimeout(() => {
+                if (Date.now() > chatKeepKeyboardUntil) return;
+                keepChatKeyboardOpen(inputEl);
+            }, 0);
         });
     }
 

@@ -12027,16 +12027,23 @@ function renderChatMessages(messages) {
     `;
     }).join('');
 
-    const installFastTap = (item, handler) => {
+    const installFastTap = (item, handler, options = {}) => {
         let startX = 0;
         let startY = 0;
         let moved = false;
         let activeTouchId = null;
+        const extraIgnoreSelector = String(options && options.ignoreSelector ? options.ignoreSelector : '').trim();
 
-        const shouldIgnoreTarget = (event) => (
-            event && event.target && event.target.closest
-                && event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')
-        );
+        const shouldIgnoreTarget = (event) => {
+            if (!event || !event.target || !event.target.closest) return false;
+            if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')) {
+                return true;
+            }
+            if (extraIgnoreSelector && event.target.closest(extraIgnoreSelector)) {
+                return true;
+            }
+            return false;
+        };
 
         const triggerTap = (event) => {
             if (moved) return;
@@ -12127,7 +12134,7 @@ function renderChatMessages(messages) {
             if (Date.now() < chatIgnoreMessageClickUntil) return;
             handleReply();
         });
-        installFastTap(item, handleReply);
+        installFastTap(item, handleReply, { ignoreSelector: '.chat-message-reply-reactable' });
     });
 
     const editableOwnItems = messagesEl.querySelectorAll('.chat-message-item.is-self.is-editable-self');
@@ -12156,7 +12163,7 @@ function renderChatMessages(messages) {
             event.stopPropagation();
             handleEditMenu();
         });
-        installFastTap(item, handleEditMenu);
+        installFastTap(item, handleEditMenu, { ignoreSelector: '.chat-message-reply-reactable' });
     });
 
     const reactableReplyItems = messagesEl.querySelectorAll('.chat-message-reply-reactable');
@@ -12170,20 +12177,8 @@ function renderChatMessages(messages) {
         const reactionTarget = parentMessage && replyEntry
             ? getReactionTargetFromAttachedReply(parentMessage, replyEntry)
             : null;
-        item.addEventListener('click', (event) => {
-            if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')) {
-                return;
-            }
-            if (chatSuppressNextMessageClick) {
-                chatSuppressNextMessageClick = false;
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-            if (Date.now() < chatIgnoreMessageClickUntil) return;
+        const handleAttachedReplyAction = () => {
             if (!parentMessage || !replyEntry || !canReplyToAttachedReply(replyEntry, currentUserLabel)) return;
-            event.preventDefault();
-            event.stopPropagation();
             const actionTarget = getActionTargetFromAttachedReply(parentMessage, replyEntry);
             actionTarget.__ownedByVisibleLabelInCurrentBubble =
                 areSameChatUserLabels(parentMessage && parentMessage.user ? parentMessage.user : '', currentUserLabel)
@@ -12204,6 +12199,25 @@ function renderChatMessages(messages) {
             updateChatReplyPreview();
             focusChatInputForReply();
             renderMergedChatMessages(chatLatestServerMessages);
+        };
+        item.addEventListener('click', (event) => {
+            if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-audio-card, button, a, audio')) {
+                return;
+            }
+            if (chatSuppressNextMessageClick) {
+                chatSuppressNextMessageClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            if (Date.now() < chatIgnoreMessageClickUntil) return;
+            event.preventDefault();
+            event.stopPropagation();
+            handleAttachedReplyAction();
+        });
+        installFastTap(item, () => {
+            vibrar(80);
+            handleAttachedReplyAction();
         });
         bindChatReactionLongPress(item, reactionTarget, currentUserLabel);
     });

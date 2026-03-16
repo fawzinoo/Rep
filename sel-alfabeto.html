@@ -8266,6 +8266,14 @@ function focusChatInputForReply() {
     });
 }
 
+function preserveChatInputFocusFromControlTap(event, durationMs = 2200) {
+    const inputEl = document.getElementById('chat-input');
+    if (!inputEl || document.activeElement !== inputEl) return false;
+    if (event && event.cancelable) event.preventDefault();
+    requestChatKeyboardHold(durationMs, inputEl);
+    return true;
+}
+
 function activateChatReplyTarget(nextTarget) {
     if (!nextTarget || !nextTarget.user || !nextTarget.message) return;
     chatReplyTarget = nextTarget;
@@ -13034,11 +13042,60 @@ async function openChatModal() {
     const closeBtn = document.getElementById('chat-close-btn');
     installChatAnsweredOnlySwitchHandler();
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
+        let closeBtnTouchHandled = false;
+        if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+            closeBtn.addEventListener('pointerdown', (event) => {
+                const pointerType = event && event.pointerType ? String(event.pointerType) : '';
+                if (pointerType && pointerType !== 'touch' && pointerType !== 'pen') return;
+                if (!(chatEditTarget && chatEditTarget.row)) return;
+                preserveChatInputFocusFromControlTap(event, 2400);
+            });
+            closeBtn.addEventListener('pointerup', (event) => {
+                const pointerType = event && event.pointerType ? String(event.pointerType) : '';
+                if (pointerType && pointerType !== 'touch' && pointerType !== 'pen') return;
+                if (!(chatEditTarget && chatEditTarget.row)) return;
+                closeBtnTouchHandled = true;
+                event.preventDefault();
+                event.stopPropagation();
+                vibrar(40);
+                playButtonSound();
+                clearChatEditTarget(true, true);
+                preserveChatInputFocusFromControlTap(event, 1800);
+                setTimeout(() => { closeBtnTouchHandled = false; }, 320);
+            });
+            closeBtn.addEventListener('pointercancel', () => {
+                closeBtnTouchHandled = false;
+            });
+        } else {
+            closeBtn.addEventListener('touchstart', (event) => {
+                if (!(chatEditTarget && chatEditTarget.row)) return;
+                preserveChatInputFocusFromControlTap(event, 2400);
+            }, { passive: false });
+            closeBtn.addEventListener('touchend', (event) => {
+                if (!(chatEditTarget && chatEditTarget.row)) return;
+                closeBtnTouchHandled = true;
+                event.preventDefault();
+                event.stopPropagation();
+                vibrar(40);
+                playButtonSound();
+                clearChatEditTarget(true, true);
+                preserveChatInputFocusFromControlTap(event, 1800);
+                setTimeout(() => { closeBtnTouchHandled = false; }, 320);
+            }, { passive: false });
+            closeBtn.addEventListener('touchcancel', () => {
+                closeBtnTouchHandled = false;
+            });
+        }
+        closeBtn.addEventListener('click', (event) => {
+            if (closeBtnTouchHandled) {
+                closeBtnTouchHandled = false;
+                return;
+            }
             vibrar(40);
             playButtonSound();
             if (chatEditTarget && chatEditTarget.row) {
                 clearChatEditTarget(true, true);
+                preserveChatInputFocusFromControlTap(event, 1800);
                 return;
             }
             closeChatModal();
@@ -13054,20 +13111,65 @@ async function openChatModal() {
         });
     }
 
+    const bindChatComposerCancelButton = (buttonEl, handler) => {
+        if (!buttonEl) return;
+        let touchHandled = false;
+        if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+            buttonEl.addEventListener('pointerdown', (event) => {
+                const pointerType = event && event.pointerType ? String(event.pointerType) : '';
+                if (pointerType && pointerType !== 'touch' && pointerType !== 'pen') return;
+                preserveChatInputFocusFromControlTap(event, 2400);
+            });
+            buttonEl.addEventListener('pointerup', (event) => {
+                const pointerType = event && event.pointerType ? String(event.pointerType) : '';
+                if (pointerType && pointerType !== 'touch' && pointerType !== 'pen') return;
+                touchHandled = true;
+                event.preventDefault();
+                event.stopPropagation();
+                handler(event);
+                preserveChatInputFocusFromControlTap(event, 1800);
+                setTimeout(() => { touchHandled = false; }, 320);
+            });
+            buttonEl.addEventListener('pointercancel', () => {
+                touchHandled = false;
+            });
+        } else {
+            buttonEl.addEventListener('touchstart', (event) => {
+                preserveChatInputFocusFromControlTap(event, 2400);
+            }, { passive: false });
+            buttonEl.addEventListener('touchend', (event) => {
+                touchHandled = true;
+                event.preventDefault();
+                event.stopPropagation();
+                handler(event);
+                preserveChatInputFocusFromControlTap(event, 1800);
+                setTimeout(() => { touchHandled = false; }, 320);
+            }, { passive: false });
+            buttonEl.addEventListener('touchcancel', () => {
+                touchHandled = false;
+            });
+        }
+        buttonEl.addEventListener('click', (event) => {
+            if (touchHandled) {
+                touchHandled = false;
+                return;
+            }
+            handler(event);
+            preserveChatInputFocusFromControlTap(event, 1800);
+        });
+    };
+
     const cancelReplyBtn = document.getElementById('chat-reply-banner-cancel-btn');
-    if (cancelReplyBtn) {
-        cancelReplyBtn.addEventListener('click', () => {
+    bindChatComposerCancelButton(cancelReplyBtn, () => {
             vibrar(30);
             clearChatReplyTarget(true);
-        });
-    }
+    });
+
     const cancelEditBtn = document.getElementById('chat-edit-banner-close-btn');
-    if (cancelEditBtn) {
-        cancelEditBtn.addEventListener('click', () => {
+    bindChatComposerCancelButton(cancelEditBtn, () => {
             vibrar(30);
             clearChatEditTarget(true, true);
-        });
-    }
+    });
     const editAttachmentSlotEl = document.getElementById('chat-edit-banner-attachment-slot');
     if (editAttachmentSlotEl) {
         editAttachmentSlotEl.addEventListener('click', (event) => {

@@ -94,6 +94,10 @@
             box-shadow: 0 4px 12px rgba(78,205,196,0.2);
         }
 
+        :root {
+            --chat-vh: 100dvh;
+        }
+
         /* Estilos básicos */
         body, html {
             width: 100%;
@@ -672,7 +676,10 @@
 
 .chat-overlay {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--chat-vh, 100dvh);
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
@@ -838,6 +845,7 @@
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
+    overscroll-behavior: contain;
 }
 
 .chat-unread-indicator {
@@ -2904,6 +2912,8 @@
 
 .chat-footer {
     padding: 12px 14px 14px;
+    padding-bottom: 14px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(120, 92, 61, 0.14);
     background: linear-gradient(180deg, rgba(244, 233, 217, 0.96) 0%, rgba(238, 225, 206, 0.98) 100%);
     display: flex;
@@ -12227,8 +12237,78 @@ function startChatAutoRefresh() {
     }, CHAT_REFRESH_INTERVAL_MS);
 }
 
+let chatViewportListenerInstalled = false;
+let chatBodyScrollLock = null;
+
+function setChatViewportVars() {
+    const viewportHeight = window.visualViewport && Number.isFinite(window.visualViewport.height)
+        ? window.visualViewport.height
+        : window.innerHeight;
+    if (viewportHeight && document.documentElement) {
+        document.documentElement.style.setProperty('--chat-vh', `${Math.round(viewportHeight)}px`);
+    }
+}
+
+function installChatViewportHandlers() {
+    setChatViewportVars();
+    if (chatViewportListenerInstalled) return;
+    chatViewportListenerInstalled = true;
+    window.addEventListener('resize', setChatViewportVars);
+    window.addEventListener('orientationchange', setChatViewportVars);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setChatViewportVars);
+        window.visualViewport.addEventListener('scroll', setChatViewportVars);
+    }
+}
+
+function removeChatViewportHandlers() {
+    if (!chatViewportListenerInstalled) return;
+    chatViewportListenerInstalled = false;
+    window.removeEventListener('resize', setChatViewportVars);
+    window.removeEventListener('orientationchange', setChatViewportVars);
+    if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setChatViewportVars);
+        window.visualViewport.removeEventListener('scroll', setChatViewportVars);
+    }
+}
+
+function lockBodyScrollForChat() {
+    if (chatBodyScrollLock) return;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    chatBodyScrollLock = {
+        scrollY,
+        position: document.body.style.position,
+        top: document.body.style.top,
+        left: document.body.style.left,
+        right: document.body.style.right,
+        width: document.body.style.width,
+        overflow: document.body.style.overflow
+    };
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+}
+
+function unlockBodyScrollForChat() {
+    if (!chatBodyScrollLock) return;
+    const { scrollY, position, top, left, right, width, overflow } = chatBodyScrollLock;
+    chatBodyScrollLock = null;
+    document.body.style.position = position;
+    document.body.style.top = top;
+    document.body.style.left = left;
+    document.body.style.right = right;
+    document.body.style.width = width;
+    document.body.style.overflow = overflow;
+    window.scrollTo(0, scrollY);
+}
+
 function closeChatModal() {
     stopChatAutoRefresh();
+    removeChatViewportHandlers();
+    unlockBodyScrollForChat();
     if (chatOwnMessageLongPressTimerId) {
         clearTimeout(chatOwnMessageLongPressTimerId);
         chatOwnMessageLongPressTimerId = null;
@@ -12414,6 +12494,8 @@ async function submitChatMessage() {
 async function openChatModal() {
     const existingOverlay = document.getElementById('chat-overlay');
     if (existingOverlay) {
+        lockBodyScrollForChat();
+        installChatViewportHandlers();
         const messagesEl = document.getElementById('chat-messages-list');
         const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
         existingOverlay.classList.remove('is-hidden');
@@ -12446,6 +12528,8 @@ async function openChatModal() {
     chatReplyTarget = null;
     chatEditTarget = null;
 
+    lockBodyScrollForChat();
+    installChatViewportHandlers();
     const overlay = document.createElement('div');
     overlay.id = 'chat-overlay';
     overlay.className = 'chat-overlay';
@@ -12627,7 +12711,10 @@ async function openChatModal() {
             }
         });
         inputEl.addEventListener('input', dismissChatUnreadIndicatorFromInteraction);
-        inputEl.addEventListener('focus', dismissChatUnreadIndicatorFromInteraction);
+        inputEl.addEventListener('focus', (event) => {
+            dismissChatUnreadIndicatorFromInteraction(event);
+            setChatViewportVars();
+        });
     }
 
     const unreadIndicatorBtn = document.getElementById('chat-unread-indicator');

@@ -12556,11 +12556,29 @@ function startChatAutoRefresh() {
 
 let chatViewportListenerInstalled = false;
 let chatBodyScrollLock = null;
+let chatViewportSyncRafId = 0;
+let chatLastViewportHeight = 0;
+
+function cancelChatKeyboardRefocus() {
+    chatKeepKeyboardUntil = 0;
+    if (chatKeyboardRefocusTimerId) {
+        clearTimeout(chatKeyboardRefocusTimerId);
+        chatKeyboardRefocusTimerId = null;
+    }
+}
 
 function setChatViewportVars() {
     const viewportHeight = window.visualViewport && Number.isFinite(window.visualViewport.height)
         ? window.visualViewport.height
         : window.innerHeight;
+    if (viewportHeight) {
+        const previousHeight = chatLastViewportHeight || 0;
+        const heightDelta = viewportHeight - previousHeight;
+        if (previousHeight > 0 && heightDelta > 80) {
+            cancelChatKeyboardRefocus();
+        }
+        chatLastViewportHeight = viewportHeight;
+    }
     if (viewportHeight && document.documentElement) {
         document.documentElement.style.setProperty('--chat-vh', `${Math.round(viewportHeight)}px`);
     }
@@ -12579,6 +12597,14 @@ function setChatViewportVars() {
     }
 }
 
+function scheduleChatViewportSync() {
+    if (chatViewportSyncRafId) return;
+    chatViewportSyncRafId = requestAnimationFrame(() => {
+        chatViewportSyncRafId = 0;
+        setChatViewportVars();
+    });
+}
+
 function updateChatFooterInset() {
     const overlay = document.getElementById('chat-overlay');
     if (!overlay || overlay.classList.contains('is-hidden')) return;
@@ -12593,20 +12619,26 @@ function installChatViewportHandlers() {
     setChatViewportVars();
     if (chatViewportListenerInstalled) return;
     chatViewportListenerInstalled = true;
-    window.addEventListener('resize', setChatViewportVars);
-    window.addEventListener('orientationchange', setChatViewportVars);
+    window.addEventListener('resize', scheduleChatViewportSync, { passive: true });
+    window.addEventListener('orientationchange', scheduleChatViewportSync, { passive: true });
     if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setChatViewportVars);
+        window.visualViewport.addEventListener('resize', scheduleChatViewportSync, { passive: true });
+        window.visualViewport.addEventListener('scroll', scheduleChatViewportSync, { passive: true });
     }
 }
 
 function removeChatViewportHandlers() {
     if (!chatViewportListenerInstalled) return;
     chatViewportListenerInstalled = false;
-    window.removeEventListener('resize', setChatViewportVars);
-    window.removeEventListener('orientationchange', setChatViewportVars);
+    window.removeEventListener('resize', scheduleChatViewportSync);
+    window.removeEventListener('orientationchange', scheduleChatViewportSync);
     if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', setChatViewportVars);
+        window.visualViewport.removeEventListener('resize', scheduleChatViewportSync);
+        window.visualViewport.removeEventListener('scroll', scheduleChatViewportSync);
+    }
+    if (chatViewportSyncRafId) {
+        cancelAnimationFrame(chatViewportSyncRafId);
+        chatViewportSyncRafId = 0;
     }
 }
 

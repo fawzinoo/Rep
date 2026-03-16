@@ -11517,6 +11517,22 @@ function renderChatMessages(messages) {
     const messagesEl = document.getElementById('chat-messages-list');
     if (!messagesEl) return;
 
+    if (messagesEl.dataset.keyboardGuard !== '1') {
+        messagesEl.dataset.keyboardGuard = '1';
+        const guardKeyboard = (event) => {
+            preserveChatKeyboardFromInteraction(2000);
+        };
+        if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+            messagesEl.addEventListener('pointerdown', (event) => {
+                const pointerType = event && event.pointerType ? String(event.pointerType) : '';
+                if (pointerType && pointerType !== 'touch' && pointerType !== 'pen') return;
+                guardKeyboard(event);
+            }, { passive: true });
+        } else {
+            messagesEl.addEventListener('touchstart', guardKeyboard, { passive: true });
+        }
+    }
+
     if (!Array.isArray(messages) || messages.length === 0) {
         messagesEl.innerHTML = `<div class="chat-empty">Todavia no hay mensajes.</div>`;
         return;
@@ -12473,7 +12489,10 @@ function removeChatViewportHandlers() {
 function keepChatKeyboardOpen(inputEl = null) {
     const target = inputEl || document.getElementById('chat-input');
     if (!target) return;
-    chatKeepKeyboardUntil = Date.now() + 1400;
+    const nextHold = Date.now() + 1400;
+    if (nextHold > chatKeepKeyboardUntil) {
+        chatKeepKeyboardUntil = nextHold;
+    }
     const focusTarget = () => {
         try {
             target.focus({ preventScroll: true });
@@ -12498,6 +12517,22 @@ function keepChatKeyboardOpen(inputEl = null) {
         if (!overlay || overlay.classList.contains('is-hidden')) return;
         focusTarget();
     }, 240);
+}
+
+function requestChatKeyboardHold(durationMs = 2000, inputEl = null) {
+    const target = inputEl || document.getElementById('chat-input');
+    if (!target) return;
+    const nextHold = Date.now() + Math.max(0, Number(durationMs) || 0);
+    if (nextHold > chatKeepKeyboardUntil) {
+        chatKeepKeyboardUntil = nextHold;
+    }
+    keepChatKeyboardOpen(target);
+}
+
+function preserveChatKeyboardFromInteraction(durationMs = 2000) {
+    const inputEl = document.getElementById('chat-input');
+    if (!inputEl || document.activeElement !== inputEl) return;
+    requestChatKeyboardHold(durationMs, inputEl);
 }
 
 function lockBodyScrollForChat() {

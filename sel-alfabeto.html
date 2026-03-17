@@ -1164,6 +1164,14 @@
     padding-bottom: 12px;
 }
 
+.chat-message-main.has-media-time-below {
+    padding-bottom: 8px;
+}
+
+.chat-message-line-only.has-media-time-below {
+    padding-bottom: 0;
+}
+
 .chat-message-reaction-badge {
     position: absolute;
     top: 2px;
@@ -1560,6 +1568,22 @@
 
 .chat-video-block {
     margin-top: 8px;
+}
+
+.chat-message-media-time-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+.chat-message-media-time-below {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #64748b;
+    white-space: nowrap;
 }
 
 .chat-video-inline-shell {
@@ -2527,6 +2551,10 @@
     color: #334155;
 }
 
+.chat-message-reply.has-media-time-below {
+    padding-bottom: 8px;
+}
+
 .chat-message-reply-image-btn {
     border: none;
     background: transparent;
@@ -2556,6 +2584,25 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+}
+
+.chat-message-main-inline-media-stack,
+.chat-message-reply-media-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.chat-message-reply-media-stack {
+    margin-left: 4px;
+}
+
+.chat-message-main-inline-media-stack .chat-message-reply-file,
+.chat-message-reply-media-stack .chat-message-reply-file {
+    margin-left: 0;
 }
 
 .chat-message-reply-audio {
@@ -2769,7 +2816,8 @@
 }
 
 .chat-message-item.is-self .chat-message-inline-time,
-.chat-message-item.is-self .chat-message-reply-meta {
+.chat-message-item.is-self .chat-message-reply-meta,
+.chat-message-item.is-self .chat-message-media-time-below {
     color: #4b5563;
 }
 
@@ -7082,6 +7130,9 @@ let chatKeepKeyboardUntil = 0;
 let chatKeyboardRefocusTimerId = null;
 let chatPinnedToBottom = true;
 let chatReplyTargetVisibilityTimerIds = [];
+let chatLayoutResizeObserver = null;
+let chatPinnedBottomSnapRafId = 0;
+let chatForcedLatestMessageRevealRafId = 0;
 
 function loadChatOwnedRowIds() {
     try {
@@ -7579,6 +7630,8 @@ function renderMergedChatMessages(serverMessages) {
     const merged = sortChatMessagesChronologically([...base, ...chatLocalEchoMessages]);
     renderChatMessages(merged);
     chatLastRenderedSignature = buildChatMessagesSignature(merged);
+    installChatLayoutResizeObserver();
+    schedulePinnedChatBottomSnap();
 }
 
 function canReplyToRecipientMessage(msg, currentUserLabel) {
@@ -8371,6 +8424,7 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
     const hasAttachment = !!(attachment && attachment.url);
     if (!cleanMessage && !hasAttachment) return;
     const shouldScrollToLatest = !(options && options.scrollToLatest === false);
+    const shouldForceRevealLatestMessage = !!(options && options.forceRevealLatestMessage);
     const timeLabel = getLocalChatTimeLabel();
     const replyPreview = serializeQuotedReplyTarget(replyTarget);
     chatLocalEchoMessages.push({
@@ -8393,9 +8447,13 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
     });
     renderMergedChatMessages(chatLatestServerMessages);
     if (shouldScrollToLatest) {
-        requestAnimationFrame(() => {
-            scrollChatToLatestMessage(false);
-        });
+        if (shouldForceRevealLatestMessage) {
+            scheduleForcedLatestChatMessageReveal();
+        } else {
+            requestAnimationFrame(() => {
+                scrollChatToLatestMessage(false);
+            });
+        }
     }
 }
 
@@ -10028,7 +10086,9 @@ async function submitChatAttachment(file, forcedKind = '') {
             mimeType: String(file.type || '').trim(),
             size: fileSize
         },
-        activeReplyTarget ? { scrollToLatest: false } : null
+        activeReplyTarget
+            ? { scrollToLatest: false }
+            : (kind === 'file' ? { forceRevealLatestMessage: true } : null)
     );
     if (replyScrollSnapshot) {
         restoreChatScrollSnapshot(replyScrollSnapshot);
@@ -10819,7 +10879,7 @@ function scrollChatToLatestMessage(useSmooth = false) {
     const finalTop = Math.max(targetTop, bottomTop);
 
     const applyScroll = (behavior) => {
-        if (typeof chatBody.scrollTo === 'function') {
+        if (behavior === 'smooth' && typeof chatBody.scrollTo === 'function') {
             chatBody.scrollTo({ top: finalTop, behavior });
             return;
         }
@@ -10829,14 +10889,142 @@ function scrollChatToLatestMessage(useSmooth = false) {
     applyScroll(useSmooth ? 'smooth' : 'auto');
     if (!useSmooth) {
         requestAnimationFrame(() => applyScroll('auto'));
-        setTimeout(() => applyScroll('auto'), 80);
-        setTimeout(() => applyScroll('auto'), 180);
     }
     chatPinnedToBottom = true;
 }
 
+function schedulePinnedChatBottomSnap() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.classList.contains('is-hidden') || !chatPinnedToBottom) return;
+
+    if (chatPinnedBottomSnapRafId) {
+        cancelAnimationFrame(chatPinnedBottomSnapRafId);
+        chatPinnedBottomSnapRafId = 0;
+    }
+
+    const syncBottom = () => {
+        chatPinnedBottomSnapRafId = 0;
+        const activeOverlay = document.getElementById('chat-overlay');
+        if (!activeOverlay || activeOverlay.classList.contains('is-hidden') || !chatPinnedToBottom) return;
+        scrollChatToLatestMessage(false);
+        ensureLatestChatMessageFullyVisible();
+    };
+
+    chatPinnedBottomSnapRafId = requestAnimationFrame(syncBottom);
+}
+
+function scheduleForcedLatestChatMessageReveal() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.classList.contains('is-hidden')) return;
+
+    if (chatForcedLatestMessageRevealRafId) {
+        cancelAnimationFrame(chatForcedLatestMessageRevealRafId);
+        chatForcedLatestMessageRevealRafId = 0;
+    }
+
+    let passCount = 0;
+    const forceReveal = () => {
+        chatForcedLatestMessageRevealRafId = 0;
+        const activeOverlay = document.getElementById('chat-overlay');
+        if (!activeOverlay || activeOverlay.classList.contains('is-hidden')) return;
+        chatPinnedToBottom = true;
+        scrollChatToLatestMessage(false);
+        ensureLatestChatMessageFullyVisible();
+        passCount += 1;
+        if (passCount < 2) {
+            chatForcedLatestMessageRevealRafId = requestAnimationFrame(forceReveal);
+        }
+    };
+
+    chatForcedLatestMessageRevealRafId = requestAnimationFrame(forceReveal);
+}
+
+function installChatLayoutResizeObserver() {
+    removeChatLayoutResizeObserver();
+    if (typeof ResizeObserver !== 'function') return;
+
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.classList.contains('is-hidden')) return;
+
+    const messagesEl = document.getElementById('chat-messages-list');
+    const footerEl = overlay.querySelector('.chat-footer');
+    const lastMessageEl = getLastChatMessageElement();
+    const observedEls = [messagesEl, footerEl, lastMessageEl].filter(Boolean);
+    if (observedEls.length === 0) return;
+
+    chatLayoutResizeObserver = new ResizeObserver(() => {
+        updateChatFooterInset();
+        schedulePinnedChatBottomSnap();
+    });
+
+    observedEls.forEach((element) => {
+        chatLayoutResizeObserver.observe(element);
+    });
+}
+
+function removeChatLayoutResizeObserver() {
+    if (chatLayoutResizeObserver) {
+        chatLayoutResizeObserver.disconnect();
+        chatLayoutResizeObserver = null;
+    }
+    if (chatPinnedBottomSnapRafId) {
+        cancelAnimationFrame(chatPinnedBottomSnapRafId);
+        chatPinnedBottomSnapRafId = 0;
+    }
+    if (chatForcedLatestMessageRevealRafId) {
+        cancelAnimationFrame(chatForcedLatestMessageRevealRafId);
+        chatForcedLatestMessageRevealRafId = 0;
+    }
+}
+
 function getChatBodyElement() {
     return document.querySelector('#chat-overlay .chat-body');
+}
+
+function getLastChatMessageElement() {
+    const messagesEl = document.getElementById('chat-messages-list');
+    if (!messagesEl) return null;
+    const messageItems = messagesEl.querySelectorAll('.chat-message-item');
+    return messageItems.length > 0 ? messageItems[messageItems.length - 1] : null;
+}
+
+function ensureChatElementFullyVisibleInBody(targetEl, topMargin = 14, bottomMargin = 18) {
+    const chatBody = getChatBodyElement();
+    if (!chatBody || !targetEl) return false;
+
+    const bodyRect = chatBody.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+    if (!bodyRect.height || !targetRect.height) return false;
+
+    const safeTopMargin = Math.max(0, Number(topMargin) || 0);
+    const safeBottomMargin = Math.max(0, Number(bottomMargin) || 0);
+    const minTop = bodyRect.top + safeTopMargin;
+    const maxBottom = bodyRect.bottom - safeBottomMargin;
+    const availableHeight = Math.max(0, bodyRect.height - safeTopMargin - safeBottomMargin);
+    const targetFitsFully = targetRect.height <= availableHeight;
+
+    let nextScrollTop = Number(chatBody.scrollTop) || 0;
+
+    if (targetFitsFully && targetRect.top < minTop) {
+        nextScrollTop -= (minTop - targetRect.top);
+    }
+
+    if (targetRect.bottom > maxBottom) {
+        nextScrollTop += (targetRect.bottom - maxBottom);
+    } else if (!targetFitsFully && targetRect.top < minTop) {
+        nextScrollTop -= (minTop - targetRect.top);
+    }
+
+    const safeScrollTop = Math.max(0, Math.round(nextScrollTop));
+    if (Math.abs(safeScrollTop - ((Number(chatBody.scrollTop) || 0))) < 1) return false;
+    chatBody.scrollTop = safeScrollTop;
+    return true;
+}
+
+function ensureLatestChatMessageFullyVisible() {
+    const lastMessageEl = getLastChatMessageElement();
+    if (!lastMessageEl) return false;
+    return ensureChatElementFullyVisibleInBody(lastMessageEl, 14, 12);
 }
 
 function captureChatScrollSnapshot() {
@@ -10856,6 +11044,7 @@ function restoreChatScrollSnapshot(snapshot) {
         const chatBody = getChatBodyElement();
         if (chatBody) {
             chatBody.scrollTop = safeScrollTop;
+            chatPinnedToBottom = isChatNearBottom();
         }
         try {
             window.scrollTo({ top: safeWindowScrollY, left: 0, behavior: 'auto' });
@@ -11735,6 +11924,7 @@ function renderChatMessages(messages) {
         const imageFetchPriority = shouldBoostThumbLoad ? 'high' : 'auto';
         const imageLoadingMode = shouldBoostThumbLoad ? 'eager' : 'lazy';
         const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
+        const timeLabel = resolveChatTimeLabel(msg.timeLabel, msg.timestamp);
         const imageThumbHtml = imageThumbSrc ? `
             <div class="chat-image-block">
                 <button
@@ -11755,6 +11945,7 @@ function renderChatMessages(messages) {
                         decoding="async"
                     />
                 </button>
+                ${timeLabel ? `<div class="chat-message-media-time-row"><span class="chat-message-media-time-below">${escapeHtml(timeLabel)}</span></div>` : ''}
             </div>
         ` : '';
         const showVideo = resolvedAttachmentKind === 'video' && !!attachmentUrl;
@@ -11788,6 +11979,7 @@ function renderChatMessages(messages) {
                         <i class="fas fa-expand" aria-hidden="true"></i>
                     </button>
                 </div>
+                ${timeLabel && !imageThumbSrc ? `<div class="chat-message-media-time-row"><span class="chat-message-media-time-below">${escapeHtml(timeLabel)}</span></div>` : ''}
             </div>
         ` : '';
         const showAudio = resolvedAttachmentKind === 'audio' && !!attachmentUrl;
@@ -11849,6 +12041,7 @@ function renderChatMessages(messages) {
                         data-candidate-index="${audioCandidateIndex}"
                     ></audio>
                 </div>
+                ${timeLabel ? `<div class="chat-message-media-time-row"><span class="chat-message-media-time-below">${escapeHtml(timeLabel)}</span></div>` : ''}
             </div>
         ` : '';
         const showFile = resolvedAttachmentKind && resolvedAttachmentKind !== 'image' && resolvedAttachmentKind !== 'audio' && resolvedAttachmentKind !== 'video' && !!attachmentUrl;
@@ -11867,10 +12060,10 @@ function renderChatMessages(messages) {
                     <i class="${fileIconClass || 'fas fa-file'}"></i>
                     <span class="chat-file-name">${escapeHtml(fileLabel)}</span>
                 </a>
+                ${timeLabel && !imageThumbSrc && !showVideo ? `<div class="chat-message-media-time-row"><span class="chat-message-media-time-below">${escapeHtml(timeLabel)}</span></div>` : ''}
             </div>
         ` : '';
         const quotedReply = getQuotedReplyPreviewText(msg.quotedReply);
-        const timeLabel = resolveChatTimeLabel(msg.timeLabel, msg.timestamp);
         const metaParts = [];
         if (isEdited) metaParts.push('editado');
         const messageMetaHtml = metaParts.length > 0
@@ -11981,90 +12174,115 @@ function renderChatMessages(messages) {
             const replyAuthorLabel = isTeacherReply
                 ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
                 : `<span class="chat-user-label ${areSameChatUserLabels(replyAuthor, currentUserLabel) ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
+            const replyPlaceTimeBelowImage = !!replyTimeLabel && !!replyImageUrl;
+            const replyPlaceTimeBelowVideo = !!replyTimeLabel && !replyImageUrl && replyShowVideo;
+            const replyPlaceTimeBelowFile = !!replyTimeLabel && !replyImageUrl && !replyShowVideo && replyShowFile;
+            const replyHasMediaTimeBelow = replyPlaceTimeBelowImage || replyPlaceTimeBelowVideo || replyPlaceTimeBelowFile;
+            const replyMediaTimeHtml = replyTimeLabel ? `<span class="chat-message-media-time-below">${escapeHtml(replyTimeLabel)}</span>` : '';
+            const replyContainerClass = [
+                'chat-message-reply',
+                'chat-message-reply-reactable',
+                canReplyToThisReply ? 'is-replyable' : '',
+                isSelectedReplyTarget ? 'reply-target' : '',
+                replyHasMediaTimeBelow ? 'has-media-time-below' : ''
+            ].filter(Boolean).join(' ');
+            const replyImageHtml = replyImageUrl ? `
+                ${replyPlaceTimeBelowImage ? `<span class="chat-message-reply-media-stack">` : ''}
+                <button
+                    type="button"
+                    class="chat-message-reply-image-btn chat-image-thumb-btn"
+                    data-image-url="${escapeHtml(replyImageUrl)}"
+                    data-image-title="${escapeHtml(replyImageTitle)}"
+                    aria-label="Abrir imagen"
+                >
+                    <img
+                        class="chat-message-reply-image-thumb"
+                        src="${escapeHtml(replyImageUrl)}"
+                        alt="${escapeHtml(replyImageTitle)}"
+                        loading="lazy"
+                        decoding="async"
+                    />
+                </button>
+                ${replyPlaceTimeBelowImage ? `${replyMediaTimeHtml}</span>` : ''}
+            ` : '';
+            const replyVideoHtml = replyShowVideo ? `
+                ${replyPlaceTimeBelowVideo ? `<span class="chat-message-reply-media-stack">` : ''}
+                <button
+                    type="button"
+                    class="chat-message-reply-file chat-video-thumb-btn is-video"
+                    data-video-url="${escapeHtml(replyAttachmentUrl)}"
+                    data-video-title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                    data-video-file-id="${escapeHtml(replyAttachmentFileId)}"
+                    data-video-mime="${escapeHtml(replyAttachmentMimeType)}"
+                    data-video-kind="${escapeHtml(replyAttachmentKind)}"
+                    title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                    aria-label="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                >
+                    <i class="fas fa-file-video" aria-hidden="true"></i>
+                </button>
+                ${replyPlaceTimeBelowVideo ? `${replyMediaTimeHtml}</span>` : ''}
+            ` : '';
+            const replyAudioHtml = replyShowAudio ? `
+                <span class="chat-message-reply-audio">
+                    <div
+                        class="chat-audio-card"
+                        data-audio-key="${escapeHtml(replyAudioKey)}"
+                        data-audio-name="${escapeHtml(replyAttachmentName)}"
+                        data-audio-file-id="${escapeHtml(replyAttachmentFileId)}"
+                        data-audio-download-url="${escapeHtml(buildChatAudioDownloadUrl(replyAttachmentUrl) || replyAttachmentUrl)}"
+                        data-requires-download="${replyRequiresAudioDownload ? '1' : '0'}"
+                    >
+                        <button type="button" class="chat-audio-action-btn ${replyAudioActionStateClass}" aria-label="${escapeHtml(replyAudioActionLabel)}">
+                            <i class="${replyAudioActionIconClass}" aria-hidden="true"></i>
+                        </button>
+                        <div class="chat-audio-main">
+                            <div class="chat-audio-progress">
+                                <span class="chat-audio-progress-fill" style="width:0%"></span>
+                            </div>
+                            <div class="chat-audio-times">
+                                <span class="chat-audio-current-time">0:00</span>
+                                <span class="chat-audio-total-time">0:00</span>
+                            </div>
+                        </div>
+                        <audio
+                            class="chat-audio-player"
+                            preload="auto"
+                            playsinline
+                            src="${escapeHtml(replyAudioSrc)}"
+                            data-candidates="${escapeHtml(replyAudioCandidates.join('||'))}"
+                            data-candidate-index="${replyAudioCandidateIndex}"
+                        ></audio>
+                    </div>
+                </span>
+            ` : '';
+            const replyFileHtml = replyShowFile ? `
+                ${replyPlaceTimeBelowFile ? `<span class="chat-message-reply-media-stack">` : ''}
+                <a
+                    class="chat-message-reply-file ${replyFileStateClass}"
+                    href="${escapeHtml(replyAttachmentUrl)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="${escapeHtml(replyAttachmentName || 'Archivo')}"
+                    aria-label="${escapeHtml(replyAttachmentName || 'Archivo')}"
+                >
+                    <i class="${replyFileIconClass}" aria-hidden="true"></i>
+                </a>
+                ${replyPlaceTimeBelowFile ? `${replyMediaTimeHtml}</span>` : ''}
+            ` : '';
+            const replyTimeHtml = !replyHasMediaTimeBelow && replyTimeLabel
+                ? `<span class="chat-message-reply-time">${escapeHtml(replyTimeLabel)}</span>`
+                : '';
             return `
-                <div class="chat-message-reply chat-message-reply-reactable ${canReplyToThisReply ? 'is-replyable' : ''} ${isSelectedReplyTarget ? 'reply-target' : ''}" data-parent-index="${idx}" data-reply-index="${replyIdx}" data-source-row="${Number(replyEntry && replyEntry.sourceRow ? replyEntry.sourceRow : 0) || 0}" data-entry-token="${escapeHtml(buildChatAttachedReplyToken(replyEntry))}">
+                <div class="${replyContainerClass}" data-parent-index="${idx}" data-reply-index="${replyIdx}" data-source-row="${Number(replyEntry && replyEntry.sourceRow ? replyEntry.sourceRow : 0) || 0}" data-entry-token="${escapeHtml(buildChatAttachedReplyToken(replyEntry))}">
                     <span class="chat-message-reply-arrow">↳</span>
                     ${replyStatusOverlayHtml}
                     ${replyAuthorLabel}
                     ${String(replyEntry && replyEntry.text ? replyEntry.text : '').trim() ? `<span class="chat-message-reply-text">${formatChatMessageHtml(replyEntry.text)}</span>` : ''}
-                    ${replyImageUrl ? `
-                        <button
-                            type="button"
-                            class="chat-message-reply-image-btn chat-image-thumb-btn"
-                            data-image-url="${escapeHtml(replyImageUrl)}"
-                            data-image-title="${escapeHtml(replyImageTitle)}"
-                            aria-label="Abrir imagen"
-                        >
-                            <img
-                                class="chat-message-reply-image-thumb"
-                                src="${escapeHtml(replyImageUrl)}"
-                                alt="${escapeHtml(replyImageTitle)}"
-                                loading="lazy"
-                                decoding="async"
-                            />
-                        </button>
-                    ` : ''}
-                    ${replyShowVideo ? `
-                        <button
-                            type="button"
-                            class="chat-message-reply-file chat-video-thumb-btn is-video"
-                            data-video-url="${escapeHtml(replyAttachmentUrl)}"
-                            data-video-title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                            data-video-file-id="${escapeHtml(replyAttachmentFileId)}"
-                            data-video-mime="${escapeHtml(replyAttachmentMimeType)}"
-                            data-video-kind="${escapeHtml(replyAttachmentKind)}"
-                            title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                            aria-label="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                        >
-                            <i class="fas fa-file-video" aria-hidden="true"></i>
-                        </button>
-                    ` : ''}
-                    ${replyShowAudio ? `
-                        <span class="chat-message-reply-audio">
-                            <div
-                                class="chat-audio-card"
-                                data-audio-key="${escapeHtml(replyAudioKey)}"
-                                data-audio-name="${escapeHtml(replyAttachmentName)}"
-                                data-audio-file-id="${escapeHtml(replyAttachmentFileId)}"
-                                data-audio-download-url="${escapeHtml(buildChatAudioDownloadUrl(replyAttachmentUrl) || replyAttachmentUrl)}"
-                                data-requires-download="${replyRequiresAudioDownload ? '1' : '0'}"
-                            >
-                                <button type="button" class="chat-audio-action-btn ${replyAudioActionStateClass}" aria-label="${escapeHtml(replyAudioActionLabel)}">
-                                    <i class="${replyAudioActionIconClass}" aria-hidden="true"></i>
-                                </button>
-                                <div class="chat-audio-main">
-                                    <div class="chat-audio-progress">
-                                        <span class="chat-audio-progress-fill" style="width:0%"></span>
-                                    </div>
-                                    <div class="chat-audio-times">
-                                        <span class="chat-audio-current-time">0:00</span>
-                                        <span class="chat-audio-total-time">0:00</span>
-                                    </div>
-                                </div>
-                                <audio
-                                    class="chat-audio-player"
-                                    preload="auto"
-                                    playsinline
-                                    src="${escapeHtml(replyAudioSrc)}"
-                                    data-candidates="${escapeHtml(replyAudioCandidates.join('||'))}"
-                                    data-candidate-index="${replyAudioCandidateIndex}"
-                                ></audio>
-                            </div>
-                        </span>
-                    ` : ''}
-                    ${replyShowFile ? `
-                        <a
-                            class="chat-message-reply-file ${replyFileStateClass}"
-                            href="${escapeHtml(replyAttachmentUrl)}"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="${escapeHtml(replyAttachmentName || 'Archivo')}"
-                            aria-label="${escapeHtml(replyAttachmentName || 'Archivo')}"
-                        >
-                            <i class="${replyFileIconClass}" aria-hidden="true"></i>
-                        </a>
-                    ` : ''}
-                    ${replyTimeLabel ? `<span class="chat-message-reply-time">${escapeHtml(replyTimeLabel)}</span>` : ''}
+                    ${replyImageHtml}
+                    ${replyVideoHtml}
+                    ${replyAudioHtml}
+                    ${replyFileHtml}
+                    ${replyTimeHtml}
                     ${replyThreadButtonHtml}
                     ${replyReactionBadgeHtml}
                 </div>
@@ -12072,103 +12290,118 @@ function renderChatMessages(messages) {
         }).join('');
         const hasEmbeddedReplyContent = !!quotedReply || attachedReplies.length > 0;
         const shouldCompactPrimaryMedia = hasEmbeddedReplyContent && (!!imageThumbSrc || showVideo || showAudio || showFile);
+        const shouldPlaceTimeBelowPrimaryMedia = !!timeLabel && !!(imageThumbSrc || showVideo || showAudio || showFile);
+        const messageBodyClass = `${hasEmbeddedReplyContent ? 'chat-message-main' : 'chat-message-line-only'}${shouldPlaceTimeBelowPrimaryMedia ? ' has-media-time-below' : ''}`;
+        const primaryMediaTimeHtml = timeLabel ? `<span class="chat-message-media-time-below">${escapeHtml(timeLabel)}</span>` : '';
         let compactPrimaryMediaHtml = '';
         if (shouldCompactPrimaryMedia) {
             if (imageThumbSrc) {
                 compactPrimaryMediaHtml = `
-                <button
-                    type="button"
-                    class="chat-message-main-inline-media chat-message-reply-image-btn chat-image-thumb-btn"
-                    data-image-url="${escapeHtml(imageViewerSrc)}"
-                    data-image-title="${escapeHtml(imageTitle)}"
-                    aria-label="Abrir imagen"
-                >
-                    <img
-                        class="chat-message-reply-image-thumb"
-                        src="${escapeHtml(imageThumbSrc)}"
-                        data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
-                        data-image-key="${escapeHtml(imageUrlKey)}"
-                        alt="${escapeHtml(imageTitle)}"
-                        loading="${imageLoadingMode}"
-                        fetchpriority="${imageFetchPriority}"
-                        decoding="async"
-                    />
-                </button>
+                <span class="chat-message-main-inline-media-stack">
+                    <button
+                        type="button"
+                        class="chat-message-main-inline-media chat-message-reply-image-btn chat-image-thumb-btn"
+                        data-image-url="${escapeHtml(imageViewerSrc)}"
+                        data-image-title="${escapeHtml(imageTitle)}"
+                        aria-label="Abrir imagen"
+                    >
+                        <img
+                            class="chat-message-reply-image-thumb"
+                            src="${escapeHtml(imageThumbSrc)}"
+                            data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
+                            data-image-key="${escapeHtml(imageUrlKey)}"
+                            alt="${escapeHtml(imageTitle)}"
+                            loading="${imageLoadingMode}"
+                            fetchpriority="${imageFetchPriority}"
+                            decoding="async"
+                        />
+                    </button>
+                    ${primaryMediaTimeHtml}
+                </span>
             `;
             } else if (showVideo) {
                 compactPrimaryMediaHtml = `
-                <button
-                    type="button"
-                    class="chat-message-main-inline-media chat-message-reply-file chat-video-thumb-btn is-video"
-                    data-video-url="${escapeHtml(attachmentUrl)}"
-                    data-video-title="${escapeHtml(attachmentName || 'Vídeo')}"
-                    data-video-file-id="${escapeHtml(attachmentFileId)}"
-                    data-video-mime="${escapeHtml(attachmentMimeType)}"
-                    data-video-kind="${escapeHtml(resolvedAttachmentKind)}"
-                    title="${escapeHtml(attachmentName || 'Vídeo')}"
-                    aria-label="${escapeHtml(attachmentName || 'Vídeo')}"
-                >
-                    <i class="fas fa-file-video" aria-hidden="true"></i>
-                </button>
+                <span class="chat-message-main-inline-media-stack">
+                    <button
+                        type="button"
+                        class="chat-message-main-inline-media chat-message-reply-file chat-video-thumb-btn is-video"
+                        data-video-url="${escapeHtml(attachmentUrl)}"
+                        data-video-title="${escapeHtml(attachmentName || 'Vídeo')}"
+                        data-video-file-id="${escapeHtml(attachmentFileId)}"
+                        data-video-mime="${escapeHtml(attachmentMimeType)}"
+                        data-video-kind="${escapeHtml(resolvedAttachmentKind)}"
+                        title="${escapeHtml(attachmentName || 'Vídeo')}"
+                        aria-label="${escapeHtml(attachmentName || 'Vídeo')}"
+                    >
+                        <i class="fas fa-file-video" aria-hidden="true"></i>
+                    </button>
+                    ${primaryMediaTimeHtml}
+                </span>
             `;
             } else if (showAudio) {
                 compactPrimaryMediaHtml = `
-                <span class="chat-message-main-inline-media chat-message-reply-audio">
-                    <div
-                        class="chat-audio-card"
-                        data-audio-key="${escapeHtml(audioKey)}"
-                        data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
-                        data-audio-file-id="${escapeHtml(attachmentFileId)}"
-                        data-audio-download-url="${escapeHtml(audioDownloadUrl || attachmentUrl)}"
-                        data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
-                    >
-                        <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
-                            <i class="${audioActionIconClass}" aria-hidden="true"></i>
-                        </button>
-                        <div class="chat-audio-main">
-                            <div class="chat-audio-progress">
-                                <span class="chat-audio-progress-fill" style="width:${audioProgress}%"></span>
+                <span class="chat-message-main-inline-media-stack">
+                    <span class="chat-message-main-inline-media chat-message-reply-audio">
+                        <div
+                            class="chat-audio-card"
+                            data-audio-key="${escapeHtml(audioKey)}"
+                            data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
+                            data-audio-file-id="${escapeHtml(attachmentFileId)}"
+                            data-audio-download-url="${escapeHtml(audioDownloadUrl || attachmentUrl)}"
+                            data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
+                        >
+                            <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
+                                <i class="${audioActionIconClass}" aria-hidden="true"></i>
+                            </button>
+                            <div class="chat-audio-main">
+                                <div class="chat-audio-progress">
+                                    <span class="chat-audio-progress-fill" style="width:${audioProgress}%"></span>
+                                </div>
+                                <div class="chat-audio-times">
+                                    <span class="chat-audio-current-time">${audioCurrentTime}</span>
+                                    <span class="chat-audio-total-time">${audioTotalTime}</span>
+                                </div>
                             </div>
-                            <div class="chat-audio-times">
-                                <span class="chat-audio-current-time">${audioCurrentTime}</span>
-                                <span class="chat-audio-total-time">${audioTotalTime}</span>
-                            </div>
+                            <audio
+                                class="chat-audio-player"
+                                preload="auto"
+                                playsinline
+                                src="${escapeHtml(audioSrc)}"
+                                data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"
+                                data-candidate-index="${audioCandidateIndex}"
+                            ></audio>
                         </div>
-                        <audio
-                            class="chat-audio-player"
-                            preload="auto"
-                            playsinline
-                            src="${escapeHtml(audioSrc)}"
-                            data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"
-                            data-candidate-index="${audioCandidateIndex}"
-                        ></audio>
-                    </div>
+                    </span>
+                    ${primaryMediaTimeHtml}
                 </span>
             `;
             } else if (showFile) {
                 compactPrimaryMediaHtml = `
-                <a
-                    class="chat-message-main-inline-media chat-message-reply-file ${fileStateClass}"
-                    href="${escapeHtml(attachmentUrl)}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="${escapeHtml(attachmentName || 'Archivo')}"
-                    aria-label="${escapeHtml(attachmentName || 'Archivo')}"
-                >
-                    <i class="${fileIconClass}" aria-hidden="true"></i>
-                </a>
+                <span class="chat-message-main-inline-media-stack">
+                    <a
+                        class="chat-message-main-inline-media chat-message-reply-file ${fileStateClass}"
+                        href="${escapeHtml(attachmentUrl)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="${escapeHtml(attachmentName || 'Archivo')}"
+                        aria-label="${escapeHtml(attachmentName || 'Archivo')}"
+                    >
+                        <i class="${fileIconClass}" aria-hidden="true"></i>
+                    </a>
+                    ${primaryMediaTimeHtml}
+                </span>
             `;
             }
         }
         return `
         ${daySeparatorHtml}
         <div class="${messageItemClass}" data-msg-index="${idx}" data-message-row="${Number(msg.row) || 0}">
-            <div class="${hasEmbeddedReplyContent ? 'chat-message-main' : 'chat-message-line-only'}">
+            <div class="${messageBodyClass}">
                 <div class="chat-message-line ${useLongMessageLayout ? 'is-long-message' : ''}">
                     <div class="chat-message-user">${messageStatusOverlayHtml}${renderedUser}</div>
                     ${msg.message ? `<div class="chat-message-text chat-message-text-inline">${formatChatMessageHtml(msg.message)}</div>` : ''}
                     ${compactPrimaryMediaHtml}
-                    ${timeLabel ? `<span class="chat-message-inline-time">${escapeHtml(timeLabel)}</span>` : ''}
+                    ${timeLabel && !shouldPlaceTimeBelowPrimaryMedia ? `<span class="chat-message-inline-time">${escapeHtml(timeLabel)}</span>` : ''}
                 </div>
                 ${messageReactionBadgeHtml}
             </div>
@@ -12731,6 +12964,7 @@ function unlockBodyScrollForChat() {
 function closeChatModal() {
     stopChatAutoRefresh();
     removeChatViewportHandlers();
+    removeChatLayoutResizeObserver();
     unlockBodyScrollForChat();
     document.body.classList.remove('chat-open');
     document.body.classList.remove('chat-typing');
@@ -12936,6 +13170,7 @@ async function openChatModal() {
         const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
         existingOverlay.classList.remove('is-hidden');
         existingOverlay.removeAttribute('aria-hidden');
+        installChatLayoutResizeObserver();
         chatReplyTarget = null;
         chatEditTarget = null;
         chatAttachmentUploadInProgress = false;
@@ -13065,6 +13300,7 @@ async function openChatModal() {
     `;
     document.body.appendChild(overlay);
     updateChatFooterInset();
+    installChatLayoutResizeObserver();
     const chatModalEl = overlay.querySelector('.chat-modal');
 
     overlay.addEventListener('click', (event) => {

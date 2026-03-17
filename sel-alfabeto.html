@@ -7511,7 +7511,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwNSbHeOlPKiuWto3rNSC_5G3LmOv5wVcgIIO7hKIUWiFzmMH65NIq_D1Zf_cTOVXYZ/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyKvO2Ppbo6qBpT60m9XPrLuD1gDZlYSJA1jdeQCfQB69zczAsFsuqa23GAC-Ms38MX/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -9687,6 +9687,40 @@ function formatChatAudioTime(totalSeconds) {
     const minutes = Math.floor(safeSeconds / 60);
     const seconds = safeSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function inferChatAttachmentExtensionFromMime(mimeType = '') {
+    const mime = String(mimeType || '').trim().toLowerCase();
+    if (!mime) return '';
+    if (mime.includes('webm') || mime.includes('weba')) return 'webm';
+    if (mime.includes('ogg')) return 'ogg';
+    if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
+    if (mime.includes('wav') || mime.includes('x-wav')) return 'wav';
+    if (mime.includes('m4a') || mime.includes('mp4') || mime.includes('aac')) return 'm4a';
+    if (mime.includes('flac')) return 'flac';
+    if (mime.includes('opus')) return 'opus';
+    if (mime.includes('pdf')) return 'pdf';
+    if (mime.includes('zip')) return 'zip';
+    return '';
+}
+
+function normalizeChatAttachmentFileName(fileName = '', mimeType = '', fallbackBase = 'archivo-chat') {
+    const rawName = String(fileName || '').trim().split('?')[0].split('#')[0].trim();
+    const safeFallbackBase = String(fallbackBase || 'archivo-chat').trim() || 'archivo-chat';
+    const mimeExt = inferChatAttachmentExtensionFromMime(mimeType);
+    const extMatch = rawName.match(/\.([a-z0-9]{2,8})$/i);
+    const currentExt = extMatch ? String(extMatch[1] || '').toLowerCase() : '';
+    const baseName = rawName.replace(/\.[a-z0-9]{2,8}$/i, '').trim() || safeFallbackBase;
+
+    if (rawName && currentExt && currentExt !== 'bin' && currentExt !== 'octet-stream') {
+        return rawName;
+    }
+
+    if (!mimeExt) {
+        return rawName || safeFallbackBase;
+    }
+
+    return `${baseName}.${mimeExt}`;
 }
 
 function formatChatAudioDisplayName(fileName, maxChars = 12) {
@@ -12792,15 +12826,22 @@ function renderChatMessages(messages) {
         const rawImageUrl = String(msg.imageUrl || '').trim();
         const attachmentKind = String(msg.attachmentKind || '').trim().toLowerCase();
         const attachmentUrl = String(msg.attachmentUrl || '').trim();
-        const attachmentName = String(msg.attachmentName || '').trim();
+        const rawAttachmentName = String(msg.attachmentName || '').trim();
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const attachmentFileId = String(msg.attachmentFileId || '').trim();
         const resolvedAttachmentKind = resolveChatAttachmentKind(
             attachmentKind,
             attachmentMimeType,
-            attachmentName,
+            rawAttachmentName,
             attachmentUrl
+        );
+        const attachmentName = normalizeChatAttachmentFileName(
+            rawAttachmentName,
+            attachmentMimeType,
+            resolvedAttachmentKind === 'audio'
+                ? 'audio-chat'
+                : (resolvedAttachmentKind === 'video' ? 'video-chat' : 'archivo-chat')
         );
         const isEdited = !!msg.edited;
         const isPendingSend = !!msg.pending;
@@ -13016,14 +13057,21 @@ function renderChatMessages(messages) {
             const replyImageUrl = String(replyEntry && replyEntry.imageUrl ? replyEntry.imageUrl : '').trim();
             const replyImageTitle = String(replyEntry && replyEntry.imageTitle ? replyEntry.imageTitle : 'Imagen').trim() || 'Imagen';
             const replyAttachmentUrl = String(replyEntry && replyEntry.attachmentUrl ? replyEntry.attachmentUrl : '').trim();
-            const replyAttachmentName = String(replyEntry && replyEntry.attachmentName ? replyEntry.attachmentName : 'audio-chat.mp3').trim() || 'audio-chat.mp3';
+            const rawReplyAttachmentName = String(replyEntry && replyEntry.attachmentName ? replyEntry.attachmentName : 'audio-chat.mp3').trim() || 'audio-chat.mp3';
             const replyAttachmentMimeType = String(replyEntry && replyEntry.attachmentMimeType ? replyEntry.attachmentMimeType : '').trim();
             const replyAttachmentFileId = String(replyEntry && replyEntry.attachmentFileId ? replyEntry.attachmentFileId : '').trim();
             const replyAttachmentKind = resolveChatAttachmentKind(
                 replyEntry && replyEntry.attachmentKind ? replyEntry.attachmentKind : '',
                 replyAttachmentMimeType,
-                replyAttachmentName,
+                rawReplyAttachmentName,
                 replyAttachmentUrl
+            );
+            const replyAttachmentName = normalizeChatAttachmentFileName(
+                rawReplyAttachmentName,
+                replyAttachmentMimeType,
+                replyAttachmentKind === 'audio'
+                    ? 'audio-chat'
+                    : (replyAttachmentKind === 'video' ? 'video-chat' : 'archivo-chat')
             );
             const replyShowVideo = replyAttachmentKind === 'video' && !!replyAttachmentUrl;
             const replyShowAudio = replyAttachmentKind === 'audio' && !!replyAttachmentUrl;

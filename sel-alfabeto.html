@@ -7593,6 +7593,8 @@ let chatVoiceRecorderKeepResultOnStop = false;
 let chatVoiceRecorderSendAfterStop = false;
 let chatVoiceRecorderStopResolve = null;
 let chatVoiceRecorderRequestId = 0;
+let chatVoiceMp3EncoderLoadPromise = null;
+const CHAT_VOICE_MP3_ENCODER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js';
 
 function loadChatOwnedRowIds() {
     try {
@@ -10501,6 +10503,165 @@ function readFileAsDataBase64(file) {
     });
 }
 
+function ensureChatVoiceMp3EncoderReady() {
+    if (typeof window !== 'undefined' && window.lamejs && typeof window.lamejs.Mp3Encoder === 'function') {
+        return Promise.resolve(window.lamejs);
+    }
+    if (chatVoiceMp3EncoderLoadPromise) {
+        return chatVoiceMp3EncoderLoadPromise;
+    }
+    chatVoiceMp3EncoderLoadPromise = new Promise((resolve, reject) => {
+        if (typeof document === 'undefined') {
+            reject(new Error('document_unavailable'));
+            return;
+        }
+
+        const existingScript = document.querySelector(`script[data-chat-mp3-encoder="1"]`);
+        if (existingScript) {
+            existingScript.addEventListener('load', () => {
+                if (window.lamejs && typeof window.lamejs.Mp3Encoder === 'function') {
+                    resolve(window.lamejs);
+                    return;
+                }
+                reject(new Error('mp3_encoder_missing_after_load'));
+            }, { once: true });
+            existingScript.addEventListener('error', () => reject(new Error('mp3_encoder_load_failed')), { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = CHAT_VOICE_MP3_ENCODER_CDN_URL;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.dataset.chatMp3Encoder = '1';
+        script.onload = () => {
+            if (window.lamejs && typeof window.lamejs.Mp3Encoder === 'function') {
+                resolve(window.lamejs);
+                return;
+            }
+            reject(new Error('mp3_encoder_missing_after_load'));
+        };
+        script.onerror = () => reject(new Error('mp3_encoder_load_failed'));
+        document.head.appendChild(script);
+    }).catch((error) => {
+        chatVoiceMp3EncoderLoadPromise = null;
+        throw error;
+    });
+    return chatVoiceMp3EncoderLoadPromise;
+}
+
+function decodeChatAudioData(audioContext, arrayBuffer) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const handleResolve = (buffer) => {
+            if (settled) return;
+            settled = true;
+            resolve(buffer);
+        };
+        const handleReject = (error) => {
+            if (settled) return;
+            settled = true;
+            reject(error || new Error('audio_decode_failed'));
+        };
+        try {
+            const maybePromise = audioContext.decodeAudioData(arrayBuffer, handleResolve, handleReject);
+            if (maybePromise && typeof maybePromise.then === 'function') {
+                maybePromise.then(handleResolve).catch(handleReject);
+            }
+        } catch (error) {
+            handleReject(error);
+        }
+    });
+}
+
+function convertChatFloat32ToInt16(floatSamples) {
+    const pcm = new Int16Array(floatSamples.length);
+    for (let index = 0; index < floatSamples.length; index += 1) {
+        const sample = Math.max(-1, Math.min(1, Number(floatSamples[index]) || 0));
+        pcm[index] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+    }
+    return pcm;
+}
+
+function mixChatAudioBufferToMono(audioBuffer) {
+    const channelCount = Math.max(1, Number(audioBuffer && audioBuffer.numberOfChannels) || 1);
+    const sampleLength = Math.max(0, Number(audioBuffer && audioBuffer.length) || 0);
+    const mixed = new Float32Array(sampleLength);
+    if (!sampleLength) return mixed;
+
+    if (channelCount === 1) {
+        mixed.set(audioBuffer.getChannelData(0));
+        return mixed;
+    }
+
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+        const channelData = audioBuffer.getChannelData(channelIndex);
+        for (let sampleIndex = 0; sampleIndex < sampleLength; sampleIndex += 1) {
+            mixed[sampleIndex] += channelData[sampleIndex] / channelCount;
+        }
+    }
+    return mixed;
+}
+
+function encodeChatMonoPcmToMp3(floatSamples, sampleRate) {
+    if (!window.lamejs || typeof window.lamejs.Mp3Encoder !== 'function') {
+        throw new Error('mp3_encoder_unavailable');
+    }
+    const normalizedSampleRate = Math.max(8000, Math.min(48000, Number(sampleRate) || 44100));
+    const kbps = normalizedSampleRate <= 24000 ? 96 : 128;
+    const encoder = new window.lamejs.Mp3Encoder(1, normalizedSampleRate, kbps);
+    const pcmSamples = convertChatFloat32ToInt16(floatSamples);
+    const mp3Chunks = [];
+    const blockSize = 1152;
+
+    for (let offset = 0; offset < pcmSamples.length; offset += blockSize) {
+        const sampleChunk = pcmSamples.subarray(offset, offset + blockSize);
+        const encodedChunk = encoder.encodeBuffer(sampleChunk);
+        if (encodedChunk && encodedChunk.length) {
+            mp3Chunks.push(new Int8Array(encodedChunk));
+        }
+    }
+
+    const flushChunk = encoder.flush();
+    if (flushChunk && flushChunk.length) {
+        mp3Chunks.push(new Int8Array(flushChunk));
+    }
+
+    if (!mp3Chunks.length) {
+        throw new Error('mp3_encode_empty');
+    }
+
+    return new Blob(mp3Chunks, { type: 'audio/mpeg' });
+}
+
+async function convertChatVoiceBlobToMp3(sourceBlob) {
+    const blob = sourceBlob instanceof Blob ? sourceBlob : null;
+    if (!blob || !blob.size) {
+        throw new Error('voice_blob_missing');
+    }
+
+    await ensureChatVoiceMp3EncoderReady();
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (typeof AudioContextCtor !== 'function') {
+        throw new Error('audio_context_unavailable');
+    }
+
+    const audioContext = new AudioContextCtor();
+    try {
+        const sourceBuffer = await blob.arrayBuffer();
+        const decodedBuffer = await decodeChatAudioData(audioContext, sourceBuffer.slice(0));
+        const monoSamples = mixChatAudioBufferToMono(decodedBuffer);
+        return encodeChatMonoPcmToMp3(monoSamples, decodedBuffer.sampleRate);
+    } finally {
+        if (audioContext && typeof audioContext.close === 'function') {
+            try {
+                await audioContext.close();
+            } catch (_) {}
+        }
+    }
+}
+
 function disableChatAttachmentUI(disabled) {
     const attachBtn = document.getElementById('chat-attach-btn');
     if (attachBtn) attachBtn.disabled = !!disabled;
@@ -10516,6 +10677,7 @@ function isChatVoiceRecorderSupported() {
 function getChatVoiceRecorderSupportedMimeType() {
     if (typeof MediaRecorder === 'undefined') return '';
     const candidates = [
+        'audio/mpeg',
         'audio/webm;codecs=opus',
         'audio/webm',
         'audio/mp4',
@@ -10909,9 +11071,21 @@ async function sendChatVoiceRecording() {
         }
     }
     if (!chatVoiceRecorderBlob || !chatVoiceRecorderBlob.size) return;
-    const mimeType = String(chatVoiceRecorderBlob.type || chatVoiceRecorderMimeType || 'audio/webm').trim() || 'audio/webm';
+    let uploadBlob = chatVoiceRecorderBlob;
+    const sourceMimeType = String(chatVoiceRecorderBlob.type || chatVoiceRecorderMimeType || '').trim().toLowerCase();
+    if (!(sourceMimeType.includes('mpeg') || sourceMimeType.includes('mp3'))) {
+        try {
+            setChatVoiceRecorderUiState('sending', 'Convirtiendo a MP3...');
+            uploadBlob = await convertChatVoiceBlobToMp3(chatVoiceRecorderBlob);
+        } catch (error) {
+            console.warn('No se pudo convertir la nota de voz a MP3:', error);
+            setChatVoiceRecorderUiState('stopped', 'No se pudo convertir a MP3. Reintenta.');
+            return;
+        }
+    }
+    const mimeType = 'audio/mpeg';
     const fileName = buildChatVoiceRecorderFileName(mimeType);
-    const file = new File([chatVoiceRecorderBlob], fileName, {
+    const file = new File([uploadBlob], fileName, {
         type: mimeType,
         lastModified: Date.now()
     });

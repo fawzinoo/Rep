@@ -2298,42 +2298,41 @@
 
 .chat-file-viewer-modal {
     width: 100vw;
-    height: 100vh;
+    height: var(--chat-vh, 100dvh);
+    min-height: var(--chat-vh, 100dvh);
     max-width: none;
     max-height: none;
     display: flex;
     flex-direction: column;
     gap: 0;
+    position: relative;
+    overflow: hidden;
 }
 
 .chat-file-viewer-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
     color: #f8fafc;
-    padding: 14px 18px;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.94) 0%, rgba(15, 23, 42, 0.82) 100%);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-    flex: 0 0 auto;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
+    background: transparent;
+    border-bottom: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 4;
+    pointer-events: none;
 }
 
 .chat-file-viewer-actions {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
-}
-
-.chat-file-viewer-title {
-    font-size: 1rem;
-    font-weight: 800;
-    opacity: 0.94;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    justify-content: space-between;
+    width: 100%;
     flex: 1 1 auto;
+    pointer-events: auto;
 }
 
 .chat-file-viewer-download-btn,
@@ -2349,16 +2348,25 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(248, 250, 252, 0.2);
     color: #f9fafb;
     flex: 0 0 40px;
 }
 
 .chat-file-viewer-download-btn {
     font-size: 1rem;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.34);
 }
 
-.chat-file-viewer-download-btn:hover,
+.chat-file-viewer-close-btn {
+    background: rgba(248, 250, 252, 0.2);
+}
+
+.chat-file-viewer-download-btn:hover {
+    background: rgba(15, 23, 42, 0.86);
+    transform: translateY(-1px);
+}
+
 .chat-file-viewer-close-btn:hover {
     background: rgba(248, 250, 252, 0.28);
     transform: translateY(-1px);
@@ -2376,6 +2384,7 @@
     flex-direction: column;
     flex: 1 1 auto;
     background: rgba(255, 255, 255, 0.98);
+    position: relative;
 }
 
 .chat-file-viewer-frame {
@@ -2383,7 +2392,7 @@
     min-height: 0;
     position: relative;
     overflow: hidden;
-    background: #eef2f7;
+    background: #ffffff;
 }
 
 .chat-file-viewer-iframe {
@@ -2392,6 +2401,13 @@
     min-height: 0;
     border: none;
     background: #ffffff;
+}
+
+.chat-file-viewer-iframe.is-pdf {
+    width: calc(100% + 18px);
+    height: calc(100% + 18px);
+    margin-top: -9px;
+    margin-left: -9px;
 }
 
 .chat-file-viewer-google-mask {
@@ -10154,6 +10170,12 @@ function shouldPreviewChatFileInViewer(fileName = '', mimeType = '') {
     return true;
 }
 
+function isChatPdfFile(fileName = '', mimeType = '', fileUrl = '') {
+    const lowerName = String(fileName || '').trim().toLowerCase();
+    const lowerMime = String(mimeType || '').trim().toLowerCase();
+    return lowerMime.includes('application/pdf') || hasChatAttachmentExtension(lowerName, /\.pdf$/i) || hasChatAttachmentExtension(fileUrl, /\.pdf$/i);
+}
+
 function extractDriveFileIdFromUrl(rawUrl) {
     const value = String(rawUrl || '').trim();
     if (!value) return '';
@@ -12222,8 +12244,16 @@ function openChatImageViewer(imageUrl, imageTitle = 'Imagen') {
     }
 }
 
-function buildChatFilePreviewUrl(fileUrl, fileId = '') {
+function buildChatFilePreviewUrl(fileUrl, fileId = '', fileName = '', mimeType = '') {
     const safeFileId = String(fileId || extractDriveFileIdFromUrl(fileUrl)).trim();
+    if (isChatPdfFile(fileName, mimeType, fileUrl)) {
+        if (safeFileId) {
+            return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(safeFileId)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+        }
+        const safeRawUrl = String(fileUrl || '').trim();
+        if (!safeRawUrl) return '';
+        return `${safeRawUrl}${safeRawUrl.includes('#') ? '&' : '#'}toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+    }
     if (safeFileId) {
         return `https://drive.google.com/file/d/${encodeURIComponent(safeFileId)}/preview`;
     }
@@ -12239,11 +12269,11 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     closeChatImageViewer();
 
     const safeTitle = String(fileTitle || 'Archivo').trim() || 'Archivo';
-    const compactTitle = formatChatAudioDisplayName(safeTitle, 30) || 'Archivo';
     const fileId = String(options && options.fileId ? options.fileId : extractDriveFileIdFromUrl(safeUrl)).trim();
     const mimeType = String(options && options.mimeType ? options.mimeType : '').trim();
     const canPreview = shouldPreviewChatFileInViewer(safeTitle, mimeType);
-    const previewUrl = canPreview ? buildChatFilePreviewUrl(safeUrl, fileId) : '';
+    const isPdfPreview = isChatPdfFile(safeTitle, mimeType, safeUrl);
+    const previewUrl = canPreview ? buildChatFilePreviewUrl(safeUrl, fileId, safeTitle, mimeType) : '';
     const downloadUrl = buildChatAttachmentDownloadUrl(safeUrl) || safeUrl;
 
     const overlay = document.createElement('div');
@@ -12252,7 +12282,6 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     overlay.innerHTML = `
         <div class="chat-file-viewer-modal" role="dialog" aria-modal="true" aria-label="Vista de archivo">
             <div class="chat-file-viewer-head">
-                <div class="chat-file-viewer-title" title="${escapeHtml(safeTitle)}">${escapeHtml(compactTitle)}</div>
                 <div class="chat-file-viewer-actions">
                     <button
                         type="button"
@@ -12274,15 +12303,17 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
                 ${previewUrl ? `
                     <div class="chat-file-viewer-frame">
                         <iframe
-                            class="chat-file-viewer-iframe"
+                            class="chat-file-viewer-iframe${isPdfPreview ? ' is-pdf' : ''}"
                             src="${escapeHtml(previewUrl)}"
                             title="${escapeHtml(safeTitle)}"
                             loading="lazy"
                             referrerpolicy="no-referrer"
                         ></iframe>
-                        <div class="chat-file-viewer-google-mask" aria-hidden="true">
-                            <img src="https://fawzinoo.github.io/Fotos/f.png" alt="">
-                        </div>
+                        ${isPdfPreview ? '' : `
+                            <div class="chat-file-viewer-google-mask" aria-hidden="true">
+                                <img src="https://fawzinoo.github.io/Fotos/f.png" alt="">
+                            </div>
+                        `}
                     </div>
                 ` : `
                     <div class="chat-file-viewer-empty">

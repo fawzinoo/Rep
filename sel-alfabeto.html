@@ -7593,6 +7593,8 @@ let chatVoiceRecorderKeepResultOnStop = false;
 let chatVoiceRecorderSendAfterStop = false;
 let chatVoiceRecorderStopResolve = null;
 let chatVoiceRecorderRequestId = 0;
+const CHAT_VOICE_RECORDER_DEFAULT_BITRATE = 48000;
+const CHAT_VOICE_RECORDER_APPLE_BITRATE = 64000;
 
 function loadChatOwnedRowIds() {
     try {
@@ -10548,16 +10550,45 @@ function isChatVoiceRecorderSupported() {
         && typeof MediaRecorder !== 'undefined';
 }
 
+function isChatVoiceRecorderAppleMobile() {
+    if (typeof navigator === 'undefined') return false;
+    return /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
+}
+
+function isChatVoiceRecorderSafari() {
+    if (typeof navigator === 'undefined') return false;
+    const userAgent = String(navigator.userAgent || '');
+    const vendor = String(navigator.vendor || '');
+    const isWebKit = /AppleWebKit/i.test(userAgent);
+    const isAppleVendor = /Apple/i.test(vendor);
+    const isOtherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|YaBrowser/i.test(userAgent);
+    const isDesktopChromium = /Chrome|Chromium|Edg|OPR/i.test(userAgent);
+    return isWebKit && isAppleVendor && !isOtherIosBrowser && !isDesktopChromium;
+}
+
+function shouldPreferMp4ForChatVoiceRecorder() {
+    return isChatVoiceRecorderAppleMobile() || isChatVoiceRecorderSafari();
+}
+
 function getChatVoiceRecorderSupportedMimeType() {
     if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4;codecs=mp4a.40.2',
-        'audio/mp4',
-        'audio/ogg;codecs=opus',
-        'audio/ogg'
-    ];
+    const candidates = shouldPreferMp4ForChatVoiceRecorder()
+        ? [
+            'audio/mp4;codecs=mp4a.40.2',
+            'audio/mp4',
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/ogg'
+        ]
+        : [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4;codecs=mp4a.40.2',
+            'audio/mp4',
+            'audio/ogg;codecs=opus',
+            'audio/ogg'
+        ];
     const supportsCheck = typeof MediaRecorder.isTypeSupported === 'function';
     for (const mimeType of candidates) {
         if (!supportsCheck || MediaRecorder.isTypeSupported(mimeType)) {
@@ -10565,6 +10596,47 @@ function getChatVoiceRecorderSupportedMimeType() {
         }
     }
     return '';
+}
+
+function normalizeChatVoiceRecorderMimeType(mimeType = '') {
+    const cleanMimeType = String(mimeType || '').trim().toLowerCase();
+    if (cleanMimeType.includes('mp4') || cleanMimeType.includes('aac') || cleanMimeType.includes('m4a')) return 'audio/mp4';
+    if (cleanMimeType.includes('ogg')) return 'audio/ogg';
+    if (cleanMimeType.includes('mpeg') || cleanMimeType.includes('mp3')) return 'audio/mpeg';
+    return 'audio/webm';
+}
+
+function getChatVoiceRecorderTargetBitrate(preferredMimeType = '') {
+    const normalizedMimeType = normalizeChatVoiceRecorderMimeType(preferredMimeType);
+    if (normalizedMimeType === 'audio/mp4' || shouldPreferMp4ForChatVoiceRecorder()) {
+        return CHAT_VOICE_RECORDER_APPLE_BITRATE;
+    }
+    return CHAT_VOICE_RECORDER_DEFAULT_BITRATE;
+}
+
+function createChatVoiceMediaRecorder(stream, preferredMimeType = '') {
+    const safePreferredMimeType = String(preferredMimeType || '').trim();
+    const bitrate = Math.max(24000, Number(getChatVoiceRecorderTargetBitrate(safePreferredMimeType)) || CHAT_VOICE_RECORDER_DEFAULT_BITRATE);
+    const attempts = [];
+    if (safePreferredMimeType) {
+        attempts.push({ mimeType: safePreferredMimeType, audioBitsPerSecond: bitrate });
+        attempts.push({ mimeType: safePreferredMimeType });
+    }
+    attempts.push({ audioBitsPerSecond: bitrate });
+    attempts.push({});
+
+    let lastError = null;
+    for (const options of attempts) {
+        try {
+            if (!options || Object.keys(options).length === 0) {
+                return new MediaRecorder(stream);
+            }
+            return new MediaRecorder(stream, options);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('media_recorder_init_failed');
 }
 
 function getChatVoiceRecorderExtension(mimeType = '') {
@@ -10819,13 +10891,11 @@ async function startChatVoiceRecordingSession() {
         }
 
         const preferredMimeType = getChatVoiceRecorderSupportedMimeType();
-        const recorder = preferredMimeType
-            ? new MediaRecorder(stream, { mimeType: preferredMimeType })
-            : new MediaRecorder(stream);
+        const recorder = createChatVoiceMediaRecorder(stream, preferredMimeType);
 
         chatVoiceRecorderStream = stream;
         chatVoiceRecorderMediaRecorder = recorder;
-        chatVoiceRecorderMimeType = String(recorder.mimeType || preferredMimeType || 'audio/webm').trim() || 'audio/webm';
+        chatVoiceRecorderMimeType = normalizeChatVoiceRecorderMimeType(recorder.mimeType || preferredMimeType || 'audio/webm');
         chatVoiceRecorderChunks = [];
         chatVoiceRecorderKeepResultOnStop = true;
 
@@ -10945,24 +11015,20 @@ async function sendChatVoiceRecording() {
         }
     }
     if (!chatVoiceRecorderBlob || !chatVoiceRecorderBlob.size) return;
-    const mimeType = String(
+    const mimeType = normalizeChatVoiceRecorderMimeType(
         chatVoiceRecorderBlob.type
         || chatVoiceRecorderMimeType
         || getChatVoiceRecorderSupportedMimeType()
         || 'audio/webm'
-    ).trim() || 'audio/webm';
+    );
     const fileName = buildChatVoiceRecorderFileName(mimeType);
     const file = new File([chatVoiceRecorderBlob], fileName, {
         type: mimeType,
         lastModified: Date.now()
     });
     setChatVoiceRecorderUiState('sending', 'Enviando nota de voz...');
-    const sent = await submitChatAttachment(file, 'audio');
-    if (sent) {
-        closeChatVoiceRecorder(true);
-        return;
-    }
-    setChatVoiceRecorderUiState('stopped', 'Fallo de envio. Puedes reintentar.');
+    closeChatVoiceRecorder(true);
+    void submitChatAttachment(file, 'audio');
 }
 
 async function checkChatAttachmentHealth() {
@@ -11081,15 +11147,16 @@ async function submitChatAttachment(file, forcedKind = '') {
     }
 
     try {
-        const attachmentHealth = await checkChatAttachmentHealth();
+        const [attachmentHealth, dataBase64] = await Promise.all([
+            checkChatAttachmentHealth(),
+            readFileAsDataBase64(file)
+        ]);
         if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
             throw new Error('missing_drive_scope');
         }
         if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
             throw new Error('attachment_health_failed');
         }
-
-        const dataBase64 = await readFileAsDataBase64(file);
         await postToPortalB({
             type: 'chat_attachment',
             columna: CHAT_COLUMN_KEY,
@@ -11119,7 +11186,7 @@ async function submitChatAttachment(file, forcedKind = '') {
                     }
                 });
             }
-        }, 800);
+        }, 180);
         return true;
     } catch (error) {
         console.warn('Error enviando adjunto al chat:', error);

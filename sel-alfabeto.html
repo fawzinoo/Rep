@@ -2403,39 +2403,15 @@
     background: #ffffff;
 }
 
+.chat-file-viewer-frame.is-pdf {
+    background: #ffffff;
+}
+
 .chat-file-viewer-iframe.is-pdf {
     width: calc(100% + 18px);
     height: calc(100% + 18px);
     margin-top: -9px;
     margin-left: -9px;
-}
-
-.chat-file-viewer-frame.is-loading .chat-file-viewer-iframe {
-    opacity: 0;
-}
-
-.chat-file-viewer-pdf-loading {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: #ffffff;
-    color: #475569;
-    font-size: 0.96rem;
-    font-weight: 800;
-}
-
-.chat-file-viewer-pdf-loading::before {
-    content: '';
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 2px solid rgba(71, 85, 105, 0.16);
-    border-top-color: #475569;
-    animation: chatLoadingSpin 0.8s linear infinite;
 }
 
 .chat-file-viewer-google-mask {
@@ -12274,14 +12250,6 @@ function openChatImageViewer(imageUrl, imageTitle = 'Imagen') {
 
 function buildChatFilePreviewUrl(fileUrl, fileId = '', fileName = '', mimeType = '') {
     const safeFileId = String(fileId || extractDriveFileIdFromUrl(fileUrl)).trim();
-    if (isChatPdfFile(fileName, mimeType, fileUrl)) {
-        if (safeFileId) {
-            return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(safeFileId)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
-        }
-        const safeRawUrl = String(fileUrl || '').trim();
-        if (!safeRawUrl) return '';
-        return `${safeRawUrl}${safeRawUrl.includes('#') ? '&' : '#'}toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
-    }
     if (safeFileId) {
         return `https://drive.google.com/file/d/${encodeURIComponent(safeFileId)}/preview`;
     }
@@ -12301,9 +12269,7 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     const mimeType = String(options && options.mimeType ? options.mimeType : '').trim();
     const canPreview = shouldPreviewChatFileInViewer(safeTitle, mimeType);
     const isPdfPreview = isChatPdfFile(safeTitle, mimeType, safeUrl);
-    const shouldUsePdfBlobPreview = isPdfPreview && !!fileId;
-    const fallbackPreviewUrl = canPreview ? buildChatFilePreviewUrl(safeUrl, fileId, safeTitle, mimeType) : '';
-    const previewUrl = shouldUsePdfBlobPreview ? 'about:blank' : fallbackPreviewUrl;
+    const previewUrl = canPreview ? buildChatFilePreviewUrl(safeUrl, fileId, safeTitle, mimeType) : '';
     const downloadUrl = buildChatAttachmentDownloadUrl(safeUrl) || safeUrl;
 
     const overlay = document.createElement('div');
@@ -12331,7 +12297,7 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
             </div>
             <div class="chat-file-viewer-stage">
                 ${previewUrl ? `
-                    <div class="chat-file-viewer-frame${shouldUsePdfBlobPreview ? ' is-loading' : ''}" id="chat-file-viewer-frame">
+                    <div class="chat-file-viewer-frame${isPdfPreview ? ' is-pdf' : ''}" id="chat-file-viewer-frame">
                         <iframe
                             class="chat-file-viewer-iframe${isPdfPreview ? ' is-pdf' : ''}"
                             src="${escapeHtml(previewUrl)}"
@@ -12339,9 +12305,6 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
                             loading="lazy"
                             referrerpolicy="no-referrer"
                         ></iframe>
-                        ${shouldUsePdfBlobPreview ? `
-                            <div class="chat-file-viewer-pdf-loading" id="chat-file-viewer-pdf-loading">Preparando PDF...</div>
-                        ` : ''}
                         ${isPdfPreview ? '' : `
                             <div class="chat-file-viewer-google-mask" aria-hidden="true">
                                 <img src="https://fawzinoo.github.io/Fotos/f.png" alt="">
@@ -12378,41 +12341,6 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
             if (!targetUrl) return;
             triggerChatDirectDownload(targetUrl, targetName);
         });
-    }
-
-    if (shouldUsePdfBlobPreview) {
-        const iframeEl = overlay.querySelector('.chat-file-viewer-iframe');
-        const frameEl = document.getElementById('chat-file-viewer-frame');
-        const loadingEl = document.getElementById('chat-file-viewer-pdf-loading');
-        const finishPdfLoadUi = () => {
-            if (frameEl) frameEl.classList.remove('is-loading');
-            if (loadingEl) loadingEl.remove();
-        };
-        const failPdfLoadUi = () => {
-            if (loadingEl) {
-                loadingEl.textContent = 'No se pudo abrir el PDF.';
-            }
-        };
-
-        if (iframeEl) {
-            iframeEl.addEventListener('load', finishPdfLoadUi, { once: true });
-        }
-
-        void (async () => {
-            try {
-                const blobUrl = await fetchChatAttachmentBlobUrlByFileId(fileId, safeTitle, mimeType || 'application/pdf');
-                if (!document.getElementById('chat-file-viewer-overlay') || !iframeEl) return;
-                iframeEl.src = blobUrl;
-            } catch (error) {
-                console.warn('Error cargando PDF del visor desde blob:', error);
-                if (!document.getElementById('chat-file-viewer-overlay') || !iframeEl) return;
-                if (fallbackPreviewUrl) {
-                    iframeEl.src = fallbackPreviewUrl;
-                } else {
-                    failPdfLoadUi();
-                }
-            }
-        })();
     }
 }
 

@@ -8206,9 +8206,7 @@ const CHAT_THUMB_PRELOAD_LIMIT = 12;
 const CHAT_THUMB_PRELOAD_WAIT_MS = 850;
 const CHAT_THUMB_LOAD_TIMEOUT_MS = 2200;
 const CHAT_NOTIFICATION_SOUND_POOL_SIZE = 3;
-const CHAT_LONG_PRESS_DELETE_MS = 2000;
-const CHAT_LONG_PRESS_RELEASE_GUARD_MS = 700;
-const CHAT_LONG_PRESS_MOVE_TOLERANCE_PX = 14;
+const CHAT_LONG_PRESS_DELETE_MS = 320;
 const CHAT_TAP_MAX_MOVE_PX = 12;
 const CHAT_TAP_SUPPRESS_CLICK_MS = 120;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
@@ -8234,7 +8232,6 @@ let chatNotificationAudioPool = [];
 let chatNotificationAudioPrimed = false;
 let chatNotificationAudioPrimingInstalled = false;
 let chatOwnMessageLongPressTimerId = null;
-let chatLongPressGestureActive = false;
 let chatIgnoreOwnMessageClickUntil = 0;
 let chatIgnoreMessageClickUntil = 0;
 let chatSuppressNextMessageClick = false;
@@ -10403,79 +10400,11 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
 
     let longPressTriggered = false;
-    let pressStartX = null;
-    let pressStartY = null;
-    const resetPressOrigin = () => {
-        pressStartX = null;
-        pressStartY = null;
-    };
-    const getPointerPoint = (event) => {
-        if (!event) return null;
-        if (event.touches && event.touches.length) {
-            return {
-                x: Number(event.touches[0].clientX),
-                y: Number(event.touches[0].clientY)
-            };
-        }
-        if (event.changedTouches && event.changedTouches.length) {
-            return {
-                x: Number(event.changedTouches[0].clientX),
-                y: Number(event.changedTouches[0].clientY)
-            };
-        }
-        if (typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-            return {
-                x: Number(event.clientX),
-                y: Number(event.clientY)
-            };
-        }
-        return null;
-    };
-    const storePressOrigin = (event) => {
-        const point = getPointerPoint(event);
-        if (!point) {
-            resetPressOrigin();
-            return;
-        }
-        pressStartX = point.x;
-        pressStartY = point.y;
-    };
-    const movedBeyondLongPressTolerance = (event) => {
-        if (pressStartX == null || pressStartY == null) return false;
-        const point = getPointerPoint(event);
-        if (!point) return false;
-        const deltaX = point.x - pressStartX;
-        const deltaY = point.y - pressStartY;
-        return Math.hypot(deltaX, deltaY) > CHAT_LONG_PRESS_MOVE_TOLERANCE_PX;
-    };
     const clearTimer = () => {
         if (chatOwnMessageLongPressTimerId) {
             clearTimeout(chatOwnMessageLongPressTimerId);
             chatOwnMessageLongPressTimerId = null;
         }
-    };
-    const finalizeLongPress = (event) => {
-        clearTimer();
-        if (!longPressTriggered) {
-            chatLongPressGestureActive = false;
-            resetPressOrigin();
-            return;
-        }
-        if (event && event.cancelable) {
-            event.preventDefault();
-        }
-        if (event && typeof event.stopPropagation === 'function') {
-            event.stopPropagation();
-        }
-        chatSuppressNextMessageClick = true;
-        chatIgnoreMessageClickUntil = Date.now() + CHAT_LONG_PRESS_RELEASE_GUARD_MS;
-        chatIgnoreOwnMessageClickUntil = Date.now() + CHAT_LONG_PRESS_RELEASE_GUARD_MS;
-        scheduleChatSuppressNextMessageClickReset(CHAT_LONG_PRESS_RELEASE_GUARD_MS);
-        setTimeout(() => {
-            longPressTriggered = false;
-            chatLongPressGestureActive = false;
-        }, CHAT_LONG_PRESS_RELEASE_GUARD_MS);
-        resetPressOrigin();
     };
     const onStart = (event) => {
         if (event.button != null && event.button !== 0) return;
@@ -10487,36 +10416,38 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
         }
         clearTimer();
         longPressTriggered = false;
-        chatLongPressGestureActive = false;
-        storePressOrigin(event);
         chatOwnMessageLongPressTimerId = setTimeout(() => {
             longPressTriggered = true;
-            chatLongPressGestureActive = true;
             chatSuppressNextMessageClick = true;
+            chatIgnoreMessageClickUntil = Date.now() + 400;
+            chatIgnoreOwnMessageClickUntil = Date.now() + 400;
+            scheduleChatSuppressNextMessageClickReset(400);
             vibrar(45);
             openChatMessageActionMenu(targetMessage, targetEl, currentUserLabel);
         }, CHAT_LONG_PRESS_DELETE_MS);
     };
-    const onMove = (event) => {
-        if (longPressTriggered) return;
-        if (!movedBeyondLongPressTolerance(event)) return;
+    const onEnd = (event) => {
         clearTimer();
+        if (longPressTriggered) {
+            if (event && event.cancelable) {
+                event.preventDefault();
+            }
+            if (event && typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+            setTimeout(() => {
+                longPressTriggered = false;
+            }, 0);
+        }
     };
 
     targetEl.addEventListener('mousedown', onStart);
-    targetEl.addEventListener('mouseup', finalizeLongPress);
-    targetEl.addEventListener('mouseleave', (event) => {
-        if (longPressTriggered) {
-            finalizeLongPress(event);
-            return;
-        }
-        clearTimer();
-        resetPressOrigin();
-    });
+    targetEl.addEventListener('mouseup', onEnd);
+    targetEl.addEventListener('mouseleave', clearTimer);
     targetEl.addEventListener('touchstart', onStart, { passive: false });
-    targetEl.addEventListener('touchmove', onMove, { passive: true });
-    targetEl.addEventListener('touchend', finalizeLongPress, { passive: false });
-    targetEl.addEventListener('touchcancel', finalizeLongPress);
+    targetEl.addEventListener('touchmove', clearTimer, { passive: true });
+    targetEl.addEventListener('touchend', onEnd, { passive: false });
+    targetEl.addEventListener('touchcancel', clearTimer);
     targetEl.addEventListener('selectstart', (event) => {
         event.preventDefault();
     });
@@ -15250,7 +15181,6 @@ function renderChatMessages(messages) {
         const triggerTap = (event) => {
             if (moved) return;
             if (shouldIgnoreTarget(event)) return;
-            if (chatLongPressGestureActive) return;
             if (chatSuppressNextMessageClick) return;
             if (Date.now() < chatIgnoreMessageClickUntil) return;
             if (event && event.cancelable) event.preventDefault();
@@ -15330,11 +15260,6 @@ function renderChatMessages(messages) {
             toggleChatReplyTarget(targetMessage, currentUserLabel);
         };
         item.addEventListener('click', (event) => {
-            if (chatLongPressGestureActive) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
             if (chatSuppressNextMessageClick) {
                 chatSuppressNextMessageClick = false;
                 event.preventDefault();
@@ -15362,11 +15287,6 @@ function renderChatMessages(messages) {
             openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
         };
         item.addEventListener('click', (event) => {
-            if (chatLongPressGestureActive) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
             if (chatSuppressNextMessageClick) {
                 chatSuppressNextMessageClick = false;
                 event.preventDefault();
@@ -15414,11 +15334,6 @@ function renderChatMessages(messages) {
         };
         item.addEventListener('click', (event) => {
             if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-card, button, a, audio')) {
-                return;
-            }
-            if (chatLongPressGestureActive) {
-                event.preventDefault();
-                event.stopPropagation();
                 return;
             }
             if (chatSuppressNextMessageClick) {

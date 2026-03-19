@@ -1594,6 +1594,47 @@
     margin-top: 8px;
 }
 
+.chat-pending-upload-progress {
+    width: 50px;
+    height: 4px;
+    margin: 6px auto 0;
+    position: relative;
+    border-radius: 999px;
+    background: rgba(239, 68, 68, 0.2);
+    overflow: visible;
+    display: block;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chat-pending-upload-progress::after {
+    content: attr(data-progress-label);
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #dc2626;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.chat-pending-upload-progress-fill {
+    display: block;
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+    transition: width 0.16s linear;
+}
+
+.chat-message-main-inline-media-stack .chat-pending-upload-progress,
+.chat-message-reply-media-stack .chat-pending-upload-progress {
+    width: 32px;
+    margin-top: 2px;
+}
+
 .chat-video-block {
     margin-top: 8px;
 }
@@ -8213,6 +8254,7 @@ let chatPinnedToBottom = true;
 let chatReplyTargetVisibilityTimerIds = [];
 let chatLayoutResizeObserver = null;
 let chatPinnedBottomSnapRafId = 0;
+const chatPendingUploadAnimationByAttachmentUrl = new Map();
 let chatForcedLatestMessageRevealRafId = 0;
 let chatVoiceRecorderStream = null;
 let chatVoiceRecorderMediaRecorder = null;
@@ -8511,6 +8553,132 @@ function isChatBlobUrlCached(url) {
     return false;
 }
 
+function normalizeChatPendingUploadProgress(value) {
+    return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
+function getChatPendingUploadKey(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    return safeAttachmentUrl ? encodeURIComponent(safeAttachmentUrl) : '';
+}
+
+function syncChatPendingUploadProgressElements(attachmentUrl, progress) {
+    const uploadKey = getChatPendingUploadKey(attachmentUrl);
+    if (!uploadKey || typeof document === 'undefined') return false;
+    const safeProgress = normalizeChatPendingUploadProgress(progress);
+    const roundedProgress = Math.round(safeProgress);
+    let found = false;
+    document.querySelectorAll('.chat-pending-upload-progress').forEach((progressEl) => {
+        if (String(progressEl.getAttribute('data-upload-key') || '').trim() !== uploadKey) return;
+        const fillEl = progressEl.querySelector('.chat-pending-upload-progress-fill');
+        if (!fillEl) return;
+        fillEl.style.width = `${safeProgress}%`;
+        progressEl.setAttribute('data-progress-label', `${roundedProgress}%`);
+        progressEl.setAttribute('aria-valuenow', String(roundedProgress));
+        progressEl.setAttribute('aria-valuetext', `${roundedProgress}%`);
+        progressEl.setAttribute('title', `Enviando ${roundedProgress}%`);
+        found = true;
+    });
+    return found;
+}
+
+function getLocalEchoUploadProgressByAttachmentUrl(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return 0;
+    const target = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).find((msg) =>
+        String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() === safeAttachmentUrl
+    );
+    return normalizeChatPendingUploadProgress(target && target.pendingUploadProgress);
+}
+
+function clearChatPendingUploadProgressAnimation(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return;
+    const timerId = chatPendingUploadAnimationByAttachmentUrl.get(safeAttachmentUrl);
+    if (timerId) {
+        clearInterval(timerId);
+    }
+    chatPendingUploadAnimationByAttachmentUrl.delete(safeAttachmentUrl);
+}
+
+function updateLocalEchoUploadProgressByAttachmentUrl(attachmentUrl, progress, options = {}) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    const safeProgress = normalizeChatPendingUploadProgress(progress);
+    let changed = false;
+
+    chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).map((msg) => {
+        if (String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() !== safeAttachmentUrl) return msg;
+        const currentProgress = normalizeChatPendingUploadProgress(msg && msg.pendingUploadProgress);
+        const nextProgress = options.allowDecrease ? safeProgress : Math.max(currentProgress, safeProgress);
+        if (!options.force && Math.abs(nextProgress - currentProgress) < 0.5) return msg;
+        changed = true;
+        return {
+            ...msg,
+            pendingUploadProgress: nextProgress
+        };
+    });
+
+    if (!changed) return false;
+
+    const synced = syncChatPendingUploadProgressElements(safeAttachmentUrl, safeProgress);
+    if (!synced && options.render !== false) {
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+    if (safeProgress >= 100) {
+        clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+    }
+    return true;
+}
+
+function animateLocalEchoUploadProgressByAttachmentUrl(attachmentUrl, targetProgress, durationMs = 1200) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return;
+    clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+    const startProgress = getLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl);
+    const safeTargetProgress = Math.max(startProgress, normalizeChatPendingUploadProgress(targetProgress));
+    if (safeTargetProgress <= startProgress) return;
+
+    const startTime = Date.now();
+    const safeDurationMs = Math.max(180, Number(durationMs) || 0);
+    const timerId = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const ratio = Math.min(1, elapsed / safeDurationMs);
+        const easedRatio = 1 - Math.pow(1 - ratio, 2);
+        const nextProgress = startProgress + ((safeTargetProgress - startProgress) * easedRatio);
+        updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, nextProgress, { force: true });
+        if (ratio >= 1) {
+            clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+            updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, safeTargetProgress, { force: true });
+        }
+    }, 90);
+    chatPendingUploadAnimationByAttachmentUrl.set(safeAttachmentUrl, timerId);
+}
+
+function buildChatPendingUploadBarHtml(progress, attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    const uploadKey = getChatPendingUploadKey(safeAttachmentUrl);
+    if (!safeAttachmentUrl || !uploadKey) return '';
+    const safeProgress = normalizeChatPendingUploadProgress(progress);
+    const roundedProgress = Math.round(safeProgress);
+    return `
+        <span
+            class="chat-pending-upload-progress"
+            data-upload-key="${escapeHtml(uploadKey)}"
+            data-progress-label="${roundedProgress}%"
+            role="progressbar"
+            aria-label="Progreso de envio"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="${roundedProgress}"
+            aria-valuetext="${roundedProgress}%"
+            title="Enviando ${roundedProgress}%"
+        >
+            <span class="chat-pending-upload-progress-fill" style="width:${safeProgress}%"></span>
+        </span>
+    `;
+}
+
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
     return messages.map(msg => {
@@ -8711,6 +8879,7 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
             } else {
                 markChatMessageRecentlyConfirmed(msg);
             }
+            clearChatPendingUploadProgressAnimation(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             releaseChatBlobUrl(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             return false;
         }
@@ -8900,6 +9069,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         timeLabel: String(msg && msg.timeLabel ? msg.timeLabel : '').trim(),
         edited: !!(msg && msg.edited),
         pending: !!(msg && msg.pending),
+        pendingUploadProgress: normalizeChatPendingUploadProgress(msg && msg.pendingUploadProgress),
         attachedReplies: [],
         reactions: [],
         nestedReplies: [],
@@ -9052,6 +9222,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
                         timeLabel: String(msg.timeLabel || '').trim(),
                         edited: !!msg.edited,
                         pending: !!msg.pending,
+                        pendingUploadProgress: normalizeChatPendingUploadProgress(msg.pendingUploadProgress),
                         reactions: []
                     });
                 }
@@ -9082,6 +9253,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
                 timeLabel: String(msg.timeLabel || '').trim(),
                 edited: !!msg.edited,
                 pending: !!msg.pending,
+                pendingUploadProgress: normalizeChatPendingUploadProgress(msg.pendingUploadProgress),
                 reactions: [],
                 nestedReplies: []
             });
@@ -9596,7 +9768,8 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
         timestamp: new Date().toISOString(),
         timeLabel: timeLabel,
         edited: false,
-        pending: true
+        pending: true,
+        pendingUploadProgress: hasAttachment ? 0 : 100
     });
     renderMergedChatMessages(chatLatestServerMessages);
     if (shouldScrollToLatest) {
@@ -11471,9 +11644,12 @@ function toggleChatAttachmentMenu() {
     menu.hidden = !menu.hidden;
 }
 
-function readFileAsDataBase64(file) {
+function readFileAsDataBase64(file, options = {}) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
+        const onProgress = options && typeof options.onProgress === 'function'
+            ? options.onProgress
+            : null;
         reader.onload = () => {
             const result = String(reader.result || '');
             const commaIndex = result.indexOf(',');
@@ -11483,6 +11659,13 @@ function readFileAsDataBase64(file) {
             }
             resolve(result.slice(commaIndex + 1));
         };
+        if (onProgress) {
+            reader.onprogress = (event) => {
+                try {
+                    onProgress(event);
+                } catch (_) {}
+            };
+        }
         reader.onerror = () => reject(new Error('file_read_error'));
         reader.readAsDataURL(file);
     });
@@ -12098,11 +12281,20 @@ async function submitChatAttachment(file, forcedKind = '') {
             scrollChatThreadToBottom(activeReplyTarget.row, false);
         });
     }
+    updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 4, { force: true });
 
     try {
         const [attachmentHealth, dataBase64] = await Promise.all([
             checkChatAttachmentHealth(),
-            readFileAsDataBase64(file)
+            readFileAsDataBase64(file, {
+                onProgress: (event) => {
+                    if (!event || !event.lengthComputable) return;
+                    const loaded = Math.max(0, Number(event.loaded) || 0);
+                    const total = Math.max(1, Number(event.total) || fileSize || 1);
+                    const ratio = Math.max(0, Math.min(1, loaded / total));
+                    updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 6 + (ratio * 76));
+                }
+            })
         ]);
         if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
             throw new Error('missing_drive_scope');
@@ -12110,6 +12302,8 @@ async function submitChatAttachment(file, forcedKind = '') {
         if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
             throw new Error('attachment_health_failed');
         }
+        updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 84, { force: true });
+        animateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 96, 1400);
         await postToPortalB({
             type: 'chat_attachment',
             columna: CHAT_COLUMN_KEY,
@@ -12126,6 +12320,7 @@ async function submitChatAttachment(file, forcedKind = '') {
                 dataBase64: dataBase64
             }
         }, { allowBeacon: false, onlyNoCors: true });
+        updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 100, { force: true });
         setTimeout(() => {
             if (document.getElementById('chat-overlay')) {
                 void refreshChatMessages(
@@ -12144,6 +12339,7 @@ async function submitChatAttachment(file, forcedKind = '') {
         return true;
     } catch (error) {
         console.warn('Error enviando adjunto al chat:', error);
+        clearChatPendingUploadProgressAnimation(localObjectUrl);
         chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== localObjectUrl);
         renderMergedChatMessages(chatLatestServerMessages);
         releaseChatBlobUrl(localObjectUrl);
@@ -14098,6 +14294,7 @@ function renderChatMessages(messages) {
         );
         const isEdited = !!msg.edited;
         const isPendingSend = !!msg.pending;
+        const pendingUploadProgress = normalizeChatPendingUploadProgress(msg.pendingUploadProgress);
         const isRecentlyConfirmed = isCurrentSender && !isPendingSend && isChatMessageRecentlyConfirmed(msg);
         const useLongMessageLayout = shouldUseLongChatLineLayout(msg.message);
         const messageStatusOverlayHtml = isPendingSend
@@ -14105,6 +14302,9 @@ function renderChatMessages(messages) {
             : (isRecentlyConfirmed
                 ? `<span class="chat-message-status-inline confirmed" aria-hidden="true"><span class="chat-message-confirmed-indicator">✓</span></span>`
                 : '');
+        const uploadProgressHtml = isPendingSend && !!attachmentUrl
+            ? buildChatPendingUploadBarHtml(pendingUploadProgress, attachmentUrl)
+            : '';
         const imageUrl = rawImageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
         const imageUrlKey = String(imageUrl || '').trim();
         const imageUrlCandidates = getResolvedThumbCandidates(
@@ -14139,6 +14339,7 @@ function renderChatMessages(messages) {
                         decoding="async"
                     />
                 </button>
+                ${uploadProgressHtml}
             </div>
         ` : '';
         const showVideo = resolvedAttachmentKind === 'video' && !!attachmentUrl;
@@ -14171,6 +14372,7 @@ function renderChatMessages(messages) {
                         <i class="fas fa-download" aria-hidden="true"></i>
                     </button>
                 </div>
+                ${uploadProgressHtml}
             </div>
         ` : '';
         const showAudio = resolvedAttachmentKind === 'audio' && !!attachmentUrl;
@@ -14240,6 +14442,7 @@ function renderChatMessages(messages) {
                         data-candidate-index="${audioCandidateIndex}"
                     ></audio>
                 </div>
+                ${uploadProgressHtml}
             </div>
         ` : '';
         const showFile = resolvedAttachmentKind && resolvedAttachmentKind !== 'image' && resolvedAttachmentKind !== 'audio' && resolvedAttachmentKind !== 'video' && !!attachmentUrl;
@@ -14306,6 +14509,7 @@ function renderChatMessages(messages) {
                         <i class="fas fa-download" aria-hidden="true"></i>
                     </button>
                 </div>
+                ${uploadProgressHtml}
             </div>
         ` : '';
         const quotedReply = getQuotedReplyPreviewText(msg.quotedReply);
@@ -14361,6 +14565,7 @@ function renderChatMessages(messages) {
                 replyEntry && replyEntry.timeLabel ? replyEntry.timeLabel : '',
                 replyEntry && replyEntry.timestamp ? replyEntry.timestamp : ''
             );
+            const replyPendingUploadProgress = normalizeChatPendingUploadProgress(replyEntry && replyEntry.pendingUploadProgress);
             const replyImageUrl = String(replyEntry && replyEntry.imageUrl ? replyEntry.imageUrl : '').trim();
             const replyImageTitle = String(replyEntry && replyEntry.imageTitle ? replyEntry.imageTitle : 'Imagen').trim() || 'Imagen';
             const replyAttachmentUrl = String(replyEntry && replyEntry.attachmentUrl ? replyEntry.attachmentUrl : '').trim();
@@ -14429,6 +14634,9 @@ function renderChatMessages(messages) {
             const replyAuthorLabel = isTeacherReply
                 ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
                 : `<span class="chat-user-label ${areSameChatUserLabels(replyAuthor, currentUserLabel) ? 'chat-user-label-self' : 'chat-user-label-other'}">${escapeHtml(replyAuthor)}:</span>`;
+            const replyUploadProgressHtml = replyIsPending && !!replyAttachmentUrl
+                ? buildChatPendingUploadBarHtml(replyPendingUploadProgress, replyAttachmentUrl)
+                : '';
             const replyContainerClass = [
                 'chat-message-reply',
                 'chat-message-reply-reactable',
@@ -14436,81 +14644,93 @@ function renderChatMessages(messages) {
                 isSelectedReplyTarget ? 'reply-target' : ''
             ].filter(Boolean).join(' ');
             const replyImageHtml = replyImageUrl ? `
-                <button
-                    type="button"
-                    class="chat-message-reply-image-btn chat-image-thumb-btn"
-                    data-image-url="${escapeHtml(replyImageUrl)}"
-                    data-image-title="${escapeHtml(replyImageTitle)}"
-                    aria-label="Abrir imagen"
-                >
-                    <img
-                        class="chat-message-reply-image-thumb"
-                        src="${escapeHtml(replyImageUrl)}"
-                        alt="${escapeHtml(replyImageTitle)}"
-                        loading="lazy"
-                        decoding="async"
-                    />
-                </button>
+                <span class="chat-message-reply-media-stack">
+                    <button
+                        type="button"
+                        class="chat-message-reply-image-btn chat-image-thumb-btn"
+                        data-image-url="${escapeHtml(replyImageUrl)}"
+                        data-image-title="${escapeHtml(replyImageTitle)}"
+                        aria-label="Abrir imagen"
+                    >
+                        <img
+                            class="chat-message-reply-image-thumb"
+                            src="${escapeHtml(replyImageUrl)}"
+                            alt="${escapeHtml(replyImageTitle)}"
+                            loading="lazy"
+                            decoding="async"
+                        />
+                    </button>
+                    ${replyUploadProgressHtml}
+                </span>
             ` : '';
             const replyVideoHtml = replyShowVideo ? `
-                <button
-                    type="button"
-                    class="chat-message-reply-file chat-video-thumb-btn is-video"
-                    data-video-url="${escapeHtml(replyAttachmentUrl)}"
-                    data-video-title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                    data-video-file-id="${escapeHtml(replyAttachmentFileId)}"
-                    data-video-mime="${escapeHtml(replyAttachmentMimeType)}"
-                    data-video-kind="${escapeHtml(replyAttachmentKind)}"
-                    title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                    aria-label="${escapeHtml(replyAttachmentName || 'Vídeo')}"
-                >
-                    <i class="fas fa-film" aria-hidden="true"></i>
-                </button>
+                <span class="chat-message-reply-media-stack">
+                    <button
+                        type="button"
+                        class="chat-message-reply-file chat-video-thumb-btn is-video"
+                        data-video-url="${escapeHtml(replyAttachmentUrl)}"
+                        data-video-title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                        data-video-file-id="${escapeHtml(replyAttachmentFileId)}"
+                        data-video-mime="${escapeHtml(replyAttachmentMimeType)}"
+                        data-video-kind="${escapeHtml(replyAttachmentKind)}"
+                        title="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                        aria-label="${escapeHtml(replyAttachmentName || 'Vídeo')}"
+                    >
+                        <i class="fas fa-film" aria-hidden="true"></i>
+                    </button>
+                    ${replyUploadProgressHtml}
+                </span>
             ` : '';
             const replyAudioHtml = replyShowAudio ? `
-                <span class="chat-message-reply-audio">
-                    <div
-                        class="${replyAudioCardClass}"
-                        data-audio-key="${escapeHtml(replyAudioKey)}"
-                        data-audio-name="${escapeHtml(replyAttachmentName)}"
-                        data-audio-file-id="${escapeHtml(replyAttachmentFileId)}"
-                        data-audio-download-url="${escapeHtml(buildChatAudioDownloadUrl(replyAttachmentUrl) || replyAttachmentUrl)}"
-                        data-requires-download="${replyRequiresAudioDownload ? '1' : '0'}"
-                    >
-                        <button type="button" class="chat-audio-action-btn ${replyAudioActionStateClass}" aria-label="${escapeHtml(replyAudioActionLabel)}">
-                            <i class="${replyAudioActionIconClass}" aria-hidden="true"></i>
-                        </button>
-                        <div class="chat-audio-main">
-                            <div class="chat-audio-progress">
-                                <span class="chat-audio-progress-fill" style="width:0%"></span>
+                <span class="chat-message-reply-media-stack">
+                    <span class="chat-message-reply-audio">
+                        <div
+                            class="${replyAudioCardClass}"
+                            data-audio-key="${escapeHtml(replyAudioKey)}"
+                            data-audio-name="${escapeHtml(replyAttachmentName)}"
+                            data-audio-file-id="${escapeHtml(replyAttachmentFileId)}"
+                            data-audio-download-url="${escapeHtml(buildChatAudioDownloadUrl(replyAttachmentUrl) || replyAttachmentUrl)}"
+                            data-requires-download="${replyRequiresAudioDownload ? '1' : '0'}"
+                        >
+                            <button type="button" class="chat-audio-action-btn ${replyAudioActionStateClass}" aria-label="${escapeHtml(replyAudioActionLabel)}">
+                                <i class="${replyAudioActionIconClass}" aria-hidden="true"></i>
+                            </button>
+                            <div class="chat-audio-main">
+                                <div class="chat-audio-progress">
+                                    <span class="chat-audio-progress-fill" style="width:0%"></span>
+                                </div>
+                                <div class="chat-audio-times">
+                                    <span class="chat-audio-name" title="${escapeHtml(replyAttachmentName || 'audio-chat.mp3')}">${escapeHtml(replyAudioDisplayName)}</span>
+                                    <span class="chat-audio-total-time">0:00</span>
+                                </div>
                             </div>
-                            <div class="chat-audio-times">
-                                <span class="chat-audio-name" title="${escapeHtml(replyAttachmentName || 'audio-chat.mp3')}">${escapeHtml(replyAudioDisplayName)}</span>
-                                <span class="chat-audio-total-time">0:00</span>
-                            </div>
+                            <audio
+                                class="chat-audio-player"
+                                preload="auto"
+                                playsinline
+                                src="${escapeHtml(replyAudioSrc)}"
+                                data-candidates="${escapeHtml(replyAudioCandidates.join('||'))}"
+                                data-candidate-index="${replyAudioCandidateIndex}"
+                            ></audio>
                         </div>
-                        <audio
-                            class="chat-audio-player"
-                            preload="auto"
-                            playsinline
-                            src="${escapeHtml(replyAudioSrc)}"
-                            data-candidates="${escapeHtml(replyAudioCandidates.join('||'))}"
-                            data-candidate-index="${replyAudioCandidateIndex}"
-                        ></audio>
-                    </div>
+                    </span>
+                    ${replyUploadProgressHtml}
                 </span>
             ` : '';
             const replyFileHtml = replyShowFile ? `
-                <a
-                    class="chat-message-reply-file ${replyFileStateClass}"
-                    href="${escapeHtml(replyAttachmentUrl)}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="${escapeHtml(replyAttachmentName || 'Archivo')}"
-                    aria-label="${escapeHtml(replyAttachmentName || 'Archivo')}"
-                >
-                    <i class="${replyFileIconClass}" aria-hidden="true"></i>
-                </a>
+                <span class="chat-message-reply-media-stack">
+                    <a
+                        class="chat-message-reply-file ${replyFileStateClass}"
+                        href="${escapeHtml(replyAttachmentUrl)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="${escapeHtml(replyAttachmentName || 'Archivo')}"
+                        aria-label="${escapeHtml(replyAttachmentName || 'Archivo')}"
+                    >
+                        <i class="${replyFileIconClass}" aria-hidden="true"></i>
+                    </a>
+                    ${replyUploadProgressHtml}
+                </span>
             ` : '';
             const replyTimeHtml = replyTimeLabel
                 ? `<span class="chat-message-reply-time">${escapeHtml(replyTimeLabel)}</span>`
@@ -14555,6 +14775,9 @@ function renderChatMessages(messages) {
         const messageItemCornerTimeHtml = (shouldUseItemCornerTime || shouldUseLineOnlyItemCornerTime)
             ? `<span class="chat-message-corner-time">${escapeHtml(timeLabel)}</span>`
             : '';
+        const compactUploadProgressHtml = isPendingSend && !!attachmentUrl
+            ? buildChatPendingUploadBarHtml(pendingUploadProgress, attachmentUrl)
+            : '';
         let compactPrimaryMediaHtml = '';
         if (shouldCompactPrimaryMedia) {
             if (imageThumbSrc) {
@@ -14578,6 +14801,7 @@ function renderChatMessages(messages) {
                             decoding="async"
                         />
                     </button>
+                    ${compactUploadProgressHtml}
                 </span>
             `;
             } else if (showVideo) {
@@ -14596,6 +14820,7 @@ function renderChatMessages(messages) {
                     >
                         <i class="fas fa-film" aria-hidden="true"></i>
                     </button>
+                    ${compactUploadProgressHtml}
                 </span>
             `;
             } else if (showAudio) {
@@ -14632,6 +14857,7 @@ function renderChatMessages(messages) {
                             ></audio>
                         </div>
                     </span>
+                    ${compactUploadProgressHtml}
                 </span>
             `;
             } else if (showFile) {
@@ -14647,6 +14873,7 @@ function renderChatMessages(messages) {
                     >
                         <i class="${fileIconClass}" aria-hidden="true"></i>
                     </a>
+                    ${compactUploadProgressHtml}
                 </span>
             `;
             }

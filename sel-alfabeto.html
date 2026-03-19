@@ -8184,7 +8184,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXvHzfexP2NEAuPVEd8aKSrfp7nvonGxUt-tB7I4DXLej3KNC1uQ0y7xqbNviPPSpp/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjiztxbswN75x4rJi_KlQMs9Wb1h-HyP3EC0YY50NCxjbRcguCzDmzqNCnxnAQfs4/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -8206,10 +8206,14 @@ const CHAT_THUMB_PRELOAD_LIMIT = 12;
 const CHAT_THUMB_PRELOAD_WAIT_MS = 850;
 const CHAT_THUMB_LOAD_TIMEOUT_MS = 2200;
 const CHAT_NOTIFICATION_SOUND_POOL_SIZE = 3;
-const CHAT_LONG_PRESS_DELETE_MS = 320;
+const CHAT_LONG_PRESS_DELETE_MS = 2000;
+const CHAT_LONG_PRESS_RELEASE_GUARD_MS = 700;
+const CHAT_LONG_PRESS_MOVE_TOLERANCE_PX = 14;
 const CHAT_TAP_MAX_MOVE_PX = 12;
 const CHAT_TAP_SUPPRESS_CLICK_MS = 120;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
+const CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS = 4000;
+const CHAT_ATTACHMENT_HEALTH_CACHE_MS = 5 * 60 * 1000;
 const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 const CHAT_COMPOSER_EMOJIS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤗', '🤔', '😮', '😢', '😭', '😡', '👍', '👏', '🙏', '❤️', '💙', '💚', '💛', '🔥', '✨', '🎉', '🌟', '💯', '🤝', '👌', '🙌', '😉', '😴', '😅'];
 const CHAT_OWN_ROW_IDS_STORAGE_KEY = `chat-own-row-ids-${CHAT_COLUMN_KEY}`;
@@ -8230,6 +8234,7 @@ let chatNotificationAudioPool = [];
 let chatNotificationAudioPrimed = false;
 let chatNotificationAudioPrimingInstalled = false;
 let chatOwnMessageLongPressTimerId = null;
+let chatLongPressGestureActive = false;
 let chatIgnoreOwnMessageClickUntil = 0;
 let chatIgnoreMessageClickUntil = 0;
 let chatSuppressNextMessageClick = false;
@@ -8255,6 +8260,8 @@ let chatReplyTargetVisibilityTimerIds = [];
 let chatLayoutResizeObserver = null;
 let chatPinnedBottomSnapRafId = 0;
 const chatPendingUploadAnimationByAttachmentUrl = new Map();
+const chatPendingAttachmentUploads = new Map();
+let chatAttachmentHealthCache = null;
 let chatForcedLatestMessageRevealRafId = 0;
 let chatVoiceRecorderStream = null;
 let chatVoiceRecorderMediaRecorder = null;
@@ -8606,11 +8613,13 @@ function updateLocalEchoUploadProgressByAttachmentUrl(attachmentUrl, progress, o
     if (!safeAttachmentUrl) return false;
     const safeProgress = normalizeChatPendingUploadProgress(progress);
     let changed = false;
+    let appliedProgress = safeProgress;
 
     chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).map((msg) => {
         if (String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() !== safeAttachmentUrl) return msg;
         const currentProgress = normalizeChatPendingUploadProgress(msg && msg.pendingUploadProgress);
         const nextProgress = options.allowDecrease ? safeProgress : Math.max(currentProgress, safeProgress);
+        appliedProgress = nextProgress;
         if (!options.force && Math.abs(nextProgress - currentProgress) < 0.5) return msg;
         changed = true;
         return {
@@ -8621,11 +8630,11 @@ function updateLocalEchoUploadProgressByAttachmentUrl(attachmentUrl, progress, o
 
     if (!changed) return false;
 
-    const synced = syncChatPendingUploadProgressElements(safeAttachmentUrl, safeProgress);
+    const synced = syncChatPendingUploadProgressElements(safeAttachmentUrl, appliedProgress);
     if (!synced && options.render !== false) {
         renderMergedChatMessages(chatLatestServerMessages);
     }
-    if (safeProgress >= 100) {
+    if (appliedProgress >= 100) {
         clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
     }
     return true;
@@ -8677,6 +8686,38 @@ function buildChatPendingUploadBarHtml(progress, attachmentUrl) {
             <span class="chat-pending-upload-progress-fill" style="width:${safeProgress}%"></span>
         </span>
     `;
+}
+
+function queueChatPendingAttachmentUpload(uploadEntry) {
+    const safeAttachmentUrl = String(uploadEntry && uploadEntry.localObjectUrl ? uploadEntry.localObjectUrl : '').trim();
+    if (!safeAttachmentUrl || !(uploadEntry && uploadEntry.file instanceof File)) return false;
+    const existing = chatPendingAttachmentUploads.get(safeAttachmentUrl) || null;
+    chatPendingAttachmentUploads.set(safeAttachmentUrl, {
+        ...(existing || {}),
+        ...(uploadEntry || {}),
+        localObjectUrl: safeAttachmentUrl,
+        attachmentName: String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : ((existing && existing.attachmentName) || (uploadEntry.file && uploadEntry.file.name) || '')).trim(),
+        attachmentMimeType: String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : ((existing && existing.attachmentMimeType) || (uploadEntry.file && uploadEntry.file.type) || 'application/octet-stream')).trim(),
+        fileSize: Math.max(0, Number(uploadEntry && uploadEntry.fileSize ? uploadEntry.fileSize : ((existing && existing.fileSize) || (uploadEntry.file && uploadEntry.file.size) || 0)) || 0),
+        kind: String(uploadEntry && uploadEntry.kind ? uploadEntry.kind : ((existing && existing.kind) || '')).trim(),
+        sourceKind: String(uploadEntry && uploadEntry.sourceKind ? uploadEntry.sourceKind : ((existing && existing.sourceKind) || '')).trim(),
+        payloadMessage: String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : ((existing && existing.payloadMessage) || '')).trim(),
+        replyThreadRow: Number(uploadEntry && uploadEntry.replyThreadRow ? uploadEntry.replyThreadRow : ((existing && existing.replyThreadRow) || 0)) || 0,
+        retryCount: Math.max(0, Number(uploadEntry && uploadEntry.retryCount != null ? uploadEntry.retryCount : ((existing && existing.retryCount) || 0)) || 0),
+        lastAttemptAt: Math.max(0, Number(uploadEntry && uploadEntry.lastAttemptAt ? uploadEntry.lastAttemptAt : ((existing && existing.lastAttemptAt) || 0)) || 0),
+        queuedAt: Math.max(0, Number((existing && existing.queuedAt) || Date.now()) || Date.now())
+    });
+    return true;
+}
+
+function removeChatPendingAttachmentUpload(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    return chatPendingAttachmentUploads.delete(safeAttachmentUrl);
+}
+
+function hasChatPendingAttachmentUploads() {
+    return chatPendingAttachmentUploads.size > 0;
 }
 
 function buildChatMessagesSignature(messages) {
@@ -8879,6 +8920,7 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
             } else {
                 markChatMessageRecentlyConfirmed(msg);
             }
+            removeChatPendingAttachmentUpload(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             clearChatPendingUploadProgressAnimation(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             releaseChatBlobUrl(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
             return false;
@@ -9783,6 +9825,40 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
     }
 }
 
+function markLocalEchoAttachmentUploadCompleted(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    let changed = false;
+    let confirmedMessage = null;
+
+    chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).map((msg) => {
+        if (String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() !== safeAttachmentUrl) return msg;
+        if (!msg.pending && normalizeChatPendingUploadProgress(msg.pendingUploadProgress) >= 100) {
+            confirmedMessage = msg;
+            return msg;
+        }
+        const nextMsg = {
+            ...msg,
+            pending: false,
+            pendingUploadProgress: 100
+        };
+        changed = true;
+        confirmedMessage = nextMsg;
+        return nextMsg;
+    });
+
+    clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+    syncChatPendingUploadProgressElements(safeAttachmentUrl, 100);
+
+    if (confirmedMessage) {
+        markChatMessageRecentlyConfirmed(confirmedMessage);
+    }
+    if (changed) {
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+    return changed;
+}
+
 function applyLocalChatMessageEdit(editTarget, nextMessage) {
     const targetRow = Number(editTarget && editTarget.row ? editTarget.row : 0) || 0;
     const cleanMessage = String(nextMessage || '').trim();
@@ -10327,11 +10403,79 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
 
     let longPressTriggered = false;
+    let pressStartX = null;
+    let pressStartY = null;
+    const resetPressOrigin = () => {
+        pressStartX = null;
+        pressStartY = null;
+    };
+    const getPointerPoint = (event) => {
+        if (!event) return null;
+        if (event.touches && event.touches.length) {
+            return {
+                x: Number(event.touches[0].clientX),
+                y: Number(event.touches[0].clientY)
+            };
+        }
+        if (event.changedTouches && event.changedTouches.length) {
+            return {
+                x: Number(event.changedTouches[0].clientX),
+                y: Number(event.changedTouches[0].clientY)
+            };
+        }
+        if (typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+            return {
+                x: Number(event.clientX),
+                y: Number(event.clientY)
+            };
+        }
+        return null;
+    };
+    const storePressOrigin = (event) => {
+        const point = getPointerPoint(event);
+        if (!point) {
+            resetPressOrigin();
+            return;
+        }
+        pressStartX = point.x;
+        pressStartY = point.y;
+    };
+    const movedBeyondLongPressTolerance = (event) => {
+        if (pressStartX == null || pressStartY == null) return false;
+        const point = getPointerPoint(event);
+        if (!point) return false;
+        const deltaX = point.x - pressStartX;
+        const deltaY = point.y - pressStartY;
+        return Math.hypot(deltaX, deltaY) > CHAT_LONG_PRESS_MOVE_TOLERANCE_PX;
+    };
     const clearTimer = () => {
         if (chatOwnMessageLongPressTimerId) {
             clearTimeout(chatOwnMessageLongPressTimerId);
             chatOwnMessageLongPressTimerId = null;
         }
+    };
+    const finalizeLongPress = (event) => {
+        clearTimer();
+        if (!longPressTriggered) {
+            chatLongPressGestureActive = false;
+            resetPressOrigin();
+            return;
+        }
+        if (event && event.cancelable) {
+            event.preventDefault();
+        }
+        if (event && typeof event.stopPropagation === 'function') {
+            event.stopPropagation();
+        }
+        chatSuppressNextMessageClick = true;
+        chatIgnoreMessageClickUntil = Date.now() + CHAT_LONG_PRESS_RELEASE_GUARD_MS;
+        chatIgnoreOwnMessageClickUntil = Date.now() + CHAT_LONG_PRESS_RELEASE_GUARD_MS;
+        scheduleChatSuppressNextMessageClickReset(CHAT_LONG_PRESS_RELEASE_GUARD_MS);
+        setTimeout(() => {
+            longPressTriggered = false;
+            chatLongPressGestureActive = false;
+        }, CHAT_LONG_PRESS_RELEASE_GUARD_MS);
+        resetPressOrigin();
     };
     const onStart = (event) => {
         if (event.button != null && event.button !== 0) return;
@@ -10343,38 +10487,36 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
         }
         clearTimer();
         longPressTriggered = false;
+        chatLongPressGestureActive = false;
+        storePressOrigin(event);
         chatOwnMessageLongPressTimerId = setTimeout(() => {
             longPressTriggered = true;
+            chatLongPressGestureActive = true;
             chatSuppressNextMessageClick = true;
-            chatIgnoreMessageClickUntil = Date.now() + 400;
-            chatIgnoreOwnMessageClickUntil = Date.now() + 400;
-            scheduleChatSuppressNextMessageClickReset(400);
             vibrar(45);
             openChatMessageActionMenu(targetMessage, targetEl, currentUserLabel);
         }, CHAT_LONG_PRESS_DELETE_MS);
     };
-    const onEnd = (event) => {
+    const onMove = (event) => {
+        if (longPressTriggered) return;
+        if (!movedBeyondLongPressTolerance(event)) return;
         clearTimer();
-        if (longPressTriggered) {
-            if (event && event.cancelable) {
-                event.preventDefault();
-            }
-            if (event && typeof event.stopPropagation === 'function') {
-                event.stopPropagation();
-            }
-            setTimeout(() => {
-                longPressTriggered = false;
-            }, 0);
-        }
     };
 
     targetEl.addEventListener('mousedown', onStart);
-    targetEl.addEventListener('mouseup', onEnd);
-    targetEl.addEventListener('mouseleave', clearTimer);
+    targetEl.addEventListener('mouseup', finalizeLongPress);
+    targetEl.addEventListener('mouseleave', (event) => {
+        if (longPressTriggered) {
+            finalizeLongPress(event);
+            return;
+        }
+        clearTimer();
+        resetPressOrigin();
+    });
     targetEl.addEventListener('touchstart', onStart, { passive: false });
-    targetEl.addEventListener('touchmove', clearTimer, { passive: true });
-    targetEl.addEventListener('touchend', onEnd, { passive: false });
-    targetEl.addEventListener('touchcancel', clearTimer);
+    targetEl.addEventListener('touchmove', onMove, { passive: true });
+    targetEl.addEventListener('touchend', finalizeLongPress, { passive: false });
+    targetEl.addEventListener('touchcancel', finalizeLongPress);
     targetEl.addEventListener('selectstart', (event) => {
         event.preventDefault();
     });
@@ -12164,7 +12306,17 @@ async function sendChatVoiceRecording() {
     void submitChatAttachment(file, 'audio');
 }
 
-async function checkChatAttachmentHealth() {
+async function checkChatAttachmentHealth(options = {}) {
+    const now = Date.now();
+    const force = !!(options && options.force);
+    if (!force && chatAttachmentHealthCache && chatAttachmentHealthCache.result && Number(chatAttachmentHealthCache.expiresAt || 0) > now) {
+        const cachedResult = { ...chatAttachmentHealthCache.result };
+        if (cachedResult.baseUrl) {
+            PORTALB_SCRIPT_URL = cachedResult.baseUrl;
+        }
+        return cachedResult;
+    }
+
     const urls = getPortalBCandidateUrls();
     let lastReason = 'health_fetch_failed';
     for (const baseUrl of urls) {
@@ -12178,18 +12330,200 @@ async function checkChatAttachmentHealth() {
             const payload = await response.json();
             if (payload && payload.ok === true && payload.driveReady === true) {
                 PORTALB_SCRIPT_URL = baseUrl;
-                return { ok: true };
+                const result = { ok: true, baseUrl };
+                chatAttachmentHealthCache = {
+                    result,
+                    expiresAt: now + CHAT_ATTACHMENT_HEALTH_CACHE_MS
+                };
+                return result;
             }
             if (payload && payload.error === 'missing_drive_scope') {
                 PORTALB_SCRIPT_URL = baseUrl;
-                return { ok: false, reason: 'missing_drive_scope', requiredScope: payload.requiredScope || '' };
+                const result = { ok: false, reason: 'missing_drive_scope', requiredScope: payload.requiredScope || '', baseUrl };
+                chatAttachmentHealthCache = {
+                    result,
+                    expiresAt: now + 30000
+                };
+                return result;
             }
             lastReason = String(payload && payload.error ? payload.error : 'health_unknown');
         } catch (error) {
             lastReason = 'health_fetch_failed';
         }
     }
-    return { ok: false, reason: lastReason };
+    const result = { ok: false, reason: lastReason };
+    chatAttachmentHealthCache = {
+        result,
+        expiresAt: now + 15000
+    };
+    return result;
+}
+
+function isRecoverableChatAttachmentUploadError(error) {
+    const message = String(error && error.message ? error.message : '').trim();
+    if (!message) return true;
+    if (message === 'missing_drive_scope') return false;
+    if (message === 'file_read_error') return false;
+    if (message === 'invalid_data_url') return false;
+    return true;
+}
+
+async function performChatAttachmentUpload(uploadEntry) {
+    const safeAttachmentUrl = String(uploadEntry && uploadEntry.localObjectUrl ? uploadEntry.localObjectUrl : '').trim();
+    const file = uploadEntry && uploadEntry.file instanceof File ? uploadEntry.file : null;
+    if (!safeAttachmentUrl || !file) return { status: 'failed' };
+
+    const fileSize = Math.max(0, Number(uploadEntry && uploadEntry.fileSize ? uploadEntry.fileSize : file.size) || 0);
+    const kind = String(uploadEntry && uploadEntry.kind ? uploadEntry.kind : '').trim().toLowerCase();
+    const sourceKind = String(uploadEntry && uploadEntry.sourceKind ? uploadEntry.sourceKind : '').trim().toLowerCase();
+    const payloadMessage = String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : '').trim();
+    const attachmentName = String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : (file.name || `${kind}-adjunto`)).trim();
+    const attachmentMimeType = String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : (file.type || 'application/octet-stream')).trim();
+    const replyThreadRow = Number(uploadEntry && uploadEntry.replyThreadRow ? uploadEntry.replyThreadRow : 0) || 0;
+    const identity = getStudentIdentityForChat();
+
+    chatAttachmentUploadInProgress = true;
+    disableChatAttachmentUI(true);
+
+    try {
+        const [attachmentHealth, dataBase64] = await Promise.all([
+            checkChatAttachmentHealth(),
+            readFileAsDataBase64(file, {
+                onProgress: (event) => {
+                    if (!event || !event.lengthComputable) return;
+                    const loaded = Math.max(0, Number(event.loaded) || 0);
+                    const total = Math.max(1, Number(event.total) || fileSize || 1);
+                    const ratio = Math.max(0, Math.min(1, loaded / total));
+                    updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 6 + (ratio * 76));
+                }
+            })
+        ]);
+        if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
+            throw new Error('missing_drive_scope');
+        }
+        if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
+            throw new Error('attachment_health_failed');
+        }
+        updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 84, { force: true });
+        animateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 96, 1400);
+        await postToPortalB({
+            type: 'chat_attachment',
+            columna: CHAT_COLUMN_KEY,
+            nombre: identity.firstName,
+            apellido: identity.lastName,
+            userDisplayName: identity.displayName,
+            mensaje: payloadMessage,
+            attachment: {
+                name: attachmentName,
+                mimeType: attachmentMimeType,
+                size: fileSize,
+                kind: kind,
+                sourceKind: sourceKind,
+                dataBase64: dataBase64
+            }
+        }, { allowBeacon: false, onlyNoCors: true });
+        updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 100, { force: true });
+        markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
+        removeChatPendingAttachmentUpload(safeAttachmentUrl);
+        return { status: 'success', replyThreadRow };
+    } catch (error) {
+        const recoverable = isRecoverableChatAttachmentUploadError(error);
+        console.warn('Error enviando adjunto al chat:', error);
+        clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+
+        if (recoverable) {
+            queueChatPendingAttachmentUpload({
+                ...uploadEntry,
+                localObjectUrl: safeAttachmentUrl,
+                file,
+                fileSize,
+                kind,
+                sourceKind,
+                payloadMessage,
+                attachmentName,
+                attachmentMimeType,
+                replyThreadRow,
+                retryCount: (Number(uploadEntry && uploadEntry.retryCount ? uploadEntry.retryCount : 0) || 0) + 1,
+                lastAttemptAt: Date.now()
+            });
+            updateLocalEchoUploadProgressByAttachmentUrl(
+                safeAttachmentUrl,
+                Math.max(getLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl), 8),
+                { force: true }
+            );
+            if (!navigator.onLine) {
+                showConnectivityOverlay('Sin conexión o muy lenta');
+            }
+            return { status: 'queued', replyThreadRow };
+        }
+
+        removeChatPendingAttachmentUpload(safeAttachmentUrl);
+        chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== safeAttachmentUrl);
+        renderMergedChatMessages(chatLatestServerMessages);
+        releaseChatBlobUrl(safeAttachmentUrl);
+        if (String(error && error.message || '') === 'missing_drive_scope') {
+            alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
+        }
+        return { status: 'failed', replyThreadRow };
+    } finally {
+        chatAttachmentUploadInProgress = false;
+        disableChatAttachmentUI(false);
+    }
+}
+
+async function syncChatPendingAttachmentUploadsWithServer() {
+    const previousServerMessages = Array.isArray(chatLatestServerMessages) ? [...chatLatestServerMessages] : [];
+    try {
+        const messages = await fetchChatMessages();
+        chatLatestServerMessages = Array.isArray(messages) ? messages : [];
+        reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
+        if (document.getElementById('chat-messages-list')) {
+            renderMergedChatMessages(chatLatestServerMessages);
+        }
+        return true;
+    } catch (error) {
+        console.warn('Error sincronizando adjuntos pendientes:', error);
+        return false;
+    }
+}
+
+async function retryPendingChatAttachmentUploads() {
+    if (!hasChatPendingAttachmentUploads()) return false;
+    if (chatAttachmentUploadInProgress) return false;
+    if (!navigator.onLine || !lastConnectionStatus) return false;
+
+    let attempted = false;
+    for (const uploadEntry of Array.from(chatPendingAttachmentUploads.values())) {
+        const safeAttachmentUrl = String(uploadEntry && uploadEntry.localObjectUrl ? uploadEntry.localObjectUrl : '').trim();
+        if (!safeAttachmentUrl || !chatPendingAttachmentUploads.has(safeAttachmentUrl)) continue;
+        if (chatAttachmentUploadInProgress || !navigator.onLine || !lastConnectionStatus) break;
+        const latestEntry = chatPendingAttachmentUploads.get(safeAttachmentUrl);
+        const lastAttemptAt = Math.max(0, Number(latestEntry && latestEntry.lastAttemptAt ? latestEntry.lastAttemptAt : 0) || 0);
+        if (lastAttemptAt && (Date.now() - lastAttemptAt) < CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS) continue;
+        attempted = true;
+        await performChatAttachmentUpload(latestEntry);
+    }
+    return attempted;
+}
+
+async function processPendingChatAttachmentUploadsAfterReconnect() {
+    if (chatAttachmentUploadInProgress) return false;
+    if (!navigator.onLine || !lastConnectionStatus) return false;
+
+    if (!hasChatPendingAttachmentUploads()) {
+        if (document.getElementById('chat-overlay')) {
+            await refreshChatMessages(false, false);
+        }
+        return false;
+    }
+
+    await syncChatPendingAttachmentUploadsWithServer();
+    if (!hasChatPendingAttachmentUploads()) return true;
+    const attempted = await retryPendingChatAttachmentUploads();
+    if (attempted) {
+        await syncChatPendingAttachmentUploadsWithServer();
+    }
+    return attempted;
 }
 
 async function submitChatAttachment(file, forcedKind = '') {
@@ -12232,6 +12566,8 @@ async function submitChatAttachment(file, forcedKind = '') {
     const kind = resolveChatAttachmentKind(requestedKind, file.type, file.name, '');
     const sourceKind = normalizeChatAttachmentSourceKind(requestedKind || kind, kind, file.name);
     const localObjectUrl = URL.createObjectURL(file);
+    const attachmentName = String(file.name || `${kind}-adjunto`).trim();
+    const attachmentMimeType = String(file.type || 'application/octet-stream').trim();
 
     chatAttachmentUploadInProgress = true;
     disableChatAttachmentUI(true);
@@ -12244,8 +12580,8 @@ async function submitChatAttachment(file, forcedKind = '') {
             kind,
             sourceKind,
             url: localObjectUrl,
-            name: String(file.name || `${kind}-adjunto`).trim(),
-            mimeType: String(file.type || 'application/octet-stream').trim(),
+            name: attachmentName,
+            mimeType: attachmentMimeType,
             size: fileSize
         };
         chatEditTarget.attachmentRemoved = false;
@@ -12266,7 +12602,7 @@ async function submitChatAttachment(file, forcedKind = '') {
             kind,
             sourceKind,
             url: localObjectUrl,
-            name: String(file.name || `${kind}-adjunto`).trim(),
+            name: attachmentName,
             mimeType: String(file.type || '').trim(),
             size: fileSize
         },
@@ -12284,69 +12620,45 @@ async function submitChatAttachment(file, forcedKind = '') {
     updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 4, { force: true });
 
     try {
-        const [attachmentHealth, dataBase64] = await Promise.all([
-            checkChatAttachmentHealth(),
-            readFileAsDataBase64(file, {
-                onProgress: (event) => {
-                    if (!event || !event.lengthComputable) return;
-                    const loaded = Math.max(0, Number(event.loaded) || 0);
-                    const total = Math.max(1, Number(event.total) || fileSize || 1);
-                    const ratio = Math.max(0, Math.min(1, loaded / total));
-                    updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 6 + (ratio * 76));
+        const result = await performChatAttachmentUpload({
+            localObjectUrl,
+            file,
+            fileSize,
+            kind,
+            sourceKind,
+            payloadMessage,
+            attachmentName,
+            attachmentMimeType,
+            replyThreadRow: activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0
+        });
+        if (result && result.status === 'success') {
+            setTimeout(() => {
+                if (document.getElementById('chat-overlay')) {
+                    void refreshChatMessages(
+                        false,
+                        false,
+                        replyScrollSnapshot
+                            ? { preserveScrollSnapshot: captureChatScrollSnapshot() || replyScrollSnapshot }
+                            : null
+                    ).then(() => {
+                        if (shouldScrollReplyThreadToBottom) {
+                            scrollChatThreadToBottom(activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0, false);
+                        }
+                    });
                 }
-            })
-        ]);
-        if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
-            throw new Error('missing_drive_scope');
+            }, 180);
+            return true;
         }
-        if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
-            throw new Error('attachment_health_failed');
-        }
-        updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 84, { force: true });
-        animateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 96, 1400);
-        await postToPortalB({
-            type: 'chat_attachment',
-            columna: CHAT_COLUMN_KEY,
-            nombre: identity.firstName,
-            apellido: identity.lastName,
-            userDisplayName: identity.displayName,
-            mensaje: payloadMessage,
-            attachment: {
-                name: String(file.name || `${kind}-adjunto`).trim(),
-                mimeType: String(file.type || 'application/octet-stream').trim(),
-                size: fileSize,
-                kind: kind,
-                sourceKind: sourceKind,
-                dataBase64: dataBase64
-            }
-        }, { allowBeacon: false, onlyNoCors: true });
-        updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 100, { force: true });
-        setTimeout(() => {
-            if (document.getElementById('chat-overlay')) {
-                void refreshChatMessages(
-                    false,
-                    false,
-                    replyScrollSnapshot
-                        ? { preserveScrollSnapshot: captureChatScrollSnapshot() || replyScrollSnapshot }
-                        : null
-                ).then(() => {
-                    if (shouldScrollReplyThreadToBottom) {
-                        scrollChatThreadToBottom(activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0, false);
-                    }
-                });
-            }
-        }, 180);
-        return true;
+        return !!(result && result.status === 'queued');
     } catch (error) {
         console.warn('Error enviando adjunto al chat:', error);
         clearChatPendingUploadProgressAnimation(localObjectUrl);
         chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== localObjectUrl);
         renderMergedChatMessages(chatLatestServerMessages);
+        removeChatPendingAttachmentUpload(localObjectUrl);
         releaseChatBlobUrl(localObjectUrl);
         if (String(error && error.message || '') === 'missing_drive_scope') {
             alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
-        } else {
-            alert('No se pudo subir el adjunto. Intenta de nuevo.');
         }
         return false;
     } finally {
@@ -14938,6 +15250,7 @@ function renderChatMessages(messages) {
         const triggerTap = (event) => {
             if (moved) return;
             if (shouldIgnoreTarget(event)) return;
+            if (chatLongPressGestureActive) return;
             if (chatSuppressNextMessageClick) return;
             if (Date.now() < chatIgnoreMessageClickUntil) return;
             if (event && event.cancelable) event.preventDefault();
@@ -15017,6 +15330,11 @@ function renderChatMessages(messages) {
             toggleChatReplyTarget(targetMessage, currentUserLabel);
         };
         item.addEventListener('click', (event) => {
+            if (chatLongPressGestureActive) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             if (chatSuppressNextMessageClick) {
                 chatSuppressNextMessageClick = false;
                 event.preventDefault();
@@ -15044,6 +15362,11 @@ function renderChatMessages(messages) {
             openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
         };
         item.addEventListener('click', (event) => {
+            if (chatLongPressGestureActive) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             if (chatSuppressNextMessageClick) {
                 chatSuppressNextMessageClick = false;
                 event.preventDefault();
@@ -15091,6 +15414,11 @@ function renderChatMessages(messages) {
         };
         item.addEventListener('click', (event) => {
             if (event.target.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-card, button, a, audio')) {
+                return;
+            }
+            if (chatLongPressGestureActive) {
+                event.preventDefault();
+                event.stopPropagation();
                 return;
             }
             if (chatSuppressNextMessageClick) {
@@ -20145,7 +20473,11 @@ function updateConnectivityStatus(isConnected, message = '') {
     console.log(`📊 Estado de conectividad: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'} - ${message}`);
     
     if (isConnected) {
-        hideConnectivityOverlay();
+        if (isConnectivityOverlayVisible) {
+            hideConnectivityOverlay();
+        } else if (hasChatPendingAttachmentUploads()) {
+            void processPendingChatAttachmentUploadsAfterReconnect();
+        }
     } else {
         showConnectivityOverlay(message);
     }
@@ -20204,9 +20536,7 @@ function hideConnectivityOverlay() {
             // Reabilitar interacciones con el juego
             enableGameInteractions();
 
-            if (document.getElementById('chat-overlay')) {
-                void refreshChatMessages(false, false);
-            }
+            void processPendingChatAttachmentUploadsAfterReconnect();
             
             // Reset del contenido del overlay
             setTimeout(() => {

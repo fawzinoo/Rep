@@ -10399,6 +10399,7 @@ function scheduleChatSuppressNextMessageClickReset(durationMs = CHAT_TAP_SUPPRES
 function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, options = {}) {
     if (!targetEl || !targetMessage || !canReactToChatMessage(targetMessage)) return;
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
+    const suppressKeyboard = !!(options && options.suppressKeyboard);
 
     let longPressTriggered = false;
     const clearTimer = () => {
@@ -10414,6 +10415,9 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
         }
         if (event.target && event.target.closest && event.target.closest('.chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-player, a, audio, button')) {
             return;
+        }
+        if (suppressKeyboard) {
+            dismissChatKeyboardForOwnMessageInteraction();
         }
         clearTimer();
         longPressTriggered = false;
@@ -10463,7 +10467,8 @@ function bindChatOwnMessageLongPress(messagesEl, renderMessages, currentUserLabe
         const idx = Number(item.dataset.msgIndex);
         const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
         bindChatReactionLongPress(item, targetMessage, currentUserLabel, {
-            ignoreNestedSelector: '.chat-message-reply-reactable'
+            ignoreNestedSelector: '.chat-message-reply-reactable',
+            suppressKeyboard: item.classList.contains('is-self')
         });
     });
 }
@@ -15155,6 +15160,7 @@ function renderChatMessages(messages) {
         let moved = false;
         let activeTouchId = null;
         const extraIgnoreSelector = String(options && options.ignoreSelector ? options.ignoreSelector : '').trim();
+        const suppressKeyboard = !!(options && options.suppressKeyboard);
 
         const shouldIgnoreTarget = (event) => {
             if (!event || !event.target || !event.target.closest) return false;
@@ -15171,6 +15177,10 @@ function renderChatMessages(messages) {
             const inputEl = document.getElementById('chat-input');
             if (!inputEl || document.activeElement !== inputEl) return;
             if (shouldIgnoreTarget(event)) return;
+            if (suppressKeyboard) {
+                dismissChatKeyboardForOwnMessageInteraction();
+                return;
+            }
             if (event && event.cancelable) event.preventDefault();
             requestChatKeyboardHold(2200, inputEl);
         };
@@ -15278,6 +15288,7 @@ function renderChatMessages(messages) {
                 clearChatDeleteArm(true);
                 return;
             }
+            dismissChatKeyboardForOwnMessageInteraction();
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
@@ -15295,7 +15306,10 @@ function renderChatMessages(messages) {
             event.stopPropagation();
             handleEditMenu();
         });
-        installFastTap(item, handleEditMenu, { ignoreSelector: '.chat-message-reply-reactable' });
+        installFastTap(item, handleEditMenu, {
+            ignoreSelector: '.chat-message-reply-reactable',
+            suppressKeyboard: true
+        });
     });
 
     const reactableReplyItems = messagesEl.querySelectorAll('.chat-message-reply-reactable');
@@ -15309,13 +15323,17 @@ function renderChatMessages(messages) {
         const reactionTarget = parentMessage && replyEntry
             ? getReactionTargetFromAttachedReply(parentMessage, replyEntry)
             : null;
+        const actionTarget = parentMessage && replyEntry
+            ? getActionTargetFromAttachedReply(parentMessage, replyEntry)
+            : null;
+        const suppressKeyboardForOwnReply = !!(actionTarget && isAttachedReplyOwnedForActionMenu(actionTarget, currentUserLabel));
         const handleAttachedReplyAction = () => {
             if (!parentMessage || !replyEntry || !canReplyToAttachedReply(replyEntry, currentUserLabel)) return;
-            const actionTarget = getActionTargetFromAttachedReply(parentMessage, replyEntry);
             actionTarget.__ownedByVisibleLabelInCurrentBubble =
                 areSameChatUserLabels(parentMessage && parentMessage.user ? parentMessage.user : '', currentUserLabel)
                 && areSameChatUserLabels(replyEntry && replyEntry.author ? replyEntry.author : '', currentUserLabel);
             if (actionTarget && isAttachedReplyOwnedForActionMenu(actionTarget, currentUserLabel)) {
+                dismissChatKeyboardForOwnMessageInteraction();
                 openChatOwnMessageChoiceMenu(
                     actionTarget,
                     item,
@@ -15347,8 +15365,12 @@ function renderChatMessages(messages) {
         installFastTap(item, () => {
             vibrar(40);
             handleAttachedReplyAction();
+        }, {
+            suppressKeyboard: suppressKeyboardForOwnReply
         });
-        bindChatReactionLongPress(item, reactionTarget, currentUserLabel);
+        bindChatReactionLongPress(item, reactionTarget, currentUserLabel, {
+            suppressKeyboard: suppressKeyboardForOwnReply
+        });
     });
 
     const threadButtons = messagesEl.querySelectorAll('.chat-message-thread-btn');
@@ -15590,6 +15612,15 @@ function cancelChatKeyboardRefocus() {
         clearTimeout(chatKeyboardRefocusTimerId);
         chatKeyboardRefocusTimerId = null;
     }
+}
+
+function dismissChatKeyboardForOwnMessageInteraction() {
+    cancelChatKeyboardRefocus();
+    const inputEl = document.getElementById('chat-input');
+    if (!inputEl || document.activeElement !== inputEl) return;
+    try {
+        inputEl.blur();
+    } catch (_) {}
 }
 
 function setChatViewportVars() {

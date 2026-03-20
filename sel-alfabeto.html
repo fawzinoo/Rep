@@ -3777,6 +3777,44 @@
     box-shadow: 0 0 12px rgba(122, 90, 61, 0.18);
 }
 
+.chat-history-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4px 0 12px;
+}
+
+.chat-history-loader-btn {
+    border: 1px solid rgba(122, 90, 61, 0.18);
+    background: rgba(255, 251, 245, 0.96);
+    color: #6c5843;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 8px 18px rgba(95, 73, 51, 0.08);
+}
+
+.chat-history-loader-btn[disabled] {
+    cursor: default;
+    opacity: 0.78;
+}
+
+.chat-history-loader-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(122, 90, 61, 0.16);
+    border-top-color: #7a5a3d;
+    animation: chatLoadingSpin 0.75s linear infinite;
+}
+
 @keyframes chatLoadingSpin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -8364,7 +8402,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxtrAsoLhZP-ziiupHpAtJvFQgObqFWo-cYMTGw5fKhb4hyrdN7hv8ubHJIffSBuxyd/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxUsc50dqGdjJg40CC1ZpJmPXyCZc_2-PQvW1lfwdVoMA8drVXfW5QZwEXc4qUhWazB/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -8376,9 +8414,12 @@ const RANKING_GENERAL_MODE = 'ranking_general';
 const RANKING_SCOPE = 'alfabeto';
 const CHAT_MODE = 'chat_messages';
 const CHAT_COLUMN_KEY = 'U1L0T1';
-const CHAT_REFRESH_INTERVAL_MS = 10000;
+const CHAT_FETCH_LIMIT = 80;
+const CHAT_REFRESH_INTERVAL_MS = 1200;
+const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
-const CHAT_ATTACHMENT_MAX_BYTES = 7 * 1024 * 1024;
+// 0 = sin limite propio de la aplicacion; siguen aplicando limites del navegador y Apps Script.
+const CHAT_ATTACHMENT_MAX_BYTES = 0;
 const CHAT_FILE_ATTACHMENT_ACCEPT = 'audio/*,text/*,application/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.txt,.csv,.tsv,.json,.xml,.zip,.rar,.7z,.tar,.gz,.bz2,.md';
 const CHAT_ATTACHMENT_V1_PREFIX = '__CHAT_ATTACHMENT_V1__';
 const CHAT_THUMB_SIZE = 'w140';
@@ -8391,19 +8432,26 @@ const CHAT_LONG_PRESS_CLICK_BLOCK_MS = 2000;
 const CHAT_TAP_MAX_MOVE_PX = 12;
 const CHAT_TAP_SUPPRESS_CLICK_MS = 120;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
+const CHAT_LOAD_OLDER_TRIGGER_PX = 56;
 const CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS = 4000;
 const CHAT_ATTACHMENT_HEALTH_CACHE_MS = 5 * 60 * 1000;
 const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 const CHAT_COMPOSER_EMOJIS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤗', '🤔', '😮', '😢', '😭', '😡', '👍', '👏', '🙏', '❤️', '💙', '💚', '💛', '🔥', '✨', '🎉', '🌟', '💯', '🤝', '👌', '🙌', '😉', '😴', '😅'];
 const CHAT_OWN_ROW_IDS_STORAGE_KEY = `chat-own-row-ids-${CHAT_COLUMN_KEY}`;
 const CHAT_EDIT_META_STORAGE_KEY = `chat-edit-meta-${CHAT_COLUMN_KEY}`;
-let chatRefreshIntervalId = null;
+let chatRefreshTimerId = null;
+let chatRefreshInFlight = false;
+let chatAutoRefreshCycleId = 0;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
 let chatLastRenderedSignature = '';
 let chatHasLoadedOnce = false;
 let chatLatestServerMessages = [];
 let chatLocalEchoMessages = [];
+let chatHasMoreOlderMessages = false;
+let chatIsLoadingOlderMessages = false;
+let chatOldestLoadedServerRow = 0;
+let chatNewestLoadedServerRow = 0;
 let chatReplyTarget = null;
 let chatEditTarget = null;
 let chatAttachmentUploadInProgress = false;
@@ -8432,6 +8480,7 @@ const chatAudioBlobUrlByFileId = new Map();
 const chatRecentlyConfirmedMessageKeys = new Map();
 const chatRecentlyConfirmedCleanupTimers = new Map();
 const chatClientEditMetaByRow = loadChatEditMetaByRow();
+const chatOptimisticEditPatchByRow = new Map();
 let chatOwnedRowIds = loadChatOwnedRowIds();
 let chatKeepKeyboardUntil = 0;
 let chatKeyboardRefocusTimerId = null;
@@ -8444,6 +8493,8 @@ let chatPersistentBlockShadowKey = '';
 const chatPendingUploadAnimationByAttachmentUrl = new Map();
 const chatPendingAttachmentUploads = new Map();
 let chatAttachmentHealthCache = null;
+const chatAttachmentHashPromiseBySignature = new Map();
+const chatAttachmentReuseLookupCache = new Map();
 let chatForcedLatestMessageRevealRafId = 0;
 let chatVoiceRecorderStream = null;
 let chatVoiceRecorderMediaRecorder = null;
@@ -8599,6 +8650,120 @@ function rememberChatClientEditMeta(rowValue, editTimestampValue, editTimeLabelV
     saveChatEditMetaByRow();
 }
 
+function clearChatOptimisticEditPatch(rowValue) {
+    const row = Number(rowValue) || 0;
+    if (!row) return;
+    const patch = chatOptimisticEditPatchByRow.get(row);
+    if (!patch) return;
+    const localAttachmentUrl = String(patch.localAttachmentUrl || '').trim();
+    if (localAttachmentUrl) {
+        releaseChatBlobUrl(localAttachmentUrl);
+    }
+    chatOptimisticEditPatchByRow.delete(row);
+}
+
+function rememberChatOptimisticEditPatch(rowValue, patch) {
+    const row = Number(rowValue) || 0;
+    if (!row) return;
+    if (!patch || typeof patch !== 'object') {
+        clearChatOptimisticEditPatch(row);
+        return;
+    }
+    clearChatOptimisticEditPatch(row);
+    chatOptimisticEditPatchByRow.set(row, {
+        ...patch,
+        row
+    });
+}
+
+function applyChatOptimisticEditPatch(msg, patch) {
+    if (!msg || !patch) return msg;
+    const nextMsg = {
+        ...msg,
+        message: String(patch.message || '').trim(),
+        edited: true,
+        editTimestamp: String(patch.editTimestamp || '').trim(),
+        editTimeLabel: String(patch.editTimeLabel || '').trim()
+    };
+    const attachmentMode = String(patch.attachmentMode || 'keep').trim().toLowerCase();
+    if (attachmentMode === 'remove') {
+        nextMsg.imageUrl = '';
+        nextMsg.imageTitle = '';
+        nextMsg.attachmentKind = '';
+        nextMsg.attachmentSourceKind = '';
+        nextMsg.attachmentUrl = '';
+        nextMsg.attachmentName = '';
+        nextMsg.attachmentMimeType = '';
+        nextMsg.attachmentSize = 0;
+        nextMsg.attachmentFileId = '';
+        return nextMsg;
+    }
+    if (attachmentMode === 'replace') {
+        const attachmentKind = String(patch.attachmentKind || '').trim().toLowerCase();
+        const attachmentUrl = String(patch.attachmentUrl || '').trim();
+        const attachmentName = String(patch.attachmentName || '').trim();
+        nextMsg.imageUrl = attachmentKind === 'image' ? attachmentUrl : '';
+        nextMsg.imageTitle = attachmentKind === 'image' ? (attachmentName || 'Imagen') : '';
+        nextMsg.attachmentKind = attachmentKind;
+        nextMsg.attachmentSourceKind = String(patch.attachmentSourceKind || attachmentKind).trim().toLowerCase();
+        nextMsg.attachmentUrl = attachmentUrl;
+        nextMsg.attachmentName = attachmentName;
+        nextMsg.attachmentMimeType = String(patch.attachmentMimeType || '').trim();
+        nextMsg.attachmentSize = Number(patch.attachmentSize) || 0;
+        nextMsg.attachmentFileId = String(patch.attachmentFileId || '').trim();
+    }
+    return nextMsg;
+}
+
+function hasServerConfirmedChatOptimisticEdit(msg, patch) {
+    if (!msg || !patch) return false;
+    if (String(msg.message || '').trim() !== String(patch.message || '').trim()) {
+        return false;
+    }
+
+    const attachmentMode = String(patch.attachmentMode || 'keep').trim().toLowerCase();
+    if (attachmentMode === 'remove') {
+        return !String(msg.imageUrl || '').trim()
+            && !String(msg.attachmentUrl || '').trim()
+            && !String(msg.attachmentKind || '').trim();
+    }
+
+    if (attachmentMode === 'replace') {
+        const serverKind = String(msg.attachmentKind || '').trim().toLowerCase();
+        const patchKind = String(patch.attachmentKind || '').trim().toLowerCase();
+        const serverUrl = String(msg.attachmentUrl || msg.imageUrl || '').trim();
+        const serverFileId = String(msg.attachmentFileId || '').trim();
+        const previousUrl = String(patch.previousAttachmentUrl || '').trim();
+        const previousFileId = String(patch.previousAttachmentFileId || '').trim();
+        if (!serverUrl || isChatBlobUrl(serverUrl)) return false;
+        if (patchKind && serverKind !== patchKind) return false;
+
+        const previousName = String(patch.previousAttachmentName || '').trim();
+        const patchName = String(patch.attachmentName || '').trim();
+        const serverName = String(msg.attachmentName || msg.imageTitle || '').trim();
+        if (patchName && previousName && patchName !== previousName && serverName && serverName !== patchName) {
+            return false;
+        }
+
+        const previousMimeType = String(patch.previousAttachmentMimeType || '').trim();
+        const patchMimeType = String(patch.attachmentMimeType || '').trim();
+        const serverMimeType = String(msg.attachmentMimeType || '').trim();
+        if (patchMimeType && previousMimeType && patchMimeType !== previousMimeType && serverMimeType && serverMimeType !== patchMimeType) {
+            return false;
+        }
+
+        return (!!serverFileId && (!previousFileId || serverFileId !== previousFileId))
+            || (!!serverUrl && (!previousUrl || serverUrl !== previousUrl));
+    }
+
+    const serverEditTimestampMs = parseChatTimestampMs(msg.editTimestamp);
+    const patchEditTimestampMs = parseChatTimestampMs(patch.editTimestamp);
+    if (serverEditTimestampMs > 0 && patchEditTimestampMs > 0) {
+        return serverEditTimestampMs >= patchEditTimestampMs;
+    }
+    return !!msg.edited;
+}
+
 function mergeChatMessagesWithClientEditMeta(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
         return Array.isArray(messages) ? [...messages] : [];
@@ -8606,29 +8771,42 @@ function mergeChatMessagesWithClientEditMeta(messages) {
     return messages.map((msg) => {
         const row = Number(msg && msg.row ? msg.row : 0) || 0;
         if (!row) return msg;
+        let nextMsg = msg;
         const serverEditTimestamp = String(msg && msg.editTimestamp ? msg.editTimestamp : '').trim();
         const serverEditTimeLabel = String(msg && msg.editTimeLabel ? msg.editTimeLabel : '').trim();
         if (serverEditTimestamp || serverEditTimeLabel) {
             rememberChatClientEditMeta(row, serverEditTimestamp, serverEditTimeLabel);
-            if (msg && msg.edited) return msg;
-            return {
-                ...msg,
-                edited: true,
-                editTimestamp: serverEditTimestamp,
-                editTimeLabel: serverEditTimeLabel
-            };
+            if (!msg || !msg.edited) {
+                nextMsg = {
+                    ...msg,
+                    edited: true,
+                    editTimestamp: serverEditTimestamp,
+                    editTimeLabel: serverEditTimeLabel
+                };
+            }
+        } else {
+            const cachedEditMeta = chatClientEditMetaByRow.get(row);
+            if (cachedEditMeta) {
+                const cachedEditTimestamp = String(cachedEditMeta.editTimestamp || '').trim();
+                const cachedEditTimeLabel = String(cachedEditMeta.editTimeLabel || '').trim();
+                if (cachedEditTimestamp || cachedEditTimeLabel) {
+                    nextMsg = {
+                        ...nextMsg,
+                        edited: true,
+                        editTimestamp: cachedEditTimestamp,
+                        editTimeLabel: cachedEditTimeLabel
+                    };
+                }
+            }
         }
-        const cachedEditMeta = chatClientEditMetaByRow.get(row);
-        if (!cachedEditMeta) return msg;
-        const cachedEditTimestamp = String(cachedEditMeta.editTimestamp || '').trim();
-        const cachedEditTimeLabel = String(cachedEditMeta.editTimeLabel || '').trim();
-        if (!cachedEditTimestamp && !cachedEditTimeLabel) return msg;
-        return {
-            ...msg,
-            edited: true,
-            editTimestamp: cachedEditTimestamp,
-            editTimeLabel: cachedEditTimeLabel
-        };
+
+        const optimisticPatch = chatOptimisticEditPatchByRow.get(row);
+        if (!optimisticPatch) return nextMsg;
+        if (hasServerConfirmedChatOptimisticEdit(nextMsg, optimisticPatch)) {
+            clearChatOptimisticEditPatch(row);
+            return nextMsg;
+        }
+        return applyChatOptimisticEditPatch(nextMsg, optimisticPatch);
     });
 }
 
@@ -8725,6 +8903,60 @@ function sortChatMessagesChronologically(messages) {
             return leftEntry.index - rightEntry.index;
         })
         .map((entry) => entry.msg);
+}
+
+function getOldestChatServerRow(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return 0;
+    let oldestRow = 0;
+    messages.forEach((msg) => {
+        const row = Number(msg && msg.row ? msg.row : 0) || 0;
+        if (row <= 0) return;
+        if (!oldestRow || row < oldestRow) oldestRow = row;
+    });
+    return oldestRow;
+}
+
+function getNewestChatServerRow(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return 0;
+    let newestRow = 0;
+    messages.forEach((msg) => {
+        const row = Number(msg && msg.row ? msg.row : 0) || 0;
+        if (row > newestRow) newestRow = row;
+    });
+    return newestRow;
+}
+
+function mergeChatServerMessages(existingMessages, incomingMessages) {
+    const mergedByRow = new Map();
+    const upsert = (msg) => {
+        if (!msg || typeof msg !== 'object') return;
+        const row = Number(msg.row) || 0;
+        if (row > 0) {
+            mergedByRow.set(`row:${row}`, msg);
+            return;
+        }
+        const key = buildChatMessageKey(msg);
+        mergedByRow.set(`fallback:${key}`, msg);
+    };
+
+    (Array.isArray(existingMessages) ? existingMessages : []).forEach(upsert);
+    (Array.isArray(incomingMessages) ? incomingMessages : []).forEach(upsert);
+    return sortChatMessagesChronologically(Array.from(mergedByRow.values()));
+}
+
+function syncChatLoadedServerRows(messages) {
+    chatOldestLoadedServerRow = getOldestChatServerRow(messages);
+    chatNewestLoadedServerRow = getNewestChatServerRow(messages);
+}
+
+function resetChatHistoryPaginationState(clearServerMessages = false) {
+    chatHasMoreOlderMessages = false;
+    chatIsLoadingOlderMessages = false;
+    chatOldestLoadedServerRow = 0;
+    chatNewestLoadedServerRow = 0;
+    if (clearServerMessages) {
+        chatLatestServerMessages = [];
+    }
 }
 
 function sortChatEntriesChronologically(entries, rowKey = 'row') {
@@ -8857,7 +9089,267 @@ function getPortalBCandidateUrls() {
         });
 }
 
+function hasAppsScriptHtmlServiceBridge() {
+    return typeof google !== 'undefined' && !!(google.script && google.script.run);
+}
+
+function runAppsScriptFunction(functionName, ...args) {
+    if (!hasAppsScriptHtmlServiceBridge()) {
+        return Promise.reject(new Error('apps_script_bridge_unavailable'));
+    }
+    return new Promise((resolve, reject) => {
+        const runner = google.script.run
+            .withSuccessHandler((result) => resolve(result))
+            .withFailureHandler((error) => {
+                const message = String(error && error.message ? error.message : error || 'apps_script_call_failed').trim();
+                reject(new Error(message || 'apps_script_call_failed'));
+            });
+        if (!runner || typeof runner[functionName] !== 'function') {
+            reject(new Error('apps_script_method_unavailable'));
+            return;
+        }
+        runner[functionName](...args);
+    });
+}
+
+function isChatPayloadSupportedByHtmlService(payload) {
+    const type = String(payload && payload.type || '').trim().toLowerCase();
+    if (type === 'chat_attachment') return !!(payload && payload.attachmentReuse);
+    if (type === 'chat_edit_message' && payload && payload.attachment) return false;
+    return type === 'chat_message' || type === 'chat_edit_message' || type === 'chat_delete_message';
+}
+
+function clearChatAttachmentInputSelection(inputId) {
+    const safeInputId = String(inputId || '').trim();
+    if (!safeInputId) return;
+    const input = document.getElementById(safeInputId);
+    if (input) {
+        input.value = '';
+    }
+}
+
+function setChatAttachmentInputFile(inputId, file) {
+    const safeInputId = String(inputId || '').trim();
+    if (!safeInputId || !(file instanceof File)) return false;
+    const inputEl = document.getElementById(safeInputId);
+    if (!inputEl) return false;
+    if (typeof DataTransfer === 'undefined') return false;
+    try {
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        inputEl.files = transfer.files;
+        return !!(inputEl.files && inputEl.files[0]);
+    } catch (_) {
+        return false;
+    }
+}
+
+function resetChatAttachmentUploadFormMetadata() {
+    const payloadInput = document.getElementById('chat-attachment-payload-json');
+    const sourceInput = document.getElementById('chat-attachment-input-source');
+    if (payloadInput) payloadInput.value = '';
+    if (sourceInput) sourceInput.value = '';
+}
+
+function canUseHtmlServiceAttachmentInput(inputId) {
+    const safeInputId = String(inputId || '').trim();
+    if (!safeInputId || !hasAppsScriptHtmlServiceBridge()) return false;
+    const input = document.getElementById(safeInputId);
+    return !!(input && input.files && input.files[0]);
+}
+
+async function postChatPayloadViaHtmlService(payload) {
+    return runAppsScriptFunction('chatPostHtmlService', payload || {});
+}
+
+async function uploadChatAttachmentViaHtmlService(payload, sourceInputId) {
+    const safeInputId = String(sourceInputId || '').trim();
+    const formEl = document.getElementById('chat-attachment-upload-form');
+    const inputEl = safeInputId ? document.getElementById(safeInputId) : null;
+    const payloadInput = document.getElementById('chat-attachment-payload-json');
+    const sourceInput = document.getElementById('chat-attachment-input-source');
+    if (!formEl || !inputEl || !payloadInput || !inputEl.files || !inputEl.files[0]) {
+        throw new Error('chat_htmlservice_upload_unavailable');
+    }
+
+    payloadInput.value = JSON.stringify(payload || {});
+    if (sourceInput) sourceInput.value = safeInputId;
+    try {
+        return await runAppsScriptFunction('chatUploadAttachmentHtmlService', formEl);
+    } finally {
+        resetChatAttachmentUploadFormMetadata();
+    }
+}
+
+function normalizeChatAttachmentSha256(value) {
+    const hash = String(value || '').trim().toLowerCase();
+    return /^[a-f0-9]{64}$/.test(hash) ? hash : '';
+}
+
+function normalizeChatAttachmentReuseRecord(attachment) {
+    const source = attachment && typeof attachment === 'object' ? attachment : null;
+    if (!source) return null;
+    const fileId = String(source.fileId || '').trim();
+    if (!fileId) return null;
+
+    const mimeType = String(source.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+    const kind = String(source.kind || guessAttachmentKindFromMime(mimeType, source.name || '') || 'file').trim().toLowerCase() || 'file';
+    const sourceKind = String(source.sourceKind || kind).trim().toLowerCase() || kind;
+    const normalized = {
+        fileId,
+        name: normalizeChatAttachmentFileName(String(source.name || '').trim(), mimeType, 'adjunto-chat'),
+        mimeType,
+        size: Math.max(0, Number(source.size) || 0),
+        kind,
+        sourceKind,
+        url: String(source.url || '').trim(),
+        sha256: normalizeChatAttachmentSha256(source.sha256 || source.hash)
+    };
+    return normalized;
+}
+
+function getChatAttachmentFileSignature(file) {
+    if (!(file instanceof File)) return '';
+    return [
+        String(file.name || '').trim(),
+        String(file.type || '').trim(),
+        String(Number(file.size) || 0),
+        String(Number(file.lastModified) || 0)
+    ].join('::');
+}
+
+function bytesToHex(bytes) {
+    return Array.from(bytes || [], (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function readFileAsArrayBuffer(file, options = {}) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        const onProgress = options && typeof options.onProgress === 'function'
+            ? options.onProgress
+            : null;
+        reader.onload = () => resolve(reader.result);
+        if (onProgress) {
+            reader.onprogress = (event) => {
+                try {
+                    onProgress(event);
+                } catch (_) {}
+            };
+        }
+        reader.onerror = () => reject(new Error('file_read_error'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+async function computeChatAttachmentSha256(file) {
+    if (!(file instanceof File)) return '';
+    if (!(window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function')) {
+        return '';
+    }
+
+    const signature = getChatAttachmentFileSignature(file);
+    if (signature && chatAttachmentHashPromiseBySignature.has(signature)) {
+        return chatAttachmentHashPromiseBySignature.get(signature);
+    }
+
+    const promise = (async () => {
+        const buffer = await readFileAsArrayBuffer(file);
+        const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+        return bytesToHex(new Uint8Array(digest));
+    })().then((hash) => normalizeChatAttachmentSha256(hash));
+
+    if (signature) {
+        chatAttachmentHashPromiseBySignature.set(signature, promise);
+    }
+
+    try {
+        return await promise;
+    } catch (error) {
+        if (signature) {
+            chatAttachmentHashPromiseBySignature.delete(signature);
+        }
+        throw error;
+    }
+}
+
+async function lookupReusableChatAttachmentByHash(sha256) {
+    const safeHash = normalizeChatAttachmentSha256(sha256);
+    if (!safeHash) return null;
+
+    if (chatAttachmentReuseLookupCache.has(safeHash)) {
+        return chatAttachmentReuseLookupCache.get(safeHash);
+    }
+
+    let normalizedAttachment = null;
+    if (hasAppsScriptHtmlServiceBridge()) {
+        const result = await runAppsScriptFunction('chatLookupAttachmentHtmlService', { sha256: safeHash });
+        normalizedAttachment = result && result.ok && result.found
+            ? normalizeChatAttachmentReuseRecord(result.attachment)
+            : null;
+    } else {
+        const urls = getPortalBCandidateUrls();
+        for (const baseUrl of urls) {
+            try {
+                const response = await fetch(`${baseUrl}?mode=chat_attachment_lookup&sha256=${encodeURIComponent(safeHash)}&t=${Date.now()}`, {
+                    cache: 'no-store'
+                });
+                if (!response.ok) continue;
+                const result = await response.json();
+                if (result && result.ok === true) {
+                    PORTALB_SCRIPT_URL = baseUrl;
+                    normalizedAttachment = result.found
+                        ? normalizeChatAttachmentReuseRecord(result.attachment)
+                        : null;
+                    break;
+                }
+            } catch (_) {}
+        }
+    }
+
+    chatAttachmentReuseLookupCache.set(safeHash, normalizedAttachment);
+    return normalizedAttachment;
+}
+
+async function resolveChatAttachmentReuseForFile(file) {
+    if (!(file instanceof File)) {
+        return { sha256: '', attachment: null };
+    }
+
+    let sha256 = '';
+    try {
+        sha256 = await computeChatAttachmentSha256(file);
+    } catch (error) {
+        console.warn('No se pudo calcular el hash del adjunto:', error);
+        return { sha256: '', attachment: null };
+    }
+
+    if (!sha256) {
+        return { sha256: '', attachment: null };
+    }
+
+    try {
+        const attachment = await lookupReusableChatAttachmentByHash(sha256);
+        if (attachment) {
+            return {
+                sha256,
+                attachment: {
+                    ...attachment,
+                    sha256: normalizeChatAttachmentSha256(attachment.sha256) || sha256
+                }
+            };
+        }
+    } catch (error) {
+        console.warn('No se pudo consultar la reutilizacion del adjunto:', error);
+    }
+
+    return { sha256, attachment: null };
+}
+
 async function postToPortalB(payload, options = {}) {
+    if (hasAppsScriptHtmlServiceBridge() && isChatPayloadSupportedByHtmlService(payload)) {
+        return postChatPayloadViaHtmlService(payload);
+    }
+
     const allowBeacon = options && options.allowBeacon !== false;
     const onlyNoCors = options && options.onlyNoCors === true;
     const requestBody = JSON.stringify(payload || {});
@@ -9310,6 +9802,55 @@ function renderMergedChatMessages(serverMessages) {
     chatLastRenderedSignature = buildChatMessagesSignature(merged);
     installChatLayoutResizeObserver();
     schedulePinnedChatBottomSnap();
+}
+
+async function loadOlderChatMessages() {
+    if (chatIsLoadingOlderMessages || !chatHasMoreOlderMessages) return false;
+
+    const beforeRow = chatOldestLoadedServerRow || getOldestChatServerRow(chatLatestServerMessages);
+    if (beforeRow <= 0) return false;
+
+    const messagesEl = document.getElementById('chat-messages-list');
+    const chatBody = getChatBodyElement();
+    const anchorSelector = `.chat-message-item[data-message-row="${beforeRow}"]`;
+    const anchorElBefore = messagesEl ? messagesEl.querySelector(anchorSelector) : null;
+    const anchorTopBefore = anchorElBefore ? anchorElBefore.getBoundingClientRect().top : 0;
+    const scrollHeightBefore = chatBody ? chatBody.scrollHeight : 0;
+
+    chatIsLoadingOlderMessages = true;
+    renderMergedChatMessages(chatLatestServerMessages);
+
+    try {
+        const payload = await fetchChatMessages({ beforeRow, limit: CHAT_FETCH_LIMIT });
+        const olderMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
+        if (olderMessages.length > 0) {
+            chatLatestServerMessages = mergeChatServerMessages(olderMessages, chatLatestServerMessages);
+            syncChatLoadedServerRows(chatLatestServerMessages);
+        }
+        chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
+    } catch (error) {
+        console.warn('Error cargando mensajes antiguos del chat:', error);
+        return false;
+    } finally {
+        chatIsLoadingOlderMessages = false;
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+
+    requestAnimationFrame(() => {
+        const activeChatBody = getChatBodyElement();
+        if (!activeChatBody) return;
+        const activeMessagesEl = document.getElementById('chat-messages-list');
+        const anchorElAfter = activeMessagesEl ? activeMessagesEl.querySelector(anchorSelector) : null;
+        if (anchorElBefore && anchorElAfter) {
+            const delta = anchorElAfter.getBoundingClientRect().top - anchorTopBefore;
+            activeChatBody.scrollTop += delta;
+            return;
+        }
+        const scrollHeightAfter = activeChatBody.scrollHeight;
+        activeChatBody.scrollTop += Math.max(0, scrollHeightAfter - scrollHeightBefore);
+    });
+
+    return true;
 }
 
 function canReplyToRecipientMessage(msg, currentUserLabel) {
@@ -9913,6 +10454,7 @@ function getChatEditAttachmentMeta(target) {
 function clearChatEditPendingReplacementAttachment(target) {
     if (!target || !target.pendingReplacementAttachment) return;
     releaseChatBlobUrl(String(target.pendingReplacementAttachment.url || '').trim());
+    clearChatAttachmentInputSelection(String(target.pendingReplacementAttachment.sourceInputId || '').trim());
     delete target.pendingReplacementAttachment;
 }
 
@@ -10107,8 +10649,10 @@ function toggleChatReplyTarget(msg, currentUserLabel) {
     activateChatReplyTarget(nextTarget);
 }
 
-function clearChatEditTarget(shouldRerender = true, clearInput = true) {
-    clearChatEditPendingReplacementAttachment(chatEditTarget);
+function clearChatEditTarget(shouldRerender = true, clearInput = true, preservePendingReplacement = false) {
+    if (!preservePendingReplacement) {
+        clearChatEditPendingReplacementAttachment(chatEditTarget);
+    }
     chatEditTarget = null;
     closeChatMessageActionMenu();
     closeChatOwnMessageChoiceMenu();
@@ -10275,6 +10819,7 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
     const editTimeLabel = getLocalChatTimeLabel();
     rememberChatClientEditMeta(targetRow, editTimestamp, editTimeLabel);
     let changed = false;
+    let optimisticPatch = null;
     chatLatestServerMessages = (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages : []).map((msg) => {
         const row = Number(msg && msg.row ? msg.row : 0) || 0;
         if (row !== targetRow) return msg;
@@ -10310,12 +10855,33 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
             nextPatch.attachmentSize = Number(replacementAttachment.size) || 0;
             nextPatch.attachmentFileId = '';
         }
+        optimisticPatch = {
+            message: cleanMessage,
+            editTimestamp,
+            editTimeLabel,
+            attachmentMode: shouldRemoveAttachment
+                ? 'remove'
+                : (replacementAttachment ? 'replace' : 'keep'),
+            attachmentKind: replacementAttachment ? String(replacementAttachment.kind || '').trim().toLowerCase() : '',
+            attachmentSourceKind: replacementAttachment ? String(replacementAttachment.sourceKind || replacementAttachment.kind || '').trim().toLowerCase() : '',
+            attachmentUrl: replacementAttachment ? String(replacementAttachment.url || '').trim() : '',
+            attachmentName: replacementAttachment ? String(replacementAttachment.name || '').trim() : '',
+            attachmentMimeType: replacementAttachment ? String(replacementAttachment.mimeType || '').trim() : '',
+            attachmentSize: replacementAttachment ? Number(replacementAttachment.size) || 0 : 0,
+            attachmentFileId: '',
+            localAttachmentUrl: replacementAttachment ? String(replacementAttachment.url || '').trim() : '',
+            previousAttachmentUrl: String(msg && (msg.attachmentUrl || msg.imageUrl) ? (msg.attachmentUrl || msg.imageUrl) : '').trim(),
+            previousAttachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
+            previousAttachmentName: String(msg && (msg.attachmentName || msg.imageTitle) ? (msg.attachmentName || msg.imageTitle) : '').trim(),
+            previousAttachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim()
+        };
         return {
             ...msg,
             ...nextPatch
         };
     });
     if (changed) {
+        rememberChatOptimisticEditPatch(targetRow, optimisticPatch);
         renderMergedChatMessages(chatLatestServerMessages);
     }
 }
@@ -10324,6 +10890,7 @@ function applyLocalChatMessageDelete(deleteTarget) {
     const targetRow = Number(deleteTarget && deleteTarget.row ? deleteTarget.row : 0) || 0;
     if (!targetRow) return;
     rememberChatClientEditMeta(targetRow, '', '');
+    clearChatOptimisticEditPatch(targetRow);
     chatLatestServerMessages = (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages : [])
         .filter((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) !== targetRow);
     chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : [])
@@ -10988,7 +11555,6 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
     const payloadMessage = serializedReplyTarget
         ? `<${serializedReplyTarget}> ${cleanEmoji}`
         : cleanEmoji;
-    const senderTaggedPayloadMessage = `-${normalizeChatUserLabel(identity.displayName)}-\n${payloadMessage}`;
 
     appendLocalEchoMessage(identity.displayName, cleanEmoji, replyTarget, null, { scrollToLatest: false });
 
@@ -10999,7 +11565,7 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
             nombre: identity.firstName,
             apellido: identity.lastName,
             userDisplayName: identity.displayName,
-            mensaje: senderTaggedPayloadMessage
+            mensaje: payloadMessage
         });
         if (document.getElementById('chat-overlay')) {
             setTimeout(() => {
@@ -11632,56 +12198,14 @@ async function downloadChatAudioFile(fileUrl, fileName, fileId = '') {
     if (!safeUrl) return false;
     const safeName = normalizeChatAttachmentFileName(fileName, 'audio/webm', 'audio-chat');
     const safeFileId = String(fileId || '').trim();
-    let downloadUrl = '';
-    let shouldRevokeUrl = false;
+    const preferredDirectUrl = isChatBlobUrl(safeUrl)
+        ? safeUrl
+        : (buildChatAudioDownloadUrl(safeUrl) || safeUrl);
 
-    try {
-        if (safeFileId) {
-            try {
-                downloadUrl = await fetchChatAudioBlobUrlByFileId(safeFileId, safeName);
-            } catch (error) {
-                console.warn('No se pudo preparar el blob de descarga del audio:', error);
-            }
-        }
-
-        if (!downloadUrl && isChatBlobUrl(safeUrl)) {
-            downloadUrl = safeUrl;
-        }
-
-        if (!downloadUrl) {
-            try {
-                const response = await fetch(safeUrl, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    downloadUrl = URL.createObjectURL(blob);
-                    shouldRevokeUrl = true;
-                }
-            } catch (_) {}
-        }
-
-        if (!downloadUrl) {
-            downloadUrl = safeUrl;
-        }
-
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = safeName;
-        link.rel = 'noopener noreferrer';
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        if (shouldRevokeUrl) {
-            setTimeout(() => {
-                try {
-                    URL.revokeObjectURL(downloadUrl);
-                } catch (_) {}
-            }, 1500);
-        }
-        return true;
-    } catch (_) {
-        return false;
-    }
+    return triggerChatAttachmentDownloadWithFallback(preferredDirectUrl, safeName, {
+        fileId: safeFileId,
+        mimeType: inferChatAttachmentMimeTypeFromFileName(safeName, 'audio/webm')
+    });
 }
 
 function bindChatAudioFallbacks(messagesRootEl) {
@@ -11944,11 +12468,9 @@ function bindChatAudioFallbacks(messagesRootEl) {
                 state.prepareMode = 'download';
                 renderAudioUi();
                 try {
-                    await primePlaybackSourceInBackground();
-                    const preparedBlobUrl = String(cardEl.dataset.audioBlobUrl || '').trim();
-                    const preferredUrl = String(audioEl.currentSrc || audioEl.src || '').trim();
                     const fallbackUrl = String(cardEl.dataset.audioDownloadUrl || '').trim();
-                    await downloadChatAudioFile(preparedBlobUrl || preferredUrl || fallbackUrl, fileName, audioFileId);
+                    const preferredUrl = String(audioEl.currentSrc || audioEl.src || '').trim();
+                    await downloadChatAudioFile(fallbackUrl || preferredUrl, fileName, audioFileId);
                 } finally {
                     state.isPreparing = false;
                     state.prepareMode = '';
@@ -12916,9 +13438,12 @@ async function sendChatVoiceRecording() {
         type: mimeType,
         lastModified: Date.now()
     });
+    const sourceInputId = setChatAttachmentInputFile('chat-attach-audio-input', file)
+        ? 'chat-attach-audio-input'
+        : '';
     setChatVoiceRecorderUiState('sending', 'Enviando nota de voz...');
     closeChatVoiceRecorder(true);
-    void submitChatAttachment(file, 'audio');
+    void submitChatAttachment(file, 'audio', sourceInputId);
 }
 
 async function checkChatAttachmentHealth(options = {}) {
@@ -12991,6 +13516,7 @@ async function performChatAttachmentUpload(uploadEntry) {
     const fileSize = Math.max(0, Number(uploadEntry && uploadEntry.fileSize ? uploadEntry.fileSize : file.size) || 0);
     const kind = String(uploadEntry && uploadEntry.kind ? uploadEntry.kind : '').trim().toLowerCase();
     const sourceKind = String(uploadEntry && uploadEntry.sourceKind ? uploadEntry.sourceKind : '').trim().toLowerCase();
+    const sourceInputId = String(uploadEntry && uploadEntry.sourceInputId ? uploadEntry.sourceInputId : '').trim();
     const payloadMessage = String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : '').trim();
     const attachmentName = String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : (file.name || `${kind}-adjunto`)).trim();
     const attachmentMimeType = String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : (file.type || 'application/octet-stream')).trim();
@@ -13001,9 +13527,65 @@ async function performChatAttachmentUpload(uploadEntry) {
     disableChatAttachmentUI(true);
 
     try {
-        const [attachmentHealth, dataBase64] = await Promise.all([
-            checkChatAttachmentHealth(),
-            readFileAsDataBase64(file, {
+        updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 10, { force: true });
+        const attachmentReuseResult = await resolveChatAttachmentReuseForFile(file);
+        const attachmentSha256 = normalizeChatAttachmentSha256(attachmentReuseResult && attachmentReuseResult.sha256);
+        const reusableAttachment = normalizeChatAttachmentReuseRecord(attachmentReuseResult && attachmentReuseResult.attachment);
+
+        if (reusableAttachment) {
+            if (attachmentSha256) {
+                chatAttachmentReuseLookupCache.set(attachmentSha256, reusableAttachment);
+            }
+            updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 84, { force: true });
+            animateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 96, 900);
+            await postToPortalB({
+                type: 'chat_attachment',
+                columna: CHAT_COLUMN_KEY,
+                nombre: identity.firstName,
+                apellido: identity.lastName,
+                userDisplayName: identity.displayName,
+                mensaje: payloadMessage,
+                attachmentReuse: {
+                    ...reusableAttachment,
+                    sha256: reusableAttachment.sha256 || attachmentSha256
+                }
+            }, { allowBeacon: false, onlyNoCors: true });
+            updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 100, { force: true });
+            markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
+            removeChatPendingAttachmentUpload(safeAttachmentUrl);
+            clearChatAttachmentInputSelection(sourceInputId);
+            return { status: 'success', replyThreadRow };
+        }
+
+        const attachmentHealth = await checkChatAttachmentHealth();
+        if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
+            throw new Error('missing_drive_scope');
+        }
+        if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
+            throw new Error('attachment_health_failed');
+        }
+
+        if (canUseHtmlServiceAttachmentInput(sourceInputId)) {
+            updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 84, { force: true });
+            animateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 96, 1400);
+            await uploadChatAttachmentViaHtmlService({
+                type: 'chat_attachment',
+                columna: CHAT_COLUMN_KEY,
+                nombre: identity.firstName,
+                apellido: identity.lastName,
+                userDisplayName: identity.displayName,
+                mensaje: payloadMessage,
+                attachment: {
+                    name: attachmentName,
+                    mimeType: attachmentMimeType,
+                    size: fileSize,
+                    kind: kind,
+                    sourceKind: sourceKind,
+                    sha256: attachmentSha256
+                }
+            }, sourceInputId);
+        } else {
+            const dataBase64 = await readFileAsDataBase64(file, {
                 onProgress: (event) => {
                     if (!event || !event.lengthComputable) return;
                     const loaded = Math.max(0, Number(event.loaded) || 0);
@@ -13011,35 +13593,34 @@ async function performChatAttachmentUpload(uploadEntry) {
                     const ratio = Math.max(0, Math.min(1, loaded / total));
                     updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 6 + (ratio * 76));
                 }
-            })
-        ]);
-        if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
-            throw new Error('missing_drive_scope');
+            });
+            updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 84, { force: true });
+            animateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 96, 1400);
+            await postToPortalB({
+                type: 'chat_attachment',
+                columna: CHAT_COLUMN_KEY,
+                nombre: identity.firstName,
+                apellido: identity.lastName,
+                userDisplayName: identity.displayName,
+                mensaje: payloadMessage,
+                attachment: {
+                    name: attachmentName,
+                    mimeType: attachmentMimeType,
+                    size: fileSize,
+                    kind: kind,
+                    sourceKind: sourceKind,
+                    sha256: attachmentSha256,
+                    dataBase64: dataBase64
+                }
+            }, { allowBeacon: false, onlyNoCors: true });
         }
-        if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
-            throw new Error('attachment_health_failed');
+        if (attachmentSha256) {
+            chatAttachmentReuseLookupCache.delete(attachmentSha256);
         }
-        updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 84, { force: true });
-        animateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 96, 1400);
-        await postToPortalB({
-            type: 'chat_attachment',
-            columna: CHAT_COLUMN_KEY,
-            nombre: identity.firstName,
-            apellido: identity.lastName,
-            userDisplayName: identity.displayName,
-            mensaje: payloadMessage,
-            attachment: {
-                name: attachmentName,
-                mimeType: attachmentMimeType,
-                size: fileSize,
-                kind: kind,
-                sourceKind: sourceKind,
-                dataBase64: dataBase64
-            }
-        }, { allowBeacon: false, onlyNoCors: true });
         updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 100, { force: true });
         markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
         removeChatPendingAttachmentUpload(safeAttachmentUrl);
+        clearChatAttachmentInputSelection(sourceInputId);
         return { status: 'success', replyThreadRow };
     } catch (error) {
         const recoverable = isRecoverableChatAttachmentUploadError(error);
@@ -13054,6 +13635,7 @@ async function performChatAttachmentUpload(uploadEntry) {
                 fileSize,
                 kind,
                 sourceKind,
+                sourceInputId,
                 payloadMessage,
                 attachmentName,
                 attachmentMimeType,
@@ -13069,6 +13651,7 @@ async function performChatAttachmentUpload(uploadEntry) {
             if (!navigator.onLine) {
                 showConnectivityOverlay('Sin conexión o muy lenta');
             }
+            clearChatAttachmentInputSelection(sourceInputId);
             return { status: 'queued', replyThreadRow };
         }
 
@@ -13076,6 +13659,7 @@ async function performChatAttachmentUpload(uploadEntry) {
         chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== safeAttachmentUrl);
         renderMergedChatMessages(chatLatestServerMessages);
         releaseChatBlobUrl(safeAttachmentUrl);
+        clearChatAttachmentInputSelection(sourceInputId);
         if (String(error && error.message || '') === 'missing_drive_scope') {
             alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
         }
@@ -13089,8 +13673,20 @@ async function performChatAttachmentUpload(uploadEntry) {
 async function syncChatPendingAttachmentUploadsWithServer() {
     const previousServerMessages = Array.isArray(chatLatestServerMessages) ? [...chatLatestServerMessages] : [];
     try {
-        const messages = await fetchChatMessages();
-        chatLatestServerMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(messages) ? messages : []);
+        const payload = await fetchChatMessages();
+        const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
+        const oldestRecentRow = getOldestChatServerRow(recentMessages);
+        const olderLoadedMessages = oldestRecentRow > 0
+            ? (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages.filter((msg) => {
+                const row = Number(msg && msg.row ? msg.row : 0) || 0;
+                return row > 0 && row < oldestRecentRow;
+            }) : [])
+            : [];
+        chatLatestServerMessages = mergeChatServerMessages(olderLoadedMessages, recentMessages);
+        if (olderLoadedMessages.length === 0) {
+            chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
+        }
+        syncChatLoadedServerRows(chatLatestServerMessages);
         reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
         if (document.getElementById('chat-messages-list')) {
             renderMergedChatMessages(chatLatestServerMessages);
@@ -13141,14 +13737,18 @@ async function processPendingChatAttachmentUploadsAfterReconnect() {
     return attempted;
 }
 
-async function submitChatAttachment(file, forcedKind = '') {
+async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
     const inputEl = document.getElementById('chat-input');
     if (!file || !inputEl) return false;
     if (chatAttachmentUploadInProgress) return false;
 
     const fileSize = Number(file.size) || 0;
-    if (!fileSize) return false;
-    if (fileSize > CHAT_ATTACHMENT_MAX_BYTES) {
+    if (!fileSize) {
+        clearChatAttachmentInputSelection(sourceInputId);
+        return false;
+    }
+    if (CHAT_ATTACHMENT_MAX_BYTES > 0 && fileSize > CHAT_ATTACHMENT_MAX_BYTES) {
+        clearChatAttachmentInputSelection(sourceInputId);
         alert(`El archivo supera el limite de ${(CHAT_ATTACHMENT_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB.`);
         return false;
     }
@@ -13194,6 +13794,7 @@ async function submitChatAttachment(file, forcedKind = '') {
             file,
             kind,
             sourceKind,
+            sourceInputId: String(sourceInputId || '').trim(),
             url: localObjectUrl,
             name: attachmentName,
             mimeType: attachmentMimeType,
@@ -13202,6 +13803,9 @@ async function submitChatAttachment(file, forcedKind = '') {
         chatEditTarget.attachmentRemoved = false;
         updateChatReplyPreview();
         focusChatInputForReply();
+        if (!canUseHtmlServiceAttachmentInput(sourceInputId)) {
+            clearChatAttachmentInputSelection(sourceInputId);
+        }
         chatAttachmentUploadInProgress = false;
         disableChatAttachmentUI(false);
         return true;
@@ -13241,6 +13845,7 @@ async function submitChatAttachment(file, forcedKind = '') {
             fileSize,
             kind,
             sourceKind,
+            sourceInputId: String(sourceInputId || '').trim(),
             payloadMessage,
             attachmentName,
             attachmentMimeType,
@@ -13377,6 +13982,34 @@ function triggerChatDirectDownload(fileUrl, fileName = '') {
         link.remove();
         return true;
     } catch (_) {
+        return false;
+    }
+}
+
+async function triggerChatAttachmentDownloadWithFallback(directUrl, fileName = '', options = {}) {
+    const safeDirectUrl = String(directUrl || '').trim();
+    const requestedName = String(fileName || '').trim();
+    const safeFileId = String(options && options.fileId ? options.fileId : extractDriveFileIdFromUrl(safeDirectUrl)).trim();
+    const fallbackMimeType = String(options && options.mimeType ? options.mimeType : '').trim()
+        || inferChatAttachmentMimeTypeFromFileName(requestedName, 'application/octet-stream');
+    const safeFileName = requestedName || normalizeChatAttachmentFileName('', fallbackMimeType, 'archivo-chat');
+
+    if (safeDirectUrl && triggerChatDirectDownload(safeDirectUrl, safeFileName)) {
+        return true;
+    }
+
+    if (!safeFileId) return false;
+
+    try {
+        const blobUrl = await fetchChatAttachmentBlobUrlByFileId(
+            safeFileId,
+            safeFileName,
+            fallbackMimeType
+        );
+        if (!blobUrl) return false;
+        return triggerChatDirectDownload(blobUrl, safeFileName);
+    } catch (error) {
+        console.warn('No se pudo completar la descarga con fallback del chat:', error);
         return false;
     }
 }
@@ -13622,6 +14255,8 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
                         id="chat-file-viewer-download-btn"
                         data-download-url="${escapeHtml(downloadUrl)}"
                         data-download-name="${escapeHtml(safeTitle)}"
+                        data-download-file-id="${escapeHtml(fileId)}"
+                        data-download-mime="${escapeHtml(mimeType || inferChatAttachmentMimeTypeFromFileName(safeTitle, 'application/octet-stream'))}"
                         aria-label="Descargar archivo"
                         title="Descargar"
                     >
@@ -13669,14 +14304,19 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     }
     const downloadBtn = document.getElementById('chat-file-viewer-download-btn');
     if (downloadBtn) {
-        downloadBtn.addEventListener('click', (event) => {
+        downloadBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
             vibrar(80);
             const targetUrl = String(downloadBtn.getAttribute('data-download-url') || '').trim();
             const targetName = String(downloadBtn.getAttribute('data-download-name') || '').trim();
+            const targetFileId = String(downloadBtn.getAttribute('data-download-file-id') || '').trim();
+            const targetMimeType = String(downloadBtn.getAttribute('data-download-mime') || '').trim();
             if (!targetUrl) return;
-            triggerChatDirectDownload(targetUrl, targetName);
+            await triggerChatAttachmentDownloadWithFallback(targetUrl, targetName, {
+                fileId: targetFileId,
+                mimeType: targetMimeType
+            });
         });
     }
 }
@@ -14022,10 +14662,15 @@ function openChatVideoViewer(videoUrl, videoTitle = 'Vídeo', options = {}) {
     }
 
     if (downloadBtn && !isPrivateVoiceNoteViewer) {
-        downloadBtn.addEventListener('click', () => {
+        downloadBtn.addEventListener('click', async () => {
             vibrar(80);
             const preferredName = /\.[a-z0-9]{2,5}$/i.test(safeTitle) ? safeTitle : '';
-            triggerChatDirectDownload(downloadUrl, preferredName);
+            await triggerChatAttachmentDownloadWithFallback(downloadUrl, preferredName, {
+                fileId,
+                mimeType: mimeType || (isAudioViewer
+                    ? inferChatAttachmentMimeTypeFromFileName(preferredName || safeTitle, 'audio/webm')
+                    : inferChatAttachmentMimeTypeFromFileName(preferredName || safeTitle, 'video/mp4'))
+            });
         });
     }
 
@@ -15019,14 +15664,38 @@ function shouldUseLongChatLineLayout(text) {
     return false;
 }
 
-async function fetchChatMessages() {
-    const url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(CHAT_MODE)}&columna=${encodeURIComponent(CHAT_COLUMN_KEY)}&t=${Date.now()}`;
+function getChatHistoryLoaderMarkup() {
+    if (!chatHasMoreOlderMessages && !chatIsLoadingOlderMessages) return '';
+    const label = chatIsLoadingOlderMessages ? 'Cargando mensajes antiguos...' : 'Cargar mensajes antiguos';
+    return `
+        <div class="chat-history-loader">
+            <button
+                type="button"
+                id="chat-load-older-btn"
+                class="chat-history-loader-btn"
+                ${chatIsLoadingOlderMessages ? 'disabled' : ''}
+            >
+                ${chatIsLoadingOlderMessages ? '<span class="chat-history-loader-spinner" aria-hidden="true"></span>' : ''}
+                <span>${escapeHtml(label)}</span>
+            </button>
+        </div>
+    `;
+}
+
+async function fetchChatMessages(options = null) {
+    const safeOptions = options && typeof options === 'object' ? options : {};
+    const safeLimit = Math.max(1, Number(safeOptions.limit || CHAT_FETCH_LIMIT) || CHAT_FETCH_LIMIT);
+    const safeBeforeRow = Math.max(0, Number(safeOptions.beforeRow) || 0);
+    let url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(CHAT_MODE)}&columna=${encodeURIComponent(CHAT_COLUMN_KEY)}&limit=${encodeURIComponent(safeLimit)}&t=${Date.now()}`;
+    if (safeBeforeRow > 0) {
+        url += `&beforeRow=${encodeURIComponent(safeBeforeRow)}`;
+    }
     const response = await fetch(url, { cache: 'no-store' });
     const data = await response.json();
     if (!data || data.ok !== true || !Array.isArray(data.messages)) {
         throw new Error('No se pudieron cargar los mensajes del chat.');
     }
-    return sortChatMessagesChronologically(data.messages
+    const messages = sortChatMessagesChronologically(data.messages
         .map((entry) => {
             const entryImageUrl = entry && typeof entry === 'object'
                 ? String(entry.imageUrl || '').trim()
@@ -15150,6 +15819,13 @@ async function fetchChatMessages() {
             };
         })
         .filter(Boolean));
+    return {
+        messages,
+        hasMoreOlder: !!(data && data.hasMoreOlder),
+        oldestRow: Number(data && data.oldestRow ? data.oldestRow : 0) || getOldestChatServerRow(messages),
+        newestRow: Number(data && data.newestRow ? data.newestRow : 0) || getNewestChatServerRow(messages),
+        cached: !!(data && data.cached)
+    };
 }
 
 function renderChatMessages(messages) {
@@ -15268,7 +15944,13 @@ function renderChatMessages(messages) {
     }
 
     if (!Array.isArray(messages) || messages.length === 0) {
-        messagesEl.innerHTML = `<div class="chat-empty">Todavia no hay mensajes.</div>`;
+        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}<div class="chat-empty">Todavia no hay mensajes.</div>`;
+        const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
+        if (loadOlderBtn) {
+            loadOlderBtn.addEventListener('click', () => {
+                void loadOlderChatMessages();
+            });
+        }
         return;
     }
 
@@ -15290,13 +15972,19 @@ function renderChatMessages(messages) {
     const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
     if (renderMessages.length === 0) {
-        messagesEl.innerHTML = chatShowAnsweredOnly
+        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
             ? `<div class="chat-empty">No hay mensajes tuyos con respuesta.</div>`
-            : `<div class="chat-empty">Todavia no hay mensajes.</div>`;
+            : `<div class="chat-empty">Todavia no hay mensajes.</div>`}`;
+        const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
+        if (loadOlderBtn) {
+            loadOlderBtn.addEventListener('click', () => {
+                void loadOlderChatMessages();
+            });
+        }
         return;
     }
 
-    messagesEl.innerHTML = renderMessages.map((msg, idx) => {
+    messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${renderMessages.map((msg, idx) => {
         const currentDisplayTimestamp = String(msg && msg.__displayTimestamp ? msg.__displayTimestamp : (msg && msg.timestamp ? msg.timestamp : '')).trim();
         const previousDisplayTimestamp = idx > 0
             ? String(renderMessages[idx - 1] && renderMessages[idx - 1].__displayTimestamp ? renderMessages[idx - 1].__displayTimestamp : (renderMessages[idx - 1] && renderMessages[idx - 1].timestamp ? renderMessages[idx - 1].timestamp : '')).trim()
@@ -15415,6 +16103,8 @@ function renderChatMessages(messages) {
                         class="chat-video-inline-download-btn"
                         data-download-url="${escapeHtml(videoDownloadUrl)}"
                         data-download-name="${escapeHtml(attachmentName || 'video-chat.mp4')}"
+                        data-download-file-id="${escapeHtml(attachmentFileId)}"
+                        data-download-mime="${escapeHtml(attachmentMimeType || 'video/mp4')}"
                         aria-label="Descargar vídeo"
                         title="Descargar vídeo"
                     >
@@ -15552,6 +16242,8 @@ function renderChatMessages(messages) {
                         class="chat-file-thumb-download-btn"
                         data-download-url="${escapeHtml(buildChatAttachmentDownloadUrl(attachmentUrl) || attachmentUrl)}"
                         data-download-name="${escapeHtml(attachmentName || 'archivo-chat')}"
+                        data-download-file-id="${escapeHtml(attachmentFileId)}"
+                        data-download-mime="${escapeHtml(attachmentMimeType || inferChatAttachmentMimeTypeFromFileName(attachmentName || 'archivo-chat', 'application/octet-stream'))}"
                         aria-label="${escapeHtml(`Descargar ${attachmentName || 'archivo'}`)}"
                         title="Descargar"
                     >
@@ -15995,7 +16687,14 @@ function renderChatMessages(messages) {
             ${deleteButtonHtml}
         </div>
         `;
-    }).join('');
+    }).join('')}`;
+
+    const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
+    if (loadOlderBtn) {
+        loadOlderBtn.addEventListener('click', () => {
+            void loadOlderChatMessages();
+        });
+    }
     applyChatPersistentSideHitArea(messagesEl);
     applyChatPersistentBlockShadow(messagesEl);
 
@@ -16315,9 +17014,38 @@ function renderChatMessages(messages) {
         });
     });
 
+    const openOwnMessageChoiceFromAttachmentSurface = (triggerEl, event = null) => {
+        if (!triggerEl || triggerEl.closest('.chat-message-reply-reactable')) return false;
+        const item = triggerEl.closest('.chat-message-item.is-self.is-editable-self');
+        if (!item) return false;
+        if (event && event.cancelable) event.preventDefault();
+        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+        vibrar(40);
+        if (Date.now() < chatIgnoreOwnMessageClickUntil) return true;
+        if (chatDeleteArmRow) {
+            clearChatDeleteArm(true);
+            return true;
+        }
+        const idx = Number(item.dataset.msgIndex);
+        const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
+        if (!targetMessage) return true;
+        dismissChatKeyboardForOwnMessageInteraction();
+        const nextTarget = getEditTargetFromMessage(targetMessage);
+        const activeTarget = chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.targetMessage
+            ? getEditTargetFromMessage(chatOwnMessageChoiceMenuState.targetMessage)
+            : null;
+        if (activeTarget && isSameEditTarget(nextTarget, activeTarget)) {
+            closeChatOwnMessageChoiceMenu();
+            return false;
+        }
+        openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
+        return true;
+    };
+
     const imageThumbButtons = messagesEl.querySelectorAll('.chat-image-thumb-btn');
     imageThumbButtons.forEach((button) => {
         button.addEventListener('click', (event) => {
+            if (openOwnMessageChoiceFromAttachmentSurface(button, event)) return;
             event.preventDefault();
             event.stopPropagation();
             const imageUrl = String(button.getAttribute('data-image-url') || '').trim();
@@ -16330,6 +17058,7 @@ function renderChatMessages(messages) {
     const videoThumbButtons = messagesEl.querySelectorAll('.chat-video-thumb-btn');
     videoThumbButtons.forEach((button) => {
         button.addEventListener('click', (event) => {
+            if (openOwnMessageChoiceFromAttachmentSurface(button, event)) return;
             event.preventDefault();
             event.stopPropagation();
             const videoUrl = String(button.getAttribute('data-video-url') || '').trim();
@@ -16349,6 +17078,7 @@ function renderChatMessages(messages) {
     const fileThumbButtons = messagesEl.querySelectorAll('.chat-file-thumb-btn');
     fileThumbButtons.forEach((button) => {
         button.addEventListener('click', (event) => {
+            if (openOwnMessageChoiceFromAttachmentSurface(button, event)) return;
             event.preventDefault();
             event.stopPropagation();
             vibrar(40);
@@ -16368,27 +17098,37 @@ function renderChatMessages(messages) {
 
     const fileThumbDownloadButtons = messagesEl.querySelectorAll('.chat-file-thumb-download-btn');
     fileThumbDownloadButtons.forEach((button) => {
-        button.addEventListener('click', (event) => {
+        button.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
             vibrar(80);
             const downloadUrl = String(button.getAttribute('data-download-url') || '').trim();
             const downloadName = String(button.getAttribute('data-download-name') || '').trim();
+            const downloadFileId = String(button.getAttribute('data-download-file-id') || '').trim();
+            const downloadMimeType = String(button.getAttribute('data-download-mime') || '').trim();
             if (!downloadUrl) return;
-            triggerChatDirectDownload(downloadUrl, downloadName);
+            await triggerChatAttachmentDownloadWithFallback(downloadUrl, downloadName, {
+                fileId: downloadFileId,
+                mimeType: downloadMimeType
+            });
         });
     });
 
     const videoDownloadButtons = messagesEl.querySelectorAll('.chat-video-inline-download-btn');
     videoDownloadButtons.forEach((button) => {
-        button.addEventListener('click', (event) => {
+        button.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
             vibrar(80);
             const downloadUrl = String(button.getAttribute('data-download-url') || '').trim();
             const downloadName = String(button.getAttribute('data-download-name') || '').trim();
+            const downloadFileId = String(button.getAttribute('data-download-file-id') || '').trim();
+            const downloadMimeType = String(button.getAttribute('data-download-mime') || '').trim();
             if (!downloadUrl) return;
-            triggerChatDirectDownload(downloadUrl, downloadName);
+            await triggerChatAttachmentDownloadWithFallback(downloadUrl, downloadName, {
+                fileId: downloadFileId,
+                mimeType: downloadMimeType
+            });
         });
     });
 
@@ -16445,14 +17185,26 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
     if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
     try {
-        const messages = await fetchChatMessages();
-        chatLatestServerMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(messages) ? messages : []);
+        const payload = await fetchChatMessages();
+        const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
+        const oldestRecentRow = getOldestChatServerRow(recentMessages);
+        const olderLoadedMessages = oldestRecentRow > 0
+            ? (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages.filter((msg) => {
+                const row = Number(msg && msg.row ? msg.row : 0) || 0;
+                return row > 0 && row < oldestRecentRow;
+            }) : [])
+            : [];
+        chatLatestServerMessages = mergeChatServerMessages(olderLoadedMessages, recentMessages);
+        if (olderLoadedMessages.length === 0 || showLoading) {
+            chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
+        }
+        syncChatLoadedServerRows(chatLatestServerMessages);
         chatInitialHydrationPending = !!showLoading;
         if (showLoading) {
             // No bloquea el primer render: precalienta en segundo plano.
             void preloadChatThumbnails(chatLatestServerMessages);
         }
-        const hasNewMessage = updateChatNotificationState(messages, notifyOnNewMessage);
+        const hasNewMessage = updateChatNotificationState(recentMessages, notifyOnNewMessage);
         reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
         const unreadIncomingCount = hasNewMessage
             ? countIncomingUnreadMessages(previousServerMessages, chatLatestServerMessages, currentUserLabel)
@@ -16508,18 +17260,55 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
 }
 
 function stopChatAutoRefresh() {
-    if (chatRefreshIntervalId) {
-        clearInterval(chatRefreshIntervalId);
-        chatRefreshIntervalId = null;
+    chatAutoRefreshCycleId += 1;
+    if (chatRefreshTimerId) {
+        clearTimeout(chatRefreshTimerId);
+        chatRefreshTimerId = null;
     }
+    chatRefreshInFlight = false;
+}
+
+function getChatRefreshDelayMs() {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return CHAT_REFRESH_BACKGROUND_INTERVAL_MS;
+    }
+    return CHAT_REFRESH_INTERVAL_MS;
+}
+
+function scheduleNextChatAutoRefresh(cycleId, delayMs = 0) {
+    if (cycleId !== chatAutoRefreshCycleId) return;
+    if (chatRefreshTimerId) {
+        clearTimeout(chatRefreshTimerId);
+        chatRefreshTimerId = null;
+    }
+
+    const nextDelay = Math.max(250, Number(delayMs) || getChatRefreshDelayMs());
+    chatRefreshTimerId = setTimeout(async () => {
+        chatRefreshTimerId = null;
+        if (cycleId !== chatAutoRefreshCycleId) return;
+        const overlay = document.getElementById('chat-overlay');
+        if (!overlay || overlay.classList.contains('is-hidden')) return;
+        if (chatRefreshInFlight) {
+            scheduleNextChatAutoRefresh(cycleId, getChatRefreshDelayMs());
+            return;
+        }
+
+        chatRefreshInFlight = true;
+        try {
+            await refreshChatMessages(false, true);
+        } finally {
+            chatRefreshInFlight = false;
+            if (cycleId === chatAutoRefreshCycleId) {
+                scheduleNextChatAutoRefresh(cycleId, getChatRefreshDelayMs());
+            }
+        }
+    }, nextDelay);
 }
 
 function startChatAutoRefresh() {
     stopChatAutoRefresh();
-    chatRefreshIntervalId = setInterval(() => {
-        if (!document.getElementById('chat-overlay')) return;
-        void refreshChatMessages(false, true);
-    }, CHAT_REFRESH_INTERVAL_MS);
+    const cycleId = chatAutoRefreshCycleId;
+    scheduleNextChatAutoRefresh(cycleId, getChatRefreshDelayMs());
 }
 
 let chatViewportListenerInstalled = false;
@@ -16727,6 +17516,7 @@ function closeChatModal() {
     chatReplyTarget = null;
     chatEditTarget = null;
     chatAttachmentUploadInProgress = false;
+    resetChatHistoryPaginationState(false);
     resetChatUnreadIndicator();
     clearChatReplyTarget(false);
     updateChatReplyPreview();
@@ -16775,36 +17565,87 @@ async function submitChatMessage() {
         } else {
             applyLocalChatMessageEdit(activeEditTarget, message);
         }
-        clearChatEditTarget(false, false);
+        clearChatEditTarget(false, false, hasPendingReplacementFile);
 
         try {
             if (hasPendingReplacementFile) {
-                const attachmentHealth = await checkChatAttachmentHealth();
-                if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
-                    throw new Error('missing_drive_scope');
-                }
-                if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
-                    throw new Error('attachment_health_failed');
-                }
-
                 const replacementFile = pendingReplacement.file;
-                const dataBase64 = await readFileAsDataBase64(replacementFile);
-                await postToPortalB({
-                    type: 'chat_edit_message',
-                    columna: CHAT_COLUMN_KEY,
-                    row: activeEditTarget.row,
-                    nombre: identity.firstName,
-                    apellido: identity.lastName,
-                    userDisplayName: identity.displayName,
-                    mensaje: editPayloadMessage,
-                    attachment: {
-                        name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
-                        mimeType: String(pendingReplacement.mimeType || replacementFile.type || 'application/octet-stream').trim(),
-                        size: Number(pendingReplacement.size || replacementFile.size) || 0,
-                        kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
-                        dataBase64: dataBase64
+                const replacementSourceInputId = String(pendingReplacement.sourceInputId || '').trim();
+                const replacementReuseResult = await resolveChatAttachmentReuseForFile(replacementFile);
+                const replacementSha256 = normalizeChatAttachmentSha256(replacementReuseResult && replacementReuseResult.sha256);
+                const replacementReuse = normalizeChatAttachmentReuseRecord(replacementReuseResult && replacementReuseResult.attachment);
+
+                if (replacementReuse) {
+                    if (replacementSha256) {
+                        chatAttachmentReuseLookupCache.set(replacementSha256, replacementReuse);
                     }
-                }, { allowBeacon: false, onlyNoCors: true });
+                    await postToPortalB({
+                        type: 'chat_edit_message',
+                        columna: CHAT_COLUMN_KEY,
+                        row: activeEditTarget.row,
+                        nombre: identity.firstName,
+                        apellido: identity.lastName,
+                        userDisplayName: identity.displayName,
+                        mensaje: editPayloadMessage,
+                        attachmentReuse: {
+                            ...replacementReuse,
+                            sha256: replacementReuse.sha256 || replacementSha256
+                        }
+                    }, { allowBeacon: false, onlyNoCors: true });
+                    clearChatAttachmentInputSelection(replacementSourceInputId);
+                } else {
+                    const attachmentHealth = await checkChatAttachmentHealth();
+                    if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
+                        throw new Error('missing_drive_scope');
+                    }
+                    if (!attachmentHealth.ok && attachmentHealth.reason !== 'missing_drive_scope') {
+                        throw new Error('attachment_health_failed');
+                    }
+
+                    if (canUseHtmlServiceAttachmentInput(replacementSourceInputId)) {
+                        await uploadChatAttachmentViaHtmlService({
+                            type: 'chat_edit_message',
+                            columna: CHAT_COLUMN_KEY,
+                            row: activeEditTarget.row,
+                            nombre: identity.firstName,
+                            apellido: identity.lastName,
+                            userDisplayName: identity.displayName,
+                            mensaje: editPayloadMessage,
+                            attachment: {
+                                name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
+                                mimeType: String(pendingReplacement.mimeType || replacementFile.type || 'application/octet-stream').trim(),
+                                size: Number(pendingReplacement.size || replacementFile.size) || 0,
+                                kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
+                                sourceKind: String(pendingReplacement.sourceKind || pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
+                                sha256: replacementSha256
+                            }
+                        }, replacementSourceInputId);
+                    } else {
+                        const dataBase64 = await readFileAsDataBase64(replacementFile);
+                        await postToPortalB({
+                            type: 'chat_edit_message',
+                            columna: CHAT_COLUMN_KEY,
+                            row: activeEditTarget.row,
+                            nombre: identity.firstName,
+                            apellido: identity.lastName,
+                            userDisplayName: identity.displayName,
+                            mensaje: editPayloadMessage,
+                            attachment: {
+                                name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
+                                mimeType: String(pendingReplacement.mimeType || replacementFile.type || 'application/octet-stream').trim(),
+                                size: Number(pendingReplacement.size || replacementFile.size) || 0,
+                                kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
+                                sourceKind: String(pendingReplacement.sourceKind || pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
+                                sha256: replacementSha256,
+                                dataBase64: dataBase64
+                            }
+                        }, { allowBeacon: false, onlyNoCors: true });
+                    }
+                    if (replacementSha256) {
+                        chatAttachmentReuseLookupCache.delete(replacementSha256);
+                    }
+                    clearChatAttachmentInputSelection(replacementSourceInputId);
+                }
             } else {
                 await postToPortalB({
                     type: 'chat_edit_message',
@@ -16825,6 +17666,7 @@ async function submitChatMessage() {
         } catch (error) {
             console.warn('Error editando mensaje del chat:', error);
             if (document.getElementById('chat-overlay')) {
+                clearChatOptimisticEditPatch(activeEditTarget.row);
                 inputEl.value = message;
                 if (activeEditTarget && activeEditTarget.pendingReplacementAttachment && activeEditTarget.pendingReplacementAttachment.file) {
                     activeEditTarget.pendingReplacementAttachment = {
@@ -16859,7 +17701,6 @@ async function submitChatMessage() {
     const payloadMessage = serializedReplyTarget
         ? `<${serializedReplyTarget}> ${message}`
         : message;
-    const senderTaggedPayloadMessage = `-${normalizeChatUserLabel(identity.displayName)}-\n${payloadMessage}`;
     inputEl.value = '';
     keepChatKeyboardOpen(inputEl);
     focusChatInputForReply();
@@ -16887,7 +17728,7 @@ async function submitChatMessage() {
             nombre: identity.firstName,
             apellido: identity.lastName,
             userDisplayName: identity.displayName,
-            mensaje: senderTaggedPayloadMessage
+            mensaje: payloadMessage
         });
         setTimeout(() => {
             if (document.getElementById('chat-overlay')) {
@@ -16935,6 +17776,7 @@ async function openChatModal() {
         closeChatReplyThreadPopover();
         closeChatOwnMessageChoiceMenu();
         clearChatDeleteArm(false);
+        resetChatHistoryPaginationState(true);
         if (messagesEl) {
             messagesEl.innerHTML = getChatLoadingMarkup();
         }
@@ -16947,6 +17789,7 @@ async function openChatModal() {
 
     chatReplyTarget = null;
     chatEditTarget = null;
+    resetChatHistoryPaginationState(true);
 
     document.body.classList.add('chat-open');
     lockBodyScrollForChat();
@@ -17038,10 +17881,14 @@ async function openChatModal() {
                                 <span>Grabar voz</span>
                             </button>
                         </div>
-                        <input type="file" id="chat-attach-photo-input" accept="image/*" hidden>
-                        <input type="file" id="chat-attach-audio-input" accept="audio/*" hidden>
-                        <input type="file" id="chat-attach-video-input" accept="video/*" hidden>
-                        <input type="file" id="chat-attach-file-input" accept="${escapeHtml(CHAT_FILE_ATTACHMENT_ACCEPT)}" hidden>
+                        <form id="chat-attachment-upload-form">
+                            <input type="hidden" id="chat-attachment-payload-json" name="chat_payload_json" value="">
+                            <input type="hidden" id="chat-attachment-input-source" name="chat_input_source" value="">
+                            <input type="file" id="chat-attach-photo-input" name="chat_attach_photo" accept="image/*" hidden>
+                            <input type="file" id="chat-attach-audio-input" name="chat_attach_audio" accept="audio/*" hidden>
+                            <input type="file" id="chat-attach-video-input" name="chat_attach_video" accept="video/*" hidden>
+                            <input type="file" id="chat-attach-file-input" name="chat_attach_file" accept="${escapeHtml(CHAT_FILE_ATTACHMENT_ACCEPT)}" hidden>
+                        </form>
                         <textarea id="chat-input" class="chat-input" maxlength="280" placeholder="Mensaje..."></textarea>
                     </div>
                     <button id="chat-send-btn" class="chat-send-btn" type="button" aria-label="Enviar mensaje" title="Enviar">
@@ -17368,15 +18215,15 @@ async function openChatModal() {
     const onAttachmentInputChange = (inputEl, forcedKind = '') => {
         if (!inputEl) return;
         const picked = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
-        inputEl.value = '';
         if (!picked) return;
         if (String(forcedKind || '').trim().toLowerCase() === 'file' && !isChatFilePickerAllowedFile(picked)) {
+            inputEl.value = '';
             alert('Desde Archivo solo se permiten documentos y audios. Para imagenes o videos usa Foto o Video.');
             return;
         }
         vibrar(35);
         playButtonSound();
-        void submitChatAttachment(picked, forcedKind);
+        void submitChatAttachment(picked, forcedKind, inputEl.id || '');
     };
     if (photoAttachInput) {
         photoAttachInput.addEventListener('change', () => onAttachmentInputChange(photoAttachInput, 'image'));
@@ -17482,6 +18329,13 @@ async function openChatModal() {
         chatBodyEl.addEventListener('scroll', (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             updateChatPinnedState();
+            if (
+                chatHasMoreOlderMessages &&
+                !chatIsLoadingOlderMessages &&
+                (Number(chatBodyEl.scrollTop) || 0) <= CHAT_LOAD_OLDER_TRIGGER_PX
+            ) {
+                void loadOlderChatMessages();
+            }
             closeChatEmojiMenu();
             closeChatMessageActionMenu();
             closeChatOwnMessageChoiceMenu();

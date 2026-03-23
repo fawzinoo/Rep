@@ -2258,7 +2258,6 @@
     width: var(--chat-video-inline-fit-width, var(--chat-video-inline-width));
     height: var(--chat-video-inline-fit-height, var(--chat-video-inline-height));
     max-width: 100%;
-    min-width: 96px;
     border-radius: 12px;
     overflow: hidden;
     cursor: pointer;
@@ -2295,7 +2294,6 @@
 .chat-video-inline-shell.is-compact {
     --chat-video-inline-width: 180px;
     --chat-video-inline-height: 120px;
-    min-width: 72px;
     border-radius: 10px;
 }
 
@@ -10303,6 +10301,7 @@ let chatReceiveNotificationAudioPool = [];
 let chatSendNotificationAudioPool = [];
 let chatNotificationAudioPrimed = false;
 let chatNotificationAudioPrimingInstalled = false;
+let chatNotificationAudioPrimePromise = null;
 let chatNotificationSoundEnabled = false;
 let chatOwnMessageLongPressTimerId = null;
 let chatIgnoreOwnMessageClickUntil = 0;
@@ -13011,6 +13010,7 @@ function getChatNotificationAudioPool(soundType = 'receive') {
         audio.preload = 'auto';
         audio.playsInline = true;
         audio.setAttribute('playsinline', 'true');
+        audio.__chatNotificationPrimed = false;
         try { audio.load(); } catch (_) {}
         return audio;
     });
@@ -13024,46 +13024,71 @@ function getChatNotificationAudioPool(soundType = 'receive') {
     return nextPool;
 }
 
-function primeChatNotificationAudio() {
-    if (chatNotificationAudioPrimed) return;
-    chatNotificationAudioPrimed = true;
+async function primeSingleChatNotificationAudio(audio) {
+    if (!audio) return false;
+    try {
+        audio.muted = true;
+        audio.volume = 0;
+        if (Number(audio.readyState || 0) === 0) {
+            try { audio.load(); } catch (_) {}
+        }
+        const maybePromise = audio.play();
+        if (maybePromise && typeof maybePromise.then === 'function') {
+            await maybePromise;
+        }
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+        audio.volume = 0.9;
+        audio.__chatNotificationPrimed = true;
+        return true;
+    } catch (_) {
+        try {
+            audio.pause();
+            audio.currentTime = 0;
+        } catch (_) {}
+        audio.muted = false;
+        audio.volume = 0.9;
+        audio.__chatNotificationPrimed = false;
+        return false;
+    }
+}
 
-    ['receive', 'send'].forEach((soundType) => {
-        getChatNotificationAudioPool(soundType).forEach((audio) => {
-            try {
-                audio.muted = true;
-                const maybePromise = audio.play();
-                if (maybePromise && typeof maybePromise.then === 'function') {
-                    maybePromise
-                        .then(() => {
-                            audio.pause();
-                            audio.currentTime = 0;
-                            audio.muted = false;
-                        })
-                        .catch(() => {
-                            audio.muted = false;
-                        });
-                } else {
-                    audio.pause();
-                    audio.currentTime = 0;
-                    audio.muted = false;
-                }
-            } catch (_) {
-                audio.muted = false;
+async function primeChatNotificationAudio() {
+    if (chatNotificationAudioPrimed) return true;
+    if (chatNotificationAudioPrimePromise) return chatNotificationAudioPrimePromise;
+
+    chatNotificationAudioPrimePromise = (async () => {
+        let unlockedCount = 0;
+
+        for (const soundType of ['receive', 'send']) {
+            const pool = getChatNotificationAudioPool(soundType);
+            for (const audio of pool) {
+                const unlocked = await primeSingleChatNotificationAudio(audio);
+                if (unlocked) unlockedCount += 1;
             }
-        });
+        }
+
+        chatNotificationAudioPrimed = unlockedCount > 0;
+        return chatNotificationAudioPrimed;
+    })().finally(() => {
+        chatNotificationAudioPrimePromise = null;
     });
+
+    return chatNotificationAudioPrimePromise;
 }
 
 function installChatNotificationAudioPriming() {
     if (chatNotificationAudioPrimingInstalled) return;
     chatNotificationAudioPrimingInstalled = true;
 
-    const unlockAudio = () => {
-        primeChatNotificationAudio();
+    const unlockAudio = async () => {
+        const unlocked = await primeChatNotificationAudio();
+        if (!unlocked) return;
         ['pointerdown', 'touchstart', 'keydown'].forEach((eventName) => {
             document.removeEventListener(eventName, unlockAudio, true);
         });
+        chatNotificationAudioPrimingInstalled = false;
     };
 
     ['pointerdown', 'touchstart', 'keydown'].forEach((eventName) => {
@@ -13076,19 +13101,29 @@ function playChatNotificationSound(soundType = 'receive') {
     const pool = getChatNotificationAudioPool(soundType);
     if (pool.length === 0) return;
 
-    const audio = pool.find((item) => item.paused || item.ended) || pool[0];
+    const audio = pool.find((item) => item.__chatNotificationPrimed && (item.paused || item.ended))
+        || pool.find((item) => item.paused || item.ended)
+        || pool.find((item) => item.__chatNotificationPrimed)
+        || pool[0];
     try {
         audio.pause();
         audio.currentTime = 0;
         audio.muted = false;
         audio.volume = 0.9;
+        if (Number(audio.readyState || 0) === 0) {
+            try { audio.load(); } catch (_) {}
+        }
         const maybePromise = audio.play();
         if (maybePromise && typeof maybePromise.catch === 'function') {
             maybePromise.catch(() => {
+                chatNotificationAudioPrimed = false;
+                audio.__chatNotificationPrimed = false;
                 installChatNotificationAudioPriming();
             });
         }
     } catch (_) {
+        chatNotificationAudioPrimed = false;
+        audio.__chatNotificationPrimed = false;
         installChatNotificationAudioPriming();
     }
 }
@@ -16108,6 +16143,54 @@ async function captureChatVideoPosterDataUrlFromSource(sourceUrl = '') {
     });
 }
 
+async function captureChatImageSourceGeometry(sourceUrl = '', timeoutMs = 1800) {
+    const safeSourceUrl = String(sourceUrl || '').trim();
+    if (!safeSourceUrl || typeof document === 'undefined') {
+        return { width: 0, height: 0 };
+    }
+
+    return await new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = 0;
+        const tempImage = new Image();
+
+        const cleanup = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = 0;
+            }
+            tempImage.onload = null;
+            tempImage.onerror = null;
+        };
+
+        const finish = (width = 0, height = 0) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve({
+                width: normalizeChatMediaDimension(width),
+                height: normalizeChatMediaDimension(height)
+            });
+        };
+
+        tempImage.decoding = 'async';
+        tempImage.onload = () => {
+            finish(tempImage.naturalWidth, tempImage.naturalHeight);
+        };
+        tempImage.onerror = () => finish(0, 0);
+        timeoutId = window.setTimeout(() => finish(0, 0), Math.max(400, Number(timeoutMs) || 1800));
+
+        try {
+            tempImage.src = safeSourceUrl;
+            if (tempImage.complete && Number(tempImage.naturalWidth || 0) > 0) {
+                finish(tempImage.naturalWidth, tempImage.naturalHeight);
+            }
+        } catch (_) {
+            finish(0, 0);
+        }
+    });
+}
+
 async function captureChatVideoSourceGeometry(sourceUrl = '', timeoutMs = 1800) {
     const safeSourceUrl = String(sourceUrl || '').trim();
     if (!safeSourceUrl || typeof document === 'undefined' || !document.body) {
@@ -17934,47 +18017,136 @@ function getResolvedThumbCandidates(imageKey, candidates) {
     });
 }
 
-async function resolveBestThumbForImage(imageUrl) {
-    const imageKey = String(imageUrl || '').trim();
-    if (!imageKey) return '';
-    const alreadyResolved = String(chatResolvedThumbByImageUrl.get(imageKey) || '').trim();
-    if (alreadyResolved) return alreadyResolved;
+async function resolveBestChatThumbCandidate(cacheKey = '', rawCandidates = []) {
+    const safeKey = String(cacheKey || '').trim();
+    const candidates = Array.isArray(rawCandidates)
+        ? rawCandidates.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : [];
+    if (candidates.length === 0) return '';
 
-    const candidates = buildChatImageUrlCandidates(imageKey, CHAT_THUMB_SIZE);
-    for (let i = 0; i < candidates.length; i++) {
-        const candidate = String(candidates[i] || '').trim();
+    const uniqueCandidates = [];
+    const seen = new Set();
+    candidates.forEach((entry) => {
+        if (seen.has(entry)) return;
+        seen.add(entry);
+        uniqueCandidates.push(entry);
+    });
+
+    for (let i = 0; i < uniqueCandidates.length; i++) {
+        const candidate = uniqueCandidates[i];
         if (!candidate) continue;
         if (chatThumbPreloadedUrls.has(candidate)) {
-            chatResolvedThumbByImageUrl.set(imageKey, candidate);
+            if (safeKey) {
+                chatResolvedThumbByImageUrl.set(safeKey, candidate);
+            }
             return candidate;
         }
         const ok = await probeChatImageUrl(candidate);
         if (ok) {
             chatThumbPreloadedUrls.add(candidate);
-            chatResolvedThumbByImageUrl.set(imageKey, candidate);
+            if (safeKey) {
+                chatResolvedThumbByImageUrl.set(safeKey, candidate);
+            }
             return candidate;
         }
     }
+
     return '';
+}
+
+async function resolveBestThumbForImage(imageUrl) {
+    const imageKey = String(imageUrl || '').trim();
+    if (!imageKey) return '';
+    return resolveBestChatThumbCandidate(
+        imageKey,
+        getResolvedThumbCandidates(imageKey, buildChatImageUrlCandidates(imageKey, CHAT_THUMB_SIZE))
+    );
 }
 
 async function preloadChatThumbnails(messages, limit = CHAT_THUMB_PRELOAD_LIMIT) {
     if (!Array.isArray(messages) || messages.length === 0) return;
-    const imageUrls = [];
-    const seen = new Set();
-    for (let i = messages.length - 1; i >= 0; i--) {
+    const maxItems = Math.max(0, Number(limit) || 0);
+    if (!maxItems) return;
+
+    const thumbEntries = [];
+    const seenKeys = new Set();
+
+    const queueThumbCandidates = (cacheKey = '', candidates = []) => {
+        const safeKey = String(cacheKey || '').trim();
+        if (!safeKey || seenKeys.has(safeKey) || thumbEntries.length >= maxItems) return;
+        const resolvedCandidates = getResolvedThumbCandidates(safeKey, candidates);
+        if (!Array.isArray(resolvedCandidates) || resolvedCandidates.length === 0) return;
+        seenKeys.add(safeKey);
+        thumbEntries.push({
+            key: safeKey,
+            candidates: resolvedCandidates
+        });
+    };
+
+    const queueEntryThumbs = (entry) => {
+        if (!entry || thumbEntries.length >= maxItems) return;
+
+        const imageUrl = String(entry && entry.imageUrl ? entry.imageUrl : '').trim();
+        const attachmentUrl = String(entry && entry.attachmentUrl ? entry.attachmentUrl : '').trim();
+        const attachmentName = String(entry && entry.attachmentName ? entry.attachmentName : '').trim();
+        const attachmentMimeType = String(entry && entry.attachmentMimeType ? entry.attachmentMimeType : '').trim();
+        const attachmentFileId = String(entry && entry.attachmentFileId ? entry.attachmentFileId : '').trim();
+        const explicitAttachmentKind = String(entry && entry.attachmentKind ? entry.attachmentKind : '').trim().toLowerCase();
+        const resolvedAttachmentKind = resolveChatAttachmentKind(
+            explicitAttachmentKind,
+            attachmentMimeType,
+            attachmentName,
+            attachmentUrl
+        );
+
+        const resolvedImageUrl = imageUrl || (resolvedAttachmentKind === 'image' ? attachmentUrl : '');
+        if (resolvedImageUrl) {
+            queueThumbCandidates(
+                resolvedImageUrl,
+                buildChatImageUrlCandidates(resolvedImageUrl, CHAT_THUMB_SIZE)
+            );
+        }
+
+        if (resolvedAttachmentKind === 'video' && attachmentUrl) {
+            const videoThumbKey = getChatVideoThumbKey(attachmentFileId, attachmentUrl);
+            if (videoThumbKey) {
+                queueThumbCandidates(
+                    videoThumbKey,
+                    buildChatVideoPosterCandidates(attachmentUrl, attachmentFileId, 'w520')
+                );
+            }
+            return;
+        }
+
+        if (
+            resolvedAttachmentKind
+            && resolvedAttachmentKind !== 'image'
+            && resolvedAttachmentKind !== 'audio'
+            && attachmentUrl
+            && shouldPreviewChatFileInViewer(attachmentName, attachmentMimeType)
+        ) {
+            const fileThumbKey = `file-thumb:${attachmentFileId || attachmentUrl}`;
+            queueThumbCandidates(
+                fileThumbKey,
+                buildChatFileThumbUrlCandidates(attachmentUrl, attachmentFileId, 'w520')
+            );
+        }
+    };
+
+    for (let i = messages.length - 1; i >= 0 && thumbEntries.length < maxItems; i--) {
         const msg = messages[i];
-        const imageUrl = String(msg && msg.imageUrl ? msg.imageUrl : '').trim();
-        const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim().toLowerCase();
-        const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
-        const resolvedImageUrl = imageUrl || (attachmentKind === 'image' ? attachmentUrl : '');
-        if (!resolvedImageUrl || seen.has(resolvedImageUrl)) continue;
-        seen.add(resolvedImageUrl);
-        imageUrls.push(resolvedImageUrl);
-        if (imageUrls.length >= limit) break;
+        queueEntryThumbs(msg);
+        const attachedReplies = Array.isArray(msg && msg.attachedReplies) ? msg.attachedReplies : [];
+        for (let j = attachedReplies.length - 1; j >= 0 && thumbEntries.length < maxItems; j--) {
+            queueEntryThumbs(attachedReplies[j]);
+        }
     }
-    if (imageUrls.length === 0) return;
-    const preloadTask = Promise.allSettled(imageUrls.map((imgUrl) => resolveBestThumbForImage(imgUrl)));
+
+    if (thumbEntries.length === 0) return;
+
+    const preloadTask = Promise.allSettled(
+        thumbEntries.map((entry) => resolveBestChatThumbCandidate(entry.key, entry.candidates))
+    );
     await Promise.race([
         preloadTask,
         new Promise((resolve) => setTimeout(resolve, CHAT_THUMB_PRELOAD_WAIT_MS))
@@ -19088,7 +19260,13 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
     disableChatAttachmentUI(true);
     closeChatAttachmentMenu();
 
-    if (kind === 'video') {
+    if (kind === 'image') {
+        const imageGeometry = await captureChatImageSourceGeometry(localObjectUrl);
+        attachmentMediaWidth = normalizeChatMediaDimension(imageGeometry && imageGeometry.width);
+        attachmentMediaHeight = normalizeChatMediaDimension(imageGeometry && imageGeometry.height);
+        chatThumbPreloadedUrls.add(localObjectUrl);
+        chatResolvedThumbByImageUrl.set(localObjectUrl, localObjectUrl);
+    } else if (kind === 'video') {
         const videoGeometry = await captureChatVideoSourceGeometry(localObjectUrl);
         attachmentMediaWidth = normalizeChatMediaDimension(videoGeometry && videoGeometry.width);
         attachmentMediaHeight = normalizeChatMediaDimension(videoGeometry && videoGeometry.height);
@@ -21969,6 +22147,9 @@ function renderChatMessages(messages) {
         const imageFetchPriority = shouldBoostThumbLoad ? 'high' : 'auto';
         const imageLoadingMode = shouldBoostThumbLoad ? 'eager' : 'lazy';
         const imageTitle = String(msg.imageTitle || '').trim() || attachmentName || 'Imagen';
+        const imageDimensionAttrs = attachmentMediaWidth && attachmentMediaHeight
+            ? ` width="${attachmentMediaWidth}" height="${attachmentMediaHeight}"`
+            : '';
         const timeLabel = resolveChatTimeLabel(msg.timeLabel, msg.timestamp);
         const editTimeLabel = resolveChatTimeLabel(msg.editTimeLabel, msg.editTimestamp);
         const imageThumbHtml = imageThumbSrc ? `
@@ -21986,6 +22167,7 @@ function renderChatMessages(messages) {
                         data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
                         data-image-key="${escapeHtml(imageUrlKey)}"
                         alt="${escapeHtml(imageTitle)}"
+                        ${imageDimensionAttrs}
                         loading="${imageLoadingMode}"
                         fetchpriority="${imageFetchPriority}"
                         decoding="async"
@@ -22242,6 +22424,9 @@ function renderChatMessages(messages) {
             const replyAttachmentFileId = String(replyEntry && replyEntry.attachmentFileId ? replyEntry.attachmentFileId : '').trim();
             const replyAttachmentMediaWidth = normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaWidth ? replyEntry.attachmentMediaWidth : 0);
             const replyAttachmentMediaHeight = normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaHeight ? replyEntry.attachmentMediaHeight : 0);
+            const replyImageDimensionAttrs = replyAttachmentMediaWidth && replyAttachmentMediaHeight
+                ? ` width="${replyAttachmentMediaWidth}" height="${replyAttachmentMediaHeight}"`
+                : '';
             const replyAttachmentKind = resolveChatAttachmentKind(
                 replyEntry && replyEntry.attachmentKind ? replyEntry.attachmentKind : '',
                 replyAttachmentMimeType,
@@ -22339,6 +22524,7 @@ function renderChatMessages(messages) {
                             class="chat-message-reply-image-thumb"
                             src="${escapeHtml(replyImageUrl)}"
                             alt="${escapeHtml(replyImageTitle)}"
+                            ${replyImageDimensionAttrs}
                             loading="lazy"
                             decoding="async"
                         />
@@ -22517,6 +22703,7 @@ function renderChatMessages(messages) {
                             data-candidates="${escapeHtml(imageUrlCandidates.join('||'))}"
                             data-image-key="${escapeHtml(imageUrlKey)}"
                             alt="${escapeHtml(imageTitle)}"
+                            ${imageDimensionAttrs}
                             loading="${imageLoadingMode}"
                             fetchpriority="${imageFetchPriority}"
                             decoding="async"
@@ -23179,8 +23366,8 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
         syncChatLoadedServerRows(chatLatestServerMessages);
         chatInitialHydrationPending = !!showLoading;
         if (showLoading) {
-            // No bloquea el primer render: precalienta en segundo plano.
-            void preloadChatThumbnails(chatLatestServerMessages);
+            // En la primera apertura priorizamos estabilidad visual de las miniaturas.
+            await preloadChatThumbnails(chatLatestServerMessages);
         }
         reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
         const hasNewMessage = updateChatNotificationState(

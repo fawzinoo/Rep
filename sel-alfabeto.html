@@ -6029,6 +6029,7 @@
 }
 
 .chat-compose-row {
+    --chat-compose-action-width: 46px;
     display: flex;
     gap: 2px;
     align-items: center;
@@ -6159,18 +6160,37 @@
 
 .chat-attach-menu {
     position: absolute;
-    right: 10px;
-    bottom: calc(100% + 8px);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    left: calc(50% + (var(--chat-compose-action-width) / 2));
+    bottom: calc(100% + 12px);
+    transform: translateX(-50%);
+    width: min(368px, calc(100vw - 28px));
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 12px;
+    padding: 18px 16px 18px;
     background: #ffffff;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 12px;
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
-    padding: 8px;
-    z-index: 12;
-    min-width: 150px;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 28px;
+    box-shadow:
+        0 18px 40px rgba(15, 23, 42, 0.14),
+        0 4px 14px rgba(15, 23, 42, 0.06);
+    z-index: 16;
+    box-sizing: border-box;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.chat-attach-menu::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 52px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.1);
+    pointer-events: none;
 }
 
 .chat-attach-menu[hidden] {
@@ -6179,20 +6199,109 @@
 
 .chat-attach-option-btn {
     border: none;
-    background: #f8fafc;
+    background: transparent;
     color: #0f172a;
-    border-radius: 8px;
-    padding: 8px 10px;
+    border-radius: 18px;
+    padding: 10px 2px 2px;
     font-size: 0.88rem;
     font-weight: 700;
     cursor: pointer;
-    display: inline-flex;
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     gap: 8px;
+    text-align: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.08s ease, filter 0.08s ease, opacity 0.08s ease;
 }
 
 .chat-attach-option-btn:hover {
-    background: #eef2ff;
+    transform: translateY(-1px);
+    filter: brightness(1.02);
+}
+
+.chat-attach-option-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.98);
+}
+
+.chat-attach-option-icon-shell {
+    width: 58px;
+    height: 58px;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow:
+        0 6px 14px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+.chat-attach-option-icon-shell i {
+    font-size: 1.42rem;
+    line-height: 1;
+}
+
+.chat-attach-option-label {
+    display: block;
+    min-height: 2.2em;
+    color: #685240;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.chat-attach-option-btn.is-photo .chat-attach-option-icon-shell i {
+    color: #228be6;
+}
+
+.chat-attach-option-btn.is-video .chat-attach-option-icon-shell i {
+    color: #e64980;
+}
+
+.chat-attach-option-btn.is-file .chat-attach-option-icon-shell i {
+    color: #7c4dff;
+}
+
+.chat-attach-option-btn.is-audio .chat-attach-option-icon-shell i {
+    color: #f76707;
+}
+
+.chat-attach-option-btn.is-record .chat-attach-option-icon-shell i {
+    color: #12b886;
+}
+
+@media (max-width: 640px) {
+    .chat-attach-menu {
+        width: min(360px, calc(100vw - 22px));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px 8px;
+        padding: 18px 14px 18px;
+        border-radius: 26px;
+    }
+
+    .chat-attach-option-btn {
+        padding-top: 12px;
+        gap: 7px;
+    }
+
+    .chat-attach-option-icon-shell {
+        width: 56px;
+        height: 56px;
+        border-radius: 17px;
+    }
+
+    .chat-attach-option-icon-shell i {
+        font-size: 1.34rem;
+    }
+
+    .chat-attach-option-label {
+        font-size: 0.76rem;
+    }
 }
 
 .chat-voice-recorder-overlay {
@@ -19421,6 +19530,103 @@ function triggerChatAttachmentInput(inputId) {
     input.click();
 }
 
+function bindFastChatPress(button, handler) {
+    if (!button || typeof handler !== 'function') return;
+
+    let pointerTriggeredAt = 0;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let pointerMoved = false;
+    let activePointerId = null;
+    let activeTouchId = null;
+
+    const invoke = (event) => {
+        handler(event);
+    };
+
+    if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+        button.addEventListener('pointerdown', (event) => {
+            if (event.pointerType === 'mouse') return;
+            if (typeof event.button === 'number' && event.button !== 0) return;
+            activePointerId = event.pointerId;
+            pointerStartX = Number(event.clientX) || 0;
+            pointerStartY = Number(event.clientY) || 0;
+            pointerMoved = false;
+        }, { passive: true });
+
+        button.addEventListener('pointermove', (event) => {
+            if (event.pointerType === 'mouse') return;
+            if (activePointerId === null || event.pointerId !== activePointerId) return;
+            const dx = Math.abs((Number(event.clientX) || 0) - pointerStartX);
+            const dy = Math.abs((Number(event.clientY) || 0) - pointerStartY);
+            if (dx > CHAT_TAP_MAX_MOVE_PX || dy > CHAT_TAP_MAX_MOVE_PX) {
+                pointerMoved = true;
+            }
+        }, { passive: true });
+
+        button.addEventListener('pointerup', (event) => {
+            if (event.pointerType === 'mouse') return;
+            if (activePointerId === null || event.pointerId !== activePointerId) return;
+            activePointerId = null;
+            if (pointerMoved) return;
+            pointerTriggeredAt = Date.now();
+            if (event.cancelable) event.preventDefault();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            invoke(event);
+        });
+
+        button.addEventListener('pointercancel', () => {
+            activePointerId = null;
+            pointerMoved = true;
+        });
+    } else {
+        button.addEventListener('touchstart', (event) => {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            activeTouchId = touch.identifier;
+            pointerStartX = Number(touch.clientX) || 0;
+            pointerStartY = Number(touch.clientY) || 0;
+            pointerMoved = false;
+        }, { passive: true });
+
+        button.addEventListener('touchmove', (event) => {
+            const touchList = event.touches || [];
+            const touch = Array.from(touchList).find((entry) => entry.identifier === activeTouchId) || touchList[0];
+            if (!touch) return;
+            const dx = Math.abs((Number(touch.clientX) || 0) - pointerStartX);
+            const dy = Math.abs((Number(touch.clientY) || 0) - pointerStartY);
+            if (dx > CHAT_TAP_MAX_MOVE_PX || dy > CHAT_TAP_MAX_MOVE_PX) {
+                pointerMoved = true;
+            }
+        }, { passive: true });
+
+        button.addEventListener('touchend', (event) => {
+            const touchList = event.changedTouches || [];
+            const touch = Array.from(touchList).find((entry) => entry.identifier === activeTouchId) || touchList[0];
+            activeTouchId = null;
+            if (!touch || pointerMoved) return;
+            pointerTriggeredAt = Date.now();
+            if (event.cancelable) event.preventDefault();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            invoke(event);
+        }, { passive: false });
+
+        button.addEventListener('touchcancel', () => {
+            activeTouchId = null;
+            pointerMoved = true;
+        });
+    }
+
+    button.addEventListener('click', (event) => {
+        if (Date.now() - pointerTriggeredAt < 700) {
+            if (event.cancelable) event.preventDefault();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            return;
+        }
+        invoke(event);
+    });
+}
+
 function syncChatVideoViewerStateBackToInlineSource(sourceVideoEl, viewerPlayer) {
     if (!(sourceVideoEl instanceof HTMLVideoElement)) return false;
     if (!(viewerPlayer instanceof HTMLMediaElement)) return false;
@@ -24082,25 +24288,35 @@ async function openChatModal() {
                             ${CHAT_COMPOSER_EMOJIS.map((emoji) => `<button type="button" class="chat-emoji-menu-btn" data-chat-emoji="${escapeHtml(emoji)}" aria-label="Insertar ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>`).join('')}
                         </div>
                         <div id="chat-attach-menu" class="chat-attach-menu" hidden>
-                            <button type="button" class="chat-attach-option-btn" id="chat-attach-photo-btn">
-                                <i class="fas fa-images" aria-hidden="true"></i>
-                                <span>Foto</span>
+                            <button type="button" class="chat-attach-option-btn is-photo" id="chat-attach-photo-btn">
+                                <span class="chat-attach-option-icon-shell" aria-hidden="true">
+                                    <i class="fas fa-images"></i>
+                                </span>
+                                <span class="chat-attach-option-label">Galeria</span>
                             </button>
-                            <button type="button" class="chat-attach-option-btn" id="chat-attach-audio-btn">
-                                <i class="fas fa-headphones" aria-hidden="true"></i>
-                                <span>Audio</span>
+                            <button type="button" class="chat-attach-option-btn is-video" id="chat-attach-video-btn">
+                                <span class="chat-attach-option-icon-shell" aria-hidden="true">
+                                    <i class="fas fa-film"></i>
+                                </span>
+                                <span class="chat-attach-option-label">Video</span>
                             </button>
-                            <button type="button" class="chat-attach-option-btn" id="chat-attach-video-btn">
-                                <i class="fas fa-film" aria-hidden="true"></i>
-                                <span>Vídeo</span>
+                            <button type="button" class="chat-attach-option-btn is-file" id="chat-attach-file-btn">
+                                <span class="chat-attach-option-icon-shell" aria-hidden="true">
+                                    <i class="fas fa-file-lines"></i>
+                                </span>
+                                <span class="chat-attach-option-label">Documento</span>
                             </button>
-                            <button type="button" class="chat-attach-option-btn" id="chat-attach-file-btn">
-                                <i class="fas fa-file" aria-hidden="true"></i>
-                                <span>Archivo</span>
+                            <button type="button" class="chat-attach-option-btn is-audio" id="chat-attach-audio-btn">
+                                <span class="chat-attach-option-icon-shell" aria-hidden="true">
+                                    <i class="fas fa-headphones"></i>
+                                </span>
+                                <span class="chat-attach-option-label">Audio</span>
                             </button>
-                            <button type="button" class="chat-attach-option-btn" id="chat-attach-record-btn">
-                                <i class="fas fa-microphone" aria-hidden="true"></i>
-                                <span>Grabar voz</span>
+                            <button type="button" class="chat-attach-option-btn is-record" id="chat-attach-record-btn">
+                                <span class="chat-attach-option-icon-shell" aria-hidden="true">
+                                    <i class="fas fa-microphone"></i>
+                                </span>
+                                <span class="chat-attach-option-label">Nota de voz</span>
                             </button>
                         </div>
                         <form id="chat-attachment-upload-form">
@@ -24350,35 +24566,43 @@ async function openChatModal() {
         });
     }
     if (photoAttachBtn) {
-        photoAttachBtn.addEventListener('click', (event) => {
+        bindFastChatPress(photoAttachBtn, (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
+            vibrar(20);
+            playButtonSound(60);
             closeChatAttachmentMenu();
             triggerChatAttachmentInput('chat-attach-photo-input');
         });
     }
     if (audioAttachBtn) {
-        audioAttachBtn.addEventListener('click', (event) => {
+        bindFastChatPress(audioAttachBtn, (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
+            vibrar(20);
+            playButtonSound(60);
             closeChatAttachmentMenu();
             triggerChatAttachmentInput('chat-attach-audio-input');
         });
     }
     if (videoAttachBtn) {
-        videoAttachBtn.addEventListener('click', (event) => {
+        bindFastChatPress(videoAttachBtn, (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
+            vibrar(20);
+            playButtonSound(60);
             closeChatAttachmentMenu();
             triggerChatAttachmentInput('chat-attach-video-input');
         });
     }
     if (fileAttachBtn) {
-        fileAttachBtn.addEventListener('click', (event) => {
+        bindFastChatPress(fileAttachBtn, (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
+            vibrar(20);
+            playButtonSound(60);
             closeChatAttachmentMenu();
             triggerChatAttachmentInput('chat-attach-file-input');
         });
     }
     if (recordAttachBtn) {
-        recordAttachBtn.addEventListener('click', (event) => {
+        bindFastChatPress(recordAttachBtn, (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             vibrar(35);
             playButtonSound();

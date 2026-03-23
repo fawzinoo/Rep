@@ -10113,7 +10113,8 @@ body.chat-typing .chat-footer {
     <audio id="soundResetButton" src="https://fawzinoo.github.io/audios/bellding-254774.mp3" preload="auto"></audio>
     <audio id="shuffleSound" src="https://fawzinoo.github.io/audios/naipe.mp3" preload="auto"></audio>
     <audio id="buttonClickSound" src="https://fawzinoo.github.io/audios/botonn.mp3" preload="auto"></audio>
-    <audio id="chatNotificationSound" src="https://fawzinoo.github.io/audios/noti.mp3" preload="auto"></audio>
+    <audio id="chatReceiveNotificationSound" src="https://fawzinoo.github.io/audios/noti.mp3" preload="auto"></audio>
+    <audio id="chatSendNotificationSound" src="https://fawzinoo.github.io/audios/noti2.mp3" preload="auto"></audio>
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
         <button class="button chat" id="chat-button" title="Chat U1L0T1" aria-label="Chat U1L0T1">
@@ -10224,7 +10225,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwvmvOftbQTcj05Uq7R3LZFY2oezggSsU7zdTx2tUobfbKGpKU-mXMfABJs4JiIab9b/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwzcCt_LgmwD5nTnxHuVjBb0HbY62NLDRom5HYPOxcbI5SKgbxuYGDkdFQbC1EdhoT0/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -10254,6 +10255,9 @@ const CHAT_VIDEO_PERSISTENT_CACHE_MAX_BYTES = 50 * 1024 * 1024;
 const CHAT_VIDEO_PERSISTENT_CACHE_DB_NAME = `chat-video-cache-${CHAT_COLUMN_KEY}`;
 const CHAT_VIDEO_PERSISTENT_CACHE_STORE_NAME = 'videos';
 const CHAT_VIDEO_PERSISTENT_CACHE_DB_VERSION = 1;
+const CHAT_PENDING_UPLOAD_PERSISTENCE_DB_NAME = `chat-pending-uploads-${CHAT_COLUMN_KEY}`;
+const CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME = 'uploads';
+const CHAT_PENDING_UPLOAD_PERSISTENCE_DB_VERSION = 1;
 const CHAT_NOTIFICATION_SOUND_POOL_SIZE = 3;
 const CHAT_LONG_PRESS_DELETE_MS = 320;
 const CHAT_LONG_PRESS_CLICK_BLOCK_MS = 2000;
@@ -10262,6 +10266,7 @@ const CHAT_TAP_SUPPRESS_CLICK_MS = 120;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
 const CHAT_LOAD_OLDER_TRIGGER_PX = 56;
 const CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS = 4000;
+const CHAT_PENDING_UPLOAD_RESTORE_RETRY_DELAY_MS = 900;
 const CHAT_ATTACHMENT_HEALTH_CACHE_MS = 5 * 60 * 1000;
 const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 const CHAT_COMPOSER_EMOJIS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤗', '🤔', '😮', '😢', '😭', '😡', '👍', '👏', '🙏', '❤️', '💙', '💚', '💛', '🔥', '✨', '🎉', '🌟', '💯', '🤝', '👌', '🙌', '😉', '😴', '😅'];
@@ -10286,9 +10291,11 @@ let chatAttachmentUploadInProgress = false;
 let chatInitialHydrationPending = false;
 const chatThumbPreloadedUrls = new Set();
 const chatResolvedThumbByImageUrl = new Map();
-let chatNotificationAudioPool = [];
+let chatReceiveNotificationAudioPool = [];
+let chatSendNotificationAudioPool = [];
 let chatNotificationAudioPrimed = false;
 let chatNotificationAudioPrimingInstalled = false;
+let chatNotificationSoundEnabled = false;
 let chatOwnMessageLongPressTimerId = null;
 let chatIgnoreOwnMessageClickUntil = 0;
 let chatIgnoreMessageClickUntil = 0;
@@ -10324,6 +10331,7 @@ let chatVideoPersistentCacheDbPromise = null;
 let chatVideoPrefetchInFlight = false;
 const chatRecentlyConfirmedMessageKeys = new Map();
 const chatRecentlyConfirmedCleanupTimers = new Map();
+const chatPendingDeletedRows = new Map();
 const chatClientEditMetaByRow = loadChatEditMetaByRow();
 const chatOptimisticEditPatchByRow = new Map();
 let chatOwnedRowIds = loadChatOwnedRowIds();
@@ -10337,6 +10345,11 @@ let chatPersistentSideHitAreaRow = 0;
 let chatPersistentBlockShadowKey = '';
 const chatPendingUploadAnimationByAttachmentUrl = new Map();
 const chatPendingAttachmentUploads = new Map();
+const chatPendingAttachmentCancelByUrl = new Set();
+const chatActiveAttachmentUploadStateByUrl = new Map();
+let chatPendingUploadPersistenceDbPromise = null;
+let chatPendingUploadHydrationPromise = null;
+let chatPendingUploadHydrated = false;
 let chatAttachmentHealthCache = null;
 const chatAttachmentHashPromiseBySignature = new Map();
 const chatAttachmentReuseLookupCache = new Map();
@@ -10542,6 +10555,8 @@ function applyChatOptimisticEditPatch(msg, patch) {
         nextMsg.attachmentMimeType = '';
         nextMsg.attachmentSize = 0;
         nextMsg.attachmentFileId = '';
+        nextMsg.attachmentMediaWidth = 0;
+        nextMsg.attachmentMediaHeight = 0;
         return nextMsg;
     }
     if (attachmentMode === 'replace') {
@@ -10557,6 +10572,8 @@ function applyChatOptimisticEditPatch(msg, patch) {
         nextMsg.attachmentMimeType = String(patch.attachmentMimeType || '').trim();
         nextMsg.attachmentSize = Number(patch.attachmentSize) || 0;
         nextMsg.attachmentFileId = String(patch.attachmentFileId || '').trim();
+        nextMsg.attachmentMediaWidth = normalizeChatMediaDimension(patch.attachmentMediaWidth);
+        nextMsg.attachmentMediaHeight = normalizeChatMediaDimension(patch.attachmentMediaHeight);
     }
     return nextMsg;
 }
@@ -10974,6 +10991,14 @@ function clearChatAttachmentInputSelection(inputId) {
     }
 }
 
+function createChatAttachmentUploadCancelledError() {
+    return new Error('chat_attachment_upload_cancelled');
+}
+
+function isChatAttachmentUploadCancelledError(error) {
+    return String(error && error.message ? error.message : '').trim() === 'chat_attachment_upload_cancelled';
+}
+
 function setChatAttachmentInputFile(inputId, file) {
     const safeInputId = String(inputId || '').trim();
     if (!safeInputId || !(file instanceof File)) return false;
@@ -11032,6 +11057,23 @@ function normalizeChatAttachmentSha256(value) {
     return /^[a-f0-9]{64}$/.test(hash) ? hash : '';
 }
 
+function normalizeChatAttachmentClientToken(value) {
+    const token = String(value || '').trim().toLowerCase();
+    return /^[a-z0-9][a-z0-9_-]{7,127}$/.test(token) ? token : '';
+}
+
+function buildChatAttachmentClientToken() {
+    let randomPart = '';
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const randomBytes = new Uint8Array(10);
+        window.crypto.getRandomValues(randomBytes);
+        randomPart = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    } else {
+        randomPart = `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    }
+    return normalizeChatAttachmentClientToken(`att-${Date.now().toString(36)}-${randomPart.slice(0, 20)}`);
+}
+
 function normalizeChatAttachmentReuseRecord(attachment) {
     const source = attachment && typeof attachment === 'object' ? attachment : null;
     if (!source) return null;
@@ -11049,7 +11091,10 @@ function normalizeChatAttachmentReuseRecord(attachment) {
         kind,
         sourceKind,
         url: String(source.url || '').trim(),
-        sha256: normalizeChatAttachmentSha256(source.sha256 || source.hash)
+        sha256: normalizeChatAttachmentSha256(source.sha256 || source.hash),
+        clientToken: normalizeChatAttachmentClientToken(source.clientToken),
+        mediaWidth: normalizeChatMediaDimension(source.mediaWidth),
+        mediaHeight: normalizeChatMediaDimension(source.mediaHeight)
     };
     return normalized;
 }
@@ -11192,6 +11237,10 @@ async function resolveChatAttachmentReuseForFile(file) {
 }
 
 async function postToPortalB(payload, options = {}) {
+    const signal = options && options.signal ? options.signal : null;
+    if (signal && signal.aborted) {
+        throw createChatAttachmentUploadCancelledError();
+    }
     if (hasAppsScriptHtmlServiceBridge() && isChatPayloadSupportedByHtmlService(payload)) {
         return postChatPayloadViaHtmlService(payload);
     }
@@ -11216,11 +11265,15 @@ async function postToPortalB(payload, options = {}) {
                     headers: {
                         'Content-Type': 'text/plain;charset=utf-8'
                     },
-                    body: requestBody
+                    body: requestBody,
+                    signal: signal || undefined
                 });
                 PORTALB_SCRIPT_URL = baseUrl;
                 return response;
             } catch (error) {
+                if (String(error && error.name ? error.name : '').trim() === 'AbortError') {
+                    throw createChatAttachmentUploadCancelledError();
+                }
                 lastError = error;
                 console.warn(`POST ${modeValue} fallo (${baseUrl}):`, error);
             }
@@ -11732,6 +11785,382 @@ async function hydrateChatVideoBlobUrlFromPersistentCache(fileId = '', options =
 
     chatVideoPersistentHydrationPromises.set(safeFileId, hydrationPromise);
     return hydrationPromise;
+}
+
+function isChatPendingUploadPersistenceSupported() {
+    return typeof window !== 'undefined'
+        && !!window.indexedDB
+        && typeof Blob !== 'undefined'
+        && typeof File !== 'undefined'
+        && !!window.URL
+        && typeof window.URL.createObjectURL === 'function';
+}
+
+function normalizeChatPersistedPendingUploadRecord(rawRecord = null) {
+    if (!rawRecord || typeof rawRecord !== 'object') return null;
+    const clientToken = normalizeChatAttachmentClientToken(rawRecord.clientToken || '');
+    const blob = rawRecord.blob;
+    if (!clientToken || !(blob instanceof Blob)) return null;
+
+    const attachmentMimeType = String(rawRecord.attachmentMimeType || blob.type || 'application/octet-stream').trim()
+        || 'application/octet-stream';
+    const attachmentName = normalizeChatAttachmentFileName(
+        String(rawRecord.attachmentName || '').trim(),
+        attachmentMimeType,
+        'archivo-chat'
+    );
+    const kind = resolveChatAttachmentKind(
+        String(rawRecord.kind || '').trim().toLowerCase(),
+        attachmentMimeType,
+        attachmentName,
+        ''
+    );
+    const sourceKind = normalizeChatAttachmentSourceKind(
+        String(rawRecord.sourceKind || kind).trim().toLowerCase(),
+        kind,
+        attachmentName
+    );
+
+    return {
+        clientToken,
+        blob,
+        userLabel: normalizeChatUserLabel(rawRecord.userLabel || CHAT_DEFAULT_USER),
+        messageText: String(rawRecord.messageText || '').trim(),
+        quotedReply: String(rawRecord.quotedReply || '').trim(),
+        payloadMessage: String(rawRecord.payloadMessage || '').trim(),
+        attachmentName,
+        attachmentMimeType,
+        fileSize: Math.max(0, Number(rawRecord.fileSize || blob.size || 0) || 0),
+        kind,
+        sourceKind,
+        attachmentMediaWidth: normalizeChatMediaDimension(rawRecord.attachmentMediaWidth || 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(rawRecord.attachmentMediaHeight || 0),
+        replyThreadRow: Number(rawRecord.replyThreadRow || 0) || 0,
+        retryCount: Math.max(0, Number(rawRecord.retryCount || 0) || 0),
+        queuedAt: Math.max(0, Number(rawRecord.queuedAt || 0) || 0),
+        lastAttemptAt: Math.max(0, Number(rawRecord.lastAttemptAt || 0) || 0),
+        lastModified: Math.max(0, Number(rawRecord.lastModified || 0) || 0)
+    };
+}
+
+function openChatPendingUploadPersistenceDb() {
+    if (!isChatPendingUploadPersistenceSupported()) {
+        return Promise.resolve(null);
+    }
+    if (chatPendingUploadPersistenceDbPromise) {
+        return chatPendingUploadPersistenceDbPromise;
+    }
+
+    chatPendingUploadPersistenceDbPromise = new Promise((resolve) => {
+        let settled = false;
+        const finish = (db) => {
+            if (settled) return;
+            settled = true;
+            resolve(db || null);
+        };
+
+        try {
+            const request = window.indexedDB.open(
+                CHAT_PENDING_UPLOAD_PERSISTENCE_DB_NAME,
+                CHAT_PENDING_UPLOAD_PERSISTENCE_DB_VERSION
+            );
+
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME)) {
+                    db.createObjectStore(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME, { keyPath: 'clientToken' });
+                }
+            };
+
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => {
+                    try {
+                        db.close();
+                    } catch (_) {}
+                    chatPendingUploadPersistenceDbPromise = null;
+                };
+                finish(db);
+            };
+
+            request.onerror = () => {
+                console.warn('No se pudo abrir la persistencia de adjuntos pendientes del chat:', request.error);
+                chatPendingUploadPersistenceDbPromise = null;
+                finish(null);
+            };
+
+            request.onblocked = () => {
+                console.warn('La persistencia de adjuntos pendientes del chat quedó bloqueada por otra pestaña.');
+            };
+        } catch (error) {
+            console.warn('No se pudo iniciar la persistencia de adjuntos pendientes del chat:', error);
+            chatPendingUploadPersistenceDbPromise = null;
+            finish(null);
+        }
+    });
+
+    return chatPendingUploadPersistenceDbPromise;
+}
+
+async function listChatPersistedPendingUploadRecords() {
+    const db = await openChatPendingUploadPersistenceDb();
+    if (!db) return [];
+
+    return await new Promise((resolve) => {
+        const records = [];
+        let settled = false;
+        const finish = (value = records) => {
+            if (settled) return;
+            settled = true;
+            resolve(Array.isArray(value) ? value : records);
+        };
+
+        try {
+            const transaction = db.transaction(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME, 'readonly');
+            const request = transaction.objectStore(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME).openCursor();
+            request.onsuccess = (event) => {
+                const cursor = event.target && event.target.result;
+                if (!cursor) {
+                    finish(records);
+                    return;
+                }
+                const normalizedRecord = normalizeChatPersistedPendingUploadRecord(cursor.value);
+                if (normalizedRecord) {
+                    records.push(normalizedRecord);
+                }
+                cursor.continue();
+            };
+            request.onerror = () => finish(records);
+            transaction.onabort = () => finish(records);
+            transaction.onerror = () => finish(records);
+        } catch (error) {
+            console.warn('No se pudo listar la cola persistida de adjuntos pendientes del chat:', error);
+            finish([]);
+        }
+    });
+}
+
+async function persistChatPendingAttachmentUpload(uploadEntry) {
+    if (!isChatPendingUploadPersistenceSupported()) return false;
+    const file = uploadEntry && uploadEntry.file instanceof File ? uploadEntry.file : null;
+    if (!file) return false;
+
+    const clientToken = normalizeChatAttachmentClientToken(uploadEntry && uploadEntry.attachmentClientToken ? uploadEntry.attachmentClientToken : '');
+    if (!clientToken) return false;
+
+    const db = await openChatPendingUploadPersistenceDb();
+    if (!db) return false;
+
+    const record = {
+        clientToken,
+        blob: file,
+        userLabel: normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER)),
+        messageText: String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : '').trim(),
+        quotedReply: String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : '').trim(),
+        payloadMessage: String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : '').trim(),
+        attachmentName: normalizeChatAttachmentFileName(
+            String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : file.name).trim(),
+            String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : file.type).trim(),
+            'archivo-chat'
+        ),
+        attachmentMimeType: String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : file.type).trim() || 'application/octet-stream',
+        fileSize: Math.max(0, Number(uploadEntry && uploadEntry.fileSize ? uploadEntry.fileSize : file.size) || 0),
+        kind: String(uploadEntry && uploadEntry.kind ? uploadEntry.kind : guessAttachmentKindFromMime(file.type, file.name)).trim().toLowerCase(),
+        sourceKind: String(uploadEntry && uploadEntry.sourceKind ? uploadEntry.sourceKind : guessAttachmentKindFromMime(file.type, file.name)).trim().toLowerCase(),
+        attachmentMediaWidth: normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaWidth ? uploadEntry.attachmentMediaWidth : 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaHeight ? uploadEntry.attachmentMediaHeight : 0),
+        replyThreadRow: Number(uploadEntry && uploadEntry.replyThreadRow ? uploadEntry.replyThreadRow : 0) || 0,
+        retryCount: Math.max(0, Number(uploadEntry && uploadEntry.retryCount ? uploadEntry.retryCount : 0) || 0),
+        queuedAt: Math.max(0, Number(uploadEntry && uploadEntry.queuedAt ? uploadEntry.queuedAt : Date.now()) || Date.now()),
+        lastAttemptAt: Math.max(0, Number(uploadEntry && uploadEntry.lastAttemptAt ? uploadEntry.lastAttemptAt : 0) || 0),
+        lastModified: Math.max(0, Number(file.lastModified || Date.now()) || Date.now())
+    };
+
+    return await new Promise((resolve) => {
+        try {
+            const transaction = db.transaction(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME, 'readwrite');
+            transaction.objectStore(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME).put(record);
+            transaction.oncomplete = () => resolve(true);
+            transaction.onabort = () => resolve(false);
+            transaction.onerror = () => resolve(false);
+        } catch (error) {
+            console.warn('No se pudo persistir el adjunto pendiente del chat:', error);
+            resolve(false);
+        }
+    });
+}
+
+async function deleteChatPendingAttachmentUploadPersistenceRecord(clientToken = '') {
+    const safeClientToken = normalizeChatAttachmentClientToken(clientToken);
+    if (!safeClientToken) return false;
+    const db = await openChatPendingUploadPersistenceDb();
+    if (!db) return false;
+
+    return await new Promise((resolve) => {
+        try {
+            const transaction = db.transaction(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME, 'readwrite');
+            transaction.objectStore(CHAT_PENDING_UPLOAD_PERSISTENCE_STORE_NAME).delete(safeClientToken);
+            transaction.oncomplete = () => resolve(true);
+            transaction.onabort = () => resolve(false);
+            transaction.onerror = () => resolve(false);
+        } catch (error) {
+            console.warn('No se pudo borrar el adjunto pendiente persistido del chat:', error);
+            resolve(false);
+        }
+    });
+}
+
+function hasChatLocalEchoAttachmentClientToken(clientToken = '') {
+    const safeClientToken = normalizeChatAttachmentClientToken(clientToken);
+    if (!safeClientToken) return false;
+    return (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).some((msg) => {
+        return normalizeChatAttachmentClientToken(msg && msg.attachmentClientToken ? msg.attachmentClientToken : '') === safeClientToken;
+    });
+}
+
+function buildChatFileFromPersistedPendingUploadRecord(record) {
+    const normalizedRecord = normalizeChatPersistedPendingUploadRecord(record);
+    if (!normalizedRecord) return null;
+    if (normalizedRecord.blob instanceof File
+        && normalizedRecord.blob.name === normalizedRecord.attachmentName
+        && String(normalizedRecord.blob.type || '').trim() === normalizedRecord.attachmentMimeType) {
+        return normalizedRecord.blob;
+    }
+    return new File([normalizedRecord.blob], normalizedRecord.attachmentName, {
+        type: normalizedRecord.attachmentMimeType,
+        lastModified: normalizedRecord.lastModified || Date.now()
+    });
+}
+
+function restorePersistedChatPendingUploadLocalEcho(record, attachmentUrl) {
+    const normalizedRecord = normalizeChatPersistedPendingUploadRecord(record);
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!normalizedRecord || !safeAttachmentUrl) return false;
+    if (hasChatLocalEchoAttachmentClientToken(normalizedRecord.clientToken)) return false;
+
+    const queuedAt = normalizedRecord.queuedAt || Date.now();
+    chatLocalEchoMessages.push({
+        user: normalizeChatUserLabel(normalizedRecord.userLabel || CHAT_DEFAULT_USER),
+        message: normalizedRecord.messageText,
+        teacherReply: '',
+        quotedReply: normalizedRecord.quotedReply,
+        imageUrl: '',
+        imageTitle: '',
+        attachmentKind: normalizedRecord.kind,
+        attachmentSourceKind: normalizedRecord.sourceKind,
+        attachmentUrl: safeAttachmentUrl,
+        attachmentName: normalizedRecord.attachmentName,
+        attachmentMimeType: normalizedRecord.attachmentMimeType,
+        attachmentSize: normalizedRecord.fileSize,
+        attachmentFileId: '',
+        attachmentClientToken: normalizedRecord.clientToken,
+        attachmentMediaWidth: normalizedRecord.attachmentMediaWidth,
+        attachmentMediaHeight: normalizedRecord.attachmentMediaHeight,
+        timestamp: new Date(queuedAt).toISOString(),
+        timeLabel: formatChatTimeLabelForServerClock(queuedAt),
+        edited: false,
+        pending: true,
+        pendingUploadProgress: 4
+    });
+    return true;
+}
+
+function findChatServerMessageByAttachmentClientToken(messages, clientToken = '') {
+    const safeClientToken = normalizeChatAttachmentClientToken(clientToken);
+    if (!safeClientToken) return null;
+    const list = Array.isArray(messages) ? messages : [];
+    return list.find((msg) => {
+        return normalizeChatAttachmentClientToken(msg && msg.attachmentClientToken ? msg.attachmentClientToken : '') === safeClientToken;
+    }) || null;
+}
+
+async function hydratePersistedChatPendingUploads(options = {}) {
+    const force = !!(options && options.force);
+    if (!isChatPendingUploadPersistenceSupported()) return false;
+    if (chatPendingUploadHydrated && !force) return false;
+    if (chatPendingUploadHydrationPromise && !force) return chatPendingUploadHydrationPromise;
+
+    chatPendingUploadHydrationPromise = (async () => {
+        const persistedRecords = await listChatPersistedPendingUploadRecords();
+        if (!persistedRecords.length) {
+            chatPendingUploadHydrated = true;
+            return false;
+        }
+
+        let serverMessages = Array.isArray(chatLatestServerMessages) ? [...chatLatestServerMessages] : [];
+        if (navigator.onLine && lastConnectionStatus) {
+            try {
+                const payload = await fetchChatMessages();
+                const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
+                const mergedServerMessages = mergeChatServerMessages(serverMessages, recentMessages);
+                reconcilePendingDeletedChatRowsWithServer(mergedServerMessages);
+                chatLatestServerMessages = filterPendingDeletedChatMessages(mergedServerMessages);
+                syncChatLoadedServerRows(chatLatestServerMessages);
+                serverMessages = chatLatestServerMessages;
+            } catch (error) {
+                console.warn('No se pudo precargar el servidor antes de restaurar adjuntos pendientes:', error);
+            }
+        }
+
+        let restoredAny = false;
+        persistedRecords.forEach((record) => {
+            if (findChatServerMessageByAttachmentClientToken(serverMessages, record.clientToken)) {
+                void deleteChatPendingAttachmentUploadPersistenceRecord(record.clientToken);
+                return;
+            }
+
+            const restoredFile = buildChatFileFromPersistedPendingUploadRecord(record);
+            if (!(restoredFile instanceof File)) {
+                void deleteChatPendingAttachmentUploadPersistenceRecord(record.clientToken);
+                return;
+            }
+
+            const localObjectUrl = URL.createObjectURL(restoredFile);
+            if (record.kind === 'video') {
+                void hydrateChatVideoPosterFromSource('', localObjectUrl, localObjectUrl);
+            }
+
+            queueChatPendingAttachmentUpload({
+                localObjectUrl,
+                file: restoredFile,
+                fileSize: record.fileSize,
+                kind: record.kind,
+                sourceKind: record.sourceKind,
+                sourceInputId: '',
+                messageText: record.messageText,
+                quotedReply: record.quotedReply,
+                payloadMessage: record.payloadMessage,
+                userLabel: record.userLabel,
+                attachmentName: record.attachmentName,
+                attachmentMimeType: record.attachmentMimeType,
+                attachmentClientToken: record.clientToken,
+                attachmentMediaWidth: record.attachmentMediaWidth,
+                attachmentMediaHeight: record.attachmentMediaHeight,
+                replyThreadRow: record.replyThreadRow,
+                retryCount: record.retryCount,
+                lastAttemptAt: record.lastAttemptAt,
+                queuedAt: record.queuedAt
+            });
+            restorePersistedChatPendingUploadLocalEcho(record, localObjectUrl);
+            restoredAny = true;
+        });
+
+        if (restoredAny && document.getElementById('chat-overlay')) {
+            renderMergedChatMessages(chatLatestServerMessages);
+        }
+
+        chatPendingUploadHydrated = true;
+        if (restoredAny && navigator.onLine && lastConnectionStatus && !chatAttachmentUploadInProgress) {
+            setTimeout(() => {
+                void processPendingChatAttachmentUploadsAfterReconnect();
+            }, Math.max(250, CHAT_PENDING_UPLOAD_RESTORE_RETRY_DELAY_MS));
+        }
+        return restoredAny;
+    })().finally(() => {
+        chatPendingUploadHydrationPromise = null;
+    });
+
+    return chatPendingUploadHydrationPromise;
 }
 
 function isChatBlobUrlInActiveMediaUse(url = '') {
@@ -12462,12 +12891,18 @@ function queueChatPendingAttachmentUpload(uploadEntry) {
     const safeAttachmentUrl = String(uploadEntry && uploadEntry.localObjectUrl ? uploadEntry.localObjectUrl : '').trim();
     if (!safeAttachmentUrl || !(uploadEntry && uploadEntry.file instanceof File)) return false;
     const existing = chatPendingAttachmentUploads.get(safeAttachmentUrl) || null;
-    chatPendingAttachmentUploads.set(safeAttachmentUrl, {
+    const nextEntry = {
         ...(existing || {}),
         ...(uploadEntry || {}),
         localObjectUrl: safeAttachmentUrl,
+        userLabel: normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : ((existing && existing.userLabel) || (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER))),
+        messageText: String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : ((existing && existing.messageText) || '')).trim(),
+        quotedReply: String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : ((existing && existing.quotedReply) || '')).trim(),
         attachmentName: String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : ((existing && existing.attachmentName) || (uploadEntry.file && uploadEntry.file.name) || '')).trim(),
         attachmentMimeType: String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : ((existing && existing.attachmentMimeType) || (uploadEntry.file && uploadEntry.file.type) || 'application/octet-stream')).trim(),
+        attachmentClientToken: normalizeChatAttachmentClientToken(uploadEntry && uploadEntry.attachmentClientToken ? uploadEntry.attachmentClientToken : ((existing && existing.attachmentClientToken) || '')),
+        attachmentMediaWidth: normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaWidth ? uploadEntry.attachmentMediaWidth : ((existing && existing.attachmentMediaWidth) || 0)),
+        attachmentMediaHeight: normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaHeight ? uploadEntry.attachmentMediaHeight : ((existing && existing.attachmentMediaHeight) || 0)),
         fileSize: Math.max(0, Number(uploadEntry && uploadEntry.fileSize ? uploadEntry.fileSize : ((existing && existing.fileSize) || (uploadEntry.file && uploadEntry.file.size) || 0)) || 0),
         kind: String(uploadEntry && uploadEntry.kind ? uploadEntry.kind : ((existing && existing.kind) || '')).trim(),
         sourceKind: String(uploadEntry && uploadEntry.sourceKind ? uploadEntry.sourceKind : ((existing && existing.sourceKind) || '')).trim(),
@@ -12476,14 +12911,52 @@ function queueChatPendingAttachmentUpload(uploadEntry) {
         retryCount: Math.max(0, Number(uploadEntry && uploadEntry.retryCount != null ? uploadEntry.retryCount : ((existing && existing.retryCount) || 0)) || 0),
         lastAttemptAt: Math.max(0, Number(uploadEntry && uploadEntry.lastAttemptAt ? uploadEntry.lastAttemptAt : ((existing && existing.lastAttemptAt) || 0)) || 0),
         queuedAt: Math.max(0, Number((existing && existing.queuedAt) || Date.now()) || Date.now())
-    });
+    };
+    chatPendingAttachmentUploads.set(safeAttachmentUrl, nextEntry);
+    void persistChatPendingAttachmentUpload(nextEntry);
     return true;
 }
 
 function removeChatPendingAttachmentUpload(attachmentUrl) {
     const safeAttachmentUrl = String(attachmentUrl || '').trim();
     if (!safeAttachmentUrl) return false;
-    return chatPendingAttachmentUploads.delete(safeAttachmentUrl);
+    const existing = chatPendingAttachmentUploads.get(safeAttachmentUrl) || null;
+    const deleted = chatPendingAttachmentUploads.delete(safeAttachmentUrl);
+    const clientToken = normalizeChatAttachmentClientToken(existing && existing.attachmentClientToken ? existing.attachmentClientToken : '');
+    if (clientToken) {
+        void deleteChatPendingAttachmentUploadPersistenceRecord(clientToken);
+    }
+    return deleted;
+}
+
+function setChatActiveAttachmentUploadState(attachmentUrl, state) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl || !state) return null;
+    chatActiveAttachmentUploadStateByUrl.set(safeAttachmentUrl, state);
+    return state;
+}
+
+function getChatActiveAttachmentUploadState(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return null;
+    return chatActiveAttachmentUploadStateByUrl.get(safeAttachmentUrl) || null;
+}
+
+function clearChatActiveAttachmentUploadState(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    return chatActiveAttachmentUploadStateByUrl.delete(safeAttachmentUrl);
+}
+
+function cancelChatActiveAttachmentUploadByUrl(attachmentUrl) {
+    const activeState = getChatActiveAttachmentUploadState(attachmentUrl);
+    if (!activeState || typeof activeState.abort !== 'function') return false;
+    try {
+        activeState.abort();
+        return true;
+    } catch (_) {
+        return false;
+    }
 }
 
 function hasChatPendingAttachmentUploads() {
@@ -12502,20 +12975,30 @@ function buildChatMessagesSignature(messages) {
         const attachmentKind = String(msg && msg.attachmentKind ? msg.attachmentKind : '');
         const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
         const attachmentName = String(msg && msg.attachmentName ? msg.attachmentName : '');
+        const attachmentMediaWidth = normalizeChatMediaDimension(msg && msg.attachmentMediaWidth ? msg.attachmentMediaWidth : 0);
+        const attachmentMediaHeight = normalizeChatMediaDimension(msg && msg.attachmentMediaHeight ? msg.attachmentMediaHeight : 0);
         const edited = msg && msg.edited ? '1' : '0';
         const editTimestamp = String(msg && msg.editTimestamp ? msg.editTimestamp : '');
         const editTimeLabel = String(msg && msg.editTimeLabel ? msg.editTimeLabel : '');
-        return `${row}::${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}::${attachmentKind}::${attachmentUrl}::${attachmentName}::${edited}::${editTimestamp}::${editTimeLabel}`;
+        return `${row}::${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}::${attachmentKind}::${attachmentUrl}::${attachmentName}::${attachmentMediaWidth}::${attachmentMediaHeight}::${edited}::${editTimestamp}::${editTimeLabel}`;
     }).join('||');
 }
 
-function getChatNotificationAudioPool() {
-    if (chatNotificationAudioPool.length > 0) return chatNotificationAudioPool;
+function getChatNotificationAudioPool(soundType = 'receive') {
+    const normalizedSoundType = soundType === 'send' ? 'send' : 'receive';
+    const currentPool = normalizedSoundType === 'send'
+        ? chatSendNotificationAudioPool
+        : chatReceiveNotificationAudioPool;
+    if (currentPool.length > 0) return currentPool;
 
-    const template = document.getElementById('chatNotificationSound');
+    const template = document.getElementById(
+        normalizedSoundType === 'send'
+            ? 'chatSendNotificationSound'
+            : 'chatReceiveNotificationSound'
+    );
     if (!template || !template.src) return [];
 
-    chatNotificationAudioPool = Array.from({ length: CHAT_NOTIFICATION_SOUND_POOL_SIZE }, (_, index) => {
+    const nextPool = Array.from({ length: CHAT_NOTIFICATION_SOUND_POOL_SIZE }, (_, index) => {
         const audio = index === 0 ? template : new Audio(template.src);
         audio.preload = 'auto';
         audio.playsInline = true;
@@ -12524,35 +13007,43 @@ function getChatNotificationAudioPool() {
         return audio;
     });
 
-    return chatNotificationAudioPool;
+    if (normalizedSoundType === 'send') {
+        chatSendNotificationAudioPool = nextPool;
+    } else {
+        chatReceiveNotificationAudioPool = nextPool;
+    }
+
+    return nextPool;
 }
 
 function primeChatNotificationAudio() {
     if (chatNotificationAudioPrimed) return;
     chatNotificationAudioPrimed = true;
 
-    getChatNotificationAudioPool().forEach((audio) => {
-        try {
-            audio.muted = true;
-            const maybePromise = audio.play();
-            if (maybePromise && typeof maybePromise.then === 'function') {
-                maybePromise
-                    .then(() => {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        audio.muted = false;
-                    })
-                    .catch(() => {
-                        audio.muted = false;
-                    });
-            } else {
-                audio.pause();
-                audio.currentTime = 0;
+    ['receive', 'send'].forEach((soundType) => {
+        getChatNotificationAudioPool(soundType).forEach((audio) => {
+            try {
+                audio.muted = true;
+                const maybePromise = audio.play();
+                if (maybePromise && typeof maybePromise.then === 'function') {
+                    maybePromise
+                        .then(() => {
+                            audio.pause();
+                            audio.currentTime = 0;
+                            audio.muted = false;
+                        })
+                        .catch(() => {
+                            audio.muted = false;
+                        });
+                } else {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.muted = false;
+                }
+            } catch (_) {
                 audio.muted = false;
             }
-        } catch (_) {
-            audio.muted = false;
-        }
+        });
     });
 }
 
@@ -12572,8 +13063,9 @@ function installChatNotificationAudioPriming() {
     });
 }
 
-function playChatNotificationSound() {
-    const pool = getChatNotificationAudioPool();
+function playChatNotificationSound(soundType = 'receive') {
+    if (!chatNotificationSoundEnabled) return;
+    const pool = getChatNotificationAudioPool(soundType);
     if (pool.length === 0) return;
 
     const audio = pool.find((item) => item.paused || item.ended) || pool[0];
@@ -12593,7 +13085,51 @@ function playChatNotificationSound() {
     }
 }
 
-function updateChatNotificationState(messages, notifyOnNewMessage) {
+function setChatNotificationSoundEnabled(enabled) {
+    chatNotificationSoundEnabled = !!enabled;
+    if (chatNotificationSoundEnabled) return;
+    ['receive', 'send'].forEach((soundType) => {
+        getChatNotificationAudioPool(soundType).forEach((audio) => {
+            try {
+                audio.pause();
+                audio.currentTime = 0;
+            } catch (_) {}
+        });
+    });
+}
+
+function collectNewChatMessages(previousMessages, nextMessages) {
+    const previousRows = new Set(
+        (Array.isArray(previousMessages) ? previousMessages : [])
+            .map((msg) => Number(msg && msg.row ? msg.row : 0) || 0)
+            .filter((row) => row > 0)
+    );
+
+    return (Array.isArray(nextMessages) ? nextMessages : []).filter((msg) => {
+        const row = Number(msg && msg.row ? msg.row : 0) || 0;
+        return row > 0 && !previousRows.has(row);
+    });
+}
+
+function resolveChatNotificationSoundType(newMessages, currentUserLabel) {
+    let hasIncomingMessage = false;
+    let hasOwnMessage = false;
+
+    (Array.isArray(newMessages) ? newMessages : []).forEach((msg) => {
+        const row = Number(msg && msg.row ? msg.row : 0) || 0;
+        if (isChatRowOwnedByCurrentClient(row)) {
+            hasOwnMessage = true;
+            return;
+        }
+        hasIncomingMessage = true;
+    });
+
+    if (hasIncomingMessage) return 'receive';
+    if (hasOwnMessage) return 'send';
+    return '';
+}
+
+function updateChatNotificationState(messages, notifyOnNewMessage, previousMessages = null, currentUserLabel = '') {
     const currentCount = Array.isArray(messages) ? messages.length : 0;
     const currentSignature = buildChatMessagesSignature(messages);
     const hasNewMessage = chatHasLoadedOnce &&
@@ -12605,8 +13141,25 @@ function updateChatNotificationState(messages, notifyOnNewMessage) {
     chatLastMessagesSignature = currentSignature;
     chatHasLoadedOnce = true;
 
-    if (hasNewMessage) playChatNotificationSound();
+    if (hasNewMessage && isChatOverlayVisible()) {
+        const newMessages = collectNewChatMessages(previousMessages, messages);
+        const soundType = resolveChatNotificationSoundType(newMessages, currentUserLabel);
+        try {
+            if (soundType) playChatNotificationSound(soundType);
+        } catch (_) {}
+    }
     return hasNewMessage;
+}
+
+function isChatOverlayVisible() {
+    const overlay = document.getElementById('chat-overlay');
+    return !!(
+        chatNotificationSoundEnabled &&
+        document.body &&
+        document.body.classList.contains('chat-open') &&
+        overlay &&
+        !overlay.classList.contains('is-hidden')
+    );
 }
 
 function buildChatMessageKey(msg) {
@@ -12620,13 +13173,70 @@ function buildChatMessageKey(msg) {
     const attachmentName = String(msg && msg.attachmentName ? msg.attachmentName : '').trim();
     const attachmentMimeType = String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim();
     const attachmentSize = String(msg && msg.attachmentSize != null ? msg.attachmentSize : '').trim();
+    const attachmentClientToken = normalizeChatAttachmentClientToken(msg && msg.attachmentClientToken ? msg.attachmentClientToken : '');
     const edited = msg && msg.edited ? '1' : '0';
     const editTimestamp = String(msg && msg.editTimestamp ? msg.editTimestamp : '').trim();
     const editTimeLabel = String(msg && msg.editTimeLabel ? msg.editTimeLabel : '').trim();
     const mediaFingerprint = attachmentKind
-        ? `${attachmentKind}::${attachmentSourceKind}::${attachmentName}::${attachmentMimeType}::${attachmentSize}`
+        ? (attachmentClientToken
+            ? `${attachmentKind}::token::${attachmentClientToken}`
+            : `${attachmentKind}::${attachmentSourceKind}::${attachmentName}::${attachmentMimeType}::${attachmentSize}`)
         : (imageUrl ? `imageurl::${imageUrl}` : '');
     return `${user}::${message}::${teacherReply}::${quotedReply}::${mediaFingerprint}::${edited}::${editTimestamp}::${editTimeLabel}`;
+}
+
+function normalizeChatAttachmentMatchStem(fileName = '') {
+    const cleanName = String(fileName || '')
+        .trim()
+        .split('?')[0]
+        .split('#')[0]
+        .trim()
+        .replace(/\.[a-z0-9]{2,8}$/i, '');
+    return normalizeChatComparisonText(cleanName);
+}
+
+function isChatLooseAttachmentEchoMatch(localMsg, serverMsg) {
+    const localAttachmentKind = String(localMsg && localMsg.attachmentKind ? localMsg.attachmentKind : '').trim().toLowerCase();
+    const serverAttachmentKind = String(serverMsg && serverMsg.attachmentKind ? serverMsg.attachmentKind : '').trim().toLowerCase();
+    if (!localAttachmentKind || !serverAttachmentKind || localAttachmentKind !== serverAttachmentKind) return false;
+
+    const localClientToken = normalizeChatAttachmentClientToken(localMsg && localMsg.attachmentClientToken ? localMsg.attachmentClientToken : '');
+    const serverClientToken = normalizeChatAttachmentClientToken(serverMsg && serverMsg.attachmentClientToken ? serverMsg.attachmentClientToken : '');
+    if (localClientToken && serverClientToken) {
+        return localClientToken === serverClientToken;
+    }
+
+    const localUser = normalizeChatUserLabel(localMsg && localMsg.user ? localMsg.user : '');
+    const serverUser = normalizeChatUserLabel(serverMsg && serverMsg.user ? serverMsg.user : '');
+    if (localUser !== serverUser) return false;
+    if (String(localMsg && localMsg.message ? localMsg.message : '').trim() !== String(serverMsg && serverMsg.message ? serverMsg.message : '').trim()) return false;
+    if (String(localMsg && localMsg.teacherReply ? localMsg.teacherReply : '').trim() !== String(serverMsg && serverMsg.teacherReply ? serverMsg.teacherReply : '').trim()) return false;
+    if (String(localMsg && localMsg.quotedReply ? localMsg.quotedReply : '').trim() !== String(serverMsg && serverMsg.quotedReply ? serverMsg.quotedReply : '').trim()) return false;
+
+    const localSize = Math.max(0, Number(localMsg && localMsg.attachmentSize ? localMsg.attachmentSize : 0) || 0);
+    const serverSize = Math.max(0, Number(serverMsg && serverMsg.attachmentSize ? serverMsg.attachmentSize : 0) || 0);
+    if (localSize > 0 && serverSize > 0 && localSize !== serverSize) return false;
+
+    const localStem = normalizeChatAttachmentMatchStem(localMsg && localMsg.attachmentName ? localMsg.attachmentName : '');
+    const serverStem = normalizeChatAttachmentMatchStem(serverMsg && serverMsg.attachmentName ? serverMsg.attachmentName : '');
+    if (localStem && serverStem && localStem !== serverStem) return false;
+
+    const localMime = String(localMsg && localMsg.attachmentMimeType ? localMsg.attachmentMimeType : '').trim().toLowerCase();
+    const serverMime = String(serverMsg && serverMsg.attachmentMimeType ? serverMsg.attachmentMimeType : '').trim().toLowerCase();
+    if (localMime && serverMime) {
+        const localMimeFamily = localMime.split('/')[0];
+        const serverMimeFamily = serverMime.split('/')[0];
+        if (localMimeFamily && serverMimeFamily && localMimeFamily !== serverMimeFamily) return false;
+    }
+
+    const localTimestampMs = parseChatTimestampMs(localMsg && localMsg.timestamp ? localMsg.timestamp : '');
+    const serverTimestampMs = parseChatTimestampMs(serverMsg && serverMsg.timestamp ? serverMsg.timestamp : '');
+    if (localTimestampMs && serverTimestampMs) {
+        const diffMs = Math.abs(localTimestampMs - serverTimestampMs);
+        if (diffMs > 15 * 60 * 1000) return false;
+    }
+
+    return true;
 }
 
 function buildChatRecentlyConfirmedId(target) {
@@ -12662,13 +13272,77 @@ function isChatMessageRecentlyConfirmed(msg) {
     return true;
 }
 
+function pruneExpiredPendingChatDeletedRows() {
+    if (chatPendingDeletedRows.size === 0) return;
+    const now = Date.now();
+    for (const [row, expiry] of Array.from(chatPendingDeletedRows.entries())) {
+        if ((Number(expiry) || 0) <= now) {
+            chatPendingDeletedRows.delete(row);
+        }
+    }
+}
+
+function markChatRowPendingDeletion(row, ttlMs = 15000) {
+    const targetRow = Number(row) || 0;
+    if (!targetRow) return;
+    pruneExpiredPendingChatDeletedRows();
+    chatPendingDeletedRows.set(targetRow, Date.now() + Math.max(2500, Number(ttlMs) || 0));
+}
+
+function clearChatRowPendingDeletion(row) {
+    const targetRow = Number(row) || 0;
+    if (!targetRow) return;
+    chatPendingDeletedRows.delete(targetRow);
+}
+
+function isChatRowPendingDeletion(row) {
+    const targetRow = Number(row) || 0;
+    if (!targetRow) return false;
+    pruneExpiredPendingChatDeletedRows();
+    const expiry = Number(chatPendingDeletedRows.get(targetRow) || 0);
+    if (!expiry) return false;
+    if (expiry <= Date.now()) {
+        chatPendingDeletedRows.delete(targetRow);
+        return false;
+    }
+    return true;
+}
+
+function filterPendingDeletedChatMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return Array.isArray(messages) ? [...messages] : [];
+    }
+    pruneExpiredPendingChatDeletedRows();
+    if (chatPendingDeletedRows.size === 0) return [...messages];
+    return messages.filter((msg) => {
+        const row = Number(msg && msg.row ? msg.row : 0) || 0;
+        return !row || !isChatRowPendingDeletion(row);
+    });
+}
+
+function reconcilePendingDeletedChatRowsWithServer(messages) {
+    pruneExpiredPendingChatDeletedRows();
+    if (chatPendingDeletedRows.size === 0) return;
+    const activeRows = new Set(
+        (Array.isArray(messages) ? messages : [])
+            .map((msg) => Number(msg && msg.row ? msg.row : 0) || 0)
+            .filter((row) => row > 0)
+    );
+    for (const row of Array.from(chatPendingDeletedRows.keys())) {
+        if (!activeRows.has(row)) {
+            chatPendingDeletedRows.delete(row);
+        }
+    }
+}
+
 function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = null) {
+    const allServerMessages = Array.isArray(serverMessages) ? serverMessages : [];
     const previousRows = new Set(
         (Array.isArray(previousServerMessages) ? previousServerMessages : [])
             .map((msg) => Number(msg && msg.row ? msg.row : 0) || 0)
             .filter((row) => row > 0)
     );
-    const candidateServerMessages = (Array.isArray(serverMessages) ? serverMessages : []).filter((msg) => {
+    const candidateServerMessages = allServerMessages.filter((msg) => {
         const row = Number(msg && msg.row ? msg.row : 0) || 0;
         if (row <= 0) return previousRows.size === 0;
         return !previousRows.has(row);
@@ -12677,6 +13351,7 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
     const keyCounts = new Map();
     const keyRows = new Map();
     const candidateServerMessagesByRow = new Map();
+    const unmatchedCandidateServerMessages = [];
     candidateServerMessages.forEach((msg) => {
         const key = buildChatMessageKey(msg);
         keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
@@ -12686,55 +13361,120 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
         if (row > 0 && !candidateServerMessagesByRow.has(row)) {
             candidateServerMessagesByRow.set(row, msg);
         }
+        unmatchedCandidateServerMessages.push(msg);
     });
+
+    const removeUnmatchedCandidateServerMessage = (targetMsg) => {
+        const idx = unmatchedCandidateServerMessages.indexOf(targetMsg);
+        if (idx >= 0) {
+            unmatchedCandidateServerMessages.splice(idx, 1);
+        }
+    };
+
+    const buildAllServerAttachmentFallbackPool = () => {
+        const byRow = new Map();
+        allServerMessages.forEach((msg) => {
+            const row = Number(msg && msg.row ? msg.row : 0) || 0;
+            if (row > 0 && !byRow.has(row)) {
+                byRow.set(row, msg);
+            }
+        });
+        return Array.from(byRow.values());
+    };
+
+    const unmatchedAllServerAttachmentMessages = buildAllServerAttachmentFallbackPool();
+
+    const removeUnmatchedAllServerAttachmentMessage = (targetMsg) => {
+        const idx = unmatchedAllServerAttachmentMessages.indexOf(targetMsg);
+        if (idx >= 0) {
+            unmatchedAllServerAttachmentMessages.splice(idx, 1);
+        }
+    };
+
+    const consumeLocalEchoServerMatch = (msg, matchedServerMessage = null, matchedRow = 0) => {
+        let keepLocalAttachmentUrl = false;
+        const resolvedMatchedRow = Number(matchedRow || (matchedServerMessage && matchedServerMessage.row) || 0) || 0;
+        if (matchedServerMessage) {
+            removeUnmatchedCandidateServerMessage(matchedServerMessage);
+            removeUnmatchedAllServerAttachmentMessage(matchedServerMessage);
+        }
+        if (resolvedMatchedRow > 0) {
+            markChatRowOwned(resolvedMatchedRow);
+            markChatMessageRecentlyConfirmed({ row: resolvedMatchedRow });
+            const localAttachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
+            const localAttachmentKind = resolveChatAttachmentKind(
+                String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim().toLowerCase(),
+                String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
+                String(msg && msg.attachmentName ? msg.attachmentName : '').trim(),
+                localAttachmentUrl
+            );
+            if (localAttachmentKind === 'video' && isChatBlobUrl(localAttachmentUrl)) {
+                const localAttachmentName = String(msg && msg.attachmentName ? msg.attachmentName : '').trim();
+                const localAttachmentMime = String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim();
+                const localAttachmentMediaWidth = normalizeChatMediaDimension(msg && msg.attachmentMediaWidth ? msg.attachmentMediaWidth : 0);
+                const localAttachmentMediaHeight = normalizeChatMediaDimension(msg && msg.attachmentMediaHeight ? msg.attachmentMediaHeight : 0);
+                rememberChatPreferredLocalVideoForRow(resolvedMatchedRow, localAttachmentUrl, {
+                    attachmentName: localAttachmentName
+                        || String(matchedServerMessage && matchedServerMessage.attachmentName ? matchedServerMessage.attachmentName : '').trim(),
+                    attachmentMimeType: localAttachmentMime
+                        || String(matchedServerMessage && matchedServerMessage.attachmentMimeType ? matchedServerMessage.attachmentMimeType : '').trim(),
+                    attachmentFileId: String(matchedServerMessage && matchedServerMessage.attachmentFileId ? matchedServerMessage.attachmentFileId : '').trim(),
+                    remoteUrl: String(matchedServerMessage && matchedServerMessage.attachmentUrl ? matchedServerMessage.attachmentUrl : '').trim()
+                });
+                const localPosterUrl = getRememberedChatVideoPosterUrl('', localAttachmentUrl);
+                if (localPosterUrl) {
+                    rememberChatVideoPosterUrl(
+                        String(matchedServerMessage && matchedServerMessage.attachmentFileId ? matchedServerMessage.attachmentFileId : '').trim(),
+                        String(matchedServerMessage && matchedServerMessage.attachmentUrl ? matchedServerMessage.attachmentUrl : '').trim(),
+                        localPosterUrl
+                    );
+                }
+                if (matchedServerMessage) {
+                    if (!normalizeChatMediaDimension(matchedServerMessage.attachmentMediaWidth) && localAttachmentMediaWidth) {
+                        matchedServerMessage.attachmentMediaWidth = localAttachmentMediaWidth;
+                    }
+                    if (!normalizeChatMediaDimension(matchedServerMessage.attachmentMediaHeight) && localAttachmentMediaHeight) {
+                        matchedServerMessage.attachmentMediaHeight = localAttachmentMediaHeight;
+                    }
+                }
+                keepLocalAttachmentUrl = true;
+            }
+        } else {
+            markChatMessageRecentlyConfirmed(msg);
+        }
+        removeChatPendingAttachmentUpload(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
+        clearChatPendingUploadProgressAnimation(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
+        if (!keepLocalAttachmentUrl) {
+            releaseChatBlobUrl(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
+        }
+        return false;
+    };
 
     chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => {
         const key = buildChatMessageKey(msg);
         const remaining = keyCounts.get(key) || 0;
         if (remaining > 0) {
-            let keepLocalAttachmentUrl = false;
             keyCounts.set(key, remaining - 1);
             const matchingRows = keyRows.get(key) || [];
             const matchedRow = Number(matchingRows.shift() || 0) || 0;
-            if (matchedRow > 0) {
-                markChatRowOwned(matchedRow);
-                markChatMessageRecentlyConfirmed({ row: matchedRow });
-                const localAttachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
-                const localAttachmentKind = resolveChatAttachmentKind(
-                    String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim().toLowerCase(),
-                    String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
-                    String(msg && msg.attachmentName ? msg.attachmentName : '').trim(),
-                    localAttachmentUrl
-                );
-                if (localAttachmentKind === 'video' && isChatBlobUrl(localAttachmentUrl)) {
-                    const matchedServerMessage = candidateServerMessagesByRow.get(matchedRow);
-                    rememberChatPreferredLocalVideoForRow(matchedRow, localAttachmentUrl, {
-                        attachmentName: String(msg && msg.attachmentName ? msg.attachmentName : '').trim()
-                            || String(matchedServerMessage && matchedServerMessage.attachmentName ? matchedServerMessage.attachmentName : '').trim(),
-                        attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim()
-                            || String(matchedServerMessage && matchedServerMessage.attachmentMimeType ? matchedServerMessage.attachmentMimeType : '').trim(),
-                        attachmentFileId: String(matchedServerMessage && matchedServerMessage.attachmentFileId ? matchedServerMessage.attachmentFileId : '').trim(),
-                        remoteUrl: String(matchedServerMessage && matchedServerMessage.attachmentUrl ? matchedServerMessage.attachmentUrl : '').trim()
-                    });
-                    const localPosterUrl = getRememberedChatVideoPosterUrl('', localAttachmentUrl);
-                    if (localPosterUrl) {
-                        rememberChatVideoPosterUrl(
-                            String(matchedServerMessage && matchedServerMessage.attachmentFileId ? matchedServerMessage.attachmentFileId : '').trim(),
-                            String(matchedServerMessage && matchedServerMessage.attachmentUrl ? matchedServerMessage.attachmentUrl : '').trim(),
-                            localPosterUrl
-                        );
-                    }
-                    keepLocalAttachmentUrl = true;
-                }
-            } else {
-                markChatMessageRecentlyConfirmed(msg);
+            const matchedServerMessage = matchedRow > 0
+                ? candidateServerMessagesByRow.get(matchedRow) || null
+                : null;
+            return consumeLocalEchoServerMatch(msg, matchedServerMessage, matchedRow);
+        }
+
+        if (String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim()) {
+            const fallbackIndex = unmatchedCandidateServerMessages.findIndex((candidateMsg) => isChatLooseAttachmentEchoMatch(msg, candidateMsg));
+            if (fallbackIndex >= 0) {
+                const matchedServerMessage = unmatchedCandidateServerMessages[fallbackIndex];
+                return consumeLocalEchoServerMatch(msg, matchedServerMessage, Number(matchedServerMessage && matchedServerMessage.row ? matchedServerMessage.row : 0) || 0);
             }
-            removeChatPendingAttachmentUpload(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
-            clearChatPendingUploadProgressAnimation(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
-            if (!keepLocalAttachmentUrl) {
-                releaseChatBlobUrl(msg && msg.attachmentUrl ? msg.attachmentUrl : '');
+
+            const persistedFallbackIndex = unmatchedAllServerAttachmentMessages.findIndex((candidateMsg) => isChatLooseAttachmentEchoMatch(msg, candidateMsg));
+            if (persistedFallbackIndex >= 0) {
+                const matchedServerMessage = unmatchedAllServerAttachmentMessages[persistedFallbackIndex];
+                return consumeLocalEchoServerMatch(msg, matchedServerMessage, Number(matchedServerMessage && matchedServerMessage.row ? matchedServerMessage.row : 0) || 0);
             }
-            return false;
         }
         return true;
     });
@@ -12743,8 +13483,9 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
 function renderMergedChatMessages(serverMessages) {
     closeChatMessageActionMenu();
     closeChatOwnMessageChoiceMenu();
-    const base = Array.isArray(serverMessages) ? serverMessages : [];
-    const merged = sortChatMessagesChronologically([...base, ...chatLocalEchoMessages]);
+    const base = filterPendingDeletedChatMessages(Array.isArray(serverMessages) ? serverMessages : []);
+    const localEcho = filterPendingDeletedChatMessages(Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []);
+    const merged = sortChatMessagesChronologically([...base, ...localEcho]);
     renderChatMessages(merged);
     chatLastRenderedSignature = buildChatMessagesSignature(merged);
     installChatLayoutResizeObserver();
@@ -12772,6 +13513,8 @@ async function loadOlderChatMessages() {
         const olderMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
         if (olderMessages.length > 0) {
             chatLatestServerMessages = mergeChatServerMessages(olderMessages, chatLatestServerMessages);
+            reconcilePendingDeletedChatRowsWithServer(chatLatestServerMessages);
+            chatLatestServerMessages = filterPendingDeletedChatMessages(chatLatestServerMessages);
             syncChatLoadedServerRows(chatLatestServerMessages);
         }
         chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
@@ -12829,10 +13572,21 @@ function canEditOwnChatMessage(msg, currentUserLabel) {
     return row > 0 && (!!messageText || hasMedia) && areSameChatUserLabels(userLabel, currentUserLabel);
 }
 
+function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
+    const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const row = Number(msg && msg.row ? msg.row : 0) || 0;
+    const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
+    return row <= 0
+        && !!(msg && msg.pending)
+        && !!attachmentUrl
+        && areSameChatUserLabels(userLabel, currentUserLabel);
+}
+
 function canDeleteOwnChatMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const row = Number(msg && msg.row ? msg.row : 0) || 0;
-    return row > 0 && areSameChatUserLabels(userLabel, currentUserLabel);
+    return (row > 0 || canCancelPendingOwnChatMessage(msg, currentUserLabel))
+        && areSameChatUserLabels(userLabel, currentUserLabel);
 }
 
 function canReactToChatMessage(msg) {
@@ -12973,6 +13727,8 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
         attachmentSize: Number(msg && msg.attachmentSize ? msg.attachmentSize : 0) || 0,
         attachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
+        attachmentMediaWidth: normalizeChatMediaDimension(msg && msg.attachmentMediaWidth ? msg.attachmentMediaWidth : 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(msg && msg.attachmentMediaHeight ? msg.attachmentMediaHeight : 0),
         timestamp: String(msg && msg.timestamp ? msg.timestamp : '').trim(),
         timeLabel: String(msg && msg.timeLabel ? msg.timeLabel : '').trim(),
         edited: !!(msg && msg.edited),
@@ -13130,6 +13886,8 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
                         attachmentMimeType: String(msg.attachmentMimeType || '').trim(),
                         attachmentSize: Number(msg.attachmentSize) || 0,
                         attachmentFileId: String(msg.attachmentFileId || '').trim(),
+                        attachmentMediaWidth: normalizeChatMediaDimension(msg.attachmentMediaWidth),
+                        attachmentMediaHeight: normalizeChatMediaDimension(msg.attachmentMediaHeight),
                         timestamp: String(msg.timestamp || '').trim(),
                         timeLabel: String(msg.timeLabel || '').trim(),
                         edited: !!msg.edited,
@@ -13163,6 +13921,8 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
                 attachmentMimeType: String(msg.attachmentMimeType || '').trim(),
                 attachmentSize: Number(msg.attachmentSize) || 0,
                 attachmentFileId: String(msg.attachmentFileId || '').trim(),
+                attachmentMediaWidth: normalizeChatMediaDimension(msg.attachmentMediaWidth),
+                attachmentMediaHeight: normalizeChatMediaDimension(msg.attachmentMediaHeight),
                 timestamp: String(msg.timestamp || '').trim(),
                 timeLabel: String(msg.timeLabel || '').trim(),
                 edited: !!msg.edited,
@@ -13293,6 +14053,8 @@ function getActionTargetFromAttachedReply(parentMsg, replyEntry) {
         attachmentMimeType: String(replyEntry && replyEntry.attachmentMimeType ? replyEntry.attachmentMimeType : '').trim(),
         attachmentSize: Number(replyEntry && replyEntry.attachmentSize ? replyEntry.attachmentSize : 0) || 0,
         attachmentFileId: String(replyEntry && replyEntry.attachmentFileId ? replyEntry.attachmentFileId : '').trim(),
+        attachmentMediaWidth: normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaWidth ? replyEntry.attachmentMediaWidth : 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaHeight ? replyEntry.attachmentMediaHeight : 0),
         __editText: rawEditText,
         __ownedByCurrentClient: isChatRowOwnedByCurrentClient(sourceRow),
         __replyTarget: replyTarget
@@ -13344,6 +14106,8 @@ function getEditTargetFromMessage(msg) {
         attachmentMimeType: String(msg && msg.attachmentMimeType ? msg.attachmentMimeType : '').trim(),
         attachmentSize: Number(msg && msg.attachmentSize ? msg.attachmentSize : 0) || 0,
         attachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
+        attachmentMediaWidth: normalizeChatMediaDimension(msg && msg.attachmentMediaWidth ? msg.attachmentMediaWidth : 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(msg && msg.attachmentMediaHeight ? msg.attachmentMediaHeight : 0),
         attachmentRemoved: false
     };
 }
@@ -13385,7 +14149,9 @@ function getChatEditAttachmentMeta(target) {
             url: String(target.pendingReplacementAttachment.url || '').trim(),
             name: String(target.pendingReplacementAttachment.name || '').trim(),
             mimeType: String(target.pendingReplacementAttachment.mimeType || '').trim(),
-            size: Number(target.pendingReplacementAttachment.size) || 0
+            size: Number(target.pendingReplacementAttachment.size) || 0,
+            mediaWidth: normalizeChatMediaDimension(target.pendingReplacementAttachment.mediaWidth),
+            mediaHeight: normalizeChatMediaDimension(target.pendingReplacementAttachment.mediaHeight)
         };
     }
     const attachmentKindRaw = String(target.attachmentKind || '').trim().toLowerCase();
@@ -13400,7 +14166,9 @@ function getChatEditAttachmentMeta(target) {
         url: resolvedUrl,
         name: String(target.attachmentName || target.imageTitle || '').trim(),
         mimeType: String(target.attachmentMimeType || '').trim(),
-        size: Number(target.attachmentSize) || 0
+        size: Number(target.attachmentSize) || 0,
+        mediaWidth: normalizeChatMediaDimension(target.attachmentMediaWidth),
+        mediaHeight: normalizeChatMediaDimension(target.attachmentMediaHeight)
     };
 }
 
@@ -13708,6 +14476,9 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
         attachmentMimeType: attachment && attachment.mimeType ? String(attachment.mimeType).trim() : '',
         attachmentSize: attachment && attachment.size ? Number(attachment.size) || 0 : 0,
         attachmentFileId: attachment && attachment.fileId ? String(attachment.fileId).trim() : '',
+        attachmentClientToken: attachment && attachment.clientToken ? normalizeChatAttachmentClientToken(attachment.clientToken) : '',
+        attachmentMediaWidth: attachment ? normalizeChatMediaDimension(attachment.mediaWidth) : 0,
+        attachmentMediaHeight: attachment ? normalizeChatMediaDimension(attachment.mediaHeight) : 0,
         timestamp: new Date().toISOString(),
         timeLabel: timeLabel,
         edited: false,
@@ -13724,6 +14495,52 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
             });
         }
     }
+}
+
+function hasChatLocalEchoAttachment(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    return (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).some((msg) => {
+        return String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() === safeAttachmentUrl;
+    });
+}
+
+function scheduleChatAttachmentEchoReconciliation(attachmentUrl, options = {}) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return;
+
+    const attemptDelayMs = Math.max(350, Number(options.attemptDelayMs) || 900);
+    const maxAttempts = Math.max(1, Number(options.maxAttempts) || 7);
+    const preserveScrollSnapshot = options && options.preserveScrollSnapshot
+        ? options.preserveScrollSnapshot
+        : null;
+    let attempt = 0;
+
+    const runAttempt = async () => {
+        if (!hasChatLocalEchoAttachment(safeAttachmentUrl)) return;
+        const overlay = document.getElementById('chat-overlay');
+        if (!overlay || overlay.classList.contains('is-hidden')) return;
+        if (chatAttachmentUploadInProgress || chatRefreshInFlight) {
+            if (attempt < maxAttempts) {
+                attempt += 1;
+                setTimeout(() => { void runAttempt(); }, attemptDelayMs);
+            }
+            return;
+        }
+
+        try {
+            await refreshChatMessages(false, false, preserveScrollSnapshot ? { preserveScrollSnapshot } : null);
+        } catch (_) {}
+
+        if (!hasChatLocalEchoAttachment(safeAttachmentUrl)) return;
+        if (attempt >= maxAttempts) return;
+        attempt += 1;
+        setTimeout(() => { void runAttempt(); }, attemptDelayMs);
+    };
+
+    setTimeout(() => {
+        void runAttempt();
+    }, Math.max(180, Number(options.initialDelayMs) || 280));
 }
 
 function markLocalEchoAttachmentUploadCompleted(attachmentUrl) {
@@ -13793,6 +14610,8 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
             nextPatch.attachmentMimeType = '';
             nextPatch.attachmentSize = 0;
             nextPatch.attachmentFileId = '';
+            nextPatch.attachmentMediaWidth = 0;
+            nextPatch.attachmentMediaHeight = 0;
         } else if (replacementAttachment) {
             const replacementKind = String(replacementAttachment.kind || '').trim().toLowerCase();
             const replacementUrl = String(replacementAttachment.url || '').trim();
@@ -13807,6 +14626,8 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
             nextPatch.attachmentMimeType = replacementMimeType;
             nextPatch.attachmentSize = Number(replacementAttachment.size) || 0;
             nextPatch.attachmentFileId = '';
+            nextPatch.attachmentMediaWidth = normalizeChatMediaDimension(replacementAttachment.mediaWidth);
+            nextPatch.attachmentMediaHeight = normalizeChatMediaDimension(replacementAttachment.mediaHeight);
         }
         optimisticPatch = {
             message: cleanMessage,
@@ -13822,6 +14643,8 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
             attachmentMimeType: replacementAttachment ? String(replacementAttachment.mimeType || '').trim() : '',
             attachmentSize: replacementAttachment ? Number(replacementAttachment.size) || 0 : 0,
             attachmentFileId: '',
+            attachmentMediaWidth: replacementAttachment ? normalizeChatMediaDimension(replacementAttachment.mediaWidth) : 0,
+            attachmentMediaHeight: replacementAttachment ? normalizeChatMediaDimension(replacementAttachment.mediaHeight) : 0,
             localAttachmentUrl: replacementAttachment ? String(replacementAttachment.url || '').trim() : '',
             previousAttachmentUrl: String(msg && (msg.attachmentUrl || msg.imageUrl) ? (msg.attachmentUrl || msg.imageUrl) : '').trim(),
             previousAttachmentFileId: String(msg && msg.attachmentFileId ? msg.attachmentFileId : '').trim(),
@@ -13842,6 +14665,7 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
 function applyLocalChatMessageDelete(deleteTarget) {
     const targetRow = Number(deleteTarget && deleteTarget.row ? deleteTarget.row : 0) || 0;
     if (!targetRow) return;
+    markChatRowPendingDeletion(targetRow);
     rememberChatClientEditMeta(targetRow, '', '');
     clearChatOptimisticEditPatch(targetRow);
     chatLatestServerMessages = (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages : [])
@@ -13849,6 +14673,38 @@ function applyLocalChatMessageDelete(deleteTarget) {
     chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : [])
         .filter((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) !== targetRow);
     renderMergedChatMessages(chatLatestServerMessages);
+}
+
+function cancelPendingChatAttachmentUploadByUrl(attachmentUrl) {
+    const safeAttachmentUrl = String(attachmentUrl || '').trim();
+    if (!safeAttachmentUrl) return false;
+    const pendingEntry = chatPendingAttachmentUploads.get(safeAttachmentUrl) || null;
+    const sourceInputId = String(pendingEntry && pendingEntry.sourceInputId ? pendingEntry.sourceInputId : '').trim();
+
+    chatPendingAttachmentCancelByUrl.add(safeAttachmentUrl);
+    cancelChatActiveAttachmentUploadByUrl(safeAttachmentUrl);
+    removeChatPendingAttachmentUpload(safeAttachmentUrl);
+    clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+    if (sourceInputId) {
+        clearChatAttachmentInputSelection(sourceInputId);
+    }
+
+    const previousLength = Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages.length : 0;
+    chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : [])
+        .filter((msg) => String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() !== safeAttachmentUrl);
+    chatAttachmentUploadInProgress = false;
+    disableChatAttachmentUI(false);
+    if (document.getElementById('chat-overlay')) {
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+    releaseChatBlobUrl(safeAttachmentUrl);
+    return previousLength !== chatLocalEchoMessages.length || !!pendingEntry;
+}
+
+function cancelPendingChatAttachmentMessage(targetMessage) {
+    const attachmentUrl = String(targetMessage && targetMessage.attachmentUrl ? targetMessage.attachmentUrl : '').trim();
+    if (!attachmentUrl) return false;
+    return cancelPendingChatAttachmentUploadByUrl(attachmentUrl);
 }
 
 function clearChatDeleteArm(shouldRerender = true) {
@@ -14073,15 +14929,20 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
         chatOwnMessageChoiceMenuState.anchorEl.classList.remove('action-target');
     }
 
-    const canReply = !!(getReplyTargetForOwnMessageChoice(targetMessage) || {}).user;
+    const isPendingDeleteOnly = canCancelPendingOwnChatMessage(targetMessage, currentUserLabel);
+    const canReply = !isPendingDeleteOnly && !!(getReplyTargetForOwnMessageChoice(targetMessage) || {}).user;
     const isAttachedReplyAction = String(targetMessage && targetMessage.kind ? targetMessage.kind : '') === 'attached_reply_action';
     const isOwnedAttachedReply = isAttachedReplyAction && isAttachedReplyOwnedForActionMenu(targetMessage, currentUserLabel);
-    const canEdit = isAttachedReplyAction
-        ? canEditAttachedReplyActionMessage(targetMessage, currentUserLabel)
-        : canEditOwnChatMessage(targetMessage, currentUserLabel);
-    const canDelete = isAttachedReplyAction
-        ? isOwnedAttachedReply
-        : canDeleteOwnChatMessage(targetMessage, currentUserLabel);
+    const canEdit = isPendingDeleteOnly
+        ? false
+        : (isAttachedReplyAction
+            ? canEditAttachedReplyActionMessage(targetMessage, currentUserLabel)
+            : canEditOwnChatMessage(targetMessage, currentUserLabel));
+    const canDelete = isPendingDeleteOnly
+        ? true
+        : (isAttachedReplyAction
+            ? isOwnedAttachedReply
+            : canDeleteOwnChatMessage(targetMessage, currentUserLabel));
 
     if (!canReply && !canEdit && !canDelete) return;
 
@@ -14534,6 +15395,13 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
 }
 
 async function deleteChatMessageByTarget(targetMessage) {
+    if (canCancelPendingOwnChatMessage(targetMessage, getStudentIdentityForChat().displayName || '')) {
+        closeChatMessageActionMenu();
+        closeChatOwnMessageChoiceMenu();
+        clearChatDeleteArm(false);
+        cancelPendingChatAttachmentMessage(targetMessage);
+        return;
+    }
     const target = getEditTargetFromMessage(targetMessage);
     if (!target.row || !target.user) return;
     closeChatMessageActionMenu();
@@ -14561,6 +15429,7 @@ async function deleteChatMessageByTarget(targetMessage) {
             }, 220);
         }
     } catch (error) {
+        clearChatRowPendingDeletion(target.row);
         console.warn('Error borrando mensaje del chat:', error);
         if (document.getElementById('chat-overlay')) {
             void refreshChatMessages(false, false);
@@ -15231,6 +16100,78 @@ async function captureChatVideoPosterDataUrlFromSource(sourceUrl = '') {
     });
 }
 
+async function captureChatVideoSourceGeometry(sourceUrl = '', timeoutMs = 1800) {
+    const safeSourceUrl = String(sourceUrl || '').trim();
+    if (!safeSourceUrl || typeof document === 'undefined' || !document.body) {
+        return { width: 0, height: 0 };
+    }
+
+    return await new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = 0;
+        const tempVideo = document.createElement('video');
+
+        const cleanup = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = 0;
+            }
+            tempVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            tempVideo.removeEventListener('error', handleError);
+            try {
+                tempVideo.pause();
+            } catch (_) {}
+            tempVideo.removeAttribute('src');
+            try {
+                tempVideo.load();
+            } catch (_) {}
+            if (tempVideo.parentNode) {
+                tempVideo.parentNode.removeChild(tempVideo);
+            }
+        };
+
+        const finish = (width = 0, height = 0) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve({
+                width: normalizeChatMediaDimension(width),
+                height: normalizeChatMediaDimension(height)
+            });
+        };
+
+        const handleLoadedMetadata = () => {
+            finish(tempVideo.videoWidth, tempVideo.videoHeight);
+        };
+
+        const handleError = () => finish(0, 0);
+
+        tempVideo.muted = true;
+        tempVideo.preload = 'metadata';
+        tempVideo.playsInline = true;
+        tempVideo.setAttribute('muted', '');
+        tempVideo.setAttribute('playsinline', '');
+        tempVideo.style.position = 'fixed';
+        tempVideo.style.left = '-9999px';
+        tempVideo.style.top = '-9999px';
+        tempVideo.style.width = '1px';
+        tempVideo.style.height = '1px';
+        tempVideo.style.opacity = '0';
+        tempVideo.style.pointerEvents = 'none';
+        tempVideo.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+        tempVideo.addEventListener('error', handleError, { once: true });
+        document.body.appendChild(tempVideo);
+        timeoutId = window.setTimeout(() => finish(0, 0), Math.max(400, Number(timeoutMs) || 1800));
+
+        try {
+            tempVideo.src = safeSourceUrl;
+            tempVideo.load();
+        } catch (_) {
+            finish(0, 0);
+        }
+    });
+}
+
 async function hydrateChatVideoPosterFromSource(fileId = '', videoUrl = '', sourceUrl = '', preferredSize = 'w520') {
     const safeFileId = String(fileId || '').trim();
     const safeVideoUrl = String(videoUrl || '').trim();
@@ -15584,6 +16525,69 @@ function resolveChatAttachmentBlobMimeType(dataMimeType = '', fallbackMimeType =
     return explicitMimeType || safeFallbackMimeType;
 }
 
+function normalizeChatMediaDimension(value) {
+    const dimension = Math.round(Number(value) || 0);
+    return dimension > 1 ? dimension : 0;
+}
+
+function getChatInlineVideoGeometry(mediaWidth = 0, mediaHeight = 0, compact = false) {
+    const safeWidth = normalizeChatMediaDimension(mediaWidth);
+    const safeHeight = normalizeChatMediaDimension(mediaHeight);
+    if (!safeWidth || !safeHeight) return null;
+
+    const isCompactShell = !!compact;
+    const isPortraitVideo = safeHeight > safeWidth * 1.04;
+    const maxWidth = isCompactShell
+        ? (isPortraitVideo ? 213 : 180)
+        : (isPortraitVideo ? 342 : 300);
+    const maxHeight = isCompactShell
+        ? (isPortraitVideo ? 123 : 120)
+        : (isPortraitVideo ? 227 : 180);
+    const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
+    const portraitWidthBoost = isPortraitVideo
+        ? (isCompactShell ? 24 : 40)
+        : 0;
+    const fitWidth = Math.max(1, Math.min(maxWidth, Math.round(safeWidth * scale) + portraitWidthBoost));
+    const fitHeight = Math.max(1, Math.round(safeHeight * scale));
+
+    return {
+        width: safeWidth,
+        height: safeHeight,
+        fitWidth,
+        fitHeight,
+        isPortraitVideo
+    };
+}
+
+function applyChatInlineVideoGeometryToShell(shell, mediaWidth = 0, mediaHeight = 0) {
+    if (!shell) return null;
+    const geometry = getChatInlineVideoGeometry(
+        mediaWidth,
+        mediaHeight,
+        shell.classList.contains('is-compact')
+    );
+    if (!geometry) {
+        shell.classList.remove('is-portrait-video', 'is-landscape-video');
+        shell.style.removeProperty('--chat-video-inline-fit-width');
+        shell.style.removeProperty('--chat-video-inline-fit-height');
+        if (shell.dataset) {
+            delete shell.dataset.videoWidth;
+            delete shell.dataset.videoHeight;
+        }
+        return null;
+    }
+
+    shell.classList.toggle('is-portrait-video', geometry.isPortraitVideo);
+    shell.classList.toggle('is-landscape-video', !geometry.isPortraitVideo);
+    shell.style.setProperty('--chat-video-inline-fit-width', `${geometry.fitWidth}px`);
+    shell.style.setProperty('--chat-video-inline-fit-height', `${geometry.fitHeight}px`);
+    if (shell.dataset) {
+        shell.dataset.videoWidth = String(geometry.width);
+        shell.dataset.videoHeight = String(geometry.height);
+    }
+    return geometry;
+}
+
 function buildChatInlineVideoShellHtml(options = {}) {
     const safeVideoUrl = String(options.videoUrl || '').trim();
     if (!safeVideoUrl) return '';
@@ -15610,18 +16614,30 @@ function buildChatInlineVideoShellHtml(options = {}) {
     const safeDownloadUrl = String(options.downloadUrl || '').trim();
     const safeDownloadName = String(options.downloadName || safeVideoName).trim() || safeVideoName;
     const safeVideoSizeBytes = Math.max(0, Number(options.videoSizeBytes) || 0);
+    const safeVideoWidth = normalizeChatMediaDimension(options.videoWidth);
+    const safeVideoHeight = normalizeChatMediaDimension(options.videoHeight);
+    const initialGeometry = getChatInlineVideoGeometry(safeVideoWidth, safeVideoHeight, !!options.compact);
     const shellClasses = ['chat-video-inline-shell'];
     if (options.compact) shellClasses.push('is-compact');
     if (safeVideoPosterUrl) shellClasses.push('has-poster', 'is-poster-visible');
+    if (initialGeometry) {
+        shellClasses.push(initialGeometry.isPortraitVideo ? 'is-portrait-video' : 'is-landscape-video');
+    }
     if (String(options.extraClass || '').trim()) shellClasses.push(String(options.extraClass || '').trim());
     const rootTag = String(options.rootTag || '').trim().toLowerCase() === 'span' ? 'span' : 'div';
     const videoPosterAttr = safeVideoPosterUrl ? ` poster="${escapeHtml(safeVideoPosterUrl)}"` : '';
+    const shellStyleAttr = initialGeometry
+        ? ` style="--chat-video-inline-fit-width:${initialGeometry.fitWidth}px; --chat-video-inline-fit-height:${initialGeometry.fitHeight}px;"`
+        : '';
 
     return `
         <${rootTag}
             class="${shellClasses.join(' ')}"
             role="group"
             aria-label="${escapeHtml(safeTitle)}"
+            data-video-width="${safeVideoWidth}"
+            data-video-height="${safeVideoHeight}"
+            ${shellStyleAttr}
         >
             <video
                 class="chat-video-player"
@@ -15639,6 +16655,8 @@ function buildChatInlineVideoShellHtml(options = {}) {
                 data-video-mime="${escapeHtml(safeVideoMimeType)}"
                 data-video-kind="${escapeHtml(safeVideoKind)}"
                 data-video-size="${safeVideoSizeBytes}"
+                data-video-width="${safeVideoWidth}"
+                data-video-height="${safeVideoHeight}"
             ></video>
             <img
                 class="chat-video-inline-poster${safeVideoPosterUrl ? '' : ' is-empty'}"
@@ -16316,35 +17334,8 @@ function bindChatVideoFallbacks(messagesRootEl) {
         const videoUrl = String(videoEl.dataset.videoUrl || '').trim();
 
         const syncInlineShellGeometry = (mediaWidth = 0, mediaHeight = 0) => {
-            if (!shell) return;
-            const safeWidth = Math.max(0, Number(mediaWidth) || 0);
-            const safeHeight = Math.max(0, Number(mediaHeight) || 0);
-            if (!safeWidth || !safeHeight) {
-                shell.classList.remove('is-portrait-video', 'is-landscape-video');
-                shell.style.removeProperty('--chat-video-inline-fit-width');
-                shell.style.removeProperty('--chat-video-inline-fit-height');
-                return;
-            }
-
-            const isCompactShell = shell.classList.contains('is-compact');
-            const isPortraitVideo = safeHeight > safeWidth * 1.04;
-            const maxWidth = isCompactShell
-                ? (isPortraitVideo ? 213 : 180)
-                : (isPortraitVideo ? 342 : 300);
-            const maxHeight = isCompactShell
-                ? (isPortraitVideo ? 123 : 120)
-                : (isPortraitVideo ? 227 : 180);
-            const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
-            const portraitWidthBoost = isPortraitVideo
-                ? (isCompactShell ? 24 : 40)
-                : 0;
-            const fitWidth = Math.max(1, Math.min(maxWidth, Math.round(safeWidth * scale) + portraitWidthBoost));
-            const fitHeight = Math.max(1, Math.round(safeHeight * scale));
-
-            shell.classList.toggle('is-portrait-video', isPortraitVideo);
-            shell.classList.toggle('is-landscape-video', !isPortraitVideo);
-            shell.style.setProperty('--chat-video-inline-fit-width', `${fitWidth}px`);
-            shell.style.setProperty('--chat-video-inline-fit-height', `${fitHeight}px`);
+            if (!shell) return null;
+            return applyChatInlineVideoGeometryToShell(shell, mediaWidth, mediaHeight);
         };
 
         bindSingleChatVideoPosterFallback(posterEl, {
@@ -16353,8 +17344,15 @@ function bindChatVideoFallbacks(messagesRootEl) {
             videoUrl,
             preferredSize: 'w520'
         });
+        const initialMediaWidth = normalizeChatMediaDimension(videoEl.dataset.videoWidth || (shell && shell.dataset ? shell.dataset.videoWidth : 0));
+        const initialMediaHeight = normalizeChatMediaDimension(videoEl.dataset.videoHeight || (shell && shell.dataset ? shell.dataset.videoHeight : 0));
+        const hasTrustedInitialGeometry = initialMediaWidth > 0 && initialMediaHeight > 0;
+        if (initialMediaWidth && initialMediaHeight) {
+            syncInlineShellGeometry(initialMediaWidth, initialMediaHeight);
+        }
         if (posterEl) {
             const syncFromPoster = () => {
+                if (hasTrustedInitialGeometry) return;
                 const posterWidth = Number(posterEl.naturalWidth) || 0;
                 const posterHeight = Number(posterEl.naturalHeight) || 0;
                 if (posterWidth > 0 && posterHeight > 0) {
@@ -16412,6 +17410,8 @@ function bindChatVideoFallbacks(messagesRootEl) {
                 const videoHeight = Number(videoEl.videoHeight) || 0;
                 if (videoWidth > 0 && videoHeight > 0) {
                     syncInlineShellGeometry(videoWidth, videoHeight);
+                } else if (hasTrustedInitialGeometry) {
+                    syncInlineShellGeometry(initialMediaWidth, initialMediaHeight);
                 } else if (posterEl && Number(posterEl.naturalWidth || 0) > 0 && Number(posterEl.naturalHeight || 0) > 0) {
                     syncInlineShellGeometry(Number(posterEl.naturalWidth || 0), Number(posterEl.naturalHeight || 0));
                 } else {
@@ -17102,14 +18102,49 @@ function readFileAsDataBase64(file, options = {}) {
         const onProgress = options && typeof options.onProgress === 'function'
             ? options.onProgress
             : null;
+        const signal = options && options.signal ? options.signal : null;
+        let settled = false;
+        let onAbort = null;
+        const cleanupAbort = () => {
+            if (signal && onAbort && typeof signal.removeEventListener === 'function') {
+                signal.removeEventListener('abort', onAbort);
+            }
+        };
+        const finishResolve = (value) => {
+            if (settled) return;
+            settled = true;
+            cleanupAbort();
+            resolve(value);
+        };
+        const finishReject = (error) => {
+            if (settled) return;
+            settled = true;
+            cleanupAbort();
+            reject(error);
+        };
+        if (signal) {
+            if (signal.aborted) {
+                finishReject(createChatAttachmentUploadCancelledError());
+                return;
+            }
+            onAbort = () => {
+                try {
+                    reader.abort();
+                } catch (_) {}
+                finishReject(createChatAttachmentUploadCancelledError());
+            };
+            if (typeof signal.addEventListener === 'function') {
+                signal.addEventListener('abort', onAbort, { once: true });
+            }
+        }
         reader.onload = () => {
             const result = String(reader.result || '');
             const commaIndex = result.indexOf(',');
             if (commaIndex === -1) {
-                reject(new Error('invalid_data_url'));
+                finishReject(new Error('invalid_data_url'));
                 return;
             }
-            resolve(result.slice(commaIndex + 1));
+            finishResolve(result.slice(commaIndex + 1));
         };
         if (onProgress) {
             reader.onprogress = (event) => {
@@ -17118,7 +18153,7 @@ function readFileAsDataBase64(file, options = {}) {
                 } catch (_) {}
             };
         }
-        reader.onerror = () => reject(new Error('file_read_error'));
+        reader.onerror = () => finishReject(new Error('file_read_error'));
         reader.readAsDataURL(file);
     });
 }
@@ -17693,15 +18728,61 @@ async function performChatAttachmentUpload(uploadEntry) {
     const payloadMessage = String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : '').trim();
     const attachmentName = String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : (file.name || `${kind}-adjunto`)).trim();
     const attachmentMimeType = String(uploadEntry && uploadEntry.attachmentMimeType ? uploadEntry.attachmentMimeType : (file.type || 'application/octet-stream')).trim();
+    const attachmentClientToken = normalizeChatAttachmentClientToken(uploadEntry && uploadEntry.attachmentClientToken ? uploadEntry.attachmentClientToken : '');
+    const attachmentMediaWidth = normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaWidth ? uploadEntry.attachmentMediaWidth : 0);
+    const attachmentMediaHeight = normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaHeight ? uploadEntry.attachmentMediaHeight : 0);
     const replyThreadRow = Number(uploadEntry && uploadEntry.replyThreadRow ? uploadEntry.replyThreadRow : 0) || 0;
+    const userLabel = normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER));
+    const messageText = String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : '').trim();
+    const quotedReply = String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : '').trim();
     const identity = getStudentIdentityForChat();
+    const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const uploadSignal = abortController ? abortController.signal : null;
+    chatPendingAttachmentCancelByUrl.delete(safeAttachmentUrl);
+    setChatActiveAttachmentUploadState(safeAttachmentUrl, {
+        abort() {
+            if (abortController) {
+                try {
+                    abortController.abort();
+                } catch (_) {}
+            }
+        }
+    });
+    const ensureUploadNotCancelled = () => {
+        if (chatPendingAttachmentCancelByUrl.has(safeAttachmentUrl)) {
+            throw createChatAttachmentUploadCancelledError();
+        }
+        if (uploadSignal && uploadSignal.aborted) {
+            throw createChatAttachmentUploadCancelledError();
+        }
+    };
 
     chatAttachmentUploadInProgress = true;
     disableChatAttachmentUI(true);
+    queueChatPendingAttachmentUpload({
+        ...uploadEntry,
+        localObjectUrl: safeAttachmentUrl,
+        file,
+        fileSize,
+        kind,
+        sourceKind,
+        userLabel,
+        messageText,
+        quotedReply,
+        payloadMessage,
+        attachmentName,
+        attachmentMimeType,
+        attachmentClientToken,
+        attachmentMediaWidth,
+        attachmentMediaHeight,
+        replyThreadRow,
+        lastAttemptAt: Date.now()
+    });
 
     try {
         updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 10, { force: true });
         const attachmentReuseResult = await resolveChatAttachmentReuseForFile(file);
+        ensureUploadNotCancelled();
         const attachmentSha256 = normalizeChatAttachmentSha256(attachmentReuseResult && attachmentReuseResult.sha256);
         const reusableAttachment = normalizeChatAttachmentReuseRecord(attachmentReuseResult && attachmentReuseResult.attachment);
         const htmlServiceUpload = canUseHtmlServiceAttachmentInput(sourceInputId);
@@ -17725,9 +18806,13 @@ async function performChatAttachmentUpload(uploadEntry) {
                 mensaje: payloadMessage,
                 attachmentReuse: {
                     ...reusableAttachment,
-                    sha256: reusableAttachment.sha256 || attachmentSha256
+                    sha256: reusableAttachment.sha256 || attachmentSha256,
+                    clientToken: attachmentClientToken,
+                    mediaWidth: attachmentMediaWidth || reusableAttachment.mediaWidth || 0,
+                    mediaHeight: attachmentMediaHeight || reusableAttachment.mediaHeight || 0
                 }
-            }, { allowBeacon: false, onlyNoCors: true });
+            }, { allowBeacon: false, onlyNoCors: true, signal: uploadSignal });
+            ensureUploadNotCancelled();
             updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 100, { force: true });
             markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
             removeChatPendingAttachmentUpload(safeAttachmentUrl);
@@ -17736,6 +18821,7 @@ async function performChatAttachmentUpload(uploadEntry) {
         }
 
         const attachmentHealth = await checkChatAttachmentHealth();
+        ensureUploadNotCancelled();
         if (!attachmentHealth.ok && attachmentHealth.reason === 'missing_drive_scope') {
             throw new Error('missing_drive_scope');
         }
@@ -17763,11 +18849,16 @@ async function performChatAttachmentUpload(uploadEntry) {
                     size: fileSize,
                     kind: kind,
                     sourceKind: sourceKind,
-                    sha256: attachmentSha256
+                    sha256: attachmentSha256,
+                    clientToken: attachmentClientToken,
+                    mediaWidth: attachmentMediaWidth,
+                    mediaHeight: attachmentMediaHeight
                 }
             }, sourceInputId);
+            ensureUploadNotCancelled();
         } else {
             const dataBase64 = await readFileAsDataBase64(file, {
+                signal: uploadSignal,
                 onProgress: (event) => {
                     if (!event || !event.lengthComputable) return;
                     const loaded = Math.max(0, Number(event.loaded) || 0);
@@ -17776,6 +18867,7 @@ async function performChatAttachmentUpload(uploadEntry) {
                     updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 10 + (ratio * 52));
                 }
             });
+            ensureUploadNotCancelled();
             updateLocalEchoUploadProgressByAttachmentUrl(safeAttachmentUrl, 66, { force: true });
             startLocalEchoUploadServerWaitProgressByAttachmentUrl(safeAttachmentUrl, {
                 softCap: 84,
@@ -17796,9 +18888,13 @@ async function performChatAttachmentUpload(uploadEntry) {
                     kind: kind,
                     sourceKind: sourceKind,
                     sha256: attachmentSha256,
+                    clientToken: attachmentClientToken,
+                    mediaWidth: attachmentMediaWidth,
+                    mediaHeight: attachmentMediaHeight,
                     dataBase64: dataBase64
                 }
-            }, { allowBeacon: false, onlyNoCors: true });
+            }, { allowBeacon: false, onlyNoCors: true, signal: uploadSignal });
+            ensureUploadNotCancelled();
         }
         if (attachmentSha256) {
             chatAttachmentReuseLookupCache.delete(attachmentSha256);
@@ -17809,6 +18905,15 @@ async function performChatAttachmentUpload(uploadEntry) {
         clearChatAttachmentInputSelection(sourceInputId);
         return { status: 'success', replyThreadRow };
     } catch (error) {
+        if (isChatAttachmentUploadCancelledError(error)) {
+            removeChatPendingAttachmentUpload(safeAttachmentUrl);
+            clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
+            chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== safeAttachmentUrl);
+            renderMergedChatMessages(chatLatestServerMessages);
+            releaseChatBlobUrl(safeAttachmentUrl);
+            clearChatAttachmentInputSelection(sourceInputId);
+            return { status: 'cancelled', replyThreadRow };
+        }
         const recoverable = isRecoverableChatAttachmentUploadError(error);
         console.warn('Error enviando adjunto al chat:', error);
         clearChatPendingUploadProgressAnimation(safeAttachmentUrl);
@@ -17826,6 +18931,8 @@ async function performChatAttachmentUpload(uploadEntry) {
                 attachmentName,
                 attachmentMimeType,
                 replyThreadRow,
+                attachmentMediaWidth,
+                attachmentMediaHeight,
                 retryCount: (Number(uploadEntry && uploadEntry.retryCount ? uploadEntry.retryCount : 0) || 0) + 1,
                 lastAttemptAt: Date.now()
             });
@@ -17851,6 +18958,8 @@ async function performChatAttachmentUpload(uploadEntry) {
         }
         return { status: 'failed', replyThreadRow };
     } finally {
+        chatPendingAttachmentCancelByUrl.delete(safeAttachmentUrl);
+        clearChatActiveAttachmentUploadState(safeAttachmentUrl);
         chatAttachmentUploadInProgress = false;
         disableChatAttachmentUI(false);
     }
@@ -17869,6 +18978,8 @@ async function syncChatPendingAttachmentUploadsWithServer() {
             }) : [])
             : [];
         chatLatestServerMessages = mergeChatServerMessages(olderLoadedMessages, recentMessages);
+        reconcilePendingDeletedChatRowsWithServer(chatLatestServerMessages);
+        chatLatestServerMessages = filterPendingDeletedChatMessages(chatLatestServerMessages);
         if (olderLoadedMessages.length === 0) {
             chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
         }
@@ -17961,13 +19072,20 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
     const localObjectUrl = URL.createObjectURL(file);
     const attachmentName = String(file.name || `${kind}-adjunto`).trim();
     const attachmentMimeType = String(file.type || 'application/octet-stream').trim();
-    if (kind === 'video') {
-        void hydrateChatVideoPosterFromSource('', localObjectUrl, localObjectUrl);
-    }
+    const attachmentClientToken = buildChatAttachmentClientToken();
+    let attachmentMediaWidth = 0;
+    let attachmentMediaHeight = 0;
 
     chatAttachmentUploadInProgress = true;
     disableChatAttachmentUI(true);
     closeChatAttachmentMenu();
+
+    if (kind === 'video') {
+        const videoGeometry = await captureChatVideoSourceGeometry(localObjectUrl);
+        attachmentMediaWidth = normalizeChatMediaDimension(videoGeometry && videoGeometry.width);
+        attachmentMediaHeight = normalizeChatMediaDimension(videoGeometry && videoGeometry.height);
+        void hydrateChatVideoPosterFromSource('', localObjectUrl, localObjectUrl);
+    }
 
     if (activeEditTarget) {
         clearChatEditPendingReplacementAttachment(chatEditTarget);
@@ -17979,7 +19097,10 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
             url: localObjectUrl,
             name: attachmentName,
             mimeType: attachmentMimeType,
-            size: fileSize
+            size: fileSize,
+            clientToken: attachmentClientToken,
+            mediaWidth: attachmentMediaWidth,
+            mediaHeight: attachmentMediaHeight
         };
         chatEditTarget.attachmentRemoved = false;
         updateChatReplyPreview();
@@ -18004,7 +19125,10 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
             url: localObjectUrl,
             name: attachmentName,
             mimeType: String(file.type || '').trim(),
-            size: fileSize
+            size: fileSize,
+            clientToken: attachmentClientToken,
+            mediaWidth: attachmentMediaWidth,
+            mediaHeight: attachmentMediaHeight
         },
         activeReplyTarget
             ? { scrollToLatest: false }
@@ -18018,6 +19142,27 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
         });
     }
     updateLocalEchoUploadProgressByAttachmentUrl(localObjectUrl, 4, { force: true });
+    queueChatPendingAttachmentUpload({
+        localObjectUrl,
+        file,
+        fileSize,
+        kind,
+        sourceKind,
+        sourceInputId: String(sourceInputId || '').trim(),
+        userLabel: identity.displayName,
+        messageText: caption,
+        quotedReply: serializedReplyTarget,
+        payloadMessage,
+        attachmentName,
+        attachmentMimeType,
+        attachmentClientToken,
+        attachmentMediaWidth,
+        attachmentMediaHeight,
+        replyThreadRow: activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0,
+        retryCount: 0,
+        lastAttemptAt: 0,
+        queuedAt: Date.now()
+    });
 
     try {
         const result = await performChatAttachmentUpload({
@@ -18027,19 +19172,28 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
             kind,
             sourceKind,
             sourceInputId: String(sourceInputId || '').trim(),
+            userLabel: identity.displayName,
+            messageText: caption,
+            quotedReply: serializedReplyTarget,
             payloadMessage,
             attachmentName,
             attachmentMimeType,
+            attachmentClientToken,
+            attachmentMediaWidth,
+            attachmentMediaHeight,
             replyThreadRow: activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0
         });
         if (result && result.status === 'success') {
+            const followUpScrollSnapshot = replyScrollSnapshot
+                ? (captureChatScrollSnapshot() || replyScrollSnapshot)
+                : null;
             setTimeout(() => {
                 if (document.getElementById('chat-overlay')) {
                     void refreshChatMessages(
                         false,
                         false,
-                        replyScrollSnapshot
-                            ? { preserveScrollSnapshot: captureChatScrollSnapshot() || replyScrollSnapshot }
+                        followUpScrollSnapshot
+                            ? { preserveScrollSnapshot: followUpScrollSnapshot }
                             : null
                     ).then(() => {
                         if (shouldScrollReplyThreadToBottom) {
@@ -18048,6 +19202,12 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
                     });
                 }
             }, 180);
+            scheduleChatAttachmentEchoReconciliation(localObjectUrl, {
+                initialDelayMs: 650,
+                attemptDelayMs: 950,
+                maxAttempts: 8,
+                preserveScrollSnapshot: followUpScrollSnapshot
+            });
             return true;
         }
         return !!(result && result.status === 'queued');
@@ -20203,6 +21363,8 @@ function parseChatCellValue(rawValue) {
                 const attachmentUrl = String(attachment.url || '').trim();
                 const attachmentName = String(attachment.name || '').trim();
                 const attachmentMimeType = String(attachment.mimeType || '').trim();
+                const attachmentMediaWidth = normalizeChatMediaDimension(attachment.mediaWidth);
+                const attachmentMediaHeight = normalizeChatMediaDimension(attachment.mediaHeight);
                 const attachmentKind = resolveChatAttachmentKind(
                     String(attachment.kind || '').trim().toLowerCase(),
                     attachmentMimeType,
@@ -20232,6 +21394,9 @@ function parseChatCellValue(rawValue) {
                     attachmentMimeType,
                     attachmentSize: Number(attachment.size) || 0,
                     attachmentFileId: String(attachment.fileId || '').trim(),
+                    attachmentClientToken: normalizeChatAttachmentClientToken(attachment.clientToken),
+                    attachmentMediaWidth,
+                    attachmentMediaHeight,
                     imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
                     imageTitle: attachmentName
                 };
@@ -20433,6 +21598,15 @@ async function fetchChatMessages(options = null) {
             const entryAttachmentFileId = entry && typeof entry === 'object'
                 ? String(entry.attachmentFileId || '').trim()
                 : '';
+            const entryAttachmentClientToken = entry && typeof entry === 'object'
+                ? normalizeChatAttachmentClientToken(entry.attachmentClientToken)
+                : '';
+            const entryAttachmentMediaWidth = entry && typeof entry === 'object'
+                ? normalizeChatMediaDimension(entry.attachmentMediaWidth)
+                : 0;
+            const entryAttachmentMediaHeight = entry && typeof entry === 'object'
+                ? normalizeChatMediaDimension(entry.attachmentMediaHeight)
+                : 0;
             if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl || entryAttachmentUrl)) {
                 const rawMessage = String(entry.value || entry.message || '').trim();
                 const parsed = rawMessage
@@ -20454,6 +21628,15 @@ async function fetchChatMessages(options = null) {
                 const parsedAttachmentMimeType = parsed && parsed.attachmentMimeType ? String(parsed.attachmentMimeType || '').trim() : '';
                 const parsedAttachmentSize = parsed && parsed.attachmentSize ? Number(parsed.attachmentSize) || 0 : 0;
                 const parsedAttachmentFileId = parsed && parsed.attachmentFileId ? String(parsed.attachmentFileId || '').trim() : '';
+                const parsedAttachmentClientToken = parsed && parsed.attachmentClientToken
+                    ? normalizeChatAttachmentClientToken(parsed.attachmentClientToken)
+                    : '';
+                const parsedAttachmentMediaWidth = parsed && parsed.attachmentMediaWidth
+                    ? normalizeChatMediaDimension(parsed.attachmentMediaWidth)
+                    : 0;
+                const parsedAttachmentMediaHeight = parsed && parsed.attachmentMediaHeight
+                    ? normalizeChatMediaDimension(parsed.attachmentMediaHeight)
+                    : 0;
                 const resolvedAttachmentUrl = entryAttachmentUrl || parsedAttachmentUrl;
                 const resolvedAttachmentName = entryAttachmentName || parsedAttachmentName;
                 const resolvedAttachmentMimeType = entryAttachmentMimeType || parsedAttachmentMimeType;
@@ -20461,6 +21644,9 @@ async function fetchChatMessages(options = null) {
                 const resolvedAttachmentFileId = entryAttachmentFileId
                     || parsedAttachmentFileId
                     || extractDriveFileIdFromUrl(resolvedAttachmentUrl);
+                const resolvedAttachmentClientToken = entryAttachmentClientToken || parsedAttachmentClientToken;
+                const resolvedAttachmentMediaWidth = entryAttachmentMediaWidth || parsedAttachmentMediaWidth;
+                const resolvedAttachmentMediaHeight = entryAttachmentMediaHeight || parsedAttachmentMediaHeight;
                 const resolvedAttachmentKind = resolveChatAttachmentKind(
                     entryAttachmentKind || parsedAttachmentKind,
                     resolvedAttachmentMimeType,
@@ -20493,6 +21679,9 @@ async function fetchChatMessages(options = null) {
                     attachmentMimeType: resolvedAttachmentMimeType,
                     attachmentSize: resolvedAttachmentSize,
                     attachmentFileId: resolvedAttachmentFileId,
+                    attachmentClientToken: resolvedAttachmentClientToken,
+                    attachmentMediaWidth: resolvedAttachmentMediaWidth,
+                    attachmentMediaHeight: resolvedAttachmentMediaHeight,
                     timestamp: String(entry.timestamp || (parsed && parsed.timestamp) || '').trim(),
                     timeLabel: String(entry.timeLabel || (parsed && parsed.timeLabel) || '').trim(),
                     edited: !!entry.edited,
@@ -20522,6 +21711,9 @@ async function fetchChatMessages(options = null) {
                 attachmentMimeType: parsed.attachmentMimeType || '',
                 attachmentSize: parsed.attachmentSize || 0,
                 attachmentFileId: parsed.attachmentFileId || extractDriveFileIdFromUrl(parsed.attachmentUrl || '') || '',
+                attachmentClientToken: normalizeChatAttachmentClientToken(parsed.attachmentClientToken || ''),
+                attachmentMediaWidth: normalizeChatMediaDimension(parsed.attachmentMediaWidth || 0),
+                attachmentMediaHeight: normalizeChatMediaDimension(parsed.attachmentMediaHeight || 0),
                 timestamp: String(entry && entry.timestamp ? entry.timestamp : (parsed.timestamp || '')).trim(),
                 timeLabel: String(entry && entry.timeLabel ? entry.timeLabel : (parsed.timeLabel || '')).trim(),
                 edited: !!(entry && entry.edited),
@@ -20713,7 +21905,9 @@ function renderChatMessages(messages) {
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
         const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
         const isEditableSelf = canEditOwnChatMessage(msg, currentUserLabel);
-        const isDeleteArmedSelf = isCurrentSender && (Number(msg.row) || 0) === chatDeleteArmRow;
+        const isOwnActionable = isEditableSelf || canDeleteOwnChatMessage(msg, currentUserLabel);
+        const messageRow = Number(msg && msg.row ? msg.row : 0) || 0;
+        const isDeleteArmedSelf = isCurrentSender && messageRow > 0 && messageRow === chatDeleteArmRow;
         const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const isSelectedEditTarget = isEditableSelf && isSameEditTarget(getEditTargetFromMessage(msg), chatEditTarget);
         const renderedUser = isTeacherUser
@@ -20726,6 +21920,8 @@ function renderChatMessages(messages) {
         const attachmentMimeType = String(msg.attachmentMimeType || '').trim();
         const attachmentSize = Number(msg.attachmentSize) || 0;
         const attachmentFileId = String(msg.attachmentFileId || '').trim();
+        const attachmentMediaWidth = normalizeChatMediaDimension(msg.attachmentMediaWidth || 0);
+        const attachmentMediaHeight = normalizeChatMediaDimension(msg.attachmentMediaHeight || 0);
         const resolvedAttachmentKind = resolveChatAttachmentKind(
             attachmentKind,
             attachmentMimeType,
@@ -20811,6 +22007,8 @@ function renderChatMessages(messages) {
                     videoMimeType: attachmentMimeType || 'video/mp4',
                     videoKind: resolvedAttachmentKind,
                     videoSizeBytes: attachmentSize,
+                    videoWidth: attachmentMediaWidth,
+                    videoHeight: attachmentMediaHeight,
                     downloadUrl: videoDownloadUrl,
                     downloadName: attachmentName || 'video-chat.mp4',
                     videoPosterUrl: getChatVideoPosterUrl(attachmentFileId, attachmentUrl, 'w520')
@@ -20975,8 +22173,8 @@ function renderChatMessages(messages) {
         const messageMetaHtml = isEdited && !timeLabel
             ? `<div class="chat-message-meta">${editedBadgeHtml}</div>`
             : '';
-        const deleteButtonHtml = isCurrentSender && canDeleteOwnChatMessage(msg, currentUserLabel)
-            ? `<button type="button" class="chat-message-delete-btn" data-delete-row="${Number(msg.row) || 0}" aria-label="Borrar mensaje">X</button>`
+        const deleteButtonHtml = isCurrentSender && messageRow > 0 && canDeleteOwnChatMessage(msg, currentUserLabel)
+            ? `<button type="button" class="chat-message-delete-btn" data-delete-row="${messageRow}" aria-label="Borrar mensaje">X</button>`
             : '';
         const serializedMessageReactions = encodeChatReactionEntriesAttr(msg.reactions);
         const latestMessageReaction = Array.isArray(msg.reactions) && msg.reactions.length > 0
@@ -21034,6 +22232,8 @@ function renderChatMessages(messages) {
             const rawReplyAttachmentName = String(replyEntry && replyEntry.attachmentName ? replyEntry.attachmentName : 'audio-chat.mp3').trim() || 'audio-chat.mp3';
             const replyAttachmentMimeType = String(replyEntry && replyEntry.attachmentMimeType ? replyEntry.attachmentMimeType : '').trim();
             const replyAttachmentFileId = String(replyEntry && replyEntry.attachmentFileId ? replyEntry.attachmentFileId : '').trim();
+            const replyAttachmentMediaWidth = normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaWidth ? replyEntry.attachmentMediaWidth : 0);
+            const replyAttachmentMediaHeight = normalizeChatMediaDimension(replyEntry && replyEntry.attachmentMediaHeight ? replyEntry.attachmentMediaHeight : 0);
             const replyAttachmentKind = resolveChatAttachmentKind(
                 replyEntry && replyEntry.attachmentKind ? replyEntry.attachmentKind : '',
                 replyAttachmentMimeType,
@@ -21153,6 +22353,8 @@ function renderChatMessages(messages) {
                         videoMimeType: replyAttachmentMimeType,
                         videoKind: replyAttachmentKind,
                         videoSizeBytes: Number(replyEntry && replyEntry.attachmentSize ? replyEntry.attachmentSize : 0) || 0,
+                        videoWidth: replyAttachmentMediaWidth,
+                        videoHeight: replyAttachmentMediaHeight,
                         downloadUrl: buildChatAttachmentDownloadUrl(replyAttachmentUrl) || replyAttachmentUrl,
                         downloadName: replyAttachmentName || 'video-chat.mp4'
                     })}
@@ -21260,7 +22462,7 @@ function renderChatMessages(messages) {
             shouldUseItemReactionColumn ? 'has-full-height-reaction-column' : '',
             !hasEmbeddedReplyContent ? 'has-side-hit-area' : '',
             isCurrentSender ? 'is-self' : '',
-            isEditableSelf ? 'is-editable-self' : '',
+            isOwnActionable ? 'is-editable-self' : '',
             isReplyable ? 'is-replyable' : '',
             isSelectedTarget ? 'reply-target' : '',
             isSelectedEditTarget ? 'edit-target' : '',
@@ -21332,6 +22534,8 @@ function renderChatMessages(messages) {
                         videoMimeType: attachmentMimeType,
                         videoKind: resolvedAttachmentKind,
                         videoSizeBytes: attachmentSize,
+                        videoWidth: attachmentMediaWidth,
+                        videoHeight: attachmentMediaHeight,
                         downloadUrl: videoDownloadUrl,
                         downloadName: attachmentName || 'video-chat.mp4'
                     })}
@@ -21959,6 +23163,8 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
             }) : [])
             : [];
         chatLatestServerMessages = mergeChatServerMessages(olderLoadedMessages, recentMessages);
+        reconcilePendingDeletedChatRowsWithServer(chatLatestServerMessages);
+        chatLatestServerMessages = filterPendingDeletedChatMessages(chatLatestServerMessages);
         if (olderLoadedMessages.length === 0 || showLoading) {
             chatHasMoreOlderMessages = !!(payload && payload.hasMoreOlder);
         }
@@ -21968,8 +23174,13 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
             // No bloquea el primer render: precalienta en segundo plano.
             void preloadChatThumbnails(chatLatestServerMessages);
         }
-        const hasNewMessage = updateChatNotificationState(recentMessages, notifyOnNewMessage);
         reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
+        const hasNewMessage = updateChatNotificationState(
+            chatLatestServerMessages,
+            notifyOnNewMessage,
+            previousServerMessages,
+            currentUserLabel
+        );
         const unreadIncomingCount = hasNewMessage
             ? countIncomingUnreadMessages(previousServerMessages, chatLatestServerMessages, currentUserLabel)
             : 0;
@@ -22278,6 +23489,7 @@ function pauseChatOverlayInlineMediaPlayback() {
 }
 
 function closeChatModal() {
+    setChatNotificationSoundEnabled(false);
     stopChatAutoRefresh();
     removeChatViewportHandlers();
     removeChatLayoutResizeObserver();
@@ -22376,7 +23588,10 @@ async function submitChatMessage() {
                         mensaje: editPayloadMessage,
                         attachmentReuse: {
                             ...replacementReuse,
-                            sha256: replacementReuse.sha256 || replacementSha256
+                            sha256: replacementReuse.sha256 || replacementSha256,
+                            clientToken: normalizeChatAttachmentClientToken(pendingReplacement.clientToken),
+                            mediaWidth: normalizeChatMediaDimension(pendingReplacement.mediaWidth),
+                            mediaHeight: normalizeChatMediaDimension(pendingReplacement.mediaHeight)
                         }
                     }, { allowBeacon: false, onlyNoCors: true });
                     clearChatAttachmentInputSelection(replacementSourceInputId);
@@ -22404,7 +23619,10 @@ async function submitChatMessage() {
                                 size: Number(pendingReplacement.size || replacementFile.size) || 0,
                                 kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
                                 sourceKind: String(pendingReplacement.sourceKind || pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
-                                sha256: replacementSha256
+                                sha256: replacementSha256,
+                                clientToken: normalizeChatAttachmentClientToken(pendingReplacement.clientToken),
+                                mediaWidth: normalizeChatMediaDimension(pendingReplacement.mediaWidth),
+                                mediaHeight: normalizeChatMediaDimension(pendingReplacement.mediaHeight)
                             }
                         }, replacementSourceInputId);
                     } else {
@@ -22424,6 +23642,9 @@ async function submitChatMessage() {
                                 kind: String(pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
                                 sourceKind: String(pendingReplacement.sourceKind || pendingReplacement.kind || guessAttachmentKindFromMime(replacementFile.type, replacementFile.name)).trim(),
                                 sha256: replacementSha256,
+                                clientToken: normalizeChatAttachmentClientToken(pendingReplacement.clientToken),
+                                mediaWidth: normalizeChatMediaDimension(pendingReplacement.mediaWidth),
+                                mediaHeight: normalizeChatMediaDimension(pendingReplacement.mediaHeight),
                                 dataBase64: dataBase64
                             }
                         }, { allowBeacon: false, onlyNoCors: true });
@@ -22540,9 +23761,11 @@ async function submitChatMessage() {
 async function openChatModal() {
     void openChatVideoPersistentCacheDb();
     void pruneChatVideoPersistentCache();
+    void hydratePersistedChatPendingUploads();
     const existingOverlay = document.getElementById('chat-overlay');
     if (existingOverlay) {
         document.body.classList.add('chat-open');
+        setChatNotificationSoundEnabled(true);
         lockBodyScrollForChat();
         installChatViewportHandlers();
         const messagesEl = document.getElementById('chat-messages-list');
@@ -22572,7 +23795,19 @@ async function openChatModal() {
         installChatAnsweredOnlySwitchHandler();
         startChatAutoRefresh();
         if (chatAttachmentUploadInProgress) {
-            renderMergedChatMessages(chatLatestServerMessages);
+            const hasServerSnapshot = Array.isArray(chatLatestServerMessages) && chatLatestServerMessages.length > 0;
+            const hasRenderedConversation = !!(messagesEl && messagesEl.querySelector('.chat-message-item, .chat-day-separator, .chat-loading, .chat-empty, .chat-error'));
+            if (hasServerSnapshot) {
+                renderMergedChatMessages(chatLatestServerMessages);
+            } else if (!hasRenderedConversation && messagesEl) {
+                messagesEl.innerHTML = getChatLoadingMarkup();
+            }
+            void refreshChatMessages(false, false).catch((error) => {
+                console.warn('No se pudo restaurar la conversación del chat durante una subida activa:', error);
+                if (hasServerSnapshot) {
+                    renderMergedChatMessages(chatLatestServerMessages);
+                }
+            });
             return;
         }
         await refreshChatMessages(false, false);
@@ -22737,6 +23972,7 @@ async function openChatModal() {
         </div>
     `;
     document.body.appendChild(overlay);
+    setChatNotificationSoundEnabled(true);
     updateChatFooterInset();
     installChatLayoutResizeObserver();
     const chatModalEl = overlay.querySelector('.chat-modal');
@@ -26162,6 +27398,7 @@ function attachFlashcardHandlers() {
 // Anclar manejadores de tarjetas al cargar
 attachFlashcardHandlers();
 window.addEventListener('DOMContentLoaded', () => {
+    void hydratePersistedChatPendingUploads();
     // Guardar HTML original del tablero de tarjetas por si luego se reemplaza
     const container = document.getElementById('flashcard-container');
     if (container && !originalFlashcardsHTML) {

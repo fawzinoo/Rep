@@ -1250,6 +1250,10 @@
     display: none;
 }
 
+.chat-message-item.is-self.has-full-height-reaction-column {
+    padding-right: 5px;
+}
+
 .chat-message-item.has-side-hit-area > .chat-message-reaction-column-guard {
     position: absolute;
     z-index: 1;
@@ -1525,6 +1529,15 @@
     justify-content: center;
 }
 
+.chat-message-item.is-self .chat-message-main-inline-media-stack {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
 .chat-message-main.has-embedded-side-column .chat-message-line {
     box-sizing: border-box;
     padding-right: 4px;
@@ -1560,7 +1573,11 @@
 }
 
 .chat-message-main.has-embedded-side-column.has-text-with-attachment .chat-message-main-inline-media-stack {
-    left: -5px;
+    left: 0;
+}
+
+.chat-message-item.is-self .chat-message-main.has-embedded-side-column .chat-message-main-inline-media-stack {
+    padding-right: 0;
 }
 
 .chat-message-main.has-text-with-attachment .chat-message-main-inline-media-stack::before {
@@ -2157,6 +2174,30 @@
 .chat-message-item.has-text-with-attachment .chat-audio-block::before,
 .chat-message-item.has-text-with-attachment .chat-file-block::before {
     display: none;
+}
+
+.chat-primary-media-stack {
+    position: relative;
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    box-sizing: border-box;
+}
+
+.chat-message-item.has-full-height-reaction-column .chat-primary-media-stack {
+    padding-right: 33px;
+}
+
+.chat-message-item.is-self.has-primary-media-block .chat-primary-media-stack {
+    padding-right: 0;
+}
+
+.chat-message-item.has-text-with-attachment .chat-primary-media-stack {
+    margin-top: 0;
+    padding-top: 0;
 }
 
 .chat-pending-upload-progress {
@@ -5136,7 +5177,7 @@
 }
 
 .chat-message-reply.has-side-column {
-    padding-right: 33px;
+    padding-right: 38px;
     overflow: hidden;
     isolation: isolate;
 }
@@ -5158,11 +5199,14 @@
     position: absolute;
     top: 0;
     bottom: 0;
+    left: auto;
     right: 0;
     width: 33px;
-    border-left: 1px solid rgba(148, 163, 184, 0.5);
     border-radius: 0 12px 12px 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.5);
     background: var(--chat-reaction-column-bg);
+    opacity: 1;
+    filter: none;
     pointer-events: none;
     z-index: 2;
 }
@@ -5236,8 +5280,8 @@
     background: linear-gradient(
         to right,
         var(--chat-edited-strip-bg) 0,
-        var(--chat-edited-strip-bg) calc(100% - 33px),
-        transparent calc(100% - 33px),
+        var(--chat-edited-strip-bg) calc(100% - 38px),
+        transparent calc(100% - 38px),
         transparent 100%
     );
     border-radius: 0 0 0 12px;
@@ -5247,7 +5291,7 @@
     content: '';
     position: absolute;
     left: 0;
-    right: 33px;
+    right: 38px;
     top: 0;
     height: 0;
     border-top: 1px solid rgba(71, 85, 105, 0.45);
@@ -5299,8 +5343,7 @@
     transform: translateY(8px);
 }
 
-.chat-message-main-inline-media-stack,
-.chat-message-reply-media-stack {
+.chat-message-main-inline-media-stack {
     display: inline-flex;
     flex-direction: column;
     align-items: center;
@@ -5310,23 +5353,25 @@
 }
 
 .chat-message-reply-media-stack {
-    margin-left: 4px;
-}
-
-.chat-message-reply.has-text-with-attachment .chat-message-reply-media-stack {
     position: relative;
     display: flex;
     width: 100%;
     max-width: 100%;
     margin: 8px 0 0;
-    padding-top: 8px;
     justify-content: center;
     align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
     box-sizing: border-box;
 }
 
+.chat-message-reply.has-text-with-attachment .chat-message-reply-media-stack {
+    padding-top: 8px;
+}
+
 .chat-message-reply.has-text-with-attachment.has-side-column .chat-message-reply-media-stack {
-    left: -5px;
+    left: 0;
+    padding-right: 0;
 }
 
 .chat-message-main-inline-media-stack .chat-message-reply-file,
@@ -5515,7 +5560,7 @@
 
 .chat-message-reply.has-side-column .chat-message-reply-head {
     box-sizing: border-box;
-    padding-right: 4px;
+    padding-right: 0;
 }
 
 .chat-message-reply.has-side-column .chat-message-reply-text {
@@ -5545,7 +5590,7 @@
 }
 
 .chat-message-reply.has-text-with-attachment.has-side-column .chat-message-reply-head::after {
-    right: -48px;
+    right: 0;
 }
 
 .chat-message-reply.has-text-with-attachment.has-reply-edited-time {
@@ -14960,7 +15005,14 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
     const replacementAttachment = options && options.replacementAttachment && typeof options.replacementAttachment === 'object'
         ? options.replacementAttachment
         : null;
-    if (!targetRow || (!cleanMessage && !shouldRemoveAttachment && !replacementAttachment)) return;
+    const hasExistingAttachment = !shouldRemoveAttachment
+        && !replacementAttachment
+        && (
+            !!String(editTarget && editTarget.imageUrl ? editTarget.imageUrl : '').trim()
+            || !!String(editTarget && editTarget.attachmentUrl ? editTarget.attachmentUrl : '').trim()
+            || !!String(editTarget && editTarget.attachmentKind ? editTarget.attachmentKind : '').trim()
+        );
+    if (!targetRow || (!cleanMessage && !shouldRemoveAttachment && !replacementAttachment && !hasExistingAttachment)) return;
     const editTimestamp = new Date().toISOString();
     const editTimeLabel = getLocalChatTimeLabel();
     rememberChatClientEditMeta(targetRow, editTimestamp, editTimeLabel);
@@ -22689,7 +22741,7 @@ function renderChatMessages(messages) {
         const timeLabel = resolveChatTimeLabel(msg.timeLabel, msg.timestamp);
         const editTimeLabel = resolveChatTimeLabel(msg.editTimeLabel, msg.editTimestamp);
         const imageThumbHtml = imageThumbSrc ? `
-            <div class="chat-image-block">
+            <div class="chat-image-block chat-primary-media-stack">
                 <button
                     type="button"
                     class="chat-image-thumb-btn"
@@ -22721,7 +22773,7 @@ function renderChatMessages(messages) {
             ? formatChatAudioDisplayName(attachmentName || 'video-chat.mp4', 16)
             : '';
         const videoHtml = showVideo ? `
-            <div class="chat-video-block">
+            <div class="chat-video-block chat-primary-media-stack">
                 ${buildChatInlineVideoShellHtml({
                     videoUrl: attachmentUrl,
                     videoTitle: attachmentName || 'Vídeo',
@@ -22779,7 +22831,7 @@ function renderChatMessages(messages) {
             ? 'Descargar audio'
             : (audioState && audioState.isPlaying ? 'Pausar audio' : 'Reproducir audio');
         const audioHtml = showAudio ? `
-            <div class="chat-audio-block">
+            <div class="chat-audio-block chat-primary-media-stack">
                 <div
                     class="${audioCardClass}"
                     data-audio-key="${escapeHtml(audioKey)}"
@@ -22830,7 +22882,7 @@ function renderChatMessages(messages) {
             : [];
         const fileThumbSrc = fileThumbCandidates[0] || '';
         const fileHtml = showFile ? `
-            <div class="chat-file-block">
+            <div class="chat-file-block chat-primary-media-stack">
                 <div class="chat-file-thumb-shell">
                     <button
                         type="button"
@@ -23190,6 +23242,7 @@ function renderChatMessages(messages) {
             (shouldUseItemCornerTime || shouldUseLineOnlyItemCornerTime) ? 'has-item-corner-time' : '',
             isShortSimpleBubble ? 'is-short-bubble' : '',
             (isShortSimpleBubble && !!msg.edited) ? 'is-short-bubble-edited' : '',
+            (hasPrimaryMedia && !shouldCompactPrimaryMedia) ? 'has-primary-media-block' : '',
             shouldUseItemTextAttachmentSeparator ? 'has-text-with-attachment' : '',
             shouldUseItemReactionColumn ? 'has-full-height-reaction-column' : '',
             'has-side-hit-area',
@@ -24363,11 +24416,12 @@ async function submitChatMessage() {
     if (activeEditTarget) {
         const pendingReplacement = activeEditTarget.pendingReplacementAttachment || null;
         const hasPendingReplacementFile = !!(pendingReplacement && pendingReplacement.file);
-        if (!message && !activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) return;
-        if (!message && activeEditTarget.attachmentRemoved && !hasPendingReplacementFile) return;
+        const hasExistingAttachment = !!getChatEditAttachmentMeta(activeEditTarget);
+        const willKeepAttachment = !activeEditTarget.attachmentRemoved && hasExistingAttachment;
+        if (!message && !hasPendingReplacementFile && !willKeepAttachment) return;
         const serializedEditReplyTarget = String(activeEditTarget.quotedReply || '').trim();
         const editPayloadMessage = serializedEditReplyTarget
-            ? `<${serializedEditReplyTarget}> ${message}`
+            ? (message ? `<${serializedEditReplyTarget}> ${message}` : `<${serializedEditReplyTarget}>`)
             : message;
         inputEl.value = '';
         keepChatKeyboardOpen(inputEl);

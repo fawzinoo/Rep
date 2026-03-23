@@ -11231,12 +11231,6 @@ function clearChatAttachmentInputSelection(inputId) {
     const input = document.getElementById(safeInputId);
     if (input) {
         input.value = '';
-        if (safeInputId === 'chat-attach-audio-input') {
-            input.removeAttribute('capture');
-            if (input.dataset) {
-                input.dataset.chatVoiceNoteMode = '0';
-            }
-        }
     }
 }
 
@@ -18775,19 +18769,6 @@ function isChatVoiceRecorderAppleMobile() {
     return /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
 }
 
-function isChatVoiceRecorderMobileDevice() {
-    if (typeof navigator === 'undefined') return false;
-    const userAgent = String(navigator.userAgent || '');
-    const platform = String(navigator.platform || '');
-    const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
-        || (/Mac/i.test(platform) && maxTouchPoints > 1);
-}
-
-function shouldUseNativeChatVoiceRecorderCapture() {
-    return isChatVoiceRecorderMobileDevice();
-}
-
 function isChatVoiceRecorderSafari() {
     if (typeof navigator === 'undefined') return false;
     const userAgent = String(navigator.userAgent || '');
@@ -18880,7 +18861,7 @@ function getChatVoiceRecorderExtension(mimeType = '') {
     return 'webm';
 }
 
-function buildChatVoiceRecorderFileName(mimeType = '', originalName = '') {
+function buildChatVoiceRecorderFileName(mimeType = '') {
     const now = new Date();
     const part = [
         now.getFullYear(),
@@ -18892,27 +18873,7 @@ function buildChatVoiceRecorderFileName(mimeType = '', originalName = '') {
         String(now.getMinutes()).padStart(2, '0'),
         String(now.getSeconds()).padStart(2, '0')
     ].join('');
-    const originalExtensionMatch = String(originalName || '').trim().match(/\.([a-z0-9]{2,8})$/i);
-    const originalExtension = originalExtensionMatch ? originalExtensionMatch[1].toLowerCase() : '';
-    const derivedExtension = getChatVoiceRecorderExtension(mimeType);
-    const fileExtension = (derivedExtension === 'webm' && originalExtension)
-        ? originalExtension
-        : derivedExtension;
-    return `grabacion-voz-${part}_${time}.${fileExtension}`;
-}
-
-function createChatVoiceNoteCaptureFile(file) {
-    if (!(file instanceof File)) return file;
-    const mimeType = String(file.type || '').trim() || 'audio/webm';
-    const fileName = buildChatVoiceRecorderFileName(mimeType, file.name || '');
-    try {
-        return new File([file], fileName, {
-            type: mimeType,
-            lastModified: Date.now()
-        });
-    } catch (_) {
-        return file;
-    }
+    return `grabacion-voz-${part}_${time}.${getChatVoiceRecorderExtension(mimeType)}`;
 }
 
 function clearChatVoiceRecorderTimer() {
@@ -19245,13 +19206,6 @@ function closeChatVoiceRecorder(discardRecording = true) {
 
 function openChatVoiceRecorder() {
     if (chatAttachmentUploadInProgress) return;
-    if (shouldUseNativeChatVoiceRecorderCapture()) {
-        closeChatAttachmentMenu();
-        closeChatEmojiMenu();
-        setChatAudioInputVoiceNoteMode(true);
-        triggerChatAttachmentInput('chat-attach-audio-input');
-        return;
-    }
     const overlay = document.getElementById('chat-voice-recorder-overlay');
     if (!overlay) return;
     closeChatAttachmentMenu();
@@ -19879,20 +19833,6 @@ function triggerChatAttachmentInput(inputId) {
     if (!input) return;
     input.value = '';
     input.click();
-}
-
-function setChatAudioInputVoiceNoteMode(enabled) {
-    const input = document.getElementById('chat-attach-audio-input');
-    if (!input) return;
-    const shouldEnable = !!enabled;
-    if (shouldEnable) {
-        input.setAttribute('capture', 'user');
-    } else {
-        input.removeAttribute('capture');
-    }
-    if (input.dataset) {
-        input.dataset.chatVoiceNoteMode = shouldEnable ? '1' : '0';
-    }
 }
 
 function bindFastChatPress(button, handler) {
@@ -25038,7 +24978,6 @@ async function openChatModal() {
             dismissChatUnreadIndicatorFromInteraction(event);
             triggerChatUiHapticFeedback();
             closeChatAttachmentMenu();
-            setChatAudioInputVoiceNoteMode(false);
             triggerChatAttachmentInput('chat-attach-audio-input');
         });
     }
@@ -25119,31 +25058,16 @@ async function openChatModal() {
         if (!inputEl) return;
         const picked = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
         if (!picked) return;
-        const isVoiceNoteCapture = inputEl.id === 'chat-attach-audio-input'
-            && String(inputEl.dataset && inputEl.dataset.chatVoiceNoteMode ? inputEl.dataset.chatVoiceNoteMode : '0') === '1';
-        const normalizedForcedKind = isVoiceNoteCapture
-            ? 'audio'
-            : String(forcedKind || '').trim().toLowerCase();
-        const fileToSubmit = isVoiceNoteCapture ? createChatVoiceNoteCaptureFile(picked) : picked;
-        if (normalizedForcedKind === 'file' && !isChatFilePickerAllowedFile(fileToSubmit)) {
-            if (inputEl.id === 'chat-attach-audio-input') {
-                setChatAudioInputVoiceNoteMode(false);
-            }
+        if (String(forcedKind || '').trim().toLowerCase() === 'file' && !isChatFilePickerAllowedFile(picked)) {
             inputEl.value = '';
             alert('Desde Archivo solo se permiten documentos y audios. Para imagenes o videos usa Foto o Video.');
             return;
         }
-        if (!validateChatAttachmentSize(fileToSubmit, inputEl.id || '')) {
-            if (inputEl.id === 'chat-attach-audio-input') {
-                setChatAudioInputVoiceNoteMode(false);
-            }
+        if (!validateChatAttachmentSize(picked, inputEl.id || '')) {
             return;
         }
         triggerChatUiHapticFeedback();
-        void submitChatAttachment(fileToSubmit, normalizedForcedKind, inputEl.id || '');
-        if (inputEl.id === 'chat-attach-audio-input') {
-            setChatAudioInputVoiceNoteMode(false);
-        }
+        void submitChatAttachment(picked, forcedKind, inputEl.id || '');
     };
     if (photoAttachInput) {
         photoAttachInput.addEventListener('change', () => onAttachmentInputChange(photoAttachInput, 'image'));

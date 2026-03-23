@@ -19226,7 +19226,11 @@ function openChatVoiceRecorder() {
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
     setChatVoiceRecorderUiState('starting', 'Preparando grabadora...');
-    void startChatVoiceRecordingSession();
+    requestAnimationFrame(() => {
+        const currentOverlay = document.getElementById('chat-voice-recorder-overlay');
+        if (!currentOverlay || currentOverlay.hidden) return;
+        void startChatVoiceRecordingSession();
+    });
 }
 
 async function sendChatVoiceRecording() {
@@ -24977,6 +24981,12 @@ async function openChatModal() {
         attachMenu.addEventListener('click', (event) => {
             event.stopPropagation();
         });
+        attachMenu.addEventListener('touchstart', (event) => {
+            event.stopPropagation();
+        }, { passive: true });
+        attachMenu.addEventListener('touchend', (event) => {
+            event.stopPropagation();
+        }, { passive: true });
     }
     if (photoAttachBtn) {
         bindFastChatPress(photoAttachBtn, (event) => {
@@ -25011,10 +25021,24 @@ async function openChatModal() {
         });
     }
     if (recordAttachBtn) {
-        bindFastChatPress(recordAttachBtn, (event) => {
+        let recordAttachTouchHandled = false;
+        const handleRecordAttach = (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             triggerChatUiHapticFeedback();
+            if (event && event.cancelable) event.preventDefault();
+            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
             openChatVoiceRecorder();
+        };
+        recordAttachBtn.addEventListener('touchend', (event) => {
+            recordAttachTouchHandled = true;
+            handleRecordAttach(event);
+            setTimeout(() => {
+                recordAttachTouchHandled = false;
+            }, 450);
+        }, { passive: false });
+        recordAttachBtn.addEventListener('click', (event) => {
+            if (recordAttachTouchHandled) return;
+            handleRecordAttach(event);
         });
     }
     if (voiceRecorderOverlay) {

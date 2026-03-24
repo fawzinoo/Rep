@@ -933,6 +933,28 @@
     line-height: 1;
 }
 
+.chat-unread-indicator.is-jump-only .chat-unread-indicator-badge {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    padding: 0;
+    border-color: rgba(13, 148, 136, 0.72);
+    background: linear-gradient(180deg, #ffffff 0%, #ecfeff 100%);
+    color: #0f766e;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 10px 20px rgba(15, 118, 110, 0.18);
+}
+
+.chat-unread-indicator.is-jump-only .chat-unread-indicator-badge i {
+    font-size: 1rem;
+}
+
+.chat-unread-indicator.is-jump-only .chat-unread-indicator-count-inline,
+.chat-unread-indicator.is-jump-only .chat-unread-indicator-arrow {
+    display: none !important;
+}
+
 .chat-unread-indicator-count-inline {
     display: inline-flex;
     align-items: center;
@@ -958,6 +980,52 @@
     50% {
         transform: translateY(4px);
     }
+}
+
+.chat-jump-bottom-btn {
+    position: absolute;
+    left: 26px;
+    bottom: calc(var(--chat-footer-h, 0px) + env(safe-area-inset-bottom) + 10px);
+    z-index: 15;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.28));
+    transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.chat-jump-bottom-btn[hidden] {
+    display: none !important;
+}
+
+.chat-jump-bottom-btn:hover {
+    transform: translateY(-1px);
+    filter: drop-shadow(0 12px 20px rgba(15, 23, 42, 0.34));
+}
+
+.chat-jump-bottom-btn-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ffffff 0%, #ecfeff 100%);
+    border: 2px solid rgba(13, 148, 136, 0.72);
+    color: #0f766e;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 10px 20px rgba(15, 118, 110, 0.18);
+}
+
+.chat-jump-bottom-btn-badge i {
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .chat-messages {
@@ -14829,6 +14897,7 @@ function shouldPreserveChatComposerStateForEventTarget(target) {
         '#chat-thread-popover',
         '#chat-reaction-popover',
         '#chat-unread-indicator',
+        '#chat-jump-bottom-btn',
         '.chat-message-delete-btn',
         '.chat-voice-recorder-overlay',
         '.chat-voice-recorder-modal'
@@ -21486,6 +21555,8 @@ function scrollChatToLatestMessage(useSmooth = false) {
         requestAnimationFrame(() => applyScroll('auto'));
     }
     chatPinnedToBottom = true;
+    updateChatJumpBottomButton();
+    updateChatUnreadIndicator();
 }
 
 function schedulePinnedChatBottomSnap() {
@@ -21756,8 +21827,31 @@ function isChatNearBottom(thresholdPx = CHAT_NEAR_BOTTOM_THRESHOLD_PX) {
     return remaining <= Math.max(0, Number(thresholdPx) || 0);
 }
 
+function shouldShowChatJumpToBottomButton() {
+    const chatBody = getChatBodyElement();
+    if (!chatBody) return false;
+    const scrollableDistance = Math.max(0, chatBody.scrollHeight - chatBody.clientHeight);
+    if (scrollableDistance <= 24) return false;
+    const remaining = Math.max(0, chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight);
+    return remaining > Math.max(36, Math.round(CHAT_NEAR_BOTTOM_THRESHOLD_PX * 0.5));
+}
+
+function updateChatJumpBottomButton() {
+    const buttonEl = document.getElementById('chat-jump-bottom-btn');
+    if (!buttonEl) return;
+    const shouldShow = !chatUnreadIncomingCount && shouldShowChatJumpToBottomButton();
+    buttonEl.hidden = !shouldShow;
+    if (shouldShow) {
+        buttonEl.removeAttribute('aria-hidden');
+    } else {
+        buttonEl.setAttribute('aria-hidden', 'true');
+    }
+}
+
 function updateChatPinnedState() {
     chatPinnedToBottom = isChatNearBottom();
+    updateChatJumpBottomButton();
+    updateChatUnreadIndicator();
 }
 
 function countIncomingUnreadMessages(previousMessages, nextMessages, currentUserLabel) {
@@ -21775,24 +21869,31 @@ function countIncomingUnreadMessages(previousMessages, nextMessages, currentUser
 function updateChatUnreadIndicator() {
     const buttonEl = document.getElementById('chat-unread-indicator');
     const countEl = document.getElementById('chat-unread-indicator-count');
-    if (!buttonEl || !countEl) return;
+    const iconEl = buttonEl ? buttonEl.querySelector('.chat-unread-indicator-badge i') : null;
+    if (!buttonEl || !countEl || !iconEl) return;
+    updateChatJumpBottomButton();
 
     const safeCount = Math.max(0, Number(chatUnreadIncomingCount) || 0);
     if (!safeCount) {
         buttonEl.hidden = true;
         buttonEl.setAttribute('aria-hidden', 'true');
         buttonEl.setAttribute('aria-label', 'Sin mensajes nuevos');
+        buttonEl.title = '';
         countEl.textContent = '0';
+        countEl.hidden = false;
+        iconEl.className = 'far fa-envelope';
         return;
     }
 
     const visualCount = safeCount > 99 ? '99+' : String(safeCount);
     const label = safeCount === 1 ? '1 mensaje nuevo' : `${safeCount} mensajes nuevos`;
     countEl.textContent = visualCount;
+    countEl.hidden = false;
     buttonEl.hidden = false;
     buttonEl.removeAttribute('aria-hidden');
     buttonEl.setAttribute('aria-label', `${label}. Ir abajo`);
     buttonEl.title = label;
+    iconEl.className = 'far fa-envelope';
 }
 
 function resetChatUnreadIndicator() {
@@ -24065,6 +24166,10 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
         if (shouldRenderMessages) {
             renderMergedChatMessages(chatLatestServerMessages);
         }
+        requestAnimationFrame(() => {
+            updateChatJumpBottomButton();
+            updateChatUnreadIndicator();
+        });
         if (preserveScrollSnapshot) {
             restoreChatScrollSnapshot(preserveScrollSnapshot);
         } else if (hasActiveReplyTarget) {
@@ -24726,6 +24831,11 @@ async function openChatModal() {
                     <span class="chat-unread-indicator-arrow" aria-hidden="true"></span>
                 </button>
             </div>
+            <button type="button" id="chat-jump-bottom-btn" class="chat-jump-bottom-btn" hidden aria-label="Ir al final del chat" title="Bajar al final">
+                <span class="chat-jump-bottom-btn-badge">
+                    <i class="fas fa-arrow-down" aria-hidden="true"></i>
+                </span>
+            </button>
             <div class="chat-footer">
                 <div id="chat-reply-banner" class="chat-reply-banner" hidden>
                     <div class="chat-reply-banner-main">
@@ -24968,6 +25078,14 @@ async function openChatModal() {
         unreadIndicatorBtn.addEventListener('click', () => {
             triggerChatUiHapticFeedback();
             resetChatUnreadIndicator();
+            scrollChatToLatestMessage(true);
+        });
+    }
+
+    const jumpBottomBtn = document.getElementById('chat-jump-bottom-btn');
+    if (jumpBottomBtn) {
+        jumpBottomBtn.addEventListener('click', () => {
+            triggerChatUiHapticFeedback();
             scrollChatToLatestMessage(true);
         });
     }
@@ -25272,6 +25390,7 @@ async function openChatModal() {
         chatBodyEl.addEventListener('scroll', (event) => {
             dismissChatUnreadIndicatorFromInteraction(event);
             updateChatPinnedState();
+            updateChatJumpBottomButton();
             if (
                 chatHasMoreOlderMessages &&
                 !chatIsLoadingOlderMessages &&

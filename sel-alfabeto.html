@@ -22150,15 +22150,12 @@ function serializeLessonPointsForServer(columna, puntos) {
 }
 
 function getStudentFromStorage() {
+    const identity = getStudentIdentityForChat();
     const nombre = normalizeStudentName(
-        localStorage.getItem('access_first_name')
-        || sessionStorage.getItem('nombreUsuario')
-        || ''
+        identity && identity.firstName ? identity.firstName : ''
     );
     const apellido = normalizeStudentName(
-        localStorage.getItem('access_last_name')
-        || sessionStorage.getItem('apellidoUsuario')
-        || ''
+        identity && identity.lastName ? identity.lastName : ''
     );
     if (!nombre || !apellido) return null;
     return { nombre, apellido };
@@ -22360,25 +22357,77 @@ function installRankingButtonHandler() {
 }
 
 // ==================== CHAT U1L0T1 ====================
+function getChatIdentityStorageValue(...keys) {
+    const candidates = Array.isArray(keys) ? keys : [];
+    for (let idx = 0; idx < candidates.length; idx += 1) {
+        const key = String(candidates[idx] || '').trim();
+        if (!key) continue;
+        try {
+            const localValue = String(localStorage.getItem(key) || '').trim();
+            if (localValue) return localValue;
+        } catch (_) {}
+        try {
+            const sessionValue = String(sessionStorage.getItem(key) || '').trim();
+            if (sessionValue) return sessionValue;
+        } catch (_) {}
+    }
+    return '';
+}
+
+function parseChatIdentityFullName(fullName) {
+    const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return { firstName: '', lastName: '' };
+    const parts = clean.split(' ');
+    if (parts.length <= 1) {
+        return { firstName: clean, lastName: '' };
+    }
+    return {
+        firstName: String(parts.shift() || '').trim(),
+        lastName: parts.join(' ').trim()
+    };
+}
+
 function getStudentIdentityForChat() {
-    const firstName = (
-        localStorage.getItem('access_first_name')
-        || sessionStorage.getItem('nombreUsuario')
-        || ''
-    ).trim();
-    const lastName = (
-        localStorage.getItem('access_last_name')
-        || sessionStorage.getItem('apellidoUsuario')
-        || ''
-    ).trim();
-    const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'Anónimo';
+    const storedFirstName = getChatIdentityStorageValue(
+        'access_first_name',
+        'nombreUsuario',
+        'examUserNombre'
+    );
+    const storedLastName = getChatIdentityStorageValue(
+        'access_last_name',
+        'apellidoUsuario',
+        'examUserApellido'
+    );
+    const explicitFullName = getChatIdentityStorageValue(
+        'access_display_name',
+        'nombreCompleto',
+        'fullName',
+        'currentUserName'
+    );
+    const inferredFullName = explicitFullName || [storedFirstName, storedLastName].filter(Boolean).join(' ').trim();
+    const parsedFullName = (!storedFirstName || !storedLastName)
+        ? parseChatIdentityFullName(inferredFullName)
+        : { firstName: '', lastName: '' };
+    const firstName = String(storedFirstName || parsedFullName.firstName || '').trim();
+    const lastName = String(storedLastName || parsedFullName.lastName || '').trim();
+    const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || inferredFullName || 'Anónimo';
     return { firstName, lastName, displayName };
 }
 
 function isChatAdminIdentity(identity) {
     const firstName = normalizeChatComparisonText(identity && identity.firstName ? identity.firstName : '');
     const lastName = normalizeChatComparisonText(identity && identity.lastName ? identity.lastName : '');
-    return firstName === 'profe' && lastName === 'faouzi';
+    const displayName = normalizeChatComparisonText(identity && identity.displayName ? identity.displayName : '');
+    const combinedName = normalizeChatComparisonText([
+        identity && identity.firstName ? identity.firstName : '',
+        identity && identity.lastName ? identity.lastName : ''
+    ].filter(Boolean).join(' '));
+    const adminDisplayName = normalizeChatComparisonText(CHAT_DEFAULT_USER);
+    return (firstName === 'profe' && lastName === 'faouzi')
+        || displayName === adminDisplayName
+        || combinedName === adminDisplayName
+        || firstName === adminDisplayName
+        || lastName === adminDisplayName;
 }
 
 function isCurrentChatUserAdmin() {
@@ -22949,6 +22998,7 @@ function renderChatMessages(messages) {
         const isEditableSelf = canEditOwnChatMessage(msg, currentUserLabel);
         const isOwnActionable = isEditableSelf || canDeleteOwnChatMessage(msg, currentUserLabel);
         const messageRow = Number(msg && msg.row ? msg.row : 0) || 0;
+        const isAdminActionable = isCurrentChatUserAdmin() && !isCurrentSender && messageRow > 0;
         const isDeleteArmedSelf = isCurrentSender && messageRow > 0 && messageRow === chatDeleteArmRow;
         const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const isSelectedEditTarget = isEditableSelf && isSameEditTarget(getEditTargetFromMessage(msg), chatEditTarget);
@@ -23515,6 +23565,7 @@ function renderChatMessages(messages) {
             shouldUseItemReactionColumn ? 'has-full-height-reaction-column' : '',
             'has-side-hit-area',
             isCurrentSender ? 'is-self' : '',
+            isAdminActionable ? 'is-admin-actionable' : '',
             isOwnActionable ? 'is-editable-self' : '',
             isReplyable ? 'is-replyable' : '',
             isSelectedTarget ? 'reply-target' : '',
@@ -23884,7 +23935,50 @@ function renderChatMessages(messages) {
         return { fromBlockShadow: true, toggledOff: false, anchorEl: targetSurface };
     };
 
-    const replyableItems = messagesEl.querySelectorAll('.chat-message-item.is-replyable');
+    const adminActionableItems = messagesEl.querySelectorAll('.chat-message-item.is-admin-actionable');
+    adminActionableItems.forEach((item) => {
+        const handleAdminControlMenu = (event = null) => {
+            if (interceptEmbeddedReplyActionFromParent(item, event)) return;
+            vibrar(40);
+            if (Date.now() < chatIgnoreOwnMessageClickUntil) return;
+            if (chatDeleteArmRow) {
+                clearChatDeleteArm(true);
+                return;
+            }
+            const blockShadowState = syncBlockShadowSelectionFromEvent(item, event, { activate: true });
+            if (blockShadowState.toggledOff) return;
+            const sideHitAreaState = blockShadowState.fromBlockShadow
+                ? { fromSideHitArea: false, toggledOff: false }
+                : syncSideHitAreaSelectionFromEvent(item, event, { activate: false });
+            if (sideHitAreaState.toggledOff) return;
+            dismissChatKeyboardForOwnMessageInteraction();
+            const idx = Number(item.dataset.msgIndex);
+            const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
+            if (!targetMessage) return;
+            openChatOwnMessageChoiceMenu(targetMessage, blockShadowState.anchorEl || item, currentUserLabel, {
+                keepSideShadow: sideHitAreaState.fromSideHitArea,
+                keepBlockShadow: blockShadowState.fromBlockShadow
+            });
+        };
+        item.addEventListener('click', (event) => {
+            if (chatSuppressNextMessageClick) {
+                chatSuppressNextMessageClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            if (Date.now() < chatIgnoreMessageClickUntil) return;
+            event.preventDefault();
+            event.stopPropagation();
+            handleAdminControlMenu(event);
+        });
+        installFastTap(item, handleAdminControlMenu, {
+            ignoreSelector: '.chat-message-reply-reactable',
+            suppressKeyboard: true
+        });
+    });
+
+    const replyableItems = messagesEl.querySelectorAll('.chat-message-item.is-replyable:not(.is-admin-actionable)');
     replyableItems.forEach((item) => {
         const handleReply = (event = null) => {
             if (interceptEmbeddedReplyActionFromParent(item, event)) return;

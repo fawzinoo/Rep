@@ -3553,6 +3553,10 @@
     justify-content: flex-end;
 }
 
+.chat-notice-modal-actions.is-confirm {
+    gap: 10px;
+}
+
 .chat-notice-modal-btn {
     min-width: 108px;
     border: none;
@@ -3574,6 +3578,26 @@
 
 .chat-notice-modal-btn:active {
     transform: scale(0.98);
+}
+
+.chat-notice-modal-btn.secondary {
+    background: linear-gradient(180deg, #f8fafc 0%, #e5e7eb 100%);
+    color: #334155;
+    box-shadow: 0 12px 22px rgba(148, 163, 184, 0.2);
+}
+
+.chat-notice-modal-btn.secondary:hover {
+    box-shadow: 0 16px 26px rgba(148, 163, 184, 0.24);
+}
+
+.chat-notice-modal-btn.danger {
+    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    color: #fff7f7;
+    box-shadow: 0 12px 22px rgba(220, 38, 38, 0.24);
+}
+
+.chat-notice-modal-btn.danger:hover {
+    box-shadow: 0 16px 26px rgba(220, 38, 38, 0.3);
 }
 
 @media (max-width: 768px) {
@@ -10756,6 +10780,7 @@ let chatVoiceRecorderSendAfterStop = false;
 let chatVoiceRecorderStopResolve = null;
 let chatVoiceRecorderRequestId = 0;
 let chatNoticeModalLastFocusedEl = null;
+let chatNoticeModalResolve = null;
 const CHAT_VOICE_RECORDER_DEFAULT_BITRATE = 48000;
 const CHAT_VOICE_RECORDER_APPLE_BITRATE = 64000;
 
@@ -16130,7 +16155,15 @@ function resetChatConversationLocalState() {
 
 async function deleteEntireChatConversationAsAdmin() {
     if (!isCurrentChatUserAdmin() || chatDeleteAllInProgress) return;
-    const confirmed = window.confirm('Se borrará toda la conversación del chat. ¿Continuar?');
+    const confirmed = await showChatConfirmModal(
+        'Se borrará toda la conversación del chat para todos los usuarios. ¿Continuar?',
+        {
+            title: 'Borrar toda la conversación',
+            cancelLabel: 'Cancelar',
+            confirmLabel: 'Borrar',
+            confirmTone: 'danger'
+        }
+    );
     if (!confirmed) return;
 
     const identity = getStudentIdentityForChat();
@@ -20330,15 +20363,17 @@ function closeChatImageViewer() {
 function handleChatNoticeModalKeydown(event) {
     if (!event || event.key !== 'Escape') return;
     event.preventDefault();
-    closeChatNoticeModal();
+    closeChatNoticeModal(false);
 }
 
-function closeChatNoticeModal() {
+function closeChatNoticeModal(result = null) {
     const overlay = document.getElementById('chat-notice-modal-overlay');
     if (overlay) {
         overlay.remove();
     }
     document.removeEventListener('keydown', handleChatNoticeModalKeydown, true);
+    const resolver = chatNoticeModalResolve;
+    chatNoticeModalResolve = null;
     const previousFocusEl = chatNoticeModalLastFocusedEl;
     chatNoticeModalLastFocusedEl = null;
     if (previousFocusEl && typeof previousFocusEl.focus === 'function') {
@@ -20349,6 +20384,11 @@ function closeChatNoticeModal() {
                 previousFocusEl.focus();
             } catch (_) {}
         }
+    }
+    if (typeof resolver === 'function') {
+        try {
+            resolver(result);
+        } catch (_) {}
     }
 }
 
@@ -20365,6 +20405,7 @@ function showChatNoticeModal(message = '', options = {}) {
     chatNoticeModalLastFocusedEl = activeEl && typeof activeEl.focus === 'function'
         ? activeEl
         : null;
+    chatNoticeModalResolve = null;
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-notice-modal-overlay';
@@ -20388,7 +20429,7 @@ function showChatNoticeModal(message = '', options = {}) {
 
     overlay.addEventListener('click', (event) => {
         if (event.target === overlay) {
-            closeChatNoticeModal();
+            closeChatNoticeModal(false);
         }
     });
 
@@ -20397,7 +20438,7 @@ function showChatNoticeModal(message = '', options = {}) {
 
     const closeBtn = document.getElementById('chat-notice-modal-close-btn');
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => closeChatNoticeModal());
+        closeBtn.addEventListener('click', () => closeChatNoticeModal(true));
         requestAnimationFrame(() => {
             try {
                 closeBtn.focus({ preventScroll: true });
@@ -20408,6 +20449,80 @@ function showChatNoticeModal(message = '', options = {}) {
             }
         });
     }
+}
+
+function showChatConfirmModal(message = '', options = {}) {
+    const safeMessage = String(message || '').trim();
+    if (!safeMessage) return Promise.resolve(false);
+
+    closeChatNoticeModal(false);
+
+    const safeTitle = String(options && options.title ? options.title : 'Confirmar acción').trim() || 'Confirmar acción';
+    const safeConfirmLabel = String(options && options.confirmLabel ? options.confirmLabel : 'Aceptar').trim() || 'Aceptar';
+    const safeCancelLabel = String(options && options.cancelLabel ? options.cancelLabel : 'Cancelar').trim() || 'Cancelar';
+    const safeMessageHtml = escapeHtml(safeMessage).replace(/\n/g, '<br>');
+    const confirmButtonTone = String(options && options.confirmTone ? options.confirmTone : '').trim().toLowerCase() === 'danger'
+        ? ' danger'
+        : '';
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+    chatNoticeModalLastFocusedEl = activeEl && typeof activeEl.focus === 'function'
+        ? activeEl
+        : null;
+
+    return new Promise((resolve) => {
+        chatNoticeModalResolve = (result) => resolve(result === true);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'chat-notice-modal-overlay';
+        overlay.className = 'chat-notice-modal-overlay';
+        overlay.innerHTML = `
+            <div class="chat-notice-modal" role="dialog" aria-modal="true" aria-labelledby="chat-notice-modal-title" aria-describedby="chat-notice-modal-message">
+                <div class="chat-notice-modal-head">
+                    <div class="chat-notice-modal-icon" aria-hidden="true">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="chat-notice-modal-copy">
+                        <h3 class="chat-notice-modal-title" id="chat-notice-modal-title">${escapeHtml(safeTitle)}</h3>
+                        <p class="chat-notice-modal-message" id="chat-notice-modal-message">${safeMessageHtml}</p>
+                    </div>
+                </div>
+                <div class="chat-notice-modal-actions is-confirm">
+                    <button type="button" class="chat-notice-modal-btn secondary" id="chat-notice-modal-cancel-btn">${escapeHtml(safeCancelLabel)}</button>
+                    <button type="button" class="chat-notice-modal-btn${confirmButtonTone}" id="chat-notice-modal-confirm-btn">${escapeHtml(safeConfirmLabel)}</button>
+                </div>
+            </div>
+        `;
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                closeChatNoticeModal(false);
+            }
+        });
+
+        document.body.appendChild(overlay);
+        document.addEventListener('keydown', handleChatNoticeModalKeydown, true);
+
+        const cancelBtn = document.getElementById('chat-notice-modal-cancel-btn');
+        const confirmBtn = document.getElementById('chat-notice-modal-confirm-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => closeChatNoticeModal(false));
+        }
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', () => closeChatNoticeModal(true));
+        }
+
+        requestAnimationFrame(() => {
+            const preferredFocusEl = cancelBtn || confirmBtn;
+            if (!preferredFocusEl) return;
+            try {
+                preferredFocusEl.focus({ preventScroll: true });
+            } catch (_) {
+                try {
+                    preferredFocusEl.focus();
+                } catch (_) {}
+            }
+        });
+    });
 }
 
 function inferImageExtensionFromUrl(imageUrl) {

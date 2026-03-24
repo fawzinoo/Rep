@@ -1107,6 +1107,7 @@
     user-select: none;
     -webkit-touch-callout: none;
     touch-action: manipulation;
+    overflow: visible;
 }
 
 .chat-message-item:not(.is-self) {
@@ -1149,7 +1150,7 @@
     filter: blur(0.75px);
 }
 
-.chat-message-item.has-side-hit-area > :not(.chat-message-hit-area):not(.chat-message-corner-time):not(.chat-message-reaction-column-guard) {
+.chat-message-item.has-side-hit-area > :not(.chat-message-hit-area):not(.chat-message-corner-time):not(.chat-message-reaction-column-guard):not(#chat-own-message-choice-menu) {
     position: relative;
     z-index: 1;
 }
@@ -1336,6 +1337,7 @@
 
 .chat-message-item.action-target {
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 10px 22px rgba(15, 23, 42, 0.2);
+    z-index: 24;
 }
 
 .chat-message-item.is-self.delete-armed {
@@ -1417,7 +1419,7 @@
 }
 
 .chat-own-message-choice-menu {
-    position: fixed;
+    position: absolute;
     z-index: 14450;
     display: flex;
     align-items: center;
@@ -1429,6 +1431,7 @@
     border: 1px solid rgba(15, 23, 42, 0.08);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    pointer-events: auto;
 }
 
 .chat-own-message-choice-menu[hidden] {
@@ -14010,10 +14013,14 @@ function canEditOwnChatMessage(msg, currentUserLabel) {
 function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const row = Number(msg && msg.row ? msg.row : 0) || 0;
-    const attachmentUrl = String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim();
+    const messageText = String(msg && msg.message ? msg.message : '').trim();
+    const hasMedia =
+        !!String(msg && msg.imageUrl ? msg.imageUrl : '').trim() ||
+        !!String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() ||
+        !!String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
     return row <= 0
         && !!(msg && msg.pending)
-        && !!attachmentUrl
+        && (!!messageText || hasMedia)
         && areSameChatUserLabels(userLabel, currentUserLabel);
 }
 
@@ -15244,6 +15251,31 @@ function cancelPendingChatAttachmentMessage(targetMessage) {
     return cancelPendingChatAttachmentUploadByUrl(attachmentUrl);
 }
 
+function cancelPendingChatLocalEchoMessage(targetMessage) {
+    const attachmentUrl = String(targetMessage && targetMessage.attachmentUrl ? targetMessage.attachmentUrl : '').trim();
+    if (attachmentUrl) {
+        return cancelPendingChatAttachmentMessage(targetMessage);
+    }
+
+    const targetKey = buildChatMessageKey(targetMessage);
+    if (!targetKey) return false;
+
+    let removed = false;
+    chatLocalEchoMessages = (Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []).filter((msg) => {
+        if (removed) return true;
+        if (!msg || !msg.pending) return true;
+        if ((Number(msg && msg.row ? msg.row : 0) || 0) > 0) return true;
+        if (buildChatMessageKey(msg) !== targetKey) return true;
+        removed = true;
+        return false;
+    });
+
+    if (removed && document.getElementById('chat-overlay')) {
+        renderMergedChatMessages(chatLatestServerMessages);
+    }
+    return removed;
+}
+
 function clearChatDeleteArm(shouldRerender = true) {
     if (!chatDeleteArmRow) return;
     chatDeleteArmRow = 0;
@@ -15498,34 +15530,64 @@ function closeChatOwnMessageChoiceMenu() {
     clearChatPersistentBlockShadow();
 }
 
+function getChatOwnMessageChoiceMenuHost(anchorEl = null, menuEl = null) {
+    const overlayEl = (anchorEl && anchorEl.closest && anchorEl.closest('.chat-message-item'))
+        || (anchorEl && anchorEl.nodeType === 1 ? anchorEl : null)
+        || document.getElementById('chat-overlay')
+        || document.body;
+    const targetMenuEl = menuEl || document.getElementById('chat-own-message-choice-menu');
+    if (targetMenuEl && targetMenuEl.parentElement !== overlayEl) {
+        overlayEl.appendChild(targetMenuEl);
+    }
+    return overlayEl;
+}
+
 function positionChatOwnMessageChoiceMenu(anchorEl) {
     const menuEl = document.getElementById('chat-own-message-choice-menu');
     if (!menuEl || !anchorEl) return;
 
     const anchorRect = anchorEl.getBoundingClientRect();
+    const hostEl = getChatOwnMessageChoiceMenuHost(anchorEl, menuEl);
+    const hostRect = hostEl && hostEl.getBoundingClientRect
+        ? hostEl.getBoundingClientRect()
+        : {
+            left: 0,
+            top: 0,
+            right: window.innerWidth || document.documentElement.clientWidth || 0,
+            bottom: window.innerHeight || document.documentElement.clientHeight || 0
+        };
     const chatModalEl = anchorEl.closest('.chat-modal');
     const boundsRect = chatModalEl ? chatModalEl.getBoundingClientRect() : {
-        left: 0,
-        top: 0,
-        right: window.innerWidth || document.documentElement.clientWidth || 0,
-        bottom: window.innerHeight || document.documentElement.clientHeight || 0
+        left: hostRect.left,
+        top: hostRect.top,
+        right: hostRect.right,
+        bottom: hostRect.bottom
     };
     const menuRect = menuEl.getBoundingClientRect();
+    const menuWidth = Math.max(Number(menuRect.width) || 0, Number(menuEl.offsetWidth) || 0);
+    const menuHeight = Math.max(Number(menuRect.height) || 0, Number(menuEl.offsetHeight) || 0);
+    if (!menuWidth || !menuHeight) {
+        requestAnimationFrame(() => {
+            positionChatOwnMessageChoiceMenu(anchorEl);
+        });
+        return;
+    }
     const gap = 6;
     const sideGap = 8;
 
-    let left = anchorRect.right - menuRect.width;
-    let top = anchorRect.top - menuRect.height - gap;
+    let left = anchorRect.right - menuWidth;
+    let top = anchorRect.top - menuHeight - gap;
     if (left < boundsRect.left + sideGap) left = boundsRect.left + sideGap;
-    if (left + menuRect.width > boundsRect.right - sideGap) {
-        left = Math.max(boundsRect.left + sideGap, boundsRect.right - menuRect.width - sideGap);
+    if (left + menuWidth > boundsRect.right - sideGap) {
+        left = Math.max(boundsRect.left + sideGap, boundsRect.right - menuWidth - sideGap);
     }
     if (top < boundsRect.top + sideGap) {
-        top = Math.min(boundsRect.bottom - menuRect.height - sideGap, anchorRect.bottom + gap);
+        top = Math.min(boundsRect.bottom - menuHeight - sideGap, anchorRect.bottom + gap);
     }
 
-    menuEl.style.left = `${Math.round(left)}px`;
-    menuEl.style.top = `${Math.round(Math.max(boundsRect.top + sideGap, top))}px`;
+    const clampedTop = Math.max(boundsRect.top + sideGap, top);
+    menuEl.style.left = `${Math.round(left - hostRect.left)}px`;
+    menuEl.style.top = `${Math.round(clampedTop - hostRect.top)}px`;
 }
 
 function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel, options = {}) {
@@ -15545,8 +15607,8 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
         menuEl.id = 'chat-own-message-choice-menu';
         menuEl.className = 'chat-own-message-choice-menu';
         menuEl.hidden = true;
-        document.body.appendChild(menuEl);
     }
+    getChatOwnMessageChoiceMenuHost(anchorEl, menuEl);
 
     if (chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.anchorEl && chatOwnMessageChoiceMenuState.anchorEl !== anchorEl) {
         chatOwnMessageChoiceMenuState.anchorEl.classList.remove('action-target');
@@ -15598,8 +15660,11 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
     `;
     menuEl.hidden = false;
     chatOwnMessageChoiceMenuState = { targetMessage, anchorEl, currentUserLabel };
-    chatIgnoreOwnMessageChoiceCloseUntil = Date.now() + 350;
+    chatIgnoreOwnMessageChoiceCloseUntil = Date.now() + 700;
     positionChatOwnMessageChoiceMenu(anchorEl);
+    requestAnimationFrame(() => {
+        positionChatOwnMessageChoiceMenu(anchorEl);
+    });
 
     const installMenuFastTap = (btn, handler) => {
         if (!btn) return;
@@ -16023,7 +16088,7 @@ async function deleteChatMessageByTarget(targetMessage) {
         closeChatMessageActionMenu();
         closeChatOwnMessageChoiceMenu();
         clearChatDeleteArm(false);
-        cancelPendingChatAttachmentMessage(targetMessage);
+        cancelPendingChatLocalEchoMessage(targetMessage);
         return;
     }
     const target = getEditTargetFromMessage(targetMessage);
@@ -25455,7 +25520,7 @@ async function openChatModal() {
             if (!event.target.closest('#chat-action-menu')) {
                 closeChatMessageActionMenu();
             }
-            if (!event.target.closest('#chat-own-message-choice-menu')) {
+            if (Date.now() >= chatIgnoreOwnMessageChoiceCloseUntil && !event.target.closest('#chat-own-message-choice-menu')) {
                 closeChatOwnMessageChoiceMenu();
             }
             if (!event.target.closest('.chat-message-delete-btn')) {
@@ -25489,7 +25554,7 @@ async function openChatModal() {
     document.addEventListener('mousedown', (event) => {
         if (!chatOwnMessageChoiceMenuState) return;
         if (Date.now() < chatIgnoreOwnMessageChoiceCloseUntil) return;
-        if (event.target.closest && event.target.closest('.chat-message-item.is-self')) return;
+        if (event.target.closest && event.target.closest('.chat-message-item.is-editable-self')) return;
         if (event.target.closest && event.target.closest('.chat-message-hit-area')) return;
         const pressedReplySurface = resolveChatReplyReactableFromPoint(chatOwnMessageChoiceMenuState.anchorEl, event);
         if (pressedReplySurface && chatOwnMessageChoiceMenuState.anchorEl === pressedReplySurface) return;
@@ -25502,7 +25567,7 @@ async function openChatModal() {
     document.addEventListener('touchstart', (event) => {
         if (!chatOwnMessageChoiceMenuState) return;
         if (Date.now() < chatIgnoreOwnMessageChoiceCloseUntil) return;
-        if (event.target.closest && event.target.closest('.chat-message-item.is-self')) return;
+        if (event.target.closest && event.target.closest('.chat-message-item.is-editable-self')) return;
         if (event.target.closest && event.target.closest('.chat-message-hit-area')) return;
         const pressedReplySurface = resolveChatReplyReactableFromPoint(chatOwnMessageChoiceMenuState.anchorEl, event);
         if (pressedReplySurface && chatOwnMessageChoiceMenuState.anchorEl === pressedReplySurface) return;

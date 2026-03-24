@@ -10742,7 +10742,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwr1St9e1VAr3xRUKsFJdQfE2NwHFBEGrquRe7Dh_wsypR3KFM4DtwfB5GkP8perRZS/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYkyrOqe6KISUWfi7Isg_6V3T0dAo3N-4xpbflI8k7TvLYW3o0FlLrxqRwzEIePhK9/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -10785,6 +10785,7 @@ const CHAT_LOAD_OLDER_TRIGGER_PX = 56;
 const CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS = 4000;
 const CHAT_PENDING_UPLOAD_RESTORE_RETRY_DELAY_MS = 900;
 const CHAT_ATTACHMENT_HEALTH_CACHE_MS = 5 * 60 * 1000;
+const CHAT_WELCOME_MESSAGE_ROW = 2;
 const CHAT_QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '😴'];
 const CHAT_COMPOSER_EMOJIS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤗', '🤔', '😮', '😢', '😭', '😡', '👍', '👏', '🙏', '❤️', '💙', '💚', '💛', '🔥', '✨', '🎉', '🌟', '💯', '🤝', '👌', '🙌', '😉', '😴', '😅'];
 const CHAT_OWN_ROW_IDS_STORAGE_KEY = `chat-own-row-ids-${CHAT_COLUMN_KEY}`;
@@ -11427,6 +11428,9 @@ function getChatMessageLatestActivityMeta(msg) {
         timestampMs: parseChatTimestampMs(msg && msg.timestamp ? msg.timestamp : ''),
         timestampText: String(msg && msg.timestamp ? msg.timestamp : '').trim()
     };
+    if (msg && msg.isWelcomeMessage) {
+        return baseMeta;
+    }
     const editMeta = String(msg && msg.editTimestamp ? msg.editTimestamp : '').trim()
         ? {
             row: Number(msg && msg.row ? msg.row : 0) || 0,
@@ -15244,6 +15248,7 @@ function markLocalEchoAttachmentUploadCompleted(attachmentUrl) {
 
 function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
     const targetRow = Number(editTarget && editTarget.row ? editTarget.row : 0) || 0;
+    const isWelcomeRow = targetRow === CHAT_WELCOME_MESSAGE_ROW;
     const cleanMessage = String(nextMessage || '').trim();
     const shouldRemoveAttachment = !!(options && options.removeAttachment);
     const replacementAttachment = options && options.replacementAttachment && typeof options.replacementAttachment === 'object'
@@ -15259,52 +15264,65 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
     if (!targetRow || (!cleanMessage && !shouldRemoveAttachment && !replacementAttachment && !hasExistingAttachment)) return;
     const editTimestamp = new Date().toISOString();
     const editTimeLabel = getLocalChatTimeLabel();
-    rememberChatClientEditMeta(targetRow, editTimestamp, editTimeLabel);
+    const nextEditTimestamp = isWelcomeRow ? '' : editTimestamp;
+    const nextEditTimeLabel = isWelcomeRow ? '' : editTimeLabel;
+    rememberChatClientEditMeta(targetRow, nextEditTimestamp, nextEditTimeLabel);
+    const nextPatch = {
+        value: cleanMessage,
+        message: cleanMessage,
+        edited: !isWelcomeRow,
+        editTimestamp: nextEditTimestamp,
+        editTimeLabel: nextEditTimeLabel
+    };
+    if (shouldRemoveAttachment) {
+        nextPatch.imageUrl = '';
+        nextPatch.imageTitle = '';
+        nextPatch.attachmentKind = '';
+        nextPatch.attachmentSourceKind = '';
+        nextPatch.attachmentUrl = '';
+        nextPatch.attachmentName = '';
+        nextPatch.attachmentMimeType = '';
+        nextPatch.attachmentSize = 0;
+        nextPatch.attachmentFileId = '';
+        nextPatch.attachmentMediaWidth = 0;
+        nextPatch.attachmentMediaHeight = 0;
+    } else if (replacementAttachment) {
+        const replacementKind = String(replacementAttachment.kind || '').trim().toLowerCase();
+        const replacementUrl = String(replacementAttachment.url || '').trim();
+        const replacementName = String(replacementAttachment.name || '').trim();
+        const replacementMimeType = String(replacementAttachment.mimeType || '').trim();
+        nextPatch.imageUrl = replacementKind === 'image' ? replacementUrl : '';
+        nextPatch.imageTitle = replacementKind === 'image' ? (replacementName || 'Imagen') : '';
+        nextPatch.attachmentKind = replacementKind;
+        nextPatch.attachmentSourceKind = String(replacementAttachment.sourceKind || replacementKind).trim().toLowerCase();
+        nextPatch.attachmentUrl = replacementUrl;
+        nextPatch.attachmentName = replacementName;
+        nextPatch.attachmentMimeType = replacementMimeType;
+        nextPatch.attachmentSize = Number(replacementAttachment.size) || 0;
+        nextPatch.attachmentFileId = '';
+        nextPatch.attachmentMediaWidth = normalizeChatMediaDimension(replacementAttachment.mediaWidth);
+        nextPatch.attachmentMediaHeight = normalizeChatMediaDimension(replacementAttachment.mediaHeight);
+    }
     let changed = false;
     let optimisticPatch = null;
+    const currentWelcomeRow = Number(chatWelcomeMessage && chatWelcomeMessage.row ? chatWelcomeMessage.row : CHAT_WELCOME_MESSAGE_ROW) || CHAT_WELCOME_MESSAGE_ROW;
+    if (isWelcomeRow && chatWelcomeMessage && currentWelcomeRow === targetRow) {
+        changed = true;
+        chatWelcomeMessage = {
+            ...chatWelcomeMessage,
+            ...nextPatch,
+            isWelcomeMessage: true,
+            row: targetRow
+        };
+    }
     chatLatestServerMessages = (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages : []).map((msg) => {
         const row = Number(msg && msg.row ? msg.row : 0) || 0;
         if (row !== targetRow) return msg;
         changed = true;
-        const nextPatch = {
-            message: cleanMessage,
-            edited: true,
-            editTimestamp,
-            editTimeLabel
-        };
-        if (shouldRemoveAttachment) {
-            nextPatch.imageUrl = '';
-            nextPatch.imageTitle = '';
-            nextPatch.attachmentKind = '';
-            nextPatch.attachmentSourceKind = '';
-            nextPatch.attachmentUrl = '';
-            nextPatch.attachmentName = '';
-            nextPatch.attachmentMimeType = '';
-            nextPatch.attachmentSize = 0;
-            nextPatch.attachmentFileId = '';
-            nextPatch.attachmentMediaWidth = 0;
-            nextPatch.attachmentMediaHeight = 0;
-        } else if (replacementAttachment) {
-            const replacementKind = String(replacementAttachment.kind || '').trim().toLowerCase();
-            const replacementUrl = String(replacementAttachment.url || '').trim();
-            const replacementName = String(replacementAttachment.name || '').trim();
-            const replacementMimeType = String(replacementAttachment.mimeType || '').trim();
-            nextPatch.imageUrl = replacementKind === 'image' ? replacementUrl : '';
-            nextPatch.imageTitle = replacementKind === 'image' ? (replacementName || 'Imagen') : '';
-            nextPatch.attachmentKind = replacementKind;
-            nextPatch.attachmentSourceKind = String(replacementAttachment.sourceKind || replacementKind).trim().toLowerCase();
-            nextPatch.attachmentUrl = replacementUrl;
-            nextPatch.attachmentName = replacementName;
-            nextPatch.attachmentMimeType = replacementMimeType;
-            nextPatch.attachmentSize = Number(replacementAttachment.size) || 0;
-            nextPatch.attachmentFileId = '';
-            nextPatch.attachmentMediaWidth = normalizeChatMediaDimension(replacementAttachment.mediaWidth);
-            nextPatch.attachmentMediaHeight = normalizeChatMediaDimension(replacementAttachment.mediaHeight);
-        }
         optimisticPatch = {
             message: cleanMessage,
-            editTimestamp,
-            editTimeLabel,
+            editTimestamp: nextEditTimestamp,
+            editTimeLabel: nextEditTimeLabel,
             attachmentMode: shouldRemoveAttachment
                 ? 'remove'
                 : (replacementAttachment ? 'replace' : 'keep'),
@@ -15329,7 +15347,9 @@ function applyLocalChatMessageEdit(editTarget, nextMessage, options = {}) {
         };
     });
     if (changed) {
-        rememberChatOptimisticEditPatch(targetRow, optimisticPatch);
+        if (!isWelcomeRow) {
+            rememberChatOptimisticEditPatch(targetRow, optimisticPatch);
+        }
         renderMergedChatMessages(chatLatestServerMessages);
     }
 }
@@ -22937,6 +22957,7 @@ function normalizeFetchedChatMessageEntry(entry) {
             resolvedAttachmentName,
             resolvedAttachmentUrl
         );
+        const isWelcomeMessage = !!entry.isWelcomeMessage;
         const resolvedAttachmentSourceKind = normalizeChatAttachmentSourceKind(
             entryAttachmentSourceKind || parsedAttachmentSourceKind,
             resolvedAttachmentKind,
@@ -22950,7 +22971,7 @@ function normalizeFetchedChatMessageEntry(entry) {
         );
         return {
             row: Number(entry.row) || 0,
-            isWelcomeMessage: !!entry.isWelcomeMessage,
+            isWelcomeMessage,
             user: resolvedUser,
             message: resolvedMessage,
             teacherReply: parsed ? parsed.teacherReply : '',
@@ -22969,18 +22990,19 @@ function normalizeFetchedChatMessageEntry(entry) {
             attachmentMediaHeight: resolvedAttachmentMediaHeight,
             timestamp: String(entry.timestamp || (parsed && parsed.timestamp) || '').trim(),
             timeLabel: String(entry.timeLabel || (parsed && parsed.timeLabel) || '').trim(),
-            edited: !!entry.edited,
-            editTimestamp: String(entry.editTimestamp || '').trim(),
-            editTimeLabel: String(entry.editTimeLabel || '').trim()
+            edited: isWelcomeMessage ? false : !!entry.edited,
+            editTimestamp: isWelcomeMessage ? '' : String(entry.editTimestamp || '').trim(),
+            editTimeLabel: isWelcomeMessage ? '' : String(entry.editTimeLabel || '').trim()
         };
     }
 
     const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
     if (!parsed) return null;
     const normalizedMessage = stripLeadingChatSenderTag(parsed.message, parsed.user);
+    const isWelcomeMessage = !!(entry && entry.isWelcomeMessage);
     return {
         row: Number(entry && entry.row ? entry.row : 0) || 0,
-        isWelcomeMessage: !!(entry && entry.isWelcomeMessage),
+        isWelcomeMessage,
         user: parsed.user,
         message: normalizedMessage,
         teacherReply: parsed.teacherReply,
@@ -23003,9 +23025,9 @@ function normalizeFetchedChatMessageEntry(entry) {
         attachmentMediaHeight: normalizeChatMediaDimension(parsed.attachmentMediaHeight || 0),
         timestamp: String(entry && entry.timestamp ? entry.timestamp : (parsed.timestamp || '')).trim(),
         timeLabel: String(entry && entry.timeLabel ? entry.timeLabel : (parsed.timeLabel || '')).trim(),
-        edited: !!(entry && entry.edited),
-        editTimestamp: String(entry && entry.editTimestamp ? entry.editTimestamp : (parsed.editTimestamp || '')).trim(),
-        editTimeLabel: String(entry && entry.editTimeLabel ? entry.editTimeLabel : (parsed.editTimeLabel || '')).trim()
+        edited: isWelcomeMessage ? false : !!(entry && entry.edited),
+        editTimestamp: isWelcomeMessage ? '' : String(entry && entry.editTimestamp ? entry.editTimestamp : (parsed.editTimestamp || '')).trim(),
+        editTimeLabel: isWelcomeMessage ? '' : String(entry && entry.editTimeLabel ? entry.editTimeLabel : (parsed.editTimeLabel || '')).trim()
     };
 }
 
@@ -23029,7 +23051,7 @@ function getNormalizedChatWelcomeMessageEntry() {
     return normalizeFetchedChatMessageEntry({
         ...chatWelcomeMessage,
         isWelcomeMessage: true,
-        row: Number(chatWelcomeMessage.row) || 2,
+        row: Number(chatWelcomeMessage.row) || CHAT_WELCOME_MESSAGE_ROW,
         user: CHAT_DEFAULT_USER,
         value: rawValue || String(chatWelcomeMessage.message || '').trim()
     });
@@ -23279,8 +23301,11 @@ function renderChatMessages(messages) {
         });
     }
     renderMessages = sortPreparedChatMessagesForDisplay(renderMessages);
-    if (preparedWelcomeMessage && !renderMessages.some((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === welcomeRow)) {
-        renderMessages.unshift(preparedWelcomeMessage);
+    if (preparedWelcomeMessage && welcomeRow > 0) {
+        renderMessages = [
+            preparedWelcomeMessage,
+            ...renderMessages.filter((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) !== welcomeRow)
+        ];
     }
     const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
@@ -23349,7 +23374,7 @@ function renderChatMessages(messages) {
                 ? 'audio-chat'
                 : (resolvedAttachmentKind === 'video' ? 'video-chat' : 'archivo-chat')
         );
-        const isEdited = !!msg.edited;
+        const isEdited = !isWelcomeMessage && !!msg.edited;
         const isPendingSend = !!msg.pending;
         const pendingUploadProgress = normalizeChatPendingUploadProgress(msg.pendingUploadProgress);
         const isRecentlyConfirmed = isCurrentSender && !isPendingSend && isChatMessageRecentlyConfirmed(msg);

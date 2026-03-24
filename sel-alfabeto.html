@@ -5921,7 +5921,6 @@
     max-width: min(92vw, 520px);
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: 6px;
     padding: 6px 10px;
     border-radius: 999px;
@@ -5935,45 +5934,6 @@
 
 .chat-action-menu[hidden] {
     display: none !important;
-}
-
-.chat-action-menu-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.chat-action-menu-choice-btn {
-    border: none;
-    border-radius: 999px;
-    padding: 9px 12px;
-    font-size: 0.84rem;
-    font-weight: 800;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    flex-shrink: 0;
-}
-
-.chat-action-menu-choice-btn.reply {
-    background: rgba(37, 99, 235, 0.1);
-    color: #1d4ed8;
-}
-
-.chat-action-menu-choice-btn.edit {
-    background: rgba(34, 197, 94, 0.12);
-    color: #15803d;
-}
-
-.chat-action-menu-choice-btn.delete {
-    background: rgba(239, 68, 68, 0.12);
-    color: #b91c1c;
-}
-
-.chat-action-menu-choice-btn:hover {
-    filter: brightness(0.98);
 }
 
 .chat-action-menu-delete {
@@ -10652,7 +10612,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycJP8cS2qG2lFlPISHdrrbZtiLJ34NZJDxxhV2lL_iu2Ww4HR85sn9_FUVfKk31aeu/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzk48E2PABpI9JylnsXDt4HHc6he9cpXah7Yeuv5sAEaLzgvYiC0jt1W39vLJanzNWr/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -14018,10 +13978,7 @@ function canReplyToRecipientMessage(msg, currentUserLabel) {
         !!String(msg && msg.imageUrl ? msg.imageUrl : '').trim() ||
         !!String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() ||
         !!String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
-    const hasPayload = !!messageText || hasMedia;
-    if (!hasPayload) return false;
-    if (isCurrentChatUserAdmin()) return true;
-    return !areSameChatUserLabels(userLabel, currentUserLabel);
+    return (!!messageText || hasMedia) && !areSameChatUserLabels(userLabel, currentUserLabel);
 }
 
 function canReplyToAttachedReply(replyEntry, currentUserLabel) {
@@ -14040,8 +13997,8 @@ function canEditOwnChatMessage(msg, currentUserLabel) {
         !!String(msg && msg.imageUrl ? msg.imageUrl : '').trim() ||
         !!String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() ||
         !!String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
-    const isOwner = areSameChatUserLabels(userLabel, currentUserLabel);
-    return row > 0 && (!!messageText || hasMedia) && (isOwner || isCurrentChatUserAdmin());
+    const sameOwner = areSameChatUserLabels(userLabel, currentUserLabel);
+    return row > 0 && (!!messageText || hasMedia) && (sameOwner || isCurrentChatUserAdmin());
 }
 
 function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
@@ -14057,9 +14014,9 @@ function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
 function canDeleteOwnChatMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const row = Number(msg && msg.row ? msg.row : 0) || 0;
-    const isOwner = areSameChatUserLabels(userLabel, currentUserLabel);
-    if (canCancelPendingOwnChatMessage(msg, currentUserLabel)) return true;
-    return row > 0 && (isOwner || isCurrentChatUserAdmin());
+    const sameOwner = areSameChatUserLabels(userLabel, currentUserLabel);
+    return (row > 0 || canCancelPendingOwnChatMessage(msg, currentUserLabel))
+        && (sameOwner || isCurrentChatUserAdmin());
 }
 
 function canReactToChatMessage(msg) {
@@ -14683,6 +14640,12 @@ function canEditAttachedReplyActionMessage(msg, currentUserLabel) {
     return row > 0 && (isAttachedReplyOwnedForActionMenu(msg, currentUserLabel) || isCurrentChatUserAdmin());
 }
 
+function canDeleteAttachedReplyActionMessage(msg, currentUserLabel) {
+    if (!msg || String(msg.kind || '') !== 'attached_reply_action') return false;
+    const row = Number(msg && msg.row ? msg.row : 0) || 0;
+    return row > 0 && (isAttachedReplyOwnedForActionMenu(msg, currentUserLabel) || isCurrentChatUserAdmin());
+}
+
 function isSameReplyTarget(a, b) {
     if (!a || !b) return false;
     const entryTokenA = String(a && a.entryToken ? a.entryToken : '').trim();
@@ -14864,6 +14827,7 @@ function updateChatReplyPreview() {
     }
 
     inputEl.placeholder = isEditing ? 'Edita tu mensaje...' : 'Mensaje...';
+    syncChatAdminClearButtonVisibility();
     updateChatFooterInset();
 }
 
@@ -15591,7 +15555,6 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
     const isPendingDeleteOnly = canCancelPendingOwnChatMessage(targetMessage, currentUserLabel);
     const canReply = !isPendingDeleteOnly && !!(getReplyTargetForOwnMessageChoice(targetMessage) || {}).user;
     const isAttachedReplyAction = String(targetMessage && targetMessage.kind ? targetMessage.kind : '') === 'attached_reply_action';
-    const isOwnedAttachedReply = isAttachedReplyAction && isAttachedReplyOwnedForActionMenu(targetMessage, currentUserLabel);
     const canEdit = isPendingDeleteOnly
         ? false
         : (isAttachedReplyAction
@@ -15600,7 +15563,7 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
     const canDelete = isPendingDeleteOnly
         ? true
         : (isAttachedReplyAction
-            ? isOwnedAttachedReply
+            ? canDeleteAttachedReplyActionMessage(targetMessage, currentUserLabel)
             : canDeleteOwnChatMessage(targetMessage, currentUserLabel));
 
     if (!canReply && !canEdit && !canDelete) return;
@@ -15940,55 +15903,15 @@ function positionChatMessageActionMenu(anchorEl) {
     menuEl.style.top = `${Math.round(Math.max(boundsRect.top + sideGap, top))}px`;
 }
 
-function buildChatActionMenuHtml(options = {}) {
-    const canReply = !!(options && options.canReply);
-    const canEdit = !!(options && options.canEdit);
-    const canDelete = !!(options && options.canDelete);
-    const showReactions = !!(options && options.showReactions);
-    const actionButtons = [];
-
-    if (canReply) {
-        actionButtons.push(`
-            <button type="button" class="chat-action-menu-choice-btn reply" id="chat-action-menu-reply-btn">
-                <i class="fas fa-reply" aria-hidden="true"></i>
-                <span>Contestar</span>
-            </button>
-        `);
-    }
-    if (canEdit) {
-        actionButtons.push(`
-            <button type="button" class="chat-action-menu-choice-btn edit" id="chat-action-menu-edit-btn">
-                <i class="fas fa-pen" aria-hidden="true"></i>
-                <span>Editar</span>
-            </button>
-        `);
-    }
-    if (canDelete) {
-        actionButtons.push(`
-            <button type="button" class="chat-action-menu-choice-btn delete" id="chat-action-menu-delete-btn">
-                <i class="fas fa-trash" aria-hidden="true"></i>
-                <span>Borrar</span>
-            </button>
-        `);
-    }
-
-    const emojiHtml = showReactions
-        ? CHAT_QUICK_REACTION_EMOJIS.map((emoji) => `
-            <button type="button" class="chat-action-menu-emoji-btn" data-emoji="${escapeHtml(emoji)}" aria-label="Reaccionar con ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>
-        `).join('')
-        : '';
+function buildChatActionMenuHtml() {
+    const emojiHtml = CHAT_QUICK_REACTION_EMOJIS.map((emoji) => `
+        <button type="button" class="chat-action-menu-emoji-btn" data-emoji="${escapeHtml(emoji)}" aria-label="Reaccionar con ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>
+    `).join('');
 
     return `
-        ${actionButtons.length ? `
-        <div class="chat-action-menu-actions">
-            ${actionButtons.join('')}
-        </div>
-        ` : ''}
-        ${showReactions ? `
         <div class="chat-action-menu-reactions">
             ${emojiHtml}
         </div>
-        ` : ''}
     `;
 }
 
@@ -15996,7 +15919,6 @@ function openChatMessageActionMenu(targetMessage, anchorEl, currentUserLabel, op
     if (!targetMessage || !anchorEl) return;
     const keepSideShadow = !!(options && options.keepSideShadow);
     const keepBlockShadow = !!(options && options.keepBlockShadow);
-    const actionTarget = options && options.actionTarget ? options.actionTarget : targetMessage;
 
     closeChatOwnMessageChoiceMenu();
     closeChatReactionPopover();
@@ -16008,21 +15930,7 @@ function openChatMessageActionMenu(targetMessage, anchorEl, currentUserLabel, op
     if (chatReplyTarget) clearChatReplyTarget(false);
 
     const showReactions = canReactToChatMessage(targetMessage);
-    const isPendingDeleteOnly = canCancelPendingOwnChatMessage(actionTarget, currentUserLabel);
-    const isAttachedReplyAction = String(actionTarget && actionTarget.kind ? actionTarget.kind : '') === 'attached_reply_action';
-    const canReply = !isPendingDeleteOnly && !!(getReplyTargetForOwnMessageChoice(actionTarget) || {}).user;
-    const canEdit = isPendingDeleteOnly
-        ? false
-        : (isAttachedReplyAction
-            ? canEditAttachedReplyActionMessage(actionTarget, currentUserLabel)
-            : canEditOwnChatMessage(actionTarget, currentUserLabel));
-    const canDelete = isPendingDeleteOnly
-        ? true
-        : (isAttachedReplyAction
-            ? (canEditAttachedReplyActionMessage(actionTarget, currentUserLabel) || canDeleteOwnChatMessage(actionTarget, currentUserLabel))
-            : canDeleteOwnChatMessage(actionTarget, currentUserLabel));
-
-    if (!showReactions && !canReply && !canEdit && !canDelete) return;
+    if (!showReactions) return;
 
     let menuEl = document.getElementById('chat-action-menu');
     if (!menuEl) {
@@ -16044,12 +15952,7 @@ function openChatMessageActionMenu(targetMessage, anchorEl, currentUserLabel, op
     if (keepSideShadow && anchorEl.classList && anchorEl.classList.contains('has-side-hit-area')) {
         setChatPersistentSideHitArea(anchorEl);
     }
-    menuEl.innerHTML = buildChatActionMenuHtml({
-        showReactions,
-        canReply,
-        canEdit,
-        canDelete
-    });
+    menuEl.innerHTML = buildChatActionMenuHtml();
     menuEl.hidden = false;
     chatSuppressNextMessageClick = true;
     chatIgnoreMessageClickUntil = Date.now() + CHAT_LONG_PRESS_CLICK_BLOCK_MS;
@@ -16058,43 +15961,10 @@ function openChatMessageActionMenu(targetMessage, anchorEl, currentUserLabel, op
     chatIgnoreMessageActionCloseUntil = Date.now() + 280;
     chatMessageActionMenuState = {
         targetMessage,
-        actionTarget,
         anchorEl,
         currentUserLabel
     };
     positionChatMessageActionMenu(anchorEl);
-
-    const replyBtn = document.getElementById('chat-action-menu-reply-btn');
-    if (replyBtn) {
-        replyBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const replyTarget = getReplyTargetForOwnMessageChoice(actionTarget);
-            closeChatMessageActionMenu();
-            clearChatEditTarget(false, false);
-            activateChatReplyTarget(replyTarget);
-        });
-    }
-
-    const editBtn = document.getElementById('chat-action-menu-edit-btn');
-    if (editBtn) {
-        editBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            closeChatMessageActionMenu();
-            toggleChatEditTarget(actionTarget, currentUserLabel);
-        });
-    }
-
-    const deleteBtn = document.getElementById('chat-action-menu-delete-btn');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', async (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            closeChatMessageActionMenu();
-            await deleteChatMessageByTarget(actionTarget);
-        });
-    }
 
     const emojiButtons = menuEl.querySelectorAll('.chat-action-menu-emoji-btn');
     emojiButtons.forEach((button) => {
@@ -16190,52 +16060,82 @@ async function deleteChatMessageByTarget(targetMessage) {
 }
 
 function setChatAdminClearButtonBusy(isBusy) {
-    chatDeleteAllInProgress = !!isBusy;
-    const buttonEl = document.getElementById('chat-admin-clear-btn');
-    if (buttonEl) {
-        buttonEl.disabled = chatDeleteAllInProgress;
+    const button = document.getElementById('chat-admin-clear-btn');
+    if (!button) return;
+    const busy = !!isBusy;
+    button.disabled = busy;
+    button.setAttribute('aria-busy', busy ? 'true' : 'false');
+}
+
+function ensureChatAdminClearButtonPresence() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay) return null;
+    const headerActions = overlay.querySelector('.chat-header-actions');
+    const closeBtn = document.getElementById('chat-close-btn');
+    const button = document.getElementById('chat-admin-clear-btn');
+    if (!isCurrentChatUserAdmin()) {
+        if (button) button.remove();
+        return null;
     }
+    if (!headerActions || !closeBtn) return button || null;
+    if (button) {
+        button.hidden = false;
+        return button;
+    }
+
+    const nextButton = document.createElement('button');
+    nextButton.className = 'chat-admin-clear-btn';
+    nextButton.id = 'chat-admin-clear-btn';
+    nextButton.setAttribute('aria-label', 'Borrar toda la conversación');
+    nextButton.title = 'Borrar toda la conversación';
+    nextButton.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
+    nextButton.addEventListener('click', async () => {
+        triggerChatUiHapticFeedback();
+        await deleteEntireChatConversationAsAdmin();
+    });
+    headerActions.insertBefore(nextButton, closeBtn);
+    return nextButton;
 }
 
 function syncChatAdminClearButtonVisibility() {
-    const buttonEl = document.getElementById('chat-admin-clear-btn');
-    if (!buttonEl) return;
-    buttonEl.hidden = !isCurrentChatUserAdmin();
-    buttonEl.disabled = chatDeleteAllInProgress;
+    const button = ensureChatAdminClearButtonPresence();
+    if (!button) return;
+    button.hidden = false;
 }
 
 function resetChatConversationLocalState() {
-    chatLatestServerMessages = [];
-    chatLocalEchoMessages = [];
-    chatPendingDeletedRows.clear();
-    chatOptimisticEditPatchByRow.clear();
-    chatClientEditMetaByRow.clear();
-    saveChatEditMetaByRow();
-    chatOwnedRowIds = new Set();
-    saveChatOwnedRowIds();
     closeChatMessageActionMenu();
     closeChatOwnMessageChoiceMenu();
     closeChatReactionPopover();
     closeChatReplyThreadPopover();
     clearChatDeleteArm(false);
     clearChatReplyTarget(false);
-    clearChatEditTarget(false, true);
+    clearChatEditTarget(false, false);
+    chatLatestServerMessages = [];
+    chatLocalEchoMessages = [];
+    chatPendingDeletedRows.clear();
+    Array.from(chatOptimisticEditPatchByRow.keys()).forEach((row) => {
+        clearChatOptimisticEditPatch(row);
+    });
+    chatClientEditMetaByRow.clear();
+    saveChatEditMetaByRow();
+    chatOwnedRowIds.clear();
+    saveChatOwnedRowIds();
     resetChatHistoryPaginationState(true);
     resetChatUnreadIndicator();
-    renderMergedChatMessages([]);
+    if (document.getElementById('chat-overlay')) {
+        renderMergedChatMessages([]);
+    }
 }
 
 async function deleteEntireChatConversationAsAdmin() {
     if (!isCurrentChatUserAdmin() || chatDeleteAllInProgress) return;
-
-    const confirmed = window.confirm('Se borrará toda la conversación del chat. Esta acción no se puede deshacer. ¿Continuar?');
+    const confirmed = window.confirm('Se borrará toda la conversación del chat. ¿Continuar?');
     if (!confirmed) return;
 
     const identity = getStudentIdentityForChat();
+    chatDeleteAllInProgress = true;
     setChatAdminClearButtonBusy(true);
-    closeChatAttachmentMenu();
-    closeChatImageViewer();
-    resetChatConversationLocalState();
 
     try {
         await postToPortalB({
@@ -16245,13 +16145,19 @@ async function deleteEntireChatConversationAsAdmin() {
             apellido: identity.lastName,
             userDisplayName: identity.displayName
         });
-    } catch (error) {
-        console.warn('Error borrando toda la conversacion del chat:', error);
-    } finally {
+        resetChatConversationLocalState();
         if (document.getElementById('chat-overlay')) {
             await refreshChatMessages(false, false);
         }
+    } catch (error) {
+        console.warn('Error borrando toda la conversación del chat:', error);
+        if (document.getElementById('chat-overlay')) {
+            await refreshChatMessages(false, false);
+        }
+    } finally {
+        chatDeleteAllInProgress = false;
         setChatAdminClearButtonBusy(false);
+        syncChatAdminClearButtonVisibility();
     }
 }
 
@@ -16271,7 +16177,6 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
     if (!targetEl || !targetMessage || !canReactToChatMessage(targetMessage)) return;
     const ignoreNestedSelector = String(options && options.ignoreNestedSelector ? options.ignoreNestedSelector : '').trim();
     const suppressKeyboard = !!(options && options.suppressKeyboard);
-    const actionTarget = options && options.actionTarget ? options.actionTarget : targetMessage;
     const shadowIgnoreSelector = '.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-card, .chat-audio-player, .chat-video-inline-shell, .chat-video-player, .chat-video-inline-open-btn, .chat-video-inline-play-btn, .chat-video-inline-download-btn, button, a, audio, video';
 
     let longPressTriggered = false;
@@ -16309,8 +16214,7 @@ function bindChatReactionLongPress(targetEl, targetMessage, currentUserLabel, op
             vibrar(45);
             openChatMessageActionMenu(targetMessage, pressAnchorEl, currentUserLabel, {
                 keepSideShadow: startedFromSideHitArea,
-                keepBlockShadow: startedFromBlockShadow,
-                actionTarget
+                keepBlockShadow: startedFromBlockShadow
             });
         }, CHAT_LONG_PRESS_DELETE_MS);
     };
@@ -22456,12 +22360,9 @@ function getStudentIdentityForChat() {
 }
 
 function isChatAdminIdentity(identity) {
-    const safeIdentity = identity && typeof identity === 'object' ? identity : {};
-    const firstName = normalizeChatComparisonText(safeIdentity.firstName || '');
-    const lastName = normalizeChatComparisonText(safeIdentity.lastName || '');
-    const displayName = normalizeChatUserComparisonKey(safeIdentity.displayName || '');
-    const adminDisplayName = normalizeChatUserComparisonKey(CHAT_DEFAULT_USER);
-    return (firstName === 'profe' && lastName === 'faouzi') || displayName === adminDisplayName;
+    const firstName = normalizeChatComparisonText(identity && identity.firstName ? identity.firstName : '');
+    const lastName = normalizeChatComparisonText(identity && identity.lastName ? identity.lastName : '');
+    return firstName === 'profe' && lastName === 'faouzi';
 }
 
 function isCurrentChatUserAdmin() {
@@ -23981,6 +23882,14 @@ function renderChatMessages(messages) {
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
+            if (isCurrentChatUserAdmin()) {
+                dismissChatKeyboardForOwnMessageInteraction();
+                openChatOwnMessageChoiceMenu(targetMessage, blockShadowState.anchorEl || item, currentUserLabel, {
+                    keepSideShadow: sideHitAreaState.fromSideHitArea,
+                    keepBlockShadow: blockShadowState.fromBlockShadow
+                });
+                return;
+            }
             toggleChatReplyTarget(targetMessage, currentUserLabel);
         };
         item.addEventListener('click', (event) => {
@@ -24016,10 +23925,9 @@ function renderChatMessages(messages) {
             const idx = Number(item.dataset.msgIndex);
             const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
             if (!targetMessage) return;
-            openChatMessageActionMenu(targetMessage, blockShadowState.anchorEl || item, currentUserLabel, {
+            openChatOwnMessageChoiceMenu(targetMessage, blockShadowState.anchorEl || item, currentUserLabel, {
                 keepSideShadow: sideHitAreaState.fromSideHitArea,
-                keepBlockShadow: blockShadowState.fromBlockShadow,
-                actionTarget: targetMessage
+                keepBlockShadow: blockShadowState.fromBlockShadow
             });
         };
         item.addEventListener('click', (event) => {
@@ -24056,7 +23964,7 @@ function renderChatMessages(messages) {
             : null;
         const canOpenAttachedReplyActionMenu = !!(actionTarget && (
             canEditAttachedReplyActionMessage(actionTarget, currentUserLabel)
-            || canDeleteOwnChatMessage(actionTarget, currentUserLabel)
+            || canDeleteAttachedReplyActionMessage(actionTarget, currentUserLabel)
         ));
         const suppressKeyboardForOwnReply = canOpenAttachedReplyActionMenu;
         const handleAttachedReplyAction = (event = null) => {
@@ -24068,10 +23976,12 @@ function renderChatMessages(messages) {
                 const blockShadowState = syncBlockShadowSelectionFromEvent(item, event, { activate: true });
                 if (blockShadowState.toggledOff) return;
                 dismissChatKeyboardForOwnMessageInteraction();
-                openChatMessageActionMenu(reactionTarget, blockShadowState.anchorEl || item, currentUserLabel, {
-                    keepBlockShadow: blockShadowState.fromBlockShadow,
-                    actionTarget
-                });
+                openChatOwnMessageChoiceMenu(
+                    actionTarget,
+                    blockShadowState.anchorEl || item,
+                    currentUserLabel,
+                    { keepBlockShadow: blockShadowState.fromBlockShadow }
+                );
                 return;
             }
             const replyTarget = getReplyTargetForOwnMessageChoice(actionTarget);
@@ -24103,8 +24013,7 @@ function renderChatMessages(messages) {
             suppressKeyboard: suppressKeyboardForOwnReply
         });
         bindChatReactionLongPress(item, reactionTarget, currentUserLabel, {
-            suppressKeyboard: suppressKeyboardForOwnReply,
-            actionTarget
+            suppressKeyboard: suppressKeyboardForOwnReply
         });
     });
 
@@ -24117,7 +24026,10 @@ function renderChatMessages(messages) {
         const actionTarget = actionContext && actionContext.actionTarget ? actionContext.actionTarget : null;
         const reactionTarget = actionContext && actionContext.reactionTarget ? actionContext.reactionTarget : null;
         const replyTarget = actionContext && actionContext.replyTarget ? actionContext.replyTarget : null;
-        const isOwnAttachedReplyTarget = !!(actionTarget && String(actionTarget.kind || '') === 'attached_reply_action' && canEditAttachedReplyActionMessage(actionTarget, currentUserLabel));
+        const isOwnAttachedReplyTarget = !!(actionTarget && String(actionTarget.kind || '') === 'attached_reply_action' && (
+            canEditAttachedReplyActionMessage(actionTarget, currentUserLabel)
+            || canDeleteAttachedReplyActionMessage(actionTarget, currentUserLabel)
+        ));
         const isOwnMessageTarget = !!(actionTarget && String(actionTarget.kind || '') !== 'attached_reply_action' && (canEditOwnChatMessage(actionTarget, currentUserLabel) || canDeleteOwnChatMessage(actionTarget, currentUserLabel)));
         const canOpenOwnChoiceMenu = isOwnAttachedReplyTarget || isOwnMessageTarget;
 
@@ -24127,9 +24039,8 @@ function renderChatMessages(messages) {
                 const blockShadowState = syncBlockShadowSelectionFromEvent(item, event, { activate: true });
                 if (blockShadowState.toggledOff) return;
                 dismissChatKeyboardForOwnMessageInteraction();
-                openChatMessageActionMenu(reactionTarget || actionTarget, blockShadowState.anchorEl || item, currentUserLabel, {
-                    keepBlockShadow: blockShadowState.fromBlockShadow,
-                    actionTarget
+                openChatOwnMessageChoiceMenu(actionTarget, blockShadowState.anchorEl || item, currentUserLabel, {
+                    keepBlockShadow: blockShadowState.fromBlockShadow
                 });
                 return;
             }
@@ -24163,8 +24074,7 @@ function renderChatMessages(messages) {
         });
 
         bindChatReactionLongPress(item, reactionTarget, currentUserLabel, {
-            suppressKeyboard: canOpenOwnChoiceMenu,
-            actionTarget
+            suppressKeyboard: canOpenOwnChoiceMenu
         });
     });
 
@@ -24186,8 +24096,14 @@ function renderChatMessages(messages) {
 
     const openOwnMessageChoiceFromAttachmentSurface = (triggerEl, event = null) => {
         if (!triggerEl || triggerEl.closest('.chat-message-reply-reactable')) return false;
-        const item = triggerEl.closest('.chat-message-item.is-self.is-editable-self');
+        const item = triggerEl.closest('.chat-message-item');
         if (!item) return false;
+        const idx = Number(item.dataset.msgIndex);
+        const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
+        if (!targetMessage) return false;
+        const canOpenControl = isCurrentChatUserAdmin()
+            || item.matches('.chat-message-item.is-self.is-editable-self');
+        if (!canOpenControl) return false;
         if (event && event.cancelable) event.preventDefault();
         if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
         vibrar(40);
@@ -24196,21 +24112,16 @@ function renderChatMessages(messages) {
             clearChatDeleteArm(true);
             return true;
         }
-        const idx = Number(item.dataset.msgIndex);
-        const targetMessage = Number.isFinite(idx) ? renderMessages[idx] : null;
-        if (!targetMessage) return true;
         dismissChatKeyboardForOwnMessageInteraction();
         const nextTarget = getEditTargetFromMessage(targetMessage);
-        const activeTarget = chatMessageActionMenuState && chatMessageActionMenuState.actionTarget
-            ? getEditTargetFromMessage(chatMessageActionMenuState.actionTarget)
+        const activeTarget = chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.targetMessage
+            ? getEditTargetFromMessage(chatOwnMessageChoiceMenuState.targetMessage)
             : null;
         if (activeTarget && isSameEditTarget(nextTarget, activeTarget)) {
-            closeChatMessageActionMenu();
+            closeChatOwnMessageChoiceMenu();
             return false;
         }
-        openChatMessageActionMenu(targetMessage, item, currentUserLabel, {
-            actionTarget: targetMessage
-        });
+        openChatOwnMessageChoiceMenu(targetMessage, item, currentUserLabel);
         return true;
     };
 
@@ -24747,6 +24658,7 @@ function closeChatModal() {
     closeChatReactionPopover();
     closeChatReplyThreadPopover();
     closeChatOwnMessageChoiceMenu();
+    setChatAdminClearButtonBusy(false);
     clearChatDeleteArm(false);
     chatReplyTarget = null;
     chatEditTarget = null;
@@ -24999,7 +24911,6 @@ async function openChatModal() {
     void openChatVideoPersistentCacheDb();
     void pruneChatVideoPersistentCache();
     void hydratePersistedChatPendingUploads();
-    const isChatAdmin = isCurrentChatUserAdmin();
     const existingOverlay = document.getElementById('chat-overlay');
     if (existingOverlay) {
         document.body.classList.add('chat-open');
@@ -25031,6 +24942,7 @@ async function openChatModal() {
         }
         if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
         syncChatAdminClearButtonVisibility();
+        setChatAdminClearButtonBusy(false);
         installChatAnsweredOnlySwitchHandler();
         startChatAutoRefresh();
         if (chatAttachmentUploadInProgress) {
@@ -25074,9 +24986,6 @@ async function openChatModal() {
                         <span class="chat-header-filter-switch-ui" aria-hidden="true"></span>
                         <span class="chat-header-filter-icon answered" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
                     </label>
-                    <button class="chat-admin-clear-btn" id="chat-admin-clear-btn" aria-label="Borrar toda la conversación" title="Borrar toda la conversación" ${isChatAdmin ? '' : 'hidden'}>
-                        <i class="fas fa-trash" aria-hidden="true"></i>
-                    </button>
                     <button class="chat-close-btn" id="chat-close-btn" aria-label="Cerrar chat">
                         <i id="chat-close-btn-icon" class="fas fa-times"></i>
                     </button>
@@ -25255,15 +25164,9 @@ async function openChatModal() {
     });
 
     const closeBtn = document.getElementById('chat-close-btn');
-    const adminClearBtn = document.getElementById('chat-admin-clear-btn');
     installChatAnsweredOnlySwitchHandler();
     syncChatAdminClearButtonVisibility();
-    if (adminClearBtn) {
-        adminClearBtn.addEventListener('click', () => {
-            triggerChatUiHapticFeedback();
-            void deleteEntireChatConversationAsAdmin();
-        });
-    }
+    setChatAdminClearButtonBusy(false);
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             triggerChatUiHapticFeedback();

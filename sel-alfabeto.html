@@ -10793,6 +10793,7 @@ const CHAT_EDIT_META_STORAGE_KEY = `chat-edit-meta-${CHAT_COLUMN_KEY}`;
 let chatRefreshTimerId = null;
 let chatRefreshInFlight = false;
 let chatAutoRefreshCycleId = 0;
+let chatLastResumeRefreshAt = 0;
 let chatLastMessagesSignature = '';
 let chatLastMessagesCount = 0;
 let chatLastRenderedSignature = '';
@@ -13513,6 +13514,25 @@ function buildChatMessagesSignature(messages) {
     }).join('||');
 }
 
+function buildChatRenderSignature(messages, welcomeMessage = null) {
+    const messageSignature = buildChatMessagesSignature(messages);
+    const normalizedWelcomeMessage = welcomeMessage && typeof welcomeMessage === 'object'
+        ? normalizeFetchedChatMessageEntry({
+            ...welcomeMessage,
+            isWelcomeMessage: true,
+            row: Number(welcomeMessage.row) || CHAT_WELCOME_MESSAGE_ROW,
+            user: CHAT_DEFAULT_USER,
+            value: String(welcomeMessage.value || welcomeMessage.message || '').trim()
+        })
+        : null;
+    const welcomeSignature = normalizedWelcomeMessage
+        ? buildChatMessagesSignature([normalizedWelcomeMessage])
+        : '';
+    if (!welcomeSignature) return messageSignature;
+    if (!messageSignature) return `welcome::${welcomeSignature}`;
+    return `welcome::${welcomeSignature}||messages::${messageSignature}`;
+}
+
 function getChatNotificationAudioPool(soundType = 'receive') {
     const normalizedSoundType = soundType === 'send' ? 'send' : 'receive';
     const currentPool = normalizedSoundType === 'send'
@@ -14052,7 +14072,7 @@ function renderMergedChatMessages(serverMessages) {
     const localEcho = filterPendingDeletedChatMessages(Array.isArray(chatLocalEchoMessages) ? chatLocalEchoMessages : []);
     const merged = sortChatMessagesChronologically([...base, ...localEcho]);
     renderChatMessages(merged);
-    chatLastRenderedSignature = buildChatMessagesSignature(merged);
+    chatLastRenderedSignature = buildChatRenderSignature(merged, chatWelcomeMessage);
     installChatLayoutResizeObserver();
     schedulePinnedChatBottomSnap();
 }
@@ -24788,10 +24808,11 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
         const unreadIncomingCount = hasNewMessage
             ? countIncomingUnreadMessages(previousServerMessages, chatLatestServerMessages, currentUserLabel)
             : 0;
-        const nextRenderSignature = buildChatMessagesSignature(sortChatMessagesChronologically([
+        const mergedRenderMessages = sortChatMessagesChronologically([
             ...chatLatestServerMessages,
             ...chatLocalEchoMessages
-        ]));
+        ]);
+        const nextRenderSignature = buildChatRenderSignature(mergedRenderMessages, chatWelcomeMessage);
         const shouldRenderMessages = showLoading || nextRenderSignature !== chatLastRenderedSignature;
         if (shouldRenderMessages) {
             renderMergedChatMessages(chatLatestServerMessages);
@@ -24902,6 +24923,50 @@ function startChatAutoRefresh() {
     const cycleId = chatAutoRefreshCycleId;
     scheduleNextChatAutoRefresh(cycleId, getChatRefreshDelayMs());
 }
+
+function requestChatRefreshOnResume() {
+    const overlay = document.getElementById('chat-overlay');
+    if (!overlay || overlay.classList.contains('is-hidden')) return;
+    if (shouldPauseChatAutoRefresh()) return;
+
+    const now = Date.now();
+    if (now - chatLastResumeRefreshAt < 600) return;
+    chatLastResumeRefreshAt = now;
+
+    const cycleId = chatAutoRefreshCycleId;
+    if (chatRefreshTimerId) {
+        clearTimeout(chatRefreshTimerId);
+        chatRefreshTimerId = null;
+    }
+    if (chatRefreshInFlight) return;
+
+    chatRefreshInFlight = true;
+    Promise.resolve()
+        .then(() => refreshChatMessages(false, false))
+        .catch((error) => {
+            console.warn('Error refrescando el chat al reactivar la ventana:', error);
+        })
+        .finally(() => {
+            chatRefreshInFlight = false;
+            if (cycleId === chatAutoRefreshCycleId) {
+                scheduleNextChatAutoRefresh(cycleId, getChatRefreshDelayMs());
+            }
+        });
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        requestChatRefreshOnResume();
+    }
+});
+
+window.addEventListener('focus', () => {
+    requestChatRefreshOnResume();
+});
+
+window.addEventListener('pageshow', () => {
+    requestChatRefreshOnResume();
+});
 
 let chatViewportListenerInstalled = false;
 let chatBodyScrollLock = null;

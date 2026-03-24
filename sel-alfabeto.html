@@ -1155,6 +1155,70 @@
         0 7px 16px rgba(15, 23, 42, 0.14);
 }
 
+.chat-message-item.is-passive-welcome-received {
+    width: calc(100% - 18px);
+    max-width: none;
+    margin: 0 0 12px 18px;
+    padding: 16px 16px 18px;
+    border-radius: 28px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(180deg, rgba(251, 233, 152, 0.98) 0%, rgba(241, 211, 96, 0.98) 100%);
+    border: 1px solid rgba(226, 185, 63, 0.48);
+    box-shadow:
+        0 20px 36px rgba(120, 92, 61, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.chat-message-item.is-passive-welcome-received::after {
+    left: -18px;
+    top: 20px;
+    border-width: 16px 16px 16px 0;
+    border-color: transparent rgba(251, 233, 152, 0.98) transparent transparent;
+    filter:
+        drop-shadow(-1px 0 0 rgba(255, 246, 209, 0.8))
+        drop-shadow(0 3px 6px rgba(176, 132, 32, 0.2));
+}
+
+.chat-message-item.is-passive-welcome-received .chat-message-main,
+.chat-message-item.is-passive-welcome-received .chat-message-line-only {
+    padding: 18px 22px 16px 18px;
+    padding-right: 22px;
+    padding-bottom: 16px;
+    border-radius: 22px;
+    background:
+        linear-gradient(180deg, rgba(254, 241, 185, 0.98) 0%, rgba(236, 201, 91, 0.96) 100%);
+    border: 1px solid rgba(222, 180, 58, 0.42);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 250, 225, 0.9),
+        0 10px 20px rgba(176, 132, 32, 0.14);
+}
+
+.chat-message-item.is-passive-welcome-received .chat-message-line {
+    display: block;
+}
+
+.chat-message-item.is-passive-welcome-received .chat-message-user {
+    display: block;
+    width: 100%;
+    margin-bottom: 6px;
+    font-size: 1.28rem;
+    line-height: 1.1;
+}
+
+.chat-message-item.is-passive-welcome-received .chat-message-text-inline {
+    display: block;
+    margin-top: 2px;
+}
+
+.chat-message-item.is-passive-welcome-received .chat-message-text {
+    font-size: clamp(1.15rem, 2.6vw, 1.5rem);
+    line-height: 1.34;
+    font-weight: 600;
+    color: #172033;
+    text-wrap: pretty;
+}
+
 .chat-message-item.has-item-corner-time {
     padding-bottom: 24px;
 }
@@ -14208,6 +14272,7 @@ function areSameChatUserLabels(a, b) {
 function prepareChatMessagesForRender(messages, currentUserLabel) {
     const prepared = (Array.isArray(messages) ? messages : []).map((msg) => ({
         row: Number(msg && msg.row ? msg.row : 0) || 0,
+        isWelcomeMessage: !!(msg && msg.isWelcomeMessage),
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
         message: String(msg && msg.message ? msg.message : '').trim(),
         teacherReply: String(msg && msg.teacherReply ? msg.teacherReply : '').trim(),
@@ -22885,6 +22950,7 @@ function normalizeFetchedChatMessageEntry(entry) {
         );
         return {
             row: Number(entry.row) || 0,
+            isWelcomeMessage: !!entry.isWelcomeMessage,
             user: resolvedUser,
             message: resolvedMessage,
             teacherReply: parsed ? parsed.teacherReply : '',
@@ -22914,6 +22980,7 @@ function normalizeFetchedChatMessageEntry(entry) {
     const normalizedMessage = stripLeadingChatSenderTag(parsed.message, parsed.user);
     return {
         row: Number(entry && entry.row ? entry.row : 0) || 0,
+        isWelcomeMessage: !!(entry && entry.isWelcomeMessage),
         user: parsed.user,
         message: normalizedMessage,
         teacherReply: parsed.teacherReply,
@@ -22961,6 +23028,7 @@ function getNormalizedChatWelcomeMessageEntry() {
     const rawValue = String(chatWelcomeMessage.value || '').trim();
     return normalizeFetchedChatMessageEntry({
         ...chatWelcomeMessage,
+        isWelcomeMessage: true,
         row: Number(chatWelcomeMessage.row) || 2,
         user: CHAT_DEFAULT_USER,
         value: rawValue || String(chatWelcomeMessage.message || '').trim()
@@ -23245,12 +23313,14 @@ function renderChatMessages(messages) {
         const userLabel = normalizeChatUserLabel(msg.user);
         const isTeacherUser = isTeacherChatUserLabel(userLabel);
         const isCurrentSender = areSameChatUserLabels(userLabel, currentUserLabel);
+        const isWelcomeMessage = !!(msg && msg.isWelcomeMessage);
+        const isPassiveWelcomeReceived = isWelcomeMessage && !isCurrentSender;
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
-        const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
+        const isReplyable = !isPassiveWelcomeReceived && canReplyToRecipientMessage(msg, currentUserLabel);
         const isEditableSelf = canEditOwnChatMessage(msg, currentUserLabel);
         const isOwnActionable = isEditableSelf || canDeleteOwnChatMessage(msg, currentUserLabel);
         const messageRow = Number(msg && msg.row ? msg.row : 0) || 0;
-        const isAdminActionable = isCurrentChatUserAdmin() && !isCurrentSender && messageRow > 0;
+        const isAdminActionable = !isPassiveWelcomeReceived && isCurrentChatUserAdmin() && !isCurrentSender && messageRow > 0;
         const isDeleteArmedSelf = isCurrentSender && messageRow > 0 && messageRow === chatDeleteArmRow;
         const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const isSelectedEditTarget = isEditableSelf && isSameEditTarget(getEditTargetFromMessage(msg), chatEditTarget);
@@ -23794,19 +23864,20 @@ function renderChatMessages(messages) {
             && !!normalizedShortBubbleText
             && !/\n/.test(String(msg.message || ''))
             && normalizedShortBubbleText.length <= 22;
-        const shouldUseEmbeddedMainReactionColumn = hasEmbeddedReplyContent;
-        const shouldUseFullHeightReactionColumn = !hasPrimaryMedia
+        const shouldUseEmbeddedMainReactionColumn = !isPassiveWelcomeReceived && hasEmbeddedReplyContent;
+        const shouldUseFullHeightReactionColumn = !isPassiveWelcomeReceived && !hasPrimaryMedia
             && !hasEmbeddedReplyContent;
         const blockShadowBaseKey = `msg:${Number(msg.row) || idx}`;
-        const shouldUseLineOnlyItemCornerTime = !!timeLabel && !hasPrimaryMedia && !hasEmbeddedReplyContent;
+        const shouldUseLineOnlyItemCornerTime = !isPassiveWelcomeReceived && !!timeLabel && !hasPrimaryMedia && !hasEmbeddedReplyContent;
         const shouldCompactPrimaryMedia = hasEmbeddedReplyContent && hasPrimaryMedia;
         const shouldUseItemTextAttachmentSeparator = hasMessageText && hasPrimaryMedia && !shouldCompactPrimaryMedia;
         const shouldUseEmbeddedTextAttachmentSeparator = hasMessageText && shouldCompactPrimaryMedia;
-        const shouldUseCornerTimeForPrimaryMedia = !!timeLabel && hasPrimaryMedia;
+        const shouldUseCornerTimeForPrimaryMedia = !isPassiveWelcomeReceived && !!timeLabel && hasPrimaryMedia;
         const shouldUseMessageBodyCornerTime = shouldUseCornerTimeForPrimaryMedia && shouldCompactPrimaryMedia;
         const shouldUseItemCornerTime = shouldUseCornerTimeForPrimaryMedia && !shouldUseMessageBodyCornerTime;
         const shouldUseItemReactionColumn = shouldUseFullHeightReactionColumn
             || shouldUseItemCornerTime;
+        const shouldAllowItemControls = !isPassiveWelcomeReceived;
         const messageItemClass = [
             'chat-message-item',
             (shouldUseItemCornerTime || shouldUseLineOnlyItemCornerTime) ? 'has-item-corner-time' : '',
@@ -23815,7 +23886,7 @@ function renderChatMessages(messages) {
             (hasPrimaryMedia && !shouldCompactPrimaryMedia) ? 'has-primary-media-block' : '',
             shouldUseItemTextAttachmentSeparator ? 'has-text-with-attachment' : '',
             shouldUseItemReactionColumn ? 'has-full-height-reaction-column' : '',
-            'has-side-hit-area',
+            shouldAllowItemControls ? 'has-side-hit-area' : '',
             isCurrentSender ? 'is-self' : '',
             isAdminActionable ? 'is-admin-actionable' : '',
             isOwnActionable ? 'is-editable-self' : '',
@@ -23838,7 +23909,9 @@ function renderChatMessages(messages) {
         const messageBodyShadowAttrs = hasEmbeddedReplyContent
             ? ` data-shadow-key="${escapeHtml(`main:${blockShadowBaseKey}`)}"`
             : '';
-        const sideHitAreaHtml = `<span class="chat-message-hit-area" aria-hidden="true"></span>`;
+        const sideHitAreaHtml = shouldAllowItemControls
+            ? `<span class="chat-message-hit-area" aria-hidden="true"></span>`
+            : '';
         const reactionColumnGuardHtml = shouldUseItemReactionColumn
             ? `<span class="chat-message-reaction-column-guard" aria-hidden="true">${latestMessageReaction ? messageReactionBadgeHtml : ''}</span>`
             : '';

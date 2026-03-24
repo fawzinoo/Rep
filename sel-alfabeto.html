@@ -848,9 +848,38 @@
     color: #e5f7f0;
 }
 
+.chat-admin-clear-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    background: rgba(239, 68, 68, 0.24);
+    color: #fef2f2;
+    box-shadow: 0 8px 18px rgba(127, 29, 29, 0.18);
+    transition: transform 0.18s ease, background-color 0.18s ease, opacity 0.18s ease;
+}
+
+.chat-admin-clear-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(239, 68, 68, 0.34);
+}
+
+.chat-admin-clear-btn:disabled {
+    cursor: wait;
+    opacity: 0.72;
+    transform: none;
+}
+
 .chat-header.is-editing {
     background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
     color: #111827;
+}
+
+.chat-header.is-editing .chat-admin-clear-btn {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
 }
 
 .chat-header.is-editing .chat-close-btn {
@@ -10585,7 +10614,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwzcCt_LgmwD5nTnxHuVjBb0HbY62NLDRom5HYPOxcbI5SKgbxuYGDkdFQbC1EdhoT0/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwiRoEqOrlbxixl4fuA0j5H9nT0D8Dz2NRgaC726iFgRTDsYraE7J8PrYH-P_CGGgir/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -10601,6 +10630,8 @@ const CHAT_FETCH_LIMIT = 80;
 const CHAT_REFRESH_INTERVAL_MS = 1200;
 const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
 const CHAT_DEFAULT_USER = 'Profe Faouzi';
+const CHAT_ADMIN_FIRST_NAME = 'profe';
+const CHAT_ADMIN_LAST_NAME = 'faouzi';
 const CHAT_ATTACHMENT_MAX_BYTES = 80 * 1024 * 1024;
 const CHAT_FILE_ATTACHMENT_ACCEPT = 'audio/*,text/*,application/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.txt,.csv,.tsv,.json,.xml,.zip,.rar,.7z,.tar,.gz,.bz2,.md';
 const CHAT_ATTACHMENT_V1_PREFIX = '__CHAT_ATTACHMENT_V1__';
@@ -11340,7 +11371,10 @@ function isChatPayloadSupportedByHtmlService(payload) {
     const type = String(payload && payload.type || '').trim().toLowerCase();
     if (type === 'chat_attachment') return !!(payload && payload.attachmentReuse);
     if (type === 'chat_edit_message' && payload && payload.attachment) return false;
-    return type === 'chat_message' || type === 'chat_edit_message' || type === 'chat_delete_message';
+    return type === 'chat_message'
+        || type === 'chat_edit_message'
+        || type === 'chat_delete_message'
+        || type === 'chat_delete_all_messages';
 }
 
 function clearChatAttachmentInputSelection(inputId) {
@@ -12789,6 +12823,7 @@ function getChatVideoPrefetchCandidates(messages, limit = CHAT_VIDEO_PREFETCH_LI
 
     const orderedMessages = sortChatMessagesChronologically(messages);
     const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
+    const currentUserIsAdmin = isChatAdminUserLabel(currentUserLabel);
     const candidates = [];
     const seenFileIds = new Set();
 
@@ -13947,7 +13982,9 @@ function canReplyToRecipientMessage(msg, currentUserLabel) {
         !!String(msg && msg.imageUrl ? msg.imageUrl : '').trim() ||
         !!String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() ||
         !!String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
-    return (!!messageText || hasMedia) && !areSameChatUserLabels(userLabel, currentUserLabel);
+    if (!(!!messageText || hasMedia)) return false;
+    if (isChatAdminUserLabel(currentUserLabel)) return true;
+    return !areSameChatUserLabels(userLabel, currentUserLabel);
 }
 
 function canReplyToAttachedReply(replyEntry, currentUserLabel) {
@@ -13966,7 +14003,8 @@ function canEditOwnChatMessage(msg, currentUserLabel) {
         !!String(msg && msg.imageUrl ? msg.imageUrl : '').trim() ||
         !!String(msg && msg.attachmentUrl ? msg.attachmentUrl : '').trim() ||
         !!String(msg && msg.attachmentKind ? msg.attachmentKind : '').trim();
-    return row > 0 && (!!messageText || hasMedia) && areSameChatUserLabels(userLabel, currentUserLabel);
+    const isAdmin = isChatAdminUserLabel(currentUserLabel);
+    return row > 0 && (!!messageText || hasMedia) && (isAdmin || areSameChatUserLabels(userLabel, currentUserLabel));
 }
 
 function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
@@ -13982,8 +14020,9 @@ function canCancelPendingOwnChatMessage(msg, currentUserLabel) {
 function canDeleteOwnChatMessage(msg, currentUserLabel) {
     const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
     const row = Number(msg && msg.row ? msg.row : 0) || 0;
+    const isAdmin = isChatAdminUserLabel(currentUserLabel);
     return (row > 0 || canCancelPendingOwnChatMessage(msg, currentUserLabel))
-        && areSameChatUserLabels(userLabel, currentUserLabel);
+        && (isAdmin || areSameChatUserLabels(userLabel, currentUserLabel));
 }
 
 function canReactToChatMessage(msg) {
@@ -14898,6 +14937,7 @@ function shouldPreserveChatComposerStateForEventTarget(target) {
         '#chat-reaction-popover',
         '#chat-unread-indicator',
         '#chat-jump-bottom-btn',
+        '#chat-admin-clear-btn',
         '.chat-message-delete-btn',
         '.chat-voice-recorder-overlay',
         '.chat-voice-recorder-modal'
@@ -15600,6 +15640,7 @@ function openChatOwnMessageChoiceMenu(targetMessage, anchorEl, currentUserLabel,
 }
 
 function isAttachedReplyOwnedForActionMenu(targetMessage, currentUserLabel) {
+    if (isChatAdminUserLabel(currentUserLabel)) return true;
     const normalizedCurrentUserLabel = normalizeChatUserLabel(currentUserLabel || '');
     const isOwnedByVisibleLabelInCurrentBubble = !!(targetMessage && targetMessage.__ownedByVisibleLabelInCurrentBubble);
     const matchesCurrentVisibleLabel = areSameChatUserLabels(
@@ -16018,6 +16059,91 @@ async function deleteChatMessageByTarget(targetMessage) {
             void refreshChatMessages(false, false);
         }
     }
+}
+
+async function deleteAllChatMessagesAsAdmin() {
+    const identity = getStudentIdentityForChat();
+    if (!isChatAdminIdentity(identity)) return;
+
+    const confirmed = window.confirm('Vas a borrar toda la conversación del chat. Esta acción no se puede deshacer.');
+    if (!confirmed) return;
+
+    const buttonEl = document.getElementById('chat-admin-clear-btn');
+    if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.setAttribute('aria-busy', 'true');
+    }
+
+    closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
+    closeChatReactionPopover();
+    closeChatReplyThreadPopover();
+    clearChatDeleteArm(false);
+    clearChatEditTarget(false, true);
+    clearChatReplyTarget(false);
+    closeChatAttachmentMenu();
+    closeChatEmojiMenu();
+
+    try {
+        await postToPortalB({
+            type: 'chat_delete_all_messages',
+            columna: CHAT_COLUMN_KEY,
+            nombre: identity.firstName,
+            apellido: identity.lastName,
+            userDisplayName: identity.displayName
+        });
+        resetChatHistoryPaginationState(true);
+        resetChatUnreadIndicator();
+        renderMergedChatMessages(chatLatestServerMessages);
+        await refreshChatMessages(false, false);
+    } catch (error) {
+        console.warn('Error borrando toda la conversación del chat:', error);
+        showChatNoticeModal('No se pudo borrar toda la conversación del chat.', {
+            title: 'Borrado no completado'
+        });
+        if (document.getElementById('chat-overlay')) {
+            void refreshChatMessages(false, false);
+        }
+    } finally {
+        if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.removeAttribute('aria-busy');
+        }
+    }
+}
+
+function ensureChatAdminClearButton() {
+    const overlay = document.getElementById('chat-overlay');
+    const headerActionsEl = overlay ? overlay.querySelector('.chat-header-actions') : null;
+    const closeBtn = document.getElementById('chat-close-btn');
+    let buttonEl = document.getElementById('chat-admin-clear-btn');
+    const shouldShow = isChatAdminIdentity();
+
+    if (!headerActionsEl || !closeBtn) return null;
+    if (!shouldShow) {
+        if (buttonEl) buttonEl.remove();
+        return null;
+    }
+
+    if (!buttonEl) {
+        buttonEl = document.createElement('button');
+        buttonEl.className = 'chat-admin-clear-btn';
+        buttonEl.id = 'chat-admin-clear-btn';
+        buttonEl.setAttribute('aria-label', 'Borrar toda la conversación');
+        buttonEl.setAttribute('title', 'Borrar toda la conversación');
+        buttonEl.innerHTML = '<i class="fas fa-trash-can" aria-hidden="true"></i>';
+        headerActionsEl.insertBefore(buttonEl, closeBtn);
+    }
+
+    if (buttonEl.dataset.handlerInstalled !== '1') {
+        buttonEl.dataset.handlerInstalled = '1';
+        buttonEl.addEventListener('click', () => {
+            triggerChatUiHapticFeedback();
+            void deleteAllChatMessagesAsAdmin();
+        });
+    }
+
+    return buttonEl;
 }
 
 function scheduleChatSuppressNextMessageClickReset(durationMs = CHAT_TAP_SUPPRESS_CLICK_MS) {
@@ -22218,6 +22344,22 @@ function getStudentIdentityForChat() {
     return { firstName, lastName, displayName };
 }
 
+function isChatAdminUserLabel(userLabel = '') {
+    return isTeacherChatUserLabel(normalizeChatUserLabel(userLabel || ''));
+}
+
+function isChatAdminIdentity(identity = null) {
+    const safeIdentity = identity && typeof identity === 'object'
+        ? identity
+        : getStudentIdentityForChat();
+    const firstName = normalizeChatComparisonText(safeIdentity.firstName || '');
+    const lastName = normalizeChatComparisonText(safeIdentity.lastName || '');
+    if (firstName === CHAT_ADMIN_FIRST_NAME && lastName === CHAT_ADMIN_LAST_NAME) {
+        return true;
+    }
+    return isChatAdminUserLabel(safeIdentity.displayName || '');
+}
+
 function triggerChatUiHapticFeedback() {
     try {
         vibrar(80);
@@ -22778,12 +22920,13 @@ function renderChatMessages(messages) {
         const isTeacherUser = isTeacherChatUserLabel(userLabel);
         const isCurrentSender = areSameChatUserLabels(userLabel, currentUserLabel);
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
-        const isReplyable = canReplyToRecipientMessage(msg, currentUserLabel);
+        const canReplyToThisMessage = canReplyToRecipientMessage(msg, currentUserLabel);
         const isEditableSelf = canEditOwnChatMessage(msg, currentUserLabel);
         const isOwnActionable = isEditableSelf || canDeleteOwnChatMessage(msg, currentUserLabel);
+        const isReplyable = canReplyToThisMessage && !isOwnActionable;
         const messageRow = Number(msg && msg.row ? msg.row : 0) || 0;
         const isDeleteArmedSelf = isCurrentSender && messageRow > 0 && messageRow === chatDeleteArmRow;
-        const isSelectedTarget = isReplyable && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
+        const isSelectedTarget = canReplyToThisMessage && isSameReplyTarget(getReplyTargetFromMessage(msg), chatReplyTarget);
         const isSelectedEditTarget = isEditableSelf && isSameEditTarget(getEditTargetFromMessage(msg), chatEditTarget);
         const renderedUser = isTeacherUser
             ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
@@ -23746,7 +23889,7 @@ function renderChatMessages(messages) {
         installFastTap(item, handleReply, { ignoreSelector: '.chat-message-reply-reactable' });
     });
 
-    const editableOwnItems = messagesEl.querySelectorAll('.chat-message-item.is-self.is-editable-self');
+    const editableOwnItems = messagesEl.querySelectorAll('.chat-message-item.is-editable-self');
     editableOwnItems.forEach((item) => {
         const handleEditMenu = (event = null) => {
             if (interceptEmbeddedReplyActionFromParent(item, event)) return;
@@ -23756,11 +23899,11 @@ function renderChatMessages(messages) {
                 clearChatDeleteArm(true);
                 return;
             }
-            const blockShadowState = syncBlockShadowSelectionFromEvent(item, event, { onlySelf: true });
+            const blockShadowState = syncBlockShadowSelectionFromEvent(item, event, { onlySelf: !currentUserIsAdmin });
             if (blockShadowState.toggledOff) return;
             const sideHitAreaState = blockShadowState.fromBlockShadow
                 ? { fromSideHitArea: false, toggledOff: false }
-                : syncSideHitAreaSelectionFromEvent(item, event, { onlySelf: true });
+                : syncSideHitAreaSelectionFromEvent(item, event, { onlySelf: !currentUserIsAdmin });
             if (sideHitAreaState.toggledOff) return;
             dismissChatKeyboardForOwnMessageInteraction();
             const idx = Number(item.dataset.msgIndex);
@@ -23930,8 +24073,9 @@ function renderChatMessages(messages) {
 
     const openOwnMessageChoiceFromAttachmentSurface = (triggerEl, event = null) => {
         if (!triggerEl || triggerEl.closest('.chat-message-reply-reactable')) return false;
-        const item = triggerEl.closest('.chat-message-item.is-self.is-editable-self');
+        const item = triggerEl.closest('.chat-message-item.is-editable-self');
         if (!item) return false;
+        if (!currentUserIsAdmin && !item.classList.contains('is-self')) return false;
         if (event && event.cancelable) event.preventDefault();
         if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
         vibrar(40);
@@ -24772,6 +24916,7 @@ async function openChatModal() {
         }
         if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
         installChatAnsweredOnlySwitchHandler();
+        ensureChatAdminClearButton();
         startChatAutoRefresh();
         if (chatAttachmentUploadInProgress) {
             const hasServerSnapshot = Array.isArray(chatLatestServerMessages) && chatLatestServerMessages.length > 0;
@@ -24800,6 +24945,8 @@ async function openChatModal() {
     document.body.classList.add('chat-open');
     lockBodyScrollForChat();
     installChatViewportHandlers();
+    const currentChatIdentity = getStudentIdentityForChat();
+    const showChatAdminClearButton = isChatAdminIdentity(currentChatIdentity);
     const overlay = document.createElement('div');
     overlay.id = 'chat-overlay';
     overlay.className = 'chat-overlay';
@@ -24814,6 +24961,11 @@ async function openChatModal() {
                         <span class="chat-header-filter-switch-ui" aria-hidden="true"></span>
                         <span class="chat-header-filter-icon answered" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
                     </label>
+                    ${showChatAdminClearButton ? `
+                    <button class="chat-admin-clear-btn" id="chat-admin-clear-btn" aria-label="Borrar toda la conversación" title="Borrar toda la conversación">
+                        <i class="fas fa-trash-can" aria-hidden="true"></i>
+                    </button>
+                    ` : ''}
                     <button class="chat-close-btn" id="chat-close-btn" aria-label="Cerrar chat">
                         <i id="chat-close-btn-icon" class="fas fa-times"></i>
                     </button>
@@ -24993,6 +25145,7 @@ async function openChatModal() {
 
     const closeBtn = document.getElementById('chat-close-btn');
     installChatAnsweredOnlySwitchHandler();
+    ensureChatAdminClearButton();
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             triggerChatUiHapticFeedback();

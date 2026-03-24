@@ -10678,7 +10678,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-T-nFJSmQQi68qDnrKGpDm__6gNjpabMgAhpEjVN88iC0xZZk7AxGvCNZZMD8OaV2/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwr1St9e1VAr3xRUKsFJdQfE2NwHFBEGrquRe7Dh_wsypR3KFM4DtwfB5GkP8perRZS/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -22956,6 +22956,17 @@ function getChatWelcomeMessageTextContent(welcomeMessage) {
     return String(welcomeMessage.imageTitle || '').trim();
 }
 
+function getNormalizedChatWelcomeMessageEntry() {
+    if (!chatWelcomeMessage || typeof chatWelcomeMessage !== 'object') return null;
+    const rawValue = String(chatWelcomeMessage.value || '').trim();
+    return normalizeFetchedChatMessageEntry({
+        ...chatWelcomeMessage,
+        row: Number(chatWelcomeMessage.row) || 2,
+        user: CHAT_DEFAULT_USER,
+        value: rawValue || String(chatWelcomeMessage.message || '').trim()
+    });
+}
+
 function getChatWelcomeMarkup() {
     if (!chatWelcomeMessage || typeof chatWelcomeMessage !== 'object') return '';
     const welcomeText = getChatWelcomeMessageTextContent(chatWelcomeMessage);
@@ -23063,6 +23074,7 @@ function renderChatMessages(messages) {
     const messagesEl = document.getElementById('chat-messages-list');
     if (!messagesEl) return;
     const chatShadowIgnoreSelector = '.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-card, .chat-audio-player, .chat-video-inline-shell, .chat-video-player, .chat-video-inline-open-btn, .chat-video-inline-play-btn, .chat-video-inline-download-btn, button, a, audio, video';
+    const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
 
     if (messagesEl.dataset.keyboardGuard !== '1') {
         messagesEl.dataset.keyboardGuard = '1';
@@ -23176,22 +23188,16 @@ function renderChatMessages(messages) {
         window.addEventListener('blur', clearPressedBlockShadow);
     }
 
-    const welcomeMarkup = getChatWelcomeMarkup();
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-        messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}<div class="chat-empty">Todavia no hay mensajes.</div>`;
-        const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
-        if (loadOlderBtn) {
-            loadOlderBtn.addEventListener('click', () => {
-                void loadOlderChatMessages();
-            });
-        }
-        bindChatImageFallbacks(messagesEl);
-        return;
-    }
-
-    const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
-    let renderMessages = prepareChatMessagesForRender(messages, currentUserLabel);
+    const safeMessages = Array.isArray(messages) ? messages : [];
+    const normalizedWelcomeMessage = getNormalizedChatWelcomeMessageEntry();
+    const combinedMessages = normalizedWelcomeMessage
+        ? [normalizedWelcomeMessage, ...safeMessages]
+        : safeMessages;
+    let renderMessages = prepareChatMessagesForRender(combinedMessages, currentUserLabel);
+    const welcomeRow = Number(normalizedWelcomeMessage && normalizedWelcomeMessage.row ? normalizedWelcomeMessage.row : 0) || 0;
+    const preparedWelcomeMessage = welcomeRow > 0
+        ? (renderMessages.find((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === welcomeRow) || null)
+        : null;
     if (chatShowAnsweredOnly) {
         renderMessages = renderMessages.filter((msg) => {
             const isCurrentSender = areSameChatUserLabels(msg && msg.user ? msg.user : '', currentUserLabel);
@@ -23205,10 +23211,13 @@ function renderChatMessages(messages) {
         });
     }
     renderMessages = sortPreparedChatMessagesForDisplay(renderMessages);
+    if (preparedWelcomeMessage && !renderMessages.some((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === welcomeRow)) {
+        renderMessages.unshift(preparedWelcomeMessage);
+    }
     const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
     if (renderMessages.length === 0) {
-        messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
+        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
             ? `<div class="chat-empty">No hay mensajes tuyos con respuesta.</div>`
             : `<div class="chat-empty">Todavia no hay mensajes.</div>`}`;
         const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
@@ -23221,7 +23230,7 @@ function renderChatMessages(messages) {
         return;
     }
 
-    messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}${renderMessages.map((msg, idx) => {
+    messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${renderMessages.map((msg, idx) => {
         const currentDisplayTimestamp = String(msg && msg.__displayTimestamp ? msg.__displayTimestamp : (msg && msg.timestamp ? msg.timestamp : '')).trim();
         const previousDisplayTimestamp = idx > 0
             ? String(renderMessages[idx - 1] && renderMessages[idx - 1].__displayTimestamp ? renderMessages[idx - 1].__displayTimestamp : (renderMessages[idx - 1] && renderMessages[idx - 1].timestamp ? renderMessages[idx - 1].timestamp : '')).trim()

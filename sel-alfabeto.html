@@ -1085,6 +1085,48 @@
     user-select: none;
 }
 
+.chat-welcome-bubble {
+    position: relative;
+    max-width: min(84%, 520px);
+    width: fit-content;
+    align-self: flex-start;
+    margin-right: auto;
+    margin-left: 0;
+    padding: 8px 12px 8px;
+    border-radius: 14px;
+    background: var(--chat-received-bubble-solid);
+    box-shadow:
+        0 18px 34px rgba(176, 132, 32, 0.24),
+        0 7px 16px rgba(15, 23, 42, 0.14);
+}
+
+.chat-welcome-bubble::after {
+    content: '';
+    position: absolute;
+    left: -10px;
+    top: 12px;
+    border-style: solid;
+    border-width: 8px 8px 8px 0;
+    border-color: transparent var(--chat-received-bubble-solid) transparent transparent;
+    filter:
+        drop-shadow(-1px 0 0 rgba(255, 255, 255, 0.48))
+        drop-shadow(0 2px 4px rgba(176, 132, 32, 0.18));
+}
+
+.chat-welcome-bubble .chat-message-main {
+    width: 100%;
+    margin-left: 0;
+    box-sizing: border-box;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.58),
+        inset 0 -10px 18px rgba(170, 127, 27, 0.18),
+        0 3px 8px rgba(15, 23, 42, 0.08);
+}
+
+.chat-welcome-bubble .chat-image-block {
+    margin-top: 8px;
+}
+
 .chat-message-item {
     position: relative;
     max-width: min(84%, 520px);
@@ -10636,7 +10678,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzntg18YJ32J5JBTGyaJwd_93JaHnGG7cd3dWyHAGM7uq2q_H4915GYZzdiYYGelFsx/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-T-nFJSmQQi68qDnrKGpDm__6gNjpabMgAhpEjVN88iC0xZZk7AxGvCNZZMD8OaV2/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -10696,6 +10738,7 @@ let chatHasMoreOlderMessages = false;
 let chatIsLoadingOlderMessages = false;
 let chatOldestLoadedServerRow = 0;
 let chatNewestLoadedServerRow = 0;
+let chatWelcomeMessage = null;
 let chatReplyTarget = null;
 let chatEditTarget = null;
 let chatAttachmentUploadInProgress = false;
@@ -12508,6 +12551,7 @@ async function hydratePersistedChatPendingUploads(options = {}) {
         if (navigator.onLine && lastConnectionStatus) {
             try {
                 const payload = await fetchChatMessages();
+                chatWelcomeMessage = payload && payload.welcomeMessage ? payload.welcomeMessage : null;
                 const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
                 const mergedServerMessages = mergeChatServerMessages(serverMessages, recentMessages);
                 reconcilePendingDeletedChatRowsWithServer(mergedServerMessages);
@@ -13963,6 +14007,7 @@ async function loadOlderChatMessages() {
 
     try {
         const payload = await fetchChatMessages({ beforeRow, limit: CHAT_FETCH_LIMIT });
+        chatWelcomeMessage = payload && payload.welcomeMessage ? payload.welcomeMessage : null;
         const olderMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
         if (olderMessages.length > 0) {
             chatLatestServerMessages = mergeChatServerMessages(olderMessages, chatLatestServerMessages);
@@ -19875,6 +19920,7 @@ async function syncChatPendingAttachmentUploadsWithServer() {
     const previousServerMessages = Array.isArray(chatLatestServerMessages) ? [...chatLatestServerMessages] : [];
     try {
         const payload = await fetchChatMessages();
+        chatWelcomeMessage = payload && payload.welcomeMessage ? payload.welcomeMessage : null;
         const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
         const oldestRecentRow = getOldestChatServerRow(recentMessages);
         const olderLoadedMessages = oldestRecentRow > 0
@@ -22742,6 +22788,230 @@ function shouldUseLongChatLineLayout(text) {
     return false;
 }
 
+function normalizeFetchedChatMessageEntry(entry) {
+    const entryImageUrl = entry && typeof entry === 'object'
+        ? String(entry.imageUrl || '').trim()
+        : '';
+    const entryImageTitle = entry && typeof entry === 'object'
+        ? String(entry.imageTitle || '').trim()
+        : '';
+    const entryAttachmentKind = entry && typeof entry === 'object'
+        ? String(entry.attachmentKind || '').trim().toLowerCase()
+        : '';
+    const entryAttachmentSourceKind = entry && typeof entry === 'object'
+        ? String(entry.attachmentSourceKind || '').trim().toLowerCase()
+        : '';
+    const entryAttachmentUrl = entry && typeof entry === 'object'
+        ? String(entry.attachmentUrl || '').trim()
+        : '';
+    const entryAttachmentName = entry && typeof entry === 'object'
+        ? String(entry.attachmentName || '').trim()
+        : '';
+    const entryAttachmentMimeType = entry && typeof entry === 'object'
+        ? String(entry.attachmentMimeType || '').trim()
+        : '';
+    const entryAttachmentSize = entry && typeof entry === 'object'
+        ? (Number(entry.attachmentSize) || 0)
+        : 0;
+    const entryAttachmentFileId = entry && typeof entry === 'object'
+        ? String(entry.attachmentFileId || '').trim()
+        : '';
+    const entryAttachmentClientToken = entry && typeof entry === 'object'
+        ? normalizeChatAttachmentClientToken(entry.attachmentClientToken)
+        : '';
+    const entryAttachmentMediaWidth = entry && typeof entry === 'object'
+        ? normalizeChatMediaDimension(entry.attachmentMediaWidth)
+        : 0;
+    const entryAttachmentMediaHeight = entry && typeof entry === 'object'
+        ? normalizeChatMediaDimension(entry.attachmentMediaHeight)
+        : 0;
+
+    if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl || entryAttachmentUrl)) {
+        const rawMessage = String(entry.value || entry.message || '').trim();
+        const parsed = rawMessage
+            ? parseChatCellValue(rawMessage)
+            : { user: CHAT_DEFAULT_USER, message: '', teacherReply: '', quotedReply: '', hasExplicitUser: false };
+        if (!parsed && !entryImageUrl) return null;
+        const entryUserRaw = String(entry.user || '').trim();
+        const entryUserClean = entryUserRaw.replace(/^-+/, '').replace(/-+$/, '').trim();
+        const hasAnonEntryUser = /^an[oó]nimo$/i.test(entryUserClean);
+        const resolvedUser = parsed && parsed.hasExplicitUser
+            ? parsed.user
+            : (!entryUserClean || hasAnonEntryUser
+                ? (parsed ? parsed.user : CHAT_DEFAULT_USER)
+                : normalizeChatUserLabel(entry.user || (parsed ? parsed.user : CHAT_DEFAULT_USER)));
+        const parsedAttachmentKind = parsed && parsed.attachmentKind ? String(parsed.attachmentKind || '').trim().toLowerCase() : '';
+        const parsedAttachmentSourceKind = parsed && parsed.attachmentSourceKind ? String(parsed.attachmentSourceKind || '').trim().toLowerCase() : '';
+        const parsedAttachmentUrl = parsed && parsed.attachmentUrl ? String(parsed.attachmentUrl || '').trim() : '';
+        const parsedAttachmentName = parsed && parsed.attachmentName ? String(parsed.attachmentName || '').trim() : '';
+        const parsedAttachmentMimeType = parsed && parsed.attachmentMimeType ? String(parsed.attachmentMimeType || '').trim() : '';
+        const parsedAttachmentSize = parsed && parsed.attachmentSize ? Number(parsed.attachmentSize) || 0 : 0;
+        const parsedAttachmentFileId = parsed && parsed.attachmentFileId ? String(parsed.attachmentFileId || '').trim() : '';
+        const parsedAttachmentClientToken = parsed && parsed.attachmentClientToken
+            ? normalizeChatAttachmentClientToken(parsed.attachmentClientToken)
+            : '';
+        const parsedAttachmentMediaWidth = parsed && parsed.attachmentMediaWidth
+            ? normalizeChatMediaDimension(parsed.attachmentMediaWidth)
+            : 0;
+        const parsedAttachmentMediaHeight = parsed && parsed.attachmentMediaHeight
+            ? normalizeChatMediaDimension(parsed.attachmentMediaHeight)
+            : 0;
+        const resolvedAttachmentUrl = entryAttachmentUrl || parsedAttachmentUrl;
+        const resolvedAttachmentName = entryAttachmentName || parsedAttachmentName;
+        const resolvedAttachmentMimeType = entryAttachmentMimeType || parsedAttachmentMimeType;
+        const resolvedAttachmentSize = entryAttachmentSize || parsedAttachmentSize;
+        const resolvedAttachmentFileId = entryAttachmentFileId
+            || parsedAttachmentFileId
+            || extractDriveFileIdFromUrl(resolvedAttachmentUrl);
+        const resolvedAttachmentClientToken = entryAttachmentClientToken || parsedAttachmentClientToken;
+        const resolvedAttachmentMediaWidth = entryAttachmentMediaWidth || parsedAttachmentMediaWidth;
+        const resolvedAttachmentMediaHeight = entryAttachmentMediaHeight || parsedAttachmentMediaHeight;
+        const resolvedAttachmentKind = resolveChatAttachmentKind(
+            entryAttachmentKind || parsedAttachmentKind,
+            resolvedAttachmentMimeType,
+            resolvedAttachmentName,
+            resolvedAttachmentUrl
+        );
+        const resolvedAttachmentSourceKind = normalizeChatAttachmentSourceKind(
+            entryAttachmentSourceKind || parsedAttachmentSourceKind,
+            resolvedAttachmentKind,
+            resolvedAttachmentName
+        );
+        const resolvedImageUrl = entryImageUrl || (parsed && parsed.imageUrl ? String(parsed.imageUrl || '').trim() : '');
+        const resolvedImageTitle = entryImageTitle || (parsed && parsed.imageTitle ? String(parsed.imageTitle || '').trim() : '');
+        const resolvedMessage = stripLeadingChatSenderTag(
+            parsed ? parsed.message : rawMessage,
+            resolvedUser
+        );
+        return {
+            row: Number(entry.row) || 0,
+            user: resolvedUser,
+            message: resolvedMessage,
+            teacherReply: parsed ? parsed.teacherReply : '',
+            quotedReply: parsed ? parsed.quotedReply : '',
+            imageUrl: resolvedImageUrl,
+            imageTitle: resolvedImageTitle,
+            attachmentKind: resolvedAttachmentKind,
+            attachmentSourceKind: resolvedAttachmentSourceKind,
+            attachmentUrl: resolvedAttachmentUrl,
+            attachmentName: resolvedAttachmentName,
+            attachmentMimeType: resolvedAttachmentMimeType,
+            attachmentSize: resolvedAttachmentSize,
+            attachmentFileId: resolvedAttachmentFileId,
+            attachmentClientToken: resolvedAttachmentClientToken,
+            attachmentMediaWidth: resolvedAttachmentMediaWidth,
+            attachmentMediaHeight: resolvedAttachmentMediaHeight,
+            timestamp: String(entry.timestamp || (parsed && parsed.timestamp) || '').trim(),
+            timeLabel: String(entry.timeLabel || (parsed && parsed.timeLabel) || '').trim(),
+            edited: !!entry.edited,
+            editTimestamp: String(entry.editTimestamp || '').trim(),
+            editTimeLabel: String(entry.editTimeLabel || '').trim()
+        };
+    }
+
+    const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
+    if (!parsed) return null;
+    const normalizedMessage = stripLeadingChatSenderTag(parsed.message, parsed.user);
+    return {
+        row: Number(entry && entry.row ? entry.row : 0) || 0,
+        user: parsed.user,
+        message: normalizedMessage,
+        teacherReply: parsed.teacherReply,
+        quotedReply: parsed.quotedReply,
+        imageUrl: parsed.imageUrl || '',
+        imageTitle: parsed.imageTitle || '',
+        attachmentKind: parsed.attachmentKind || '',
+        attachmentSourceKind: normalizeChatAttachmentSourceKind(
+            parsed.attachmentSourceKind || '',
+            parsed.attachmentKind || '',
+            parsed.attachmentName || ''
+        ),
+        attachmentUrl: parsed.attachmentUrl || '',
+        attachmentName: parsed.attachmentName || '',
+        attachmentMimeType: parsed.attachmentMimeType || '',
+        attachmentSize: parsed.attachmentSize || 0,
+        attachmentFileId: parsed.attachmentFileId || extractDriveFileIdFromUrl(parsed.attachmentUrl || '') || '',
+        attachmentClientToken: normalizeChatAttachmentClientToken(parsed.attachmentClientToken || ''),
+        attachmentMediaWidth: normalizeChatMediaDimension(parsed.attachmentMediaWidth || 0),
+        attachmentMediaHeight: normalizeChatMediaDimension(parsed.attachmentMediaHeight || 0),
+        timestamp: String(entry && entry.timestamp ? entry.timestamp : (parsed.timestamp || '')).trim(),
+        timeLabel: String(entry && entry.timeLabel ? entry.timeLabel : (parsed.timeLabel || '')).trim(),
+        edited: !!(entry && entry.edited),
+        editTimestamp: String(entry && entry.editTimestamp ? entry.editTimestamp : (parsed.editTimestamp || '')).trim(),
+        editTimeLabel: String(entry && entry.editTimeLabel ? entry.editTimeLabel : (parsed.editTimeLabel || '')).trim()
+    };
+}
+
+function getChatWelcomeMessageTextContent(welcomeMessage) {
+    if (!welcomeMessage || typeof welcomeMessage !== 'object') return '';
+    const directText = String(welcomeMessage.message || '').trim();
+    if (directText) return directText;
+    const attachmentName = normalizeChatAttachmentFileName(
+        String(welcomeMessage.attachmentName || '').trim(),
+        String(welcomeMessage.attachmentMimeType || '').trim(),
+        String(welcomeMessage.attachmentUrl || '').trim(),
+        String(welcomeMessage.attachmentKind || '').trim().toLowerCase()
+    );
+    if (attachmentName) return attachmentName;
+    return String(welcomeMessage.imageTitle || '').trim();
+}
+
+function getChatWelcomeMarkup() {
+    if (!chatWelcomeMessage || typeof chatWelcomeMessage !== 'object') return '';
+    const welcomeText = getChatWelcomeMessageTextContent(chatWelcomeMessage);
+    const welcomeUserRaw = normalizeChatUserLabel(chatWelcomeMessage.user || '');
+    const welcomeUser = !welcomeUserRaw || areSameChatUserLabels(welcomeUserRaw, 'Anónimo')
+        ? CHAT_DEFAULT_USER
+        : welcomeUserRaw;
+    const isTeacherUser = isTeacherChatUserLabel(welcomeUser);
+    const renderedUser = isTeacherUser
+        ? `<span class="chat-teacher-label"><i class="fas fa-user-tie" aria-hidden="true"></i><span>${escapeHtml(CHAT_DEFAULT_USER)}:</span></span>`
+        : `<span class="chat-user-label chat-user-label-other">${escapeHtml(welcomeUser)}:</span>`;
+    const rawImageUrl = String(chatWelcomeMessage.imageUrl || '').trim()
+        || (String(chatWelcomeMessage.attachmentKind || '').trim().toLowerCase() === 'image'
+            ? String(chatWelcomeMessage.attachmentUrl || '').trim()
+            : '');
+    const imageCandidates = rawImageUrl ? buildChatImageUrlCandidates(rawImageUrl, 'w520') : [];
+    const imageUrl = imageCandidates[0] || '';
+    const imageTitle = String(chatWelcomeMessage.imageTitle || chatWelcomeMessage.attachmentName || 'Bienvenida').trim() || 'Bienvenida';
+    if (!welcomeText && !imageUrl) return '';
+    const imageViewerCandidates = buildChatImageUrlCandidates(rawImageUrl, 'w1600');
+    const imageViewerSrc = rawImageUrl || imageViewerCandidates[0] || imageUrl;
+
+    return `
+        <div class="chat-welcome-bubble" data-message-row="${Number(chatWelcomeMessage.row) || 2}">
+            <div class="chat-message-main">
+                <div class="chat-message-line is-long-message">
+                    <div class="chat-message-user">${renderedUser}</div>
+                    ${welcomeText ? `<p class="chat-message-text">${formatChatMessageHtml(welcomeText)}</p>` : ''}
+                </div>
+                ${imageUrl ? `
+                    <div class="chat-image-block">
+                        <button
+                            type="button"
+                            class="chat-image-thumb-btn"
+                            data-image-url="${escapeHtml(imageViewerSrc)}"
+                            data-image-title="${escapeHtml(imageTitle)}"
+                            aria-label="Abrir imagen de bienvenida"
+                        >
+                            <img
+                                class="chat-image-thumb"
+                                src="${escapeHtml(imageUrl)}"
+                                alt="${escapeHtml(imageTitle)}"
+                                data-image-key="${escapeHtml(`welcome:${String(chatWelcomeMessage.row || 2)}`)}"
+                                data-candidate-index="0"
+                                data-candidates="${escapeHtml(imageCandidates.join('||'))}"
+                                loading="lazy"
+                                decoding="async"
+                            >
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
 function getChatHistoryLoaderMarkup() {
     if (!chatHasMoreOlderMessages && !chatIsLoadingOlderMessages) return '';
     const label = chatIsLoadingOlderMessages ? 'Cargando mensajes antiguos...' : 'Cargar mensajes antiguos';
@@ -22773,165 +23043,19 @@ async function fetchChatMessages(options = null) {
     if (!data || data.ok !== true || !Array.isArray(data.messages)) {
         throw new Error('No se pudieron cargar los mensajes del chat.');
     }
-    const messages = sortChatMessagesChronologically(data.messages
-        .map((entry) => {
-            const entryImageUrl = entry && typeof entry === 'object'
-                ? String(entry.imageUrl || '').trim()
-                : '';
-            const entryImageTitle = entry && typeof entry === 'object'
-                ? String(entry.imageTitle || '').trim()
-                : '';
-            const entryAttachmentKind = entry && typeof entry === 'object'
-                ? String(entry.attachmentKind || '').trim().toLowerCase()
-                : '';
-            const entryAttachmentSourceKind = entry && typeof entry === 'object'
-                ? String(entry.attachmentSourceKind || '').trim().toLowerCase()
-                : '';
-            const entryAttachmentUrl = entry && typeof entry === 'object'
-                ? String(entry.attachmentUrl || '').trim()
-                : '';
-            const entryAttachmentName = entry && typeof entry === 'object'
-                ? String(entry.attachmentName || '').trim()
-                : '';
-            const entryAttachmentMimeType = entry && typeof entry === 'object'
-                ? String(entry.attachmentMimeType || '').trim()
-                : '';
-            const entryAttachmentSize = entry && typeof entry === 'object'
-                ? (Number(entry.attachmentSize) || 0)
-                : 0;
-            const entryAttachmentFileId = entry && typeof entry === 'object'
-                ? String(entry.attachmentFileId || '').trim()
-                : '';
-            const entryAttachmentClientToken = entry && typeof entry === 'object'
-                ? normalizeChatAttachmentClientToken(entry.attachmentClientToken)
-                : '';
-            const entryAttachmentMediaWidth = entry && typeof entry === 'object'
-                ? normalizeChatMediaDimension(entry.attachmentMediaWidth)
-                : 0;
-            const entryAttachmentMediaHeight = entry && typeof entry === 'object'
-                ? normalizeChatMediaDimension(entry.attachmentMediaHeight)
-                : 0;
-            if (entry && typeof entry === 'object' && (entry.user || entry.message || entryImageUrl || entryAttachmentUrl)) {
-                const rawMessage = String(entry.value || entry.message || '').trim();
-                const parsed = rawMessage
-                    ? parseChatCellValue(rawMessage)
-                    : { user: CHAT_DEFAULT_USER, message: '', teacherReply: '', quotedReply: '', hasExplicitUser: false };
-                if (!parsed && !entryImageUrl) return null;
-                const entryUserRaw = String(entry.user || '').trim();
-                const entryUserClean = entryUserRaw.replace(/^-+/, '').replace(/-+$/, '').trim();
-                const hasAnonEntryUser = /^an[oó]nimo$/i.test(entryUserClean);
-                const resolvedUser = parsed && parsed.hasExplicitUser
-                    ? parsed.user
-                    : (!entryUserClean || hasAnonEntryUser
-                        ? (parsed ? parsed.user : CHAT_DEFAULT_USER)
-                        : normalizeChatUserLabel(entry.user || (parsed ? parsed.user : CHAT_DEFAULT_USER)));
-                const parsedAttachmentKind = parsed && parsed.attachmentKind ? String(parsed.attachmentKind || '').trim().toLowerCase() : '';
-                const parsedAttachmentSourceKind = parsed && parsed.attachmentSourceKind ? String(parsed.attachmentSourceKind || '').trim().toLowerCase() : '';
-                const parsedAttachmentUrl = parsed && parsed.attachmentUrl ? String(parsed.attachmentUrl || '').trim() : '';
-                const parsedAttachmentName = parsed && parsed.attachmentName ? String(parsed.attachmentName || '').trim() : '';
-                const parsedAttachmentMimeType = parsed && parsed.attachmentMimeType ? String(parsed.attachmentMimeType || '').trim() : '';
-                const parsedAttachmentSize = parsed && parsed.attachmentSize ? Number(parsed.attachmentSize) || 0 : 0;
-                const parsedAttachmentFileId = parsed && parsed.attachmentFileId ? String(parsed.attachmentFileId || '').trim() : '';
-                const parsedAttachmentClientToken = parsed && parsed.attachmentClientToken
-                    ? normalizeChatAttachmentClientToken(parsed.attachmentClientToken)
-                    : '';
-                const parsedAttachmentMediaWidth = parsed && parsed.attachmentMediaWidth
-                    ? normalizeChatMediaDimension(parsed.attachmentMediaWidth)
-                    : 0;
-                const parsedAttachmentMediaHeight = parsed && parsed.attachmentMediaHeight
-                    ? normalizeChatMediaDimension(parsed.attachmentMediaHeight)
-                    : 0;
-                const resolvedAttachmentUrl = entryAttachmentUrl || parsedAttachmentUrl;
-                const resolvedAttachmentName = entryAttachmentName || parsedAttachmentName;
-                const resolvedAttachmentMimeType = entryAttachmentMimeType || parsedAttachmentMimeType;
-                const resolvedAttachmentSize = entryAttachmentSize || parsedAttachmentSize;
-                const resolvedAttachmentFileId = entryAttachmentFileId
-                    || parsedAttachmentFileId
-                    || extractDriveFileIdFromUrl(resolvedAttachmentUrl);
-                const resolvedAttachmentClientToken = entryAttachmentClientToken || parsedAttachmentClientToken;
-                const resolvedAttachmentMediaWidth = entryAttachmentMediaWidth || parsedAttachmentMediaWidth;
-                const resolvedAttachmentMediaHeight = entryAttachmentMediaHeight || parsedAttachmentMediaHeight;
-                const resolvedAttachmentKind = resolveChatAttachmentKind(
-                    entryAttachmentKind || parsedAttachmentKind,
-                    resolvedAttachmentMimeType,
-                    resolvedAttachmentName,
-                    resolvedAttachmentUrl
-                );
-                const resolvedAttachmentSourceKind = normalizeChatAttachmentSourceKind(
-                    entryAttachmentSourceKind || parsedAttachmentSourceKind,
-                    resolvedAttachmentKind,
-                    resolvedAttachmentName
-                );
-                const resolvedImageUrl = entryImageUrl || (parsed && parsed.imageUrl ? String(parsed.imageUrl || '').trim() : '');
-                const resolvedImageTitle = entryImageTitle || (parsed && parsed.imageTitle ? String(parsed.imageTitle || '').trim() : '');
-                const resolvedMessage = stripLeadingChatSenderTag(
-                    parsed ? parsed.message : rawMessage,
-                    resolvedUser
-                );
-                return {
-                    row: Number(entry.row) || 0,
-                    user: resolvedUser,
-                    message: resolvedMessage,
-                    teacherReply: parsed ? parsed.teacherReply : '',
-                    quotedReply: parsed ? parsed.quotedReply : '',
-                    imageUrl: resolvedImageUrl,
-                    imageTitle: resolvedImageTitle,
-                    attachmentKind: resolvedAttachmentKind,
-                    attachmentSourceKind: resolvedAttachmentSourceKind,
-                    attachmentUrl: resolvedAttachmentUrl,
-                    attachmentName: resolvedAttachmentName,
-                    attachmentMimeType: resolvedAttachmentMimeType,
-                    attachmentSize: resolvedAttachmentSize,
-                    attachmentFileId: resolvedAttachmentFileId,
-                    attachmentClientToken: resolvedAttachmentClientToken,
-                    attachmentMediaWidth: resolvedAttachmentMediaWidth,
-                    attachmentMediaHeight: resolvedAttachmentMediaHeight,
-                    timestamp: String(entry.timestamp || (parsed && parsed.timestamp) || '').trim(),
-                    timeLabel: String(entry.timeLabel || (parsed && parsed.timeLabel) || '').trim(),
-                    edited: !!entry.edited,
-                    editTimestamp: String(entry.editTimestamp || '').trim(),
-                    editTimeLabel: String(entry.editTimeLabel || '').trim()
-                };
-            }
-            const parsed = parseChatCellValue(entry && typeof entry === 'object' ? entry.value : entry);
-            if (!parsed) return null;
-            const normalizedMessage = stripLeadingChatSenderTag(parsed.message, parsed.user);
-            return {
-                row: Number(entry && entry.row ? entry.row : 0) || 0,
-                user: parsed.user,
-                message: normalizedMessage,
-                teacherReply: parsed.teacherReply,
-                quotedReply: parsed.quotedReply,
-                imageUrl: parsed.imageUrl || '',
-                imageTitle: parsed.imageTitle || '',
-                attachmentKind: parsed.attachmentKind || '',
-                attachmentSourceKind: normalizeChatAttachmentSourceKind(
-                    parsed.attachmentSourceKind || '',
-                    parsed.attachmentKind || '',
-                    parsed.attachmentName || ''
-                ),
-                attachmentUrl: parsed.attachmentUrl || '',
-                attachmentName: parsed.attachmentName || '',
-                attachmentMimeType: parsed.attachmentMimeType || '',
-                attachmentSize: parsed.attachmentSize || 0,
-                attachmentFileId: parsed.attachmentFileId || extractDriveFileIdFromUrl(parsed.attachmentUrl || '') || '',
-                attachmentClientToken: normalizeChatAttachmentClientToken(parsed.attachmentClientToken || ''),
-                attachmentMediaWidth: normalizeChatMediaDimension(parsed.attachmentMediaWidth || 0),
-                attachmentMediaHeight: normalizeChatMediaDimension(parsed.attachmentMediaHeight || 0),
-                timestamp: String(entry && entry.timestamp ? entry.timestamp : (parsed.timestamp || '')).trim(),
-                timeLabel: String(entry && entry.timeLabel ? entry.timeLabel : (parsed.timeLabel || '')).trim(),
-                edited: !!(entry && entry.edited),
-                editTimestamp: String(entry && entry.editTimestamp ? entry.editTimestamp : (parsed.editTimestamp || '')).trim(),
-                editTimeLabel: String(entry && entry.editTimeLabel ? entry.editTimeLabel : (parsed.editTimeLabel || '')).trim()
-            };
-        })
-        .filter(Boolean));
+    const messages = sortChatMessagesChronologically(
+        data.messages
+            .map((entry) => normalizeFetchedChatMessageEntry(entry))
+            .filter(Boolean)
+    );
+    const welcomeMessage = normalizeFetchedChatMessageEntry(data && data.welcomeMessage ? data.welcomeMessage : null);
     return {
         messages,
         hasMoreOlder: !!(data && data.hasMoreOlder),
         oldestRow: Number(data && data.oldestRow ? data.oldestRow : 0) || getOldestChatServerRow(messages),
         newestRow: Number(data && data.newestRow ? data.newestRow : 0) || getNewestChatServerRow(messages),
-        cached: !!(data && data.cached)
+        cached: !!(data && data.cached),
+        welcomeMessage
     };
 }
 
@@ -23052,14 +23176,17 @@ function renderChatMessages(messages) {
         window.addEventListener('blur', clearPressedBlockShadow);
     }
 
+    const welcomeMarkup = getChatWelcomeMarkup();
+
     if (!Array.isArray(messages) || messages.length === 0) {
-        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}<div class="chat-empty">Todavia no hay mensajes.</div>`;
+        messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}<div class="chat-empty">Todavia no hay mensajes.</div>`;
         const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
         if (loadOlderBtn) {
             loadOlderBtn.addEventListener('click', () => {
                 void loadOlderChatMessages();
             });
         }
+        bindChatImageFallbacks(messagesEl);
         return;
     }
 
@@ -23081,7 +23208,7 @@ function renderChatMessages(messages) {
     const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
     if (renderMessages.length === 0) {
-        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
+        messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
             ? `<div class="chat-empty">No hay mensajes tuyos con respuesta.</div>`
             : `<div class="chat-empty">Todavia no hay mensajes.</div>`}`;
         const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
@@ -23090,10 +23217,11 @@ function renderChatMessages(messages) {
                 void loadOlderChatMessages();
             });
         }
+        bindChatImageFallbacks(messagesEl);
         return;
     }
 
-    messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${renderMessages.map((msg, idx) => {
+    messagesEl.innerHTML = `${welcomeMarkup}${getChatHistoryLoaderMarkup()}${renderMessages.map((msg, idx) => {
         const currentDisplayTimestamp = String(msg && msg.__displayTimestamp ? msg.__displayTimestamp : (msg && msg.timestamp ? msg.timestamp : '')).trim();
         const previousDisplayTimestamp = idx > 0
             ? String(renderMessages[idx - 1] && renderMessages[idx - 1].__displayTimestamp ? renderMessages[idx - 1].__displayTimestamp : (renderMessages[idx - 1] && renderMessages[idx - 1].timestamp ? renderMessages[idx - 1].timestamp : '')).trim()
@@ -24522,6 +24650,7 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
     try {
         const payload = await fetchChatMessages();
+        chatWelcomeMessage = payload && payload.welcomeMessage ? payload.welcomeMessage : null;
         const recentMessages = mergeChatMessagesWithClientEditMeta(Array.isArray(payload && payload.messages) ? payload.messages : []);
         const oldestRecentRow = getOldestChatServerRow(recentMessages);
         const olderLoadedMessages = oldestRecentRow > 0
@@ -25172,7 +25301,7 @@ async function openChatModal() {
         startChatAutoRefresh();
         if (chatAttachmentUploadInProgress) {
             const hasServerSnapshot = Array.isArray(chatLatestServerMessages) && chatLatestServerMessages.length > 0;
-            const hasRenderedConversation = !!(messagesEl && messagesEl.querySelector('.chat-message-item, .chat-day-separator, .chat-loading, .chat-empty, .chat-error'));
+            const hasRenderedConversation = !!(messagesEl && messagesEl.querySelector('.chat-message-item, .chat-day-separator, .chat-welcome-bubble, .chat-loading, .chat-empty, .chat-error'));
             if (hasServerSnapshot) {
                 renderMergedChatMessages(chatLatestServerMessages);
             } else if (!hasRenderedConversation && messagesEl) {

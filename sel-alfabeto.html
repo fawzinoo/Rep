@@ -796,72 +796,56 @@
     transform: translate(-50%, -50%);
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    color: rgba(229, 247, 240, 0.94);
-    user-select: none;
-}
-
-.chat-header-filter input {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.chat-header-filter-icon {
-    font-size: 0.9rem;
-    line-height: 1;
-    opacity: 0.72;
-    transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
-}
-
-.chat-header-filter-icon.global {
-    opacity: 1;
-}
-
-.chat-header-filter-icon.answered {
-    opacity: 0.62;
-}
-
-.chat-header-filter-switch-ui {
-    position: relative;
-    width: 38px;
-    height: 22px;
+    gap: 4px;
+    padding: 4px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.24);
     border: 1px solid rgba(255, 255, 255, 0.28);
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    flex-shrink: 0;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+    user-select: none;
 }
 
-.chat-header-filter-switch-ui::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #ffffff;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22);
-    transition: transform 0.2s ease;
+.chat-header-filter-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(229, 247, 240, 0.72);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-.chat-header-filter input:checked + .chat-header-filter-switch-ui {
-    background: rgba(220, 252, 231, 0.92);
-    border-color: rgba(220, 252, 231, 0.92);
+.chat-header-filter-btn:hover {
+    transform: translateY(-1px);
+    color: rgba(255, 255, 255, 0.96);
+    background: rgba(255, 255, 255, 0.12);
 }
 
-.chat-header-filter input:checked + .chat-header-filter-switch-ui::after {
-    transform: translateX(16px);
+.chat-header-filter-btn i {
+    font-size: 0.92rem;
+    line-height: 1;
 }
 
-.chat-header-filter input:checked ~ .chat-header-filter-icon.global {
-    opacity: 0.58;
+.chat-header-filter-btn.is-active {
+    background: rgba(255, 255, 255, 0.96);
+    color: #275d4d;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
 }
 
-.chat-header-filter input:checked ~ .chat-header-filter-icon.answered {
-    opacity: 1;
-    color: #dcfce7;
+.chat-header-filter-btn[data-chat-filter-mode="all"].is-active {
+    color: #0f766e;
+}
+
+.chat-header-filter-btn[data-chat-filter-mode="own"].is-active {
+    color: #1d4ed8;
+}
+
+.chat-header-filter-btn[data-chat-filter-mode="teacher"].is-active {
+    color: #b45309;
 }
 
 .chat-close-btn {
@@ -10929,7 +10913,10 @@ function isChatRowOwnedByCurrentClient(row) {
     const safeRow = Number(row) || 0;
     return safeRow > 0 && chatOwnedRowIds.has(safeRow);
 }
-let chatShowAnsweredOnly = false;
+const CHAT_FILTER_MODE_ALL = 'all';
+const CHAT_FILTER_MODE_OWN = 'own';
+const CHAT_FILTER_MODE_TEACHER = 'teacher';
+let chatMessageFilterMode = CHAT_FILTER_MODE_ALL;
 
 function getLocalChatTimeLabel() {
     return formatChatTimeLabelForServerClock(new Date());
@@ -14990,13 +14977,40 @@ function updateChatReplyPreview() {
     updateChatFooterInset();
 }
 
-function installChatAnsweredOnlySwitchHandler() {
-    const switchEl = document.getElementById('chat-answered-only-switch');
-    if (!switchEl || switchEl.dataset.bound === '1') return;
-    switchEl.dataset.bound = '1';
-    switchEl.checked = !!chatShowAnsweredOnly;
-    switchEl.addEventListener('change', () => {
-        chatShowAnsweredOnly = !!switchEl.checked;
+function normalizeChatMessageFilterMode(value) {
+    const mode = String(value || '').trim().toLowerCase();
+    if (mode === 'answered') return CHAT_FILTER_MODE_OWN;
+    if (mode === CHAT_FILTER_MODE_OWN || mode === CHAT_FILTER_MODE_TEACHER) {
+        return mode;
+    }
+    return CHAT_FILTER_MODE_ALL;
+}
+
+function syncChatHeaderFilterUi() {
+    const filterEl = document.getElementById('chat-header-filter');
+    if (!filterEl) return;
+    const activeMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
+    filterEl.querySelectorAll('.chat-header-filter-btn[data-chat-filter-mode]').forEach((buttonEl) => {
+        const isActive = String(buttonEl.dataset.chatFilterMode || '').trim() === activeMode;
+        buttonEl.classList.toggle('is-active', isActive);
+        buttonEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+}
+
+function installChatHeaderFilterHandler() {
+    const filterEl = document.getElementById('chat-header-filter');
+    if (!filterEl || filterEl.dataset.bound === '1') return;
+    filterEl.dataset.bound = '1';
+    syncChatHeaderFilterUi();
+    filterEl.addEventListener('click', (event) => {
+        const buttonEl = event.target && event.target.closest
+            ? event.target.closest('.chat-header-filter-btn[data-chat-filter-mode]')
+            : null;
+        if (!buttonEl) return;
+        const nextMode = normalizeChatMessageFilterMode(buttonEl.dataset.chatFilterMode || '');
+        if (nextMode === chatMessageFilterMode) return;
+        chatMessageFilterMode = nextMode;
+        syncChatHeaderFilterUi();
         renderMergedChatMessages(chatLatestServerMessages);
     });
 }
@@ -23308,17 +23322,11 @@ function renderChatMessages(messages) {
     const preparedWelcomeMessage = welcomeRow > 0
         ? (renderMessages.find((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === welcomeRow) || null)
         : null;
-    if (chatShowAnsweredOnly) {
-        renderMessages = renderMessages.filter((msg) => {
-            const isCurrentSender = areSameChatUserLabels(msg && msg.user ? msg.user : '', currentUserLabel);
-            const attachedReplies = Array.isArray(msg && msg.attachedReplies) ? msg.attachedReplies : [];
-            return isCurrentSender && attachedReplies.some((entry) => {
-                const text = String(entry && entry.text ? entry.text : '').trim();
-                const imageUrl = String(entry && entry.imageUrl ? entry.imageUrl : '').trim();
-                const attachmentUrl = String(entry && entry.attachmentUrl ? entry.attachmentUrl : '').trim();
-                return !!text || !!imageUrl || !!attachmentUrl;
-            });
-        });
+    const activeFilterMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
+    if (activeFilterMode === CHAT_FILTER_MODE_OWN) {
+        renderMessages = renderMessages.filter((msg) => areSameChatUserLabels(msg && msg.user ? msg.user : '', currentUserLabel));
+    } else if (activeFilterMode === CHAT_FILTER_MODE_TEACHER) {
+        renderMessages = renderMessages.filter((msg) => isTeacherChatUserLabel(msg && msg.user ? msg.user : ''));
     }
     renderMessages = sortPreparedChatMessagesForDisplay(renderMessages);
     if (preparedWelcomeMessage && welcomeRow > 0) {
@@ -23330,9 +23338,11 @@ function renderChatMessages(messages) {
     const prioritizeInitialThumbs = chatInitialHydrationPending === true;
 
     if (renderMessages.length === 0) {
-        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${chatShowAnsweredOnly
-            ? `<div class="chat-empty">No hay mensajes tuyos con respuesta.</div>`
-            : `<div class="chat-empty">Todavia no hay mensajes.</div>`}`;
+        messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${activeFilterMode === CHAT_FILTER_MODE_OWN
+            ? `<div class="chat-empty">No hay mensajes tuyos.</div>`
+            : (activeFilterMode === CHAT_FILTER_MODE_TEACHER
+                ? `<div class="chat-empty">No hay mensajes de ${escapeHtml(CHAT_DEFAULT_USER)}.</div>`
+                : `<div class="chat-empty">Todavia no hay mensajes.</div>`)}`;
         const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
         if (loadOlderBtn) {
             loadOlderBtn.addEventListener('click', () => {
@@ -24773,8 +24783,7 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
     if (showLoading) {
         messagesEl.innerHTML = getChatLoadingMarkup();
     }
-    const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
-    if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
+    syncChatHeaderFilterUi();
     try {
         const payload = await fetchChatMessages();
         chatWelcomeMessage = payload && payload.welcomeMessage ? payload.welcomeMessage : null;
@@ -25444,7 +25453,6 @@ async function openChatModal() {
         lockBodyScrollForChat();
         installChatViewportHandlers();
         const messagesEl = document.getElementById('chat-messages-list');
-        const answeredOnlySwitchEl = document.getElementById('chat-answered-only-switch');
         existingOverlay.classList.remove('is-hidden');
         existingOverlay.removeAttribute('aria-hidden');
         installChatLayoutResizeObserver();
@@ -25466,10 +25474,10 @@ async function openChatModal() {
         if (messagesEl && !messagesEl.children.length) {
             messagesEl.innerHTML = getChatLoadingMarkup();
         }
-        if (answeredOnlySwitchEl) answeredOnlySwitchEl.checked = !!chatShowAnsweredOnly;
+        syncChatHeaderFilterUi();
         syncChatAdminClearButtonVisibility();
         setChatAdminClearButtonBusy(false);
-        installChatAnsweredOnlySwitchHandler();
+        installChatHeaderFilterHandler();
         startChatAutoRefresh();
         if (chatAttachmentUploadInProgress) {
             const hasServerSnapshot = Array.isArray(chatLatestServerMessages) && chatLatestServerMessages.length > 0;
@@ -25506,12 +25514,17 @@ async function openChatModal() {
             <div class="chat-header" id="chat-header">
                 <h3 class="chat-title"><i id="chat-title-icon" class="fas fa-comments"></i> <span id="chat-title-text">Chat</span></h3>
                 <div class="chat-header-actions">
-                    <label class="chat-header-filter" for="chat-answered-only-switch" title="Mostrar solo mis mensajes con respuesta">
-                        <span class="chat-header-filter-icon global" aria-hidden="true"><i class="fas fa-comments"></i></span>
-                        <input type="checkbox" id="chat-answered-only-switch" ${chatShowAnsweredOnly ? 'checked' : ''}>
-                        <span class="chat-header-filter-switch-ui" aria-hidden="true"></span>
-                        <span class="chat-header-filter-icon answered" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
-                    </label>
+                    <div id="chat-header-filter" class="chat-header-filter" role="group" aria-label="Filtrar mensajes">
+                        <button type="button" class="chat-header-filter-btn${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_ALL ? ' is-active' : ''}" data-chat-filter-mode="${CHAT_FILTER_MODE_ALL}" aria-pressed="${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_ALL ? 'true' : 'false'}" title="Mostrar todos los mensajes">
+                            <i class="fas fa-comments" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="chat-header-filter-btn${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_OWN ? ' is-active' : ''}" data-chat-filter-mode="${CHAT_FILTER_MODE_OWN}" aria-pressed="${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_OWN ? 'true' : 'false'}" title="Mostrar solo mis mensajes">
+                            <i class="fas fa-comment-dots" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="chat-header-filter-btn${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_TEACHER ? ' is-active' : ''}" data-chat-filter-mode="${CHAT_FILTER_MODE_TEACHER}" aria-pressed="${normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_TEACHER ? 'true' : 'false'}" title="Mostrar solo los mensajes de ${escapeHtml(CHAT_DEFAULT_USER)}">
+                            <i class="fas fa-user-tie" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <button class="chat-close-btn" id="chat-close-btn" aria-label="Cerrar chat">
                         <i id="chat-close-btn-icon" class="fas fa-times"></i>
                     </button>
@@ -25690,7 +25703,7 @@ async function openChatModal() {
     });
 
     const closeBtn = document.getElementById('chat-close-btn');
-    installChatAnsweredOnlySwitchHandler();
+    installChatHeaderFilterHandler();
     syncChatAdminClearButtonVisibility();
     setChatAdminClearButtonBusy(false);
     if (closeBtn) {

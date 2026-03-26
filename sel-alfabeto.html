@@ -1127,12 +1127,6 @@
     min-height: 0;
     overscroll-behavior: contain;
     scroll-padding-bottom: 14px;
-    /* === WhatsApp-style scroll perf === */
-    will-change: scroll-position;
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
 }
 
 .chat-unread-indicator {
@@ -1289,9 +1283,6 @@
     gap: 8px;
     min-height: 100%;
     align-items: stretch;
-    /* === WhatsApp-style: GPU layer for message list === */
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
 }
 
 .chat-day-separator {
@@ -1330,10 +1321,6 @@
     box-shadow:
         0 18px 34px rgba(122, 103, 118, 0.17),
         0 7px 16px rgba(15, 23, 42, 0.14);
-    /* === WhatsApp-style perf === */
-    contain: layout style paint;
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
 }
 
 .chat-welcome-bubble::after {
@@ -1385,12 +1372,6 @@
     user-select: none;
     -webkit-touch-callout: none;
     touch-action: manipulation;
-    /* === WhatsApp-style perf: containment + GPU layer === */
-    contain: layout style paint;
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
 }
 
 .chat-message-item:not(.is-self) {
@@ -2550,50 +2531,94 @@
 
 /* ================================================================
    WhatsApp-style FAST-SCROLL optimizations
-   While the user swipes fast the class .fast-scrolling is toggled
-   on .chat-body.  It pauses animations, removes heavy filters and
-   complex box-shadows so the compositor can scroll at 60 fps.
+   Extremely aggressive: flat colours, zero shadows, zero filters,
+   zero animations. The chat looks "flat" for a split-second while
+   the finger is flicking, then springs back to the full design.
    ================================================================ */
-.chat-body.fast-scrolling .chat-message-item,
-.chat-body.fast-scrolling .chat-welcome-bubble,
-.chat-body.fast-scrolling .chat-message-main,
-.chat-body.fast-scrolling .chat-day-separator {
-    animation-play-state: paused !important;
+
+/* Kill ALL animations, transitions, filters inside the scroll area */
+.chat-body.fast-scrolling,
+.chat-body.fast-scrolling *,
+.chat-body.fast-scrolling *::before,
+.chat-body.fast-scrolling *::after {
+    animation: none !important;
     transition: none !important;
-}
-
-.chat-body.fast-scrolling .chat-message-item {
-    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.10) !important;
-}
-
-.chat-body.fast-scrolling .chat-message-item::after {
     filter: none !important;
+    -webkit-filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
-.chat-body.fast-scrolling .chat-message-main {
+/* Bubbles: flat solid color, zero shadows */
+.chat-body.fast-scrolling .chat-message-item {
     box-shadow: none !important;
+    background: var(--chat-received-bubble-solid) !important;
 }
 
-.chat-body.fast-scrolling .chat-user-label,
-.chat-body.fast-scrolling .chat-teacher-label span {
-    animation-play-state: paused !important;
+.chat-body.fast-scrolling .chat-message-item.is-self {
+    background: var(--chat-self-bubble-solid) !important;
 }
 
-.chat-body.fast-scrolling .chat-message-item.has-side-hit-area::before {
+.chat-body.fast-scrolling .chat-message-item.is-teacher-received,
+.chat-body.fast-scrolling .chat-message-item.is-passive-welcome-received {
+    background: var(--chat-welcome-bubble-outer-solid) !important;
+}
+
+.chat-body.fast-scrolling .chat-welcome-bubble {
+    box-shadow: none !important;
+    background: var(--chat-welcome-bubble-outer-solid) !important;
+}
+
+/* Inner main box: flat, no gradient, no inner shadow */
+.chat-body.fast-scrolling .chat-message-main {
+    background: inherit !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+}
+
+/* Hide the pico (tail triangle) — its drop-shadow is expensive */
+.chat-body.fast-scrolling .chat-message-item::after,
+.chat-body.fast-scrolling .chat-welcome-bubble::after {
     display: none !important;
 }
 
+/* Pseudo-element overlays (press shadows etc.) — gone */
+.chat-body.fast-scrolling .chat-message-item::before,
 .chat-body.fast-scrolling .chat-press-shadow-surface::before {
     display: none !important;
 }
 
-.chat-body.fast-scrolling .chat-message-reaction-badge,
-.chat-body.fast-scrolling .chat-message-thread-btn {
-    filter: none !important;
+/* Day separator: flat */
+.chat-body.fast-scrolling .chat-day-separator {
+    box-shadow: none !important;
 }
 
-.chat-body.fast-scrolling * {
-    animation-play-state: paused !important;
+/* Username gradient animation fallback to solid color */
+.chat-body.fast-scrolling .chat-user-label {
+    background: none !important;
+    -webkit-background-clip: unset !important;
+    background-clip: unset !important;
+    -webkit-text-fill-color: #1d4ed8 !important;
+    color: #1d4ed8 !important;
+}
+
+.chat-body.fast-scrolling .chat-user-label-self {
+    -webkit-text-fill-color: #0f766e !important;
+    color: #0f766e !important;
+}
+
+.chat-body.fast-scrolling .chat-teacher-label span {
+    background: none !important;
+    -webkit-background-clip: unset !important;
+    background-clip: unset !important;
+    -webkit-text-fill-color: #f59e0b !important;
+    color: #f59e0b !important;
+}
+
+/* Reaction / thread badges: no drop-shadow */
+.chat-body.fast-scrolling .chat-message-reaction-badge,
+.chat-body.fast-scrolling .chat-message-thread-btn {
+    text-shadow: none !important;
 }
 /* ================================================================ */
 
@@ -27414,54 +27439,50 @@ async function openChatModal() {
         });
 
         /* ============================================================
-           WhatsApp-style fast-scroll detector
-           Adds  .fast-scrolling  to .chat-body while the user is
-           flicking quickly.  This triggers CSS rules that strip heavy
-           shadows / filters / animations so the compositor can paint
-           at 60 fps with zero jank.
+           WhatsApp-style fast-scroll detector  (v2 – timestamp-based)
+           Uses scroll-event timestamps to measure velocity directly.
+           More reliable than rAF during iOS momentum scrolling.
            ============================================================ */
         (function initFastScrollDetector(el) {
             let lastY = el.scrollTop;
-            let rafId = 0;
-            let fastTimer = 0;
-            const VELOCITY_THRESHOLD = 28;   // px per frame
-            const SETTLE_MS = 120;           // ms to wait after speed drops
+            let lastT = 0;
+            let settleTimer = 0;
+            const SPEED_THRESHOLD = 800;  // px per second
+            const SETTLE_MS = 150;        // ms after last fast frame
 
-            function onFrame() {
+            el.addEventListener('scroll', function () {
+                const now = performance.now();
                 const currentY = el.scrollTop;
-                const delta = Math.abs(currentY - lastY);
-                lastY = currentY;
+                const dt = now - lastT;
 
-                if (delta > VELOCITY_THRESHOLD) {
-                    if (!el.classList.contains('fast-scrolling')) {
-                        el.classList.add('fast-scrolling');
+                if (lastT && dt > 0 && dt < 200) {
+                    const speed = (Math.abs(currentY - lastY) / dt) * 1000;
+                    if (speed > SPEED_THRESHOLD) {
+                        if (!el.classList.contains('fast-scrolling')) {
+                            el.classList.add('fast-scrolling');
+                        }
+                        clearTimeout(settleTimer);
+                        settleTimer = setTimeout(function () {
+                            el.classList.remove('fast-scrolling');
+                        }, SETTLE_MS);
                     }
-                    clearTimeout(fastTimer);
-                    fastTimer = setTimeout(() => {
-                        el.classList.remove('fast-scrolling');
-                    }, SETTLE_MS);
                 }
-                rafId = requestAnimationFrame(onFrame);
-            }
 
-            el.addEventListener('scroll', () => {
-                if (!rafId) rafId = requestAnimationFrame(onFrame);
+                lastY = currentY;
+                lastT = now;
             }, { passive: true });
 
-            el.addEventListener('scrollend', () => {
-                cancelAnimationFrame(rafId);
-                rafId = 0;
-                clearTimeout(fastTimer);
+            // Ensure cleanup on scrollend (Android / Chrome)
+            el.addEventListener('scrollend', function () {
+                clearTimeout(settleTimer);
                 el.classList.remove('fast-scrolling');
             }, { passive: true });
 
-            // Also stop on touch end / cancel (iOS doesn't fire scrollend)
-            el.addEventListener('touchend', () => {
-                setTimeout(() => {
-                    cancelAnimationFrame(rafId);
-                    rafId = 0;
+            // iOS doesn't fire scrollend reliably
+            el.addEventListener('touchend', function () {
+                setTimeout(function () {
                     el.classList.remove('fast-scrolling');
-                }, SETTLE_MS + 40);
+                }, SETTLE_MS + 50);
             }, { passive: true });
         })(chatBodyEl);
         /* ============================================================ */

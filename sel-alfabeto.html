@@ -10878,6 +10878,7 @@ const chatPendingUploadAnimationByAttachmentUrl = new Map();
 const chatPendingAttachmentUploads = new Map();
 const chatPendingAttachmentCancelByUrl = new Set();
 const chatActiveAttachmentUploadStateByUrl = new Map();
+let chatPendingAttachmentUploadProcessTimerId = null;
 let chatPendingUploadPersistenceDbPromise = null;
 let chatPendingUploadHydrationPromise = null;
 let chatPendingUploadHydrated = false;
@@ -13505,6 +13506,21 @@ function hasChatPendingAttachmentUploads() {
     return chatPendingAttachmentUploads.size > 0;
 }
 
+function scheduleChatPendingAttachmentUploadProcessing(delayMs = 0) {
+    if (chatPendingAttachmentUploadProcessTimerId) return;
+    const safeDelay = Math.max(0, Number(delayMs) || 0);
+    chatPendingAttachmentUploadProcessTimerId = setTimeout(async () => {
+        chatPendingAttachmentUploadProcessTimerId = null;
+        if (chatAttachmentUploadInProgress) return;
+        if (!hasChatPendingAttachmentUploads()) return;
+        try {
+            await retryPendingChatAttachmentUploads();
+        } catch (error) {
+            console.warn('Error procesando la cola de adjuntos del chat:', error);
+        }
+    }, safeDelay);
+}
+
 function buildChatMessagesSignature(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
     return messages.map(msg => {
@@ -14908,7 +14924,8 @@ function updateChatReplyPreview() {
     inputEl.classList.toggle('is-editing', isEditing);
     inputEl.classList.toggle('replying', hasReplyTarget && !isEditing);
     if (attachBtn) {
-        attachBtn.disabled = !!chatAttachmentUploadInProgress;
+        attachBtn.disabled = false;
+        attachBtn.setAttribute('aria-busy', chatAttachmentUploadInProgress ? 'true' : 'false');
         attachBtn.hidden = !!(isEditing && activeEditAttachment);
         if (attachBtn.hidden) closeChatAttachmentMenu();
     }
@@ -15449,6 +15466,9 @@ function cancelPendingChatAttachmentUploadByUrl(attachmentUrl) {
         renderMergedChatMessages(chatLatestServerMessages);
     }
     releaseChatBlobUrl(safeAttachmentUrl);
+    if (hasChatPendingAttachmentUploads()) {
+        scheduleChatPendingAttachmentUploadProcessing(40);
+    }
     return previousLength !== chatLocalEchoMessages.length || !!pendingEntry;
 }
 
@@ -19380,7 +19400,9 @@ function readFileAsDataBase64(file, options = {}) {
 
 function disableChatAttachmentUI(disabled) {
     const attachBtn = document.getElementById('chat-attach-btn');
-    if (attachBtn) attachBtn.disabled = !!disabled;
+    if (!attachBtn) return;
+    attachBtn.disabled = false;
+    attachBtn.setAttribute('aria-busy', disabled ? 'true' : 'false');
 }
 
 function isChatVoiceRecorderSupported() {
@@ -19831,7 +19853,6 @@ function closeChatVoiceRecorder(discardRecording = true) {
 }
 
 function openChatVoiceRecorder() {
-    if (chatAttachmentUploadInProgress) return;
     const overlay = document.getElementById('chat-voice-recorder-overlay');
     if (!overlay) return;
     closeChatAttachmentMenu();
@@ -19855,7 +19876,6 @@ function openChatVoiceRecorder() {
 }
 
 async function sendChatVoiceRecording() {
-    if (chatAttachmentUploadInProgress) return;
     const recorder = chatVoiceRecorderMediaRecorder;
     if (recorder && recorder.state !== 'inactive') {
         chatVoiceRecorderSendAfterStop = true;
@@ -19878,7 +19898,8 @@ async function sendChatVoiceRecording() {
         type: mimeType,
         lastModified: Date.now()
     });
-    const sourceInputId = setChatAttachmentInputFile('chat-attach-audio-input', file)
+    const shouldUseHtmlServiceUpload = !chatAttachmentUploadInProgress && !hasChatPendingAttachmentUploads();
+    const sourceInputId = shouldUseHtmlServiceUpload && setChatAttachmentInputFile('chat-attach-audio-input', file)
         ? 'chat-attach-audio-input'
         : '';
     setChatVoiceRecorderUiState('sending', 'Enviando nota de voz...');
@@ -20049,6 +20070,11 @@ async function performChatAttachmentUpload(uploadEntry) {
             markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
             removeChatPendingAttachmentUpload(safeAttachmentUrl);
             clearChatAttachmentInputSelection(sourceInputId);
+            scheduleChatAttachmentEchoReconciliation(safeAttachmentUrl, {
+                initialDelayMs: 650,
+                attemptDelayMs: 950,
+                maxAttempts: 8
+            });
             return { status: 'success', replyThreadRow };
         }
 
@@ -20135,6 +20161,11 @@ async function performChatAttachmentUpload(uploadEntry) {
         markLocalEchoAttachmentUploadCompleted(safeAttachmentUrl);
         removeChatPendingAttachmentUpload(safeAttachmentUrl);
         clearChatAttachmentInputSelection(sourceInputId);
+        scheduleChatAttachmentEchoReconciliation(safeAttachmentUrl, {
+            initialDelayMs: 650,
+            attemptDelayMs: 950,
+            maxAttempts: 8
+        });
         return { status: 'success', replyThreadRow };
     } catch (error) {
         if (isChatAttachmentUploadCancelledError(error)) {
@@ -20194,6 +20225,9 @@ async function performChatAttachmentUpload(uploadEntry) {
         clearChatActiveAttachmentUploadState(safeAttachmentUrl);
         chatAttachmentUploadInProgress = false;
         disableChatAttachmentUI(false);
+        if (hasChatPendingAttachmentUploads()) {
+            scheduleChatPendingAttachmentUploadProcessing(40);
+        }
     }
 }
 
@@ -20271,7 +20305,6 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
     const inputEl = document.getElementById('chat-input');
     if (!file || !inputEl) return false;
     if (!validateChatAttachmentSize(file, sourceInputId)) return false;
-    if (chatAttachmentUploadInProgress) return false;
 
     const fileSize = Number(file.size) || 0;
 
@@ -20309,8 +20342,6 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
     let attachmentMediaWidth = 0;
     let attachmentMediaHeight = 0;
 
-    chatAttachmentUploadInProgress = true;
-    disableChatAttachmentUI(true);
     closeChatAttachmentMenu();
 
     if (kind === 'image') {
@@ -20347,8 +20378,6 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
         if (!canUseHtmlServiceAttachmentInput(sourceInputId)) {
             clearChatAttachmentInputSelection(sourceInputId);
         }
-        chatAttachmentUploadInProgress = false;
-        disableChatAttachmentUI(false);
         return true;
     }
 
@@ -20402,69 +20431,8 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
         lastAttemptAt: 0,
         queuedAt: Date.now()
     });
-
-    try {
-        const result = await performChatAttachmentUpload({
-            localObjectUrl,
-            file,
-            fileSize,
-            kind,
-            sourceKind,
-            sourceInputId: String(sourceInputId || '').trim(),
-            userLabel: identity.displayName,
-            messageText: caption,
-            quotedReply: serializedReplyTarget,
-            payloadMessage,
-            attachmentName,
-            attachmentMimeType,
-            attachmentClientToken,
-            attachmentMediaWidth,
-            attachmentMediaHeight,
-            replyThreadRow: activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0
-        });
-        if (result && result.status === 'success') {
-            const followUpScrollSnapshot = replyScrollSnapshot
-                ? (captureChatScrollSnapshot() || replyScrollSnapshot)
-                : null;
-            setTimeout(() => {
-                if (document.getElementById('chat-overlay')) {
-                    void refreshChatMessages(
-                        false,
-                        false,
-                        followUpScrollSnapshot
-                            ? { preserveScrollSnapshot: followUpScrollSnapshot }
-                            : null
-                    ).then(() => {
-                        if (shouldScrollReplyThreadToBottom) {
-                            scrollChatThreadToBottom(activeReplyTarget && activeReplyTarget.row ? activeReplyTarget.row : 0, false);
-                        }
-                    });
-                }
-            }, 180);
-            scheduleChatAttachmentEchoReconciliation(localObjectUrl, {
-                initialDelayMs: 650,
-                attemptDelayMs: 950,
-                maxAttempts: 8,
-                preserveScrollSnapshot: followUpScrollSnapshot
-            });
-            return true;
-        }
-        return !!(result && result.status === 'queued');
-    } catch (error) {
-        console.warn('Error enviando adjunto al chat:', error);
-        clearChatPendingUploadProgressAnimation(localObjectUrl);
-        chatLocalEchoMessages = chatLocalEchoMessages.filter((msg) => String(msg.attachmentUrl || '') !== localObjectUrl);
-        renderMergedChatMessages(chatLatestServerMessages);
-        removeChatPendingAttachmentUpload(localObjectUrl);
-        releaseChatBlobUrl(localObjectUrl);
-        if (String(error && error.message || '') === 'missing_drive_scope') {
-            alert('No se puede subir la foto todavía: falta autorizar Drive en Apps Script. Ejecuta authDrive_ y vuelve a desplegar la Web App.');
-        }
-        return false;
-    } finally {
-        chatAttachmentUploadInProgress = false;
-        disableChatAttachmentUI(false);
-    }
+    scheduleChatPendingAttachmentUploadProcessing(0);
+    return true;
 }
 
 function triggerChatAttachmentInput(inputId) {
@@ -25391,7 +25359,6 @@ async function submitChatMessage() {
     const inputEl = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
     if (!inputEl || !sendBtn) return;
-    if (chatAttachmentUploadInProgress) return;
 
     const message = inputEl.value.trim();
     const identity = getStudentIdentityForChat();
@@ -25791,10 +25758,10 @@ async function openChatModal() {
                         <form id="chat-attachment-upload-form">
                             <input type="hidden" id="chat-attachment-payload-json" name="chat_payload_json" value="">
                             <input type="hidden" id="chat-attachment-input-source" name="chat_input_source" value="">
-                            <input type="file" id="chat-attach-photo-input" name="chat_attach_photo" accept="image/*" hidden>
-                            <input type="file" id="chat-attach-audio-input" name="chat_attach_audio" accept="audio/*" hidden>
-                            <input type="file" id="chat-attach-video-input" name="chat_attach_video" accept="video/*" hidden>
-                            <input type="file" id="chat-attach-file-input" name="chat_attach_file" accept="${escapeHtml(CHAT_FILE_ATTACHMENT_ACCEPT)}" hidden>
+                            <input type="file" id="chat-attach-photo-input" name="chat_attach_photo" accept="image/*" multiple hidden>
+                            <input type="file" id="chat-attach-audio-input" name="chat_attach_audio" accept="audio/*" multiple hidden>
+                            <input type="file" id="chat-attach-video-input" name="chat_attach_video" accept="video/*" multiple hidden>
+                            <input type="file" id="chat-attach-file-input" name="chat_attach_file" accept="${escapeHtml(CHAT_FILE_ATTACHMENT_ACCEPT)}" multiple hidden>
                         </form>
                         <textarea id="chat-input" class="chat-input" maxlength="280" placeholder="Mensaje..."></textarea>
                     </div>
@@ -26161,21 +26128,35 @@ async function openChatModal() {
         });
     }
 
-    const onAttachmentInputChange = (inputEl, forcedKind = '') => {
+    const onAttachmentInputChange = async (inputEl, forcedKind = '') => {
         if (!inputEl) return;
         finishChatNativeAttachmentPickerGuard({ armBlock: true });
-        const picked = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
-        if (!picked) return;
-        if (String(forcedKind || '').trim().toLowerCase() === 'file' && !isChatFilePickerAllowedFile(picked)) {
-            inputEl.value = '';
-            alert('Desde Archivo solo se permiten documentos y audios. Para imagenes o videos usa Foto o Video.');
-            return;
+        const pickedFiles = Array.from(inputEl.files || []).filter((entry) => entry instanceof File);
+        if (!pickedFiles.length) return;
+
+        const shouldForceDirectUpload = pickedFiles.length > 1 || chatAttachmentUploadInProgress || hasChatPendingAttachmentUploads();
+        let submittedAny = false;
+
+        for (const picked of pickedFiles) {
+            if (String(forcedKind || '').trim().toLowerCase() === 'file' && !isChatFilePickerAllowedFile(picked)) {
+                alert('Desde Archivo solo se permiten documentos y audios. Para imagenes o videos usa Foto o Video.');
+                continue;
+            }
+            if (!validateChatAttachmentSize(picked, inputEl.id || '')) {
+                continue;
+            }
+            if (!submittedAny) {
+                triggerChatUiHapticFeedback();
+                submittedAny = true;
+            }
+            await submitChatAttachment(
+                picked,
+                forcedKind,
+                shouldForceDirectUpload ? '' : (inputEl.id || '')
+            );
         }
-        if (!validateChatAttachmentSize(picked, inputEl.id || '')) {
-            return;
-        }
-        triggerChatUiHapticFeedback();
-        void submitChatAttachment(picked, forcedKind, inputEl.id || '');
+
+        inputEl.value = '';
     };
     if (photoAttachInput) {
         photoAttachInput.addEventListener('change', () => onAttachmentInputChange(photoAttachInput, 'image'));

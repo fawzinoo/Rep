@@ -841,6 +841,39 @@
     box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
 }
 
+.chat-header-filter-btn.has-channel-alert {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.96) 0%, rgba(220, 38, 38, 0.98) 100%);
+    color: #fff7f7 !important;
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.16),
+        0 10px 22px rgba(127, 29, 29, 0.28);
+    animation: chatHeaderFilterPulseAlert 1.05s ease-in-out infinite;
+}
+
+.chat-header-filter-btn.has-channel-alert:hover {
+    background: linear-gradient(180deg, rgba(248, 113, 113, 0.98) 0%, rgba(220, 38, 38, 1) 100%);
+    color: #ffffff !important;
+}
+
+.chat-header-filter-btn.has-channel-alert i {
+    color: currentColor;
+}
+
+@keyframes chatHeaderFilterPulseAlert {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow:
+            0 0 0 0 rgba(248, 113, 113, 0.32),
+            0 10px 22px rgba(127, 29, 29, 0.28);
+    }
+    50% {
+        transform: scale(1.08);
+        box-shadow:
+            0 0 0 8px rgba(248, 113, 113, 0),
+            0 14px 28px rgba(127, 29, 29, 0.34);
+    }
+}
+
 .chat-header-filter-btn[data-chat-filter-mode="all"].is-active {
     color: #0f766e;
 }
@@ -11190,6 +11223,10 @@ const CHAT_FILTER_MODE_ALL = 'all';
 const CHAT_FILTER_MODE_OWN = 'own';
 const CHAT_FILTER_MODE_TEACHER = 'teacher';
 let chatMessageFilterMode = CHAT_FILTER_MODE_ALL;
+const chatHeaderFilterAlertState = {
+    [CHAT_FILTER_MODE_ALL]: false,
+    [CHAT_FILTER_MODE_TEACHER]: false
+};
 let chatTeacherThreadTarget = '';
 let chatTeacherThreadMenuOpen = false;
 let chatTeacherDirectoryUsers = [];
@@ -14032,6 +14069,60 @@ function updateChatNotificationState(messages, notifyOnNewMessage, previousMessa
     return hasNewMessage;
 }
 
+function isIncomingChatMessageFromOtherUser(msg, currentUserLabel = '') {
+    const safeCurrentUserLabel = normalizeChatUserLabel(currentUserLabel || '');
+    const msgUser = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const row = Number(msg && msg.row ? msg.row : 0) || 0;
+    if (!msgUser) return false;
+    if (row > 0 && isChatRowOwnedByCurrentClient(row)) return false;
+    return !areSameChatUserLabels(msgUser, safeCurrentUserLabel);
+}
+
+function getIncomingChatChannelAlertState(previousMessages, nextMessages, currentUserLabel = '') {
+    const nextState = {
+        [CHAT_FILTER_MODE_ALL]: false,
+        [CHAT_FILTER_MODE_TEACHER]: false
+    };
+    const newMessages = collectNewChatMessages(previousMessages, nextMessages);
+    newMessages.forEach((msg) => {
+        if (!isIncomingChatMessageFromOtherUser(msg, currentUserLabel)) return;
+        if (shouldIncludeChatMessageInActiveFilter(msg, CHAT_FILTER_MODE_TEACHER, currentUserLabel)) {
+            nextState[CHAT_FILTER_MODE_TEACHER] = true;
+            return;
+        }
+        if (shouldIncludeChatMessageInActiveFilter(msg, CHAT_FILTER_MODE_ALL, currentUserLabel)) {
+            nextState[CHAT_FILTER_MODE_ALL] = true;
+        }
+    });
+    return nextState;
+}
+
+function setChatHeaderFilterAlert(mode, shouldAlert = true) {
+    const normalizedMode = normalizeChatMessageFilterMode(mode);
+    if (normalizedMode !== CHAT_FILTER_MODE_ALL && normalizedMode !== CHAT_FILTER_MODE_TEACHER) return false;
+    const nextValue = !!shouldAlert;
+    if (!!chatHeaderFilterAlertState[normalizedMode] === nextValue) return false;
+    chatHeaderFilterAlertState[normalizedMode] = nextValue;
+    return true;
+}
+
+function clearChatHeaderFilterAlert(mode) {
+    return setChatHeaderFilterAlert(mode, false);
+}
+
+function applyIncomingChatChannelAlerts(alertState) {
+    let hasChanges = false;
+    if (alertState && alertState[CHAT_FILTER_MODE_ALL]) {
+        hasChanges = setChatHeaderFilterAlert(CHAT_FILTER_MODE_ALL, true) || hasChanges;
+    }
+    if (alertState && alertState[CHAT_FILTER_MODE_TEACHER]) {
+        hasChanges = setChatHeaderFilterAlert(CHAT_FILTER_MODE_TEACHER, true) || hasChanges;
+    }
+    if (hasChanges) {
+        syncChatHeaderFilterUi();
+    }
+}
+
 function isChatOverlayVisible() {
     const overlay = document.getElementById('chat-overlay');
     return !!(
@@ -15653,9 +15744,17 @@ function syncChatHeaderFilterUi() {
     if (filterEl) {
         const activeMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
         filterEl.querySelectorAll('.chat-header-filter-btn[data-chat-filter-mode]').forEach((buttonEl) => {
-            const isActive = String(buttonEl.dataset.chatFilterMode || '').trim() === activeMode;
+            const buttonMode = normalizeChatMessageFilterMode(buttonEl.dataset.chatFilterMode || '');
+            const isActive = buttonMode === activeMode;
+            const hasChannelAlert = !!chatHeaderFilterAlertState[buttonMode];
             buttonEl.classList.toggle('is-active', isActive);
+            buttonEl.classList.toggle('has-channel-alert', hasChannelAlert);
             buttonEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            if (hasChannelAlert) {
+                buttonEl.setAttribute('data-chat-channel-alert', 'true');
+            } else {
+                buttonEl.removeAttribute('data-chat-channel-alert');
+            }
         });
     }
     syncChatTeacherThreadPickerUi();
@@ -15856,7 +15955,6 @@ function installChatHeaderFilterHandler() {
     const filterEl = document.getElementById('chat-header-filter');
     if (!filterEl || filterEl.dataset.bound === '1') return;
     filterEl.dataset.bound = '1';
-    const activeMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
     syncChatHeaderFilterUi();
     filterEl.addEventListener('click', (event) => {
         const buttonEl = event.target && event.target.closest
@@ -15864,7 +15962,13 @@ function installChatHeaderFilterHandler() {
             : null;
         if (!buttonEl) return;
         const nextMode = normalizeChatMessageFilterMode(buttonEl.dataset.chatFilterMode || '');
-        if (nextMode === chatMessageFilterMode) return;
+        let shouldResyncUi = clearChatHeaderFilterAlert(nextMode);
+        if (nextMode === chatMessageFilterMode) {
+            if (shouldResyncUi) {
+                syncChatHeaderFilterUi();
+            }
+            return;
+        }
         chatMessageFilterMode = nextMode;
         if (nextMode !== CHAT_FILTER_MODE_TEACHER) {
             closeChatTeacherThreadMenu();
@@ -17199,6 +17303,8 @@ function resetChatConversationLocalState() {
     chatOwnedRowIds.clear();
     saveChatOwnedRowIds();
     resetChatHistoryPaginationState(true);
+    clearChatHeaderFilterAlert(CHAT_FILTER_MODE_ALL);
+    clearChatHeaderFilterAlert(CHAT_FILTER_MODE_TEACHER);
     resetChatUnreadIndicator();
     if (document.getElementById('chat-overlay')) {
         renderMergedChatMessages([]);
@@ -25834,12 +25940,18 @@ async function refreshChatMessages(showLoading = true, notifyOnNewMessage = fals
             await preloadChatThumbnails(chatLatestServerMessages);
         }
         reconcileLocalEchoWithServer(chatLatestServerMessages, previousServerMessages);
+        const incomingChannelAlertState = (chatHasLoadedOnce && notifyOnNewMessage)
+            ? getIncomingChatChannelAlertState(previousServerMessages, chatLatestServerMessages, currentUserLabel)
+            : null;
         const hasNewMessage = updateChatNotificationState(
             chatLatestServerMessages,
             notifyOnNewMessage,
             previousServerMessages,
             currentUserLabel
         );
+        if (incomingChannelAlertState) {
+            applyIncomingChatChannelAlerts(incomingChannelAlertState);
+        }
         const unreadIncomingCount = hasNewMessage
             ? countIncomingUnreadMessages(previousServerMessages, chatLatestServerMessages, currentUserLabel)
             : 0;

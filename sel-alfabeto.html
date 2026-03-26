@@ -2386,6 +2386,15 @@
     padding-right: 0;
 }
 
+.chat-message-item.is-self.has-primary-media-block.has-full-height-reaction-column .chat-primary-media-stack {
+    padding-right: 0;
+}
+
+.chat-message-item.is-self.has-primary-media-block.has-full-height-reaction-column .chat-audio-block {
+    padding-left: 8px;
+    padding-right: 22px;
+}
+
 .chat-message-item.has-text-with-attachment .chat-primary-media-stack {
     margin-top: 0;
     padding-top: 0;
@@ -10770,6 +10779,9 @@ const CHAT_LONG_PRESS_DELETE_MS = 320;
 const CHAT_LONG_PRESS_CLICK_BLOCK_MS = 2000;
 const CHAT_TAP_MAX_MOVE_PX = 12;
 const CHAT_TAP_SUPPRESS_CLICK_MS = 120;
+const CHAT_ATTACH_MENU_DISMISS_BLOCK_MS = 260;
+const CHAT_NATIVE_ATTACHMENT_PICKER_PENDING_MS = 1800;
+const CHAT_NATIVE_ATTACHMENT_PICKER_DISMISS_BLOCK_MS = 320;
 const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 72;
 const CHAT_LOAD_OLDER_TRIGGER_PX = 56;
 const CHAT_PENDING_ATTACHMENT_RETRY_COOLDOWN_MS = 4000;
@@ -10812,6 +10824,13 @@ let chatIgnoreOwnMessageClickUntil = 0;
 let chatIgnoreMessageClickUntil = 0;
 let chatSuppressNextMessageClick = false;
 let chatSuppressNextMessageClickTimerId = null;
+let chatAttachMenuDismissBlockUntil = 0;
+let chatNativeAttachmentPickerPending = false;
+let chatNativeAttachmentPickerActive = false;
+let chatNativeAttachmentPickerPendingInputId = '';
+let chatNativeAttachmentPickerLaunchAt = 0;
+let chatNativeAttachmentPickerDismissBlockUntil = 0;
+let chatNativeAttachmentPickerPendingTimerId = null;
 let chatMessageActionMenuState = null;
 let chatIgnoreMessageActionCloseUntil = 0;
 let chatDeleteAllInProgress = false;
@@ -15544,6 +15563,11 @@ function getChatMainBlockShadowSurface(itemEl) {
     return itemEl.querySelector('.chat-message-main.chat-press-shadow-surface');
 }
 
+function isChatShadowIgnoredTarget(targetEl) {
+    if (!targetEl || !targetEl.closest) return false;
+    return !!targetEl.closest('.chat-message-thread-btn, .chat-message-reaction-badge, .chat-image-thumb-btn, .chat-file-link-btn, .chat-file-thumb-btn, .chat-file-thumb-download-btn, .chat-audio-card, .chat-audio-action-btn, .chat-audio-progress, .chat-audio-progress-fill, .chat-audio-player, .chat-video-inline-shell, .chat-video-player, .chat-video-inline-open-btn, .chat-video-inline-play-btn, .chat-video-inline-download-btn, button, a, audio, video');
+}
+
 function getChatEventClientPoint(event) {
     if (!event) return null;
     if (Array.isArray(event.touches) && event.touches[0]) {
@@ -15632,6 +15656,7 @@ function resolveChatReplyReactableFromPoint(scopeEl, event) {
 
 function resolveChatBlockShadowSurface(targetEl, scopeEl = null) {
     if (!targetEl || !targetEl.closest) return null;
+    if (isChatShadowIgnoredTarget(targetEl)) return null;
 
     const directSurface = targetEl.closest('.chat-press-shadow-surface');
     if (directSurface) {
@@ -19116,6 +19141,135 @@ function closeChatAttachmentMenu() {
     if (menu) menu.hidden = true;
 }
 
+function isChatAttachmentMenuOpen() {
+    const menu = document.getElementById('chat-attach-menu');
+    return !!(menu && !menu.hidden);
+}
+
+function isChatAttachmentMenuUiTarget(targetEl) {
+    return !!(targetEl && targetEl.closest && targetEl.closest('#chat-attach-menu, #chat-attach-btn'));
+}
+
+function armChatAttachmentMenuDismissBlock(durationMs = CHAT_ATTACH_MENU_DISMISS_BLOCK_MS) {
+    const safeDuration = Math.max(CHAT_TAP_SUPPRESS_CLICK_MS, Number(durationMs) || 0);
+    chatSuppressNextMessageClick = true;
+    chatIgnoreMessageClickUntil = Date.now() + safeDuration;
+    chatAttachMenuDismissBlockUntil = Date.now() + safeDuration;
+    scheduleChatSuppressNextMessageClickReset(safeDuration);
+}
+
+function consumeChatAttachmentMenuOutsideInteraction(event) {
+    const targetEl = event && event.target && event.target.closest
+        ? event.target
+        : null;
+    if (isChatAttachmentMenuUiTarget(targetEl)) {
+        return false;
+    }
+    const shouldConsume = isChatAttachmentMenuOpen() || Date.now() < chatAttachMenuDismissBlockUntil;
+    if (!shouldConsume) {
+        return false;
+    }
+    if (isChatAttachmentMenuOpen()) {
+        closeChatAttachmentMenu();
+    }
+    armChatAttachmentMenuDismissBlock();
+    if (event && event.cancelable) {
+        event.preventDefault();
+    }
+    if (event && typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+    } else if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    return true;
+}
+
+function clearChatNativeAttachmentPickerPendingTimer() {
+    if (chatNativeAttachmentPickerPendingTimerId) {
+        clearTimeout(chatNativeAttachmentPickerPendingTimerId);
+        chatNativeAttachmentPickerPendingTimerId = null;
+    }
+}
+
+function startChatNativeAttachmentPickerGuard(inputId = '') {
+    chatNativeAttachmentPickerPending = true;
+    chatNativeAttachmentPickerActive = false;
+    chatNativeAttachmentPickerPendingInputId = String(inputId || '').trim();
+    chatNativeAttachmentPickerLaunchAt = Date.now();
+    clearChatNativeAttachmentPickerPendingTimer();
+    chatNativeAttachmentPickerPendingTimerId = setTimeout(() => {
+        chatNativeAttachmentPickerPending = false;
+        chatNativeAttachmentPickerActive = false;
+        chatNativeAttachmentPickerPendingInputId = '';
+        chatNativeAttachmentPickerLaunchAt = 0;
+        clearChatNativeAttachmentPickerPendingTimer();
+    }, CHAT_NATIVE_ATTACHMENT_PICKER_PENDING_MS);
+}
+
+function markChatNativeAttachmentPickerActive() {
+    if (!chatNativeAttachmentPickerPending) return false;
+    if (!chatNativeAttachmentPickerLaunchAt) return false;
+    if (Date.now() - chatNativeAttachmentPickerLaunchAt > CHAT_NATIVE_ATTACHMENT_PICKER_PENDING_MS) {
+        return false;
+    }
+    chatNativeAttachmentPickerActive = true;
+    return true;
+}
+
+function armChatNativeAttachmentPickerDismissBlock(durationMs = CHAT_NATIVE_ATTACHMENT_PICKER_DISMISS_BLOCK_MS) {
+    const safeDuration = Math.max(CHAT_TAP_SUPPRESS_CLICK_MS, Number(durationMs) || 0);
+    chatSuppressNextMessageClick = true;
+    chatIgnoreMessageClickUntil = Date.now() + safeDuration;
+    chatNativeAttachmentPickerDismissBlockUntil = Date.now() + safeDuration;
+    scheduleChatSuppressNextMessageClickReset(safeDuration);
+}
+
+function finishChatNativeAttachmentPickerGuard(options = {}) {
+    const shouldArmBlock = !options || !Object.prototype.hasOwnProperty.call(options, 'armBlock')
+        ? true
+        : !!options.armBlock;
+    const hadGuard = chatNativeAttachmentPickerPending || chatNativeAttachmentPickerActive;
+    chatNativeAttachmentPickerPending = false;
+    chatNativeAttachmentPickerActive = false;
+    chatNativeAttachmentPickerPendingInputId = '';
+    chatNativeAttachmentPickerLaunchAt = 0;
+    clearChatNativeAttachmentPickerPendingTimer();
+    if (hadGuard && shouldArmBlock) {
+        armChatNativeAttachmentPickerDismissBlock();
+    }
+    return hadGuard;
+}
+
+function handleChatNativeAttachmentPickerResume() {
+    if (!chatNativeAttachmentPickerPending && !chatNativeAttachmentPickerActive) return false;
+    return finishChatNativeAttachmentPickerGuard({ armBlock: true });
+}
+
+function consumeChatNativeAttachmentPickerOutsideInteraction(event) {
+    const targetEl = event && event.target && event.target.closest
+        ? event.target
+        : null;
+    if (isChatAttachmentMenuUiTarget(targetEl)) {
+        return false;
+    }
+    const shouldConsume = chatNativeAttachmentPickerActive || Date.now() < chatNativeAttachmentPickerDismissBlockUntil;
+    if (!shouldConsume) {
+        return false;
+    }
+    if (chatNativeAttachmentPickerActive) {
+        finishChatNativeAttachmentPickerGuard({ armBlock: true });
+    }
+    if (event && event.cancelable) {
+        event.preventDefault();
+    }
+    if (event && typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+    } else if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    return true;
+}
+
 function closeChatEmojiMenu() {
     const menu = document.getElementById('chat-emoji-menu');
     if (menu) menu.hidden = true;
@@ -20315,6 +20469,7 @@ function triggerChatAttachmentInput(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
     input.value = '';
+    startChatNativeAttachmentPickerGuard(inputId);
     input.click();
 }
 
@@ -23234,6 +23389,7 @@ function renderChatMessages(messages) {
 
         const resolvePressedSideHitAreaItem = (event) => {
             if (!event || !event.target || !event.target.closest) return null;
+            if (isChatShadowIgnoredTarget(event.target)) return null;
             if (resolveChatReplyReactableFromPoint(messagesEl, event)) return null;
             const targetItem = event.target.closest('.chat-message-item.has-side-hit-area');
             if (!targetItem || !messagesEl.contains(targetItem)) return null;
@@ -23283,6 +23439,7 @@ function renderChatMessages(messages) {
 
         const resolvePressedBlockShadowSurface = (event) => {
             if (!event || !event.target) return null;
+            if (isChatShadowIgnoredTarget(event.target)) return null;
             return resolveChatReplyReactableFromPoint(messagesEl, event)
                 || resolveChatBlockShadowSurface(event.target, messagesEl);
         };
@@ -24034,20 +24191,19 @@ function renderChatMessages(messages) {
             `;
             } else if (showAudio) {
                 compactPrimaryMediaHtml = `
-                <span class="chat-message-main-inline-media-stack">
-                    <span class="chat-message-main-inline-media chat-message-reply-audio">
-                        <div
-                            class="${audioCardClass}"
-                            data-audio-key="${escapeHtml(audioKey)}"
-                            data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
-                            data-audio-file-id="${escapeHtml(attachmentFileId)}"
-                            data-audio-download-url="${escapeHtml(audioDownloadUrl || attachmentUrl)}"
-                            data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
-                        >
-                            <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
-                                <i class="${audioActionIconClass}" aria-hidden="true"></i>
-                            </button>
-                            <div class="chat-audio-main">
+                <div class="chat-audio-block chat-message-main-inline-media-stack">
+                    <div
+                        class="${audioCardClass}"
+                        data-audio-key="${escapeHtml(audioKey)}"
+                        data-audio-name="${escapeHtml(attachmentName || 'audio-chat.mp3')}"
+                        data-audio-file-id="${escapeHtml(attachmentFileId)}"
+                        data-audio-download-url="${escapeHtml(audioDownloadUrl || attachmentUrl)}"
+                        data-requires-download="${shouldRequireAudioDownload ? '1' : '0'}"
+                    >
+                        <button type="button" class="chat-audio-action-btn ${audioActionStateClass}" aria-label="${escapeHtml(audioActionLabel)}">
+                            <i class="${audioActionIconClass}" aria-hidden="true"></i>
+                        </button>
+                        <div class="chat-audio-main">
                             <div class="chat-audio-progress">
                                 <span class="chat-audio-progress-fill" style="width:${audioProgress}%"></span>
                             </div>
@@ -24056,18 +24212,17 @@ function renderChatMessages(messages) {
                                 <span class="chat-audio-total-time">${audioTotalTime}</span>
                             </div>
                         </div>
-                            <audio
-                                class="chat-audio-player"
-                                preload="auto"
-                                playsinline
-                                src="${escapeHtml(audioSrc)}"
-                                data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"
-                                data-candidate-index="${audioCandidateIndex}"
-                            ></audio>
-                        </div>
-                    </span>
+                        <audio
+                            class="chat-audio-player"
+                            preload="auto"
+                            playsinline
+                            src="${escapeHtml(audioSrc)}"
+                            data-candidates="${escapeHtml(audioUrlCandidates.join('||'))}"
+                            data-candidate-index="${audioCandidateIndex}"
+                        ></audio>
+                    </div>
                     ${compactUploadProgressHtml}
-                </span>
+                </div>
             `;
             } else if (showFile) {
                 compactPrimaryMediaHtml = `
@@ -24971,16 +25126,27 @@ function requestChatRefreshOnResume() {
 }
 
 document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        markChatNativeAttachmentPickerActive();
+        return;
+    }
+    handleChatNativeAttachmentPickerResume();
     if (document.visibilityState === 'visible') {
         requestChatRefreshOnResume();
     }
 });
 
+window.addEventListener('blur', () => {
+    markChatNativeAttachmentPickerActive();
+});
+
 window.addEventListener('focus', () => {
+    handleChatNativeAttachmentPickerResume();
     requestChatRefreshOnResume();
 });
 
 window.addEventListener('pageshow', () => {
+    handleChatNativeAttachmentPickerResume();
     requestChatRefreshOnResume();
 });
 
@@ -25985,6 +26151,7 @@ async function openChatModal() {
 
     const onAttachmentInputChange = (inputEl, forcedKind = '') => {
         if (!inputEl) return;
+        finishChatNativeAttachmentPickerGuard({ armBlock: true });
         const picked = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
         if (!picked) return;
         if (String(forcedKind || '').trim().toLowerCase() === 'file' && !isChatFilePickerAllowedFile(picked)) {
@@ -26127,6 +26294,8 @@ async function openChatModal() {
 
     if (chatModalEl) {
         chatModalEl.addEventListener('pointerdown', (event) => {
+            if (consumeChatNativeAttachmentPickerOutsideInteraction(event)) return;
+            if (consumeChatAttachmentMenuOutsideInteraction(event)) return;
             if (!chatUnreadIncomingCount) return;
             if (!event.target || !event.target.closest) return;
             if (event.target.closest('.chat-footer, #chat-input, #chat-send-btn, #chat-unread-indicator')) {
@@ -26134,12 +26303,18 @@ async function openChatModal() {
             }
         }, true);
         chatModalEl.addEventListener('touchstart', (event) => {
+            if (consumeChatNativeAttachmentPickerOutsideInteraction(event)) return;
+            if (consumeChatAttachmentMenuOutsideInteraction(event)) return;
             if (!chatUnreadIncomingCount) return;
             if (!event.target || !event.target.closest) return;
             if (event.target.closest('.chat-footer, #chat-input, #chat-send-btn, #chat-unread-indicator')) {
                 dismissChatUnreadIndicatorFromInteraction(event);
             }
-        }, { passive: true, capture: true });
+        }, { passive: false, capture: true });
+        chatModalEl.addEventListener('click', (event) => {
+            if (consumeChatNativeAttachmentPickerOutsideInteraction(event)) return;
+            if (consumeChatAttachmentMenuOutsideInteraction(event)) return;
+        }, true);
     }
 
     window.addEventListener('resize', () => {

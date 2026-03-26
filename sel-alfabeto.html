@@ -1120,6 +1120,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    will-change: scroll-position;
     touch-action: pan-y;
     background: linear-gradient(180deg, rgba(247, 242, 235, 0.96) 0%, rgba(241, 235, 227, 0.98) 100%);
     position: relative;
@@ -7401,6 +7402,60 @@ body.chat-typing .chat-footer {
     box-shadow: none;
 }
 
+/* Durante scroll rapido en moviles, quitamos capas pesadas para que Safari no rasterice borroso los bocadillos */
+body.chat-scrolling-fast .chat-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body.chat-scrolling-fast .chat-modal,
+body.chat-scrolling-fast .chat-footer,
+body.chat-scrolling-fast .chat-day-separator,
+body.chat-scrolling-fast .chat-welcome-bubble,
+body.chat-scrolling-fast .chat-message-item,
+body.chat-scrolling-fast .chat-message-main,
+body.chat-scrolling-fast .chat-message-reply,
+body.chat-scrolling-fast .chat-image-thumb-btn,
+body.chat-scrolling-fast .chat-image-thumb,
+body.chat-scrolling-fast .chat-video-inline-shell,
+body.chat-scrolling-fast .chat-audio-card,
+body.chat-scrolling-fast .chat-file-thumb-card,
+body.chat-scrolling-fast .chat-unread-indicator,
+body.chat-scrolling-fast .chat-jump-bottom-btn {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+body.chat-scrolling-fast .chat-message-item::before,
+body.chat-scrolling-fast .chat-message-item::after,
+body.chat-scrolling-fast .chat-welcome-bubble::after,
+body.chat-scrolling-fast .chat-press-shadow-surface::before,
+body.chat-scrolling-fast .chat-message-reply.chat-press-shadow-surface::before,
+body.chat-scrolling-fast .chat-message-reply.chat-press-shadow-surface::after,
+body.chat-scrolling-fast .chat-unread-indicator-arrow,
+body.chat-scrolling-fast .chat-file-thumb-download-btn,
+body.chat-scrolling-fast .chat-video-inline-open-btn,
+body.chat-scrolling-fast .chat-video-inline-download-btn,
+body.chat-scrolling-fast .chat-video-inline-play-btn {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+body.chat-scrolling-fast .chat-message-item.has-side-hit-area::before,
+body.chat-scrolling-fast .chat-press-shadow-surface::before,
+body.chat-scrolling-fast .chat-message-reply.chat-press-shadow-surface::before,
+body.chat-scrolling-fast .chat-message-reply.chat-press-shadow-surface::after {
+    opacity: 0 !important;
+}
+
+body.chat-scrolling-fast .chat-message-item,
+body.chat-scrolling-fast .chat-welcome-bubble,
+body.chat-scrolling-fast .chat-message-main,
+body.chat-scrolling-fast .chat-message-reply,
+body.chat-scrolling-fast .chat-day-separator {
+    transition: none !important;
+}
+
 .chat-input.replying {
     height: 100%;
     min-height: 100%;
@@ -11119,6 +11174,7 @@ let chatOwnMessageChoiceMenuState = null;
 let chatIgnoreOwnMessageChoiceCloseUntil = 0;
 let chatUnreadIncomingCount = 0;
 let chatDismissUnreadOnManualScroll = false;
+let chatFastScrollResetTimerId = null;
 let chatReactionPopoverState = null;
 let chatReplyThreadPopoverState = null;
 const chatAudioUiStateByKey = new Map();
@@ -11158,6 +11214,36 @@ const chatPendingUploadAnimationByAttachmentUrl = new Map();
 const chatPendingAttachmentUploads = new Map();
 const chatPendingAttachmentCancelByUrl = new Set();
 const chatActiveAttachmentUploadStateByUrl = new Map();
+
+const CHAT_FAST_SCROLL_RESET_MS = 140;
+
+function setChatFastScrollRendering(active) {
+    if (!document.body) return;
+    document.body.classList.toggle('chat-scrolling-fast', !!active);
+}
+
+function scheduleChatFastScrollRenderingReset(delay = CHAT_FAST_SCROLL_RESET_MS) {
+    if (chatFastScrollResetTimerId) {
+        clearTimeout(chatFastScrollResetTimerId);
+    }
+    chatFastScrollResetTimerId = setTimeout(() => {
+        chatFastScrollResetTimerId = null;
+        setChatFastScrollRendering(false);
+    }, Math.max(60, Number(delay) || CHAT_FAST_SCROLL_RESET_MS));
+}
+
+function markChatFastScrollRenderingActive(resetDelay = CHAT_FAST_SCROLL_RESET_MS) {
+    setChatFastScrollRendering(true);
+    scheduleChatFastScrollRenderingReset(resetDelay);
+}
+
+function clearChatFastScrollRendering() {
+    if (chatFastScrollResetTimerId) {
+        clearTimeout(chatFastScrollResetTimerId);
+        chatFastScrollResetTimerId = null;
+    }
+    setChatFastScrollRendering(false);
+}
 let chatPendingAttachmentUploadProcessTimerId = null;
 let chatPendingUploadPersistenceDbPromise = null;
 let chatPendingUploadHydrationPromise = null;
@@ -26349,6 +26435,7 @@ function closeChatModal() {
     removeChatViewportHandlers();
     removeChatLayoutResizeObserver();
     unlockBodyScrollForChat();
+    clearChatFastScrollRendering();
     document.body.classList.remove('chat-open');
     document.body.classList.remove('chat-typing');
     chatKeepKeyboardUntil = 0;
@@ -27317,17 +27404,23 @@ async function openChatModal() {
             if (!chatUnreadIncomingCount) return;
             chatDismissUnreadOnManualScroll = true;
         }, { passive: true });
+        chatBodyEl.addEventListener('touchmove', () => {
+            markChatFastScrollRenderingActive(180);
+        }, { passive: true });
         chatBodyEl.addEventListener('touchend', () => {
             setTimeout(() => {
                 chatDismissUnreadOnManualScroll = false;
             }, 160);
+            scheduleChatFastScrollRenderingReset(120);
         }, { passive: true });
         chatBodyEl.addEventListener('touchcancel', () => {
             setTimeout(() => {
                 chatDismissUnreadOnManualScroll = false;
             }, 160);
+            scheduleChatFastScrollRenderingReset(120);
         }, { passive: true });
         chatBodyEl.addEventListener('scroll', (event) => {
+            markChatFastScrollRenderingActive();
             dismissChatUnreadIndicatorFromInteraction(event);
             updateChatPinnedState();
             updateChatJumpBottomButton();

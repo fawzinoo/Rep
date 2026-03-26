@@ -1129,20 +1129,65 @@
     scroll-padding-bottom: 14px;
 }
 
-@supports (-webkit-touch-callout: none) {
-    @media (max-width: 768px) {
-        .chat-overlay {
-            backdrop-filter: none;
-            -webkit-backdrop-filter: none;
-        }
-
-        .chat-body,
-        .chat-messages {
-            -webkit-transform: translate3d(0, 0, 0);
-            transform: translate3d(0, 0, 0);
-            will-change: transform;
-        }
+/* Moviles tactiles: evita separar cada bocadillo en subcapas durante el arrastre rapido */
+@media (hover: none) and (pointer: coarse) {
+    .chat-overlay,
+    .chat-teacher-thread-menu,
+    .chat-thread-popover,
+    .chat-reaction-popover,
+    .chat-action-menu,
+    .chat-own-message-choice-menu,
+    .chat-emoji-menu,
+    .chat-audio-card,
+    .chat-video-inline-open-btn,
+    .chat-video-inline-download-btn {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
     }
+
+    .chat-body {
+        -webkit-overflow-scrolling: auto;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+    }
+
+    .chat-messages {
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+    }
+
+    .chat-welcome-bubble,
+    .chat-message-item,
+    .chat-day-separator,
+    .chat-message-main,
+    .chat-message-line-only,
+    .chat-message-reply,
+    .chat-image-thumb-btn,
+    .chat-image-thumb,
+    .chat-video-inline-shell,
+    .chat-audio-card,
+    .chat-file-thumb-card,
+    .chat-welcome-bubble::after,
+    .chat-message-item::after,
+    .chat-message-item.is-passive-welcome-received::after,
+    .chat-message-item.is-teacher-received::after,
+    .chat-message-item.is-self::after {
+        -webkit-backface-visibility: visible !important;
+        backface-visibility: visible !important;
+        -webkit-transform: none !important;
+        transform: none !important;
+        isolation: auto !important;
+    }
+}
+
+.chat-message-user,
+.chat-message-text,
+.chat-message-text-inline,
+.chat-message-inline-time,
+.chat-message-corner-time,
+.chat-message-reply-text,
+.chat-message-reply-time {
+    -webkit-font-smoothing: antialiased;
 }
 
 .chat-unread-indicator {
@@ -11168,6 +11213,12 @@ let chatLayoutResizeObserver = null;
 let chatPinnedBottomSnapRafId = 0;
 let chatPersistentSideHitAreaRow = 0;
 let chatPersistentBlockShadowKey = '';
+let chatScrollUiDismissedForGesture = false;
+let chatScrollUiResetTimerId = 0;
+let chatScrollRafId = 0;
+let chatScrollQueuedDismissUnread = false;
+let chatScrollQueuedLoadOlder = false;
+let chatScrollQueuedBodyEl = null;
 const chatPendingUploadAnimationByAttachmentUrl = new Map();
 const chatPendingAttachmentUploads = new Map();
 const chatPendingAttachmentCancelByUrl = new Set();
@@ -16457,6 +16508,17 @@ function clearChatDeleteArm(shouldRerender = true) {
     }
 }
 
+function clearChatDeleteArmFast() {
+    if (!chatDeleteArmRow) return;
+    chatDeleteArmRow = 0;
+    document.querySelectorAll('.chat-message-item.delete-armed').forEach((item) => {
+        item.classList.remove('delete-armed');
+    });
+    document.querySelectorAll('.chat-message-delete-btn').forEach((buttonEl) => {
+        buttonEl.remove();
+    });
+}
+
 function getChatMessageRowFromElement(targetEl) {
     if (!targetEl || !targetEl.getAttribute) return 0;
     return Number(targetEl.getAttribute('data-message-row') || '0') || 0;
@@ -16700,6 +16762,8 @@ function clearChatTransientBlockShadowFromInactiveSurfaces() {
 function closeChatOwnMessageChoiceMenu() {
     chatIgnoreOwnMessageChoiceCloseUntil = 0;
     const menuEl = document.getElementById('chat-own-message-choice-menu');
+    const hasPersistentUi = !!chatPersistentSideHitAreaRow || !!chatPersistentBlockShadowKey;
+    if ((!menuEl || menuEl.hidden) && !chatOwnMessageChoiceMenuState && !hasPersistentUi) return;
     if (menuEl) menuEl.hidden = true;
     if (chatOwnMessageChoiceMenuState && chatOwnMessageChoiceMenuState.anchorEl && chatOwnMessageChoiceMenuState.anchorEl.classList) {
         chatOwnMessageChoiceMenuState.anchorEl.classList.remove('action-target');
@@ -16873,6 +16937,11 @@ function armChatDeleteForMessage(targetMessage) {
 
 function closeChatMessageActionMenu() {
     const menuEl = document.getElementById('chat-action-menu');
+    const hasPersistentUi = !!chatPersistentSideHitAreaRow || !!chatPersistentBlockShadowKey;
+    if ((!menuEl || menuEl.hidden) && !chatMessageActionMenuState && !hasPersistentUi) {
+        chatIgnoreMessageActionCloseUntil = 0;
+        return;
+    }
     if (menuEl) menuEl.hidden = true;
     chatIgnoreMessageActionCloseUntil = 0;
 
@@ -20275,6 +20344,7 @@ function consumeChatNativeAttachmentPickerOutsideInteraction(event) {
 
 function closeChatEmojiMenu() {
     const menu = document.getElementById('chat-emoji-menu');
+    if (!menu || menu.hidden) return;
     if (menu) menu.hidden = true;
 }
 
@@ -23493,6 +23563,72 @@ function dismissChatUnreadIndicatorFromInteraction(event) {
         chatDismissUnreadOnManualScroll = false;
     }
     resetChatUnreadIndicator();
+}
+
+function clearChatScrollUiResetTimer() {
+    if (!chatScrollUiResetTimerId) return;
+    clearTimeout(chatScrollUiResetTimerId);
+    chatScrollUiResetTimerId = 0;
+}
+
+function scheduleChatScrollUiReset() {
+    clearChatScrollUiResetTimer();
+    chatScrollUiResetTimerId = window.setTimeout(() => {
+        chatScrollUiResetTimerId = 0;
+        chatScrollUiDismissedForGesture = false;
+    }, 140);
+}
+
+function closeChatTransientUiForScroll() {
+    closeChatEmojiMenu();
+    closeChatMessageActionMenu();
+    closeChatOwnMessageChoiceMenu();
+    clearChatDeleteArmFast();
+}
+
+function flushChatBodyScrollState() {
+    chatScrollRafId = 0;
+    const chatBodyEl = chatScrollQueuedBodyEl;
+    const shouldDismissUnread = chatScrollQueuedDismissUnread;
+    const shouldCheckLoadOlder = chatScrollQueuedLoadOlder;
+
+    chatScrollQueuedBodyEl = null;
+    chatScrollQueuedDismissUnread = false;
+    chatScrollQueuedLoadOlder = false;
+
+    if (!chatBodyEl || !chatBodyEl.isConnected) return;
+
+    if (shouldDismissUnread && chatUnreadIncomingCount) {
+        const shouldDismiss = chatDismissUnreadOnManualScroll || isChatNearBottom();
+        chatDismissUnreadOnManualScroll = false;
+        if (shouldDismiss) {
+            resetChatUnreadIndicator();
+        }
+    }
+
+    updateChatPinnedState();
+
+    if (
+        shouldCheckLoadOlder &&
+        chatHasMoreOlderMessages &&
+        !chatIsLoadingOlderMessages &&
+        (Number(chatBodyEl.scrollTop) || 0) <= CHAT_LOAD_OLDER_TRIGGER_PX
+    ) {
+        void loadOlderChatMessages();
+    }
+}
+
+function scheduleChatBodyScrollState(chatBodyEl, options = {}) {
+    if (!chatBodyEl) return;
+    chatScrollQueuedBodyEl = chatBodyEl;
+    if (options && options.dismissUnread) {
+        chatScrollQueuedDismissUnread = true;
+    }
+    if (options && options.checkLoadOlder) {
+        chatScrollQueuedLoadOlder = true;
+    }
+    if (chatScrollRafId) return;
+    chatScrollRafId = window.requestAnimationFrame(flushChatBodyScrollState);
 }
 
 function getChatLoadingMarkup() {
@@ -27328,6 +27464,7 @@ async function openChatModal() {
     const chatBodyEl = overlay.querySelector('.chat-body');
     if (chatBodyEl) {
         chatBodyEl.addEventListener('touchstart', () => {
+            chatScrollUiDismissedForGesture = false;
             if (!chatUnreadIncomingCount) return;
             chatDismissUnreadOnManualScroll = true;
         }, { passive: true });
@@ -27341,22 +27478,17 @@ async function openChatModal() {
                 chatDismissUnreadOnManualScroll = false;
             }, 160);
         }, { passive: true });
-        chatBodyEl.addEventListener('scroll', (event) => {
-            dismissChatUnreadIndicatorFromInteraction(event);
-            updateChatPinnedState();
-            updateChatJumpBottomButton();
-            if (
-                chatHasMoreOlderMessages &&
-                !chatIsLoadingOlderMessages &&
-                (Number(chatBodyEl.scrollTop) || 0) <= CHAT_LOAD_OLDER_TRIGGER_PX
-            ) {
-                void loadOlderChatMessages();
+        chatBodyEl.addEventListener('scroll', () => {
+            scheduleChatScrollUiReset();
+            if (!chatScrollUiDismissedForGesture) {
+                chatScrollUiDismissedForGesture = true;
+                closeChatTransientUiForScroll();
             }
-            closeChatEmojiMenu();
-            closeChatMessageActionMenu();
-            closeChatOwnMessageChoiceMenu();
-            clearChatDeleteArm(true);
-        });
+            scheduleChatBodyScrollState(chatBodyEl, {
+                dismissUnread: !!chatUnreadIncomingCount,
+                checkLoadOlder: true
+            });
+        }, { passive: true });
     }
 
     if (chatModalEl) {

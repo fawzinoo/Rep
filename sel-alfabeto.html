@@ -1000,7 +1000,8 @@
 
 .chat-jump-bottom-btn {
     position: absolute;
-    left: 26px;
+    left: auto;
+    right: 26px;
     bottom: calc(var(--chat-footer-h, 0px) + env(safe-area-inset-bottom) + 10px);
     z-index: 15;
     border: none;
@@ -5589,6 +5590,12 @@
     box-sizing: border-box;
 }
 
+.chat-message-reply-media-stack.is-audio-upload-stack {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 6px;
+}
+
 .chat-message-reply.has-text-with-attachment .chat-message-reply-media-stack {
     padding-top: 8px;
 }
@@ -5606,23 +5613,21 @@
 .chat-message-reply-audio {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    width: min(147px, 43vw);
+    max-width: 100%;
     margin-left: 4px;
 }
 
 .chat-message-reply-audio .chat-audio-card {
-    width: 32px;
-    min-width: 32px;
-    height: 32px;
-    min-height: 32px;
-    padding: 0;
-    gap: 0;
-    border-radius: 50%;
-    border: none;
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    box-shadow: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding: 5px 11px 5px 5px;
+    gap: 9px;
+    border-radius: 22px;
+    box-sizing: border-box;
 }
 
 .chat-message-reply-audio .chat-audio-action-btn {
@@ -5666,7 +5671,7 @@
 }
 
 .chat-message-reply-audio .chat-audio-main {
-    display: none;
+    display: flex;
 }
 
 .chat-message-reply-file {
@@ -6521,6 +6526,10 @@
     cursor: pointer;
     z-index: 3;
     transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.chat-input-trailing-btn[hidden] {
+    display: none !important;
 }
 
 .chat-input-trailing-btn:hover {
@@ -14894,6 +14903,15 @@ function clearChatEditPendingReplacementAttachment(target) {
     delete target.pendingReplacementAttachment;
 }
 
+function isChatTextOnlyReplyTarget(target = chatReplyTarget) {
+    return !!(
+        target
+        && target.user
+        && target.message
+        && String(target.kind || '').trim() === 'attached_reply'
+    );
+}
+
 function updateChatReplyPreview() {
     const inputEl = document.getElementById('chat-input');
     const inputWrapEl = inputEl ? inputEl.closest('.chat-input-wrap') : null;
@@ -14915,6 +14933,7 @@ function updateChatReplyPreview() {
 
     const isEditing = !!(chatEditTarget && chatEditTarget.row && chatEditTarget.user);
     const hasReplyTarget = !!(chatReplyTarget && chatReplyTarget.user && chatReplyTarget.message);
+    const hasTextOnlyReplyTarget = !isEditing && isChatTextOnlyReplyTarget(chatReplyTarget);
     const activeEditAttachment = isEditing ? getChatEditAttachmentMeta(chatEditTarget) : null;
     if (headerEl) headerEl.classList.toggle('is-editing', isEditing);
     if (inputWrapEl) {
@@ -14926,7 +14945,7 @@ function updateChatReplyPreview() {
     if (attachBtn) {
         attachBtn.disabled = false;
         attachBtn.setAttribute('aria-busy', chatAttachmentUploadInProgress ? 'true' : 'false');
-        attachBtn.hidden = !!(isEditing && activeEditAttachment);
+        attachBtn.hidden = !!((isEditing && activeEditAttachment) || hasTextOnlyReplyTarget);
         if (attachBtn.hidden) closeChatAttachmentMenu();
     }
 
@@ -19323,6 +19342,10 @@ function insertEmojiIntoChatInput(emoji) {
 function toggleChatAttachmentMenu() {
     const menu = document.getElementById('chat-attach-menu');
     if (!menu) return;
+    if (isChatTextOnlyReplyTarget()) {
+        closeChatAttachmentMenu();
+        return;
+    }
     closeChatEmojiMenu();
     menu.hidden = !menu.hidden;
 }
@@ -19855,6 +19878,7 @@ function closeChatVoiceRecorder(discardRecording = true) {
 function openChatVoiceRecorder() {
     const overlay = document.getElementById('chat-voice-recorder-overlay');
     if (!overlay) return;
+    if (isChatTextOnlyReplyTarget()) return;
     closeChatAttachmentMenu();
     closeChatEmojiMenu();
     cancelChatKeyboardRefocus();
@@ -20321,6 +20345,11 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
             message: chatReplyTarget.message
         }
         : null;
+    if (!activeEditTarget && isChatTextOnlyReplyTarget(activeReplyTarget)) {
+        closeChatAttachmentMenu();
+        clearChatAttachmentInputSelection(String(sourceInputId || '').trim());
+        return false;
+    }
     const shouldScrollReplyThreadToBottom = !!(activeReplyTarget && activeReplyTarget.kind === 'message' && (Number(activeReplyTarget.row) || 0) > 0);
     const replyScrollSnapshot = activeReplyTarget && !shouldScrollReplyThreadToBottom
         ? captureChatScrollSnapshot()
@@ -20438,6 +20467,10 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
 function triggerChatAttachmentInput(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
+    if (isChatTextOnlyReplyTarget()) {
+        closeChatAttachmentMenu();
+        return;
+    }
     input.value = '';
     startChatNativeAttachmentPickerGuard(inputId);
     input.click();
@@ -23973,7 +24006,7 @@ function renderChatMessages(messages) {
                 </span>
             ` : '';
             const replyAudioHtml = replyShowAudio ? `
-                <span class="chat-message-reply-media-stack">
+                <span class="chat-message-reply-media-stack${replyUploadProgressHtml ? ' is-audio-upload-stack' : ''}">
                     <span class="chat-message-reply-audio">
                         <div
                             class="${replyAudioCardClass}"

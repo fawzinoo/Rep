@@ -1211,6 +1211,28 @@
     color: #172033;
 }
 
+.chat-message-item.is-teacher-received {
+    background: var(--chat-welcome-bubble-outer-solid);
+    box-shadow:
+        0 20px 36px rgba(122, 103, 118, 0.17),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.chat-message-item.is-teacher-received::after {
+    border-color: transparent var(--chat-welcome-bubble-outer-solid) transparent transparent;
+    filter:
+        drop-shadow(-1px 0 0 rgba(255, 251, 253, 0.84))
+        drop-shadow(0 3px 6px rgba(122, 103, 118, 0.14));
+}
+
+.chat-message-item.is-teacher-received:not(.is-self) .chat-message-main {
+    background: var(--chat-welcome-bubble-inner-bg);
+    border: 1px solid var(--chat-welcome-bubble-inner-border);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 255, 255, 0.9),
+        0 10px 20px rgba(122, 103, 118, 0.12);
+}
+
 .chat-message-item.has-item-corner-time {
     padding-bottom: 24px;
 }
@@ -10751,7 +10773,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYkyrOqe6KISUWfi7Isg_6V3T0dAo3N-4xpbflI8k7TvLYW3o0FlLrxqRwzEIePhK9/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwPhfRI8wBis16NpGlEuj6qsNqO5Jdh88AwU38zPvzYrHVnMKsfmyfYu6R-Dj577cEq/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -12377,6 +12399,7 @@ function normalizeChatPersistedPendingUploadRecord(rawRecord = null) {
         clientToken,
         blob,
         userLabel: normalizeChatUserLabel(rawRecord.userLabel || CHAT_DEFAULT_USER),
+        scope: normalizeChatMessageScope(rawRecord.scope || ''),
         messageText: String(rawRecord.messageText || '').trim(),
         quotedReply: String(rawRecord.quotedReply || '').trim(),
         payloadMessage: String(rawRecord.payloadMessage || '').trim(),
@@ -12507,6 +12530,7 @@ async function persistChatPendingAttachmentUpload(uploadEntry) {
         clientToken,
         blob: file,
         userLabel: normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER)),
+        scope: normalizeChatMessageScope(uploadEntry && uploadEntry.scope ? uploadEntry.scope : ''),
         messageText: String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : '').trim(),
         quotedReply: String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : '').trim(),
         payloadMessage: String(uploadEntry && uploadEntry.payloadMessage ? uploadEntry.payloadMessage : '').trim(),
@@ -12593,6 +12617,7 @@ function restorePersistedChatPendingUploadLocalEcho(record, attachmentUrl) {
     const queuedAt = normalizedRecord.queuedAt || Date.now();
     chatLocalEchoMessages.push({
         user: normalizeChatUserLabel(normalizedRecord.userLabel || CHAT_DEFAULT_USER),
+        scope: normalizeChatMessageScope(normalizedRecord.scope || ''),
         message: normalizedRecord.messageText,
         teacherReply: '',
         quotedReply: normalizedRecord.quotedReply,
@@ -12680,6 +12705,7 @@ async function hydratePersistedChatPendingUploads(options = {}) {
                 kind: record.kind,
                 sourceKind: record.sourceKind,
                 sourceInputId: '',
+                scope: normalizeChatMessageScope(record.scope || ''),
                 messageText: record.messageText,
                 quotedReply: record.quotedReply,
                 payloadMessage: record.payloadMessage,
@@ -13449,6 +13475,7 @@ function queueChatPendingAttachmentUpload(uploadEntry) {
         ...(uploadEntry || {}),
         localObjectUrl: safeAttachmentUrl,
         userLabel: normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : ((existing && existing.userLabel) || (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER))),
+        scope: normalizeChatMessageScope(uploadEntry && uploadEntry.scope ? uploadEntry.scope : ((existing && existing.scope) || '')),
         messageText: String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : ((existing && existing.messageText) || '')).trim(),
         quotedReply: String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : ((existing && existing.quotedReply) || '')).trim(),
         attachmentName: String(uploadEntry && uploadEntry.attachmentName ? uploadEntry.attachmentName : ((existing && existing.attachmentName) || (uploadEntry.file && uploadEntry.file.name) || '')).trim(),
@@ -13536,6 +13563,7 @@ function buildChatMessagesSignature(messages) {
     return messages.map(msg => {
         const row = Number(msg && msg.row ? msg.row : 0) || 0;
         const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+        const scope = normalizeChatMessageScope(msg && msg.scope ? msg.scope : '');
         const message = String(msg && msg.message ? msg.message : '');
         const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '');
         const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '');
@@ -13548,7 +13576,7 @@ function buildChatMessagesSignature(messages) {
         const edited = msg && msg.edited ? '1' : '0';
         const editTimestamp = String(msg && msg.editTimestamp ? msg.editTimestamp : '');
         const editTimeLabel = String(msg && msg.editTimeLabel ? msg.editTimeLabel : '');
-        return `${row}::${user}::${message}::${teacherReply}::${quotedReply}::${imageUrl}::${attachmentKind}::${attachmentUrl}::${attachmentName}::${attachmentMediaWidth}::${attachmentMediaHeight}::${edited}::${editTimestamp}::${editTimeLabel}`;
+        return `${row}::${user}::${scope}::${message}::${teacherReply}::${quotedReply}::${imageUrl}::${attachmentKind}::${attachmentUrl}::${attachmentName}::${attachmentMediaWidth}::${attachmentMediaHeight}::${edited}::${editTimestamp}::${editTimeLabel}`;
     }).join('||');
 }
 
@@ -13753,8 +13781,11 @@ function resolveChatNotificationSoundType(newMessages, currentUserLabel) {
 }
 
 function updateChatNotificationState(messages, notifyOnNewMessage, previousMessages = null, currentUserLabel = '') {
-    const currentCount = Array.isArray(messages) ? messages.length : 0;
-    const currentSignature = buildChatMessagesSignature(messages);
+    const activeFilterMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
+    const visibleMessages = (Array.isArray(messages) ? messages : []).filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel));
+    const previousVisibleMessages = (Array.isArray(previousMessages) ? previousMessages : []).filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel));
+    const currentCount = visibleMessages.length;
+    const currentSignature = buildChatMessagesSignature(visibleMessages);
     const hasNewMessage = chatHasLoadedOnce &&
         notifyOnNewMessage &&
         currentCount > chatLastMessagesCount &&
@@ -13765,7 +13796,7 @@ function updateChatNotificationState(messages, notifyOnNewMessage, previousMessa
     chatHasLoadedOnce = true;
 
     if (hasNewMessage && isChatOverlayVisible()) {
-        const newMessages = collectNewChatMessages(previousMessages, messages);
+        const newMessages = collectNewChatMessages(previousVisibleMessages, visibleMessages);
         const soundType = resolveChatNotificationSoundType(newMessages, currentUserLabel);
         try {
             if (soundType) playChatNotificationSound(soundType);
@@ -13787,6 +13818,7 @@ function isChatOverlayVisible() {
 
 function buildChatMessageKey(msg) {
     const user = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const scope = normalizeChatMessageScope(msg && msg.scope ? msg.scope : '');
     const message = String(msg && msg.message ? msg.message : '').trim();
     const teacherReply = String(msg && msg.teacherReply ? msg.teacherReply : '').trim();
     const quotedReply = String(msg && msg.quotedReply ? msg.quotedReply : '').trim();
@@ -13805,7 +13837,7 @@ function buildChatMessageKey(msg) {
             ? `${attachmentKind}::token::${attachmentClientToken}`
             : `${attachmentKind}::${attachmentSourceKind}::${attachmentName}::${attachmentMimeType}::${attachmentSize}`)
         : (imageUrl ? `imageurl::${imageUrl}` : '');
-    return `${user}::${message}::${teacherReply}::${quotedReply}::${mediaFingerprint}::${edited}::${editTimestamp}::${editTimeLabel}`;
+    return `${user}::${scope}::${message}::${teacherReply}::${quotedReply}::${mediaFingerprint}::${edited}::${editTimestamp}::${editTimeLabel}`;
 }
 
 function normalizeChatAttachmentMatchStem(fileName = '') {
@@ -13832,6 +13864,7 @@ function isChatLooseAttachmentEchoMatch(localMsg, serverMsg) {
     const localUser = normalizeChatUserLabel(localMsg && localMsg.user ? localMsg.user : '');
     const serverUser = normalizeChatUserLabel(serverMsg && serverMsg.user ? serverMsg.user : '');
     if (localUser !== serverUser) return false;
+    if (normalizeChatMessageScope(localMsg && localMsg.scope ? localMsg.scope : '') !== normalizeChatMessageScope(serverMsg && serverMsg.scope ? serverMsg.scope : '')) return false;
     if (String(localMsg && localMsg.message ? localMsg.message : '').trim() !== String(serverMsg && serverMsg.message ? serverMsg.message : '').trim()) return false;
     if (String(localMsg && localMsg.teacherReply ? localMsg.teacherReply : '').trim() !== String(serverMsg && serverMsg.teacherReply ? serverMsg.teacherReply : '').trim()) return false;
     if (String(localMsg && localMsg.quotedReply ? localMsg.quotedReply : '').trim() !== String(serverMsg && serverMsg.quotedReply ? serverMsg.quotedReply : '').trim()) return false;
@@ -14336,6 +14369,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         row: Number(msg && msg.row ? msg.row : 0) || 0,
         isWelcomeMessage: !!(msg && msg.isWelcomeMessage),
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
+        scope: normalizeChatMessageScope(msg && msg.scope ? msg.scope : ''),
         message: String(msg && msg.message ? msg.message : '').trim(),
         teacherReply: String(msg && msg.teacherReply ? msg.teacherReply : '').trim(),
         quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
@@ -14375,6 +14409,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
             msg.attachedReplies.push({
                 sourceRow: Number(msg.row) || 0,
                 author: CHAT_DEFAULT_USER,
+                scope: normalizeChatMessageScope(msg && msg.scope ? msg.scope : ''),
                 text: msg.teacherReply,
                 quotedReply: '',
                 timestamp: String(msg.timestamp || '').trim(),
@@ -14405,6 +14440,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         const target = parseQuotedReplyTarget(msg.quotedReply);
         const quotedPreviewText = getQuotedReplyPreviewText(msg.quotedReply);
         const normalizedQuoted = normalizeChatComparisonText(quotedPreviewText);
+        const shouldSkipLooseReplyFallback = isTeacherScopedChatMessage(msg) && !!target;
 
         let targetIndex = -1;
         if (target && (Number(target.row) || 0) > 0) {
@@ -14435,7 +14471,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         }
 
         // Fallback 1: quotedReply solo contiene el texto del mensaje objetivo.
-        if (targetIndex === -1 && normalizedQuoted) {
+        if (!shouldSkipLooseReplyFallback && targetIndex === -1 && normalizedQuoted) {
             for (let i = idx - 1; i >= 0; i--) {
                 if (i === idx) continue;
                 const candidate = prepared[i];
@@ -14448,7 +14484,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         }
 
         // Fallback 2: si no cuadra exacto, usa el ultimo mensaje anterior del mismo usuario citado.
-        if (targetIndex === -1 && target && target.user) {
+        if (!shouldSkipLooseReplyFallback && targetIndex === -1 && target && target.user) {
             for (let i = idx - 1; i >= 0; i--) {
                 const candidate = prepared[i];
                 if (!candidate.message) continue;
@@ -14460,7 +14496,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
         }
 
         // Fallback 3: si no se puede identificar exacto, pegar en el ultimo mensaje anterior con texto.
-        if (targetIndex === -1) {
+        if (!shouldSkipLooseReplyFallback && targetIndex === -1) {
             for (let i = idx - 1; i >= 0; i--) {
                 const candidate = prepared[i];
                 if (candidate.message) {
@@ -14502,6 +14538,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
                     targetReply.nestedReplies.push({
                         sourceRow: Number(msg.row) || 0,
                         author: msg.user,
+                        scope: normalizeChatMessageScope(msg && msg.scope ? msg.scope : ''),
                         text: msg.message,
                         quotedReply: String(msg.quotedReply || '').trim(),
                         imageUrl: msgImageUrl,
@@ -14537,6 +14574,7 @@ function prepareChatMessagesForRender(messages, currentUserLabel) {
             targetMsg.attachedReplies.push({
                 sourceRow: Number(msg.row) || 0,
                 author: msg.user,
+                scope: normalizeChatMessageScope(msg && msg.scope ? msg.scope : ''),
                 text: msg.message,
                 quotedReply: String(msg.quotedReply || '').trim(),
                 imageUrl: msgImageUrl,
@@ -14665,6 +14703,7 @@ function getActionTargetFromAttachedReply(parentMsg, replyEntry) {
         kind: 'attached_reply_action',
         row: sourceRow,
         user: normalizeChatUserLabel(replyEntry && replyEntry.author ? replyEntry.author : ''),
+        scope: normalizeChatMessageScope(replyEntry && replyEntry.scope ? replyEntry.scope : ''),
         message: String(replyEntry && replyEntry.text ? replyEntry.text : '').trim()
             || String(replyEntry && replyEntry.attachmentName ? replyEntry.attachmentName : '').trim()
             || (String(replyEntry && replyEntry.imageUrl ? replyEntry.imageUrl : '').trim() ? 'imagen' : '')
@@ -14814,6 +14853,7 @@ function getEditTargetFromMessage(msg) {
     return {
         row: Number(msg && msg.row ? msg.row : 0) || 0,
         user: normalizeChatUserLabel(msg && msg.user ? msg.user : ''),
+        scope: normalizeChatMessageScope(msg && msg.scope ? msg.scope : ''),
         message: String(msg && typeof msg.__editText === 'string' ? msg.__editText : (msg && msg.message ? msg.message : '')).trim(),
         quotedReply: String(msg && msg.quotedReply ? msg.quotedReply : '').trim(),
         imageUrl: String(msg && msg.imageUrl ? msg.imageUrl : '').trim(),
@@ -15048,6 +15088,38 @@ function normalizeChatMessageFilterMode(value) {
     return CHAT_FILTER_MODE_ALL;
 }
 
+function normalizeChatMessageScope(value) {
+    const scope = String(value || '').trim().toLowerCase();
+    return scope === CHAT_FILTER_MODE_TEACHER ? CHAT_FILTER_MODE_TEACHER : CHAT_FILTER_MODE_ALL;
+}
+
+function isTeacherScopedChatMessage(msg) {
+    return normalizeChatMessageScope(msg && msg.scope ? msg.scope : '') === CHAT_FILTER_MODE_TEACHER;
+}
+
+function getActiveChatComposerScope() {
+    return normalizeChatMessageFilterMode(chatMessageFilterMode) === CHAT_FILTER_MODE_TEACHER
+        ? CHAT_FILTER_MODE_TEACHER
+        : CHAT_FILTER_MODE_ALL;
+}
+
+function shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel) {
+    const mode = normalizeChatMessageFilterMode(activeFilterMode);
+    const userLabel = normalizeChatUserLabel(msg && msg.user ? msg.user : '');
+    const isCurrentSender = areSameChatUserLabels(userLabel, currentUserLabel);
+    const isTeacherUser = isTeacherChatUserLabel(userLabel);
+    const isWelcomeMessage = !!(msg && msg.isWelcomeMessage);
+    const isTeacherScoped = isTeacherScopedChatMessage(msg);
+
+    if (mode === CHAT_FILTER_MODE_TEACHER) {
+        return isWelcomeMessage || isTeacherUser || isTeacherScoped;
+    }
+    if (mode === CHAT_FILTER_MODE_OWN) {
+        return !isWelcomeMessage && !isTeacherScoped && isCurrentSender;
+    }
+    return !isTeacherScoped;
+}
+
 function syncChatHeaderFilterUi() {
     const filterEl = document.getElementById('chat-header-filter');
     if (!filterEl) return;
@@ -15072,6 +15144,11 @@ function installChatHeaderFilterHandler() {
         const nextMode = normalizeChatMessageFilterMode(buttonEl.dataset.chatFilterMode || '');
         if (nextMode === chatMessageFilterMode) return;
         chatMessageFilterMode = nextMode;
+        const currentUserLabel = normalizeChatUserLabel(getStudentIdentityForChat().displayName || '');
+        const visibleMessages = (Array.isArray(chatLatestServerMessages) ? chatLatestServerMessages : []).filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, nextMode, currentUserLabel));
+        chatLastMessagesCount = visibleMessages.length;
+        chatLastMessagesSignature = buildChatMessagesSignature(visibleMessages);
+        resetChatUnreadIndicator();
         syncChatHeaderFilterUi();
         renderMergedChatMessages(chatLatestServerMessages);
     });
@@ -15225,10 +15302,12 @@ function appendLocalEchoMessage(userLabel, messageText, replyTarget = null, atta
     if (!cleanMessage && !hasAttachment) return;
     const shouldScrollToLatest = !(options && options.scrollToLatest === false);
     const shouldForceRevealLatestMessage = !!(options && options.forceRevealLatestMessage);
+    const messageScope = normalizeChatMessageScope(options && options.scope ? options.scope : getActiveChatComposerScope());
     const timeLabel = getLocalChatTimeLabel();
     const replyPreview = serializeQuotedReplyTarget(replyTarget);
     chatLocalEchoMessages.push({
         user: normalizeChatUserLabel(userLabel || ''),
+        scope: messageScope,
         message: cleanMessage,
         teacherReply: '',
         quotedReply: replyPreview,
@@ -16247,12 +16326,16 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
     const replyTarget = targetMessage && targetMessage.kind === 'attached_reply'
         ? targetMessage
         : getReplyTargetFromMessage(targetMessage);
+    const messageScope = getActiveChatComposerScope();
     const serializedReplyTarget = serializeQuotedReplyTarget(replyTarget);
     const payloadMessage = serializedReplyTarget
         ? `<${serializedReplyTarget}> ${cleanEmoji}`
         : cleanEmoji;
 
-    appendLocalEchoMessage(identity.displayName, cleanEmoji, replyTarget, null, { scrollToLatest: false });
+    appendLocalEchoMessage(identity.displayName, cleanEmoji, replyTarget, null, {
+        scrollToLatest: false,
+        scope: messageScope
+    });
 
     try {
         await postToPortalB({
@@ -16261,6 +16344,7 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
             nombre: identity.firstName,
             apellido: identity.lastName,
             userDisplayName: identity.displayName,
+            scope: messageScope,
             mensaje: payloadMessage
         });
         if (document.getElementById('chat-overlay')) {
@@ -20011,6 +20095,7 @@ async function performChatAttachmentUpload(uploadEntry) {
     const attachmentMediaHeight = normalizeChatMediaDimension(uploadEntry && uploadEntry.attachmentMediaHeight ? uploadEntry.attachmentMediaHeight : 0);
     const replyThreadRow = Number(uploadEntry && uploadEntry.replyThreadRow ? uploadEntry.replyThreadRow : 0) || 0;
     const userLabel = normalizeChatUserLabel(uploadEntry && uploadEntry.userLabel ? uploadEntry.userLabel : (getStudentIdentityForChat().displayName || CHAT_DEFAULT_USER));
+    const messageScope = normalizeChatMessageScope(uploadEntry && uploadEntry.scope ? uploadEntry.scope : '');
     const messageText = String(uploadEntry && uploadEntry.messageText ? uploadEntry.messageText : '').trim();
     const quotedReply = String(uploadEntry && uploadEntry.quotedReply ? uploadEntry.quotedReply : '').trim();
     const identity = getStudentIdentityForChat();
@@ -20045,6 +20130,7 @@ async function performChatAttachmentUpload(uploadEntry) {
         kind,
         sourceKind,
         userLabel,
+        scope: messageScope,
         messageText,
         quotedReply,
         payloadMessage,
@@ -20081,6 +20167,7 @@ async function performChatAttachmentUpload(uploadEntry) {
                 nombre: identity.firstName,
                 apellido: identity.lastName,
                 userDisplayName: identity.displayName,
+                scope: messageScope,
                 mensaje: payloadMessage,
                 attachmentReuse: {
                     ...reusableAttachment,
@@ -20125,6 +20212,7 @@ async function performChatAttachmentUpload(uploadEntry) {
                 nombre: identity.firstName,
                 apellido: identity.lastName,
                 userDisplayName: identity.displayName,
+                scope: messageScope,
                 mensaje: payloadMessage,
                 attachment: {
                     name: attachmentName,
@@ -20163,6 +20251,7 @@ async function performChatAttachmentUpload(uploadEntry) {
                 nombre: identity.firstName,
                 apellido: identity.lastName,
                 userDisplayName: identity.displayName,
+                scope: messageScope,
                 mensaje: payloadMessage,
                 attachment: {
                     name: attachmentName,
@@ -20356,6 +20445,7 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
         ? captureChatScrollSnapshot()
         : null;
     const caption = String(inputEl.value || '').trim();
+    const messageScope = getActiveChatComposerScope();
     const serializedReplyTarget = activeEditTarget
         ? String(activeEditTarget.quotedReply || '').trim()
         : serializeQuotedReplyTarget(activeReplyTarget);
@@ -20428,9 +20518,12 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
             mediaWidth: attachmentMediaWidth,
             mediaHeight: attachmentMediaHeight
         },
-        activeReplyTarget
-            ? { scrollToLatest: false }
-            : (kind === 'file' ? { forceRevealLatestMessage: true } : null)
+        {
+            ...(activeReplyTarget
+                ? { scrollToLatest: false }
+                : (kind === 'file' ? { forceRevealLatestMessage: true } : {})),
+            scope: messageScope
+        }
     );
     if (replyScrollSnapshot) {
         restoreChatScrollSnapshot(replyScrollSnapshot);
@@ -20448,6 +20541,7 @@ async function submitChatAttachment(file, forcedKind = '', sourceInputId = '') {
         sourceKind,
         sourceInputId: String(sourceInputId || '').trim(),
         userLabel: identity.displayName,
+        scope: messageScope,
         messageText: caption,
         quotedReply: serializedReplyTarget,
         payloadMessage,
@@ -22441,8 +22535,9 @@ function updateChatPinnedState() {
 }
 
 function countIncomingUnreadMessages(previousMessages, nextMessages, currentUserLabel) {
-    const previousList = Array.isArray(previousMessages) ? previousMessages : [];
-    const nextList = Array.isArray(nextMessages) ? nextMessages : [];
+    const activeFilterMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
+    const previousList = (Array.isArray(previousMessages) ? previousMessages : []).filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel));
+    const nextList = (Array.isArray(nextMessages) ? nextMessages : []).filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel));
     if (nextList.length <= previousList.length) return 0;
 
     return nextList.slice(previousList.length).reduce((total, msg) => {
@@ -22916,6 +23011,7 @@ function parseChatCellValue(rawValue) {
                     : { message: '', teacherReply: '', quotedReply: '' };
                 return {
                     user: normalizeChatUserLabel(payload.user || CHAT_DEFAULT_USER),
+                    scope: normalizeChatMessageScope(payload.scope || ''),
                     message: String(parsedAttachmentBody.message || '').trim(),
                     teacherReply: String(parsedAttachmentBody.teacherReply || '').trim(),
                     quotedReply: String(parsedAttachmentBody.quotedReply || '').trim(),
@@ -22942,6 +23038,7 @@ function parseChatCellValue(rawValue) {
     if (/^cellimage$/i.test(text)) {
         return {
             user: CHAT_DEFAULT_USER,
+            scope: CHAT_FILTER_MODE_ALL,
             message: '📷 Imagen',
             teacherReply: '',
             quotedReply: '',
@@ -22965,7 +23062,7 @@ function parseChatCellValue(rawValue) {
         ? [inlineMessage, ...lines.slice(1)].filter(Boolean).join('\n').trim()
         : text;
     const { message, teacherReply, quotedReply } = extractChatMessageAndReply(bodyText);
-    return { user, message, teacherReply, quotedReply, raw: text, hasExplicitUser };
+    return { user, scope: CHAT_FILTER_MODE_ALL, message, teacherReply, quotedReply, raw: text, hasExplicitUser };
 }
 
 function normalizeChatUserLabel(rawUser) {
@@ -23150,6 +23247,11 @@ function normalizeFetchedChatMessageEntry(entry) {
         const resolvedAttachmentClientToken = entryAttachmentClientToken || parsedAttachmentClientToken;
         const resolvedAttachmentMediaWidth = entryAttachmentMediaWidth || parsedAttachmentMediaWidth;
         const resolvedAttachmentMediaHeight = entryAttachmentMediaHeight || parsedAttachmentMediaHeight;
+        const resolvedScope = normalizeChatMessageScope(
+            entry && typeof entry === 'object' && entry.scope != null
+                ? entry.scope
+                : (parsed && parsed.scope ? parsed.scope : '')
+        );
         const resolvedAttachmentKind = resolveChatAttachmentKind(
             entryAttachmentKind || parsedAttachmentKind,
             resolvedAttachmentMimeType,
@@ -23172,6 +23274,7 @@ function normalizeFetchedChatMessageEntry(entry) {
             row: Number(entry.row) || 0,
             isWelcomeMessage,
             user: resolvedUser,
+            scope: resolvedScope,
             message: resolvedMessage,
             teacherReply: parsed ? parsed.teacherReply : '',
             quotedReply: parsed ? parsed.quotedReply : '',
@@ -23203,6 +23306,7 @@ function normalizeFetchedChatMessageEntry(entry) {
         row: Number(entry && entry.row ? entry.row : 0) || 0,
         isWelcomeMessage,
         user: parsed.user,
+        scope: normalizeChatMessageScope(entry && entry.scope != null ? entry.scope : (parsed.scope || '')),
         message: normalizedMessage,
         teacherReply: parsed.teacherReply,
         quotedReply: parsed.quotedReply,
@@ -23484,19 +23588,15 @@ function renderChatMessages(messages) {
     const combinedMessages = normalizedWelcomeMessage
         ? [normalizedWelcomeMessage, ...safeMessages]
         : safeMessages;
-    let renderMessages = prepareChatMessagesForRender(combinedMessages, currentUserLabel);
     const welcomeRow = Number(normalizedWelcomeMessage && normalizedWelcomeMessage.row ? normalizedWelcomeMessage.row : 0) || 0;
+    const activeFilterMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
+    const filteredMessages = combinedMessages.filter((msg) => shouldIncludeChatMessageInActiveFilter(msg, activeFilterMode, currentUserLabel));
+    let renderMessages = prepareChatMessagesForRender(filteredMessages, currentUserLabel);
     const preparedWelcomeMessage = welcomeRow > 0
         ? (renderMessages.find((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) === welcomeRow) || null)
         : null;
-    const activeFilterMode = normalizeChatMessageFilterMode(chatMessageFilterMode);
-    if (activeFilterMode === CHAT_FILTER_MODE_OWN) {
-        renderMessages = renderMessages.filter((msg) => areSameChatUserLabels(msg && msg.user ? msg.user : '', currentUserLabel));
-    } else if (activeFilterMode === CHAT_FILTER_MODE_TEACHER) {
-        renderMessages = renderMessages.filter((msg) => isTeacherChatUserLabel(msg && msg.user ? msg.user : ''));
-    }
     renderMessages = sortPreparedChatMessagesForDisplay(renderMessages);
-    if (preparedWelcomeMessage && welcomeRow > 0) {
+    if (preparedWelcomeMessage && welcomeRow > 0 && activeFilterMode !== CHAT_FILTER_MODE_OWN) {
         renderMessages = [
             preparedWelcomeMessage,
             ...renderMessages.filter((msg) => (Number(msg && msg.row ? msg.row : 0) || 0) !== welcomeRow)
@@ -23508,7 +23608,7 @@ function renderChatMessages(messages) {
         messagesEl.innerHTML = `${getChatHistoryLoaderMarkup()}${activeFilterMode === CHAT_FILTER_MODE_OWN
             ? `<div class="chat-empty">No hay mensajes tuyos.</div>`
             : (activeFilterMode === CHAT_FILTER_MODE_TEACHER
-                ? `<div class="chat-empty">No hay mensajes de ${escapeHtml(CHAT_DEFAULT_USER)}.</div>`
+                ? `<div class="chat-empty">No hay mensajes en el canal de ${escapeHtml(CHAT_DEFAULT_USER)}.</div>`
                 : `<div class="chat-empty">Todavia no hay mensajes.</div>`)}`;
         const loadOlderBtn = messagesEl.querySelector('#chat-load-older-btn');
         if (loadOlderBtn) {
@@ -23537,6 +23637,7 @@ function renderChatMessages(messages) {
         const isCurrentSender = areSameChatUserLabels(userLabel, currentUserLabel);
         const isWelcomeMessage = !!(msg && msg.isWelcomeMessage);
         const isPassiveWelcomeReceived = isWelcomeMessage && !isCurrentSender;
+        const isTeacherReceived = isTeacherUser && !isCurrentSender && !isPassiveWelcomeReceived;
         const labelClass = isCurrentSender ? 'chat-user-label-self' : 'chat-user-label-other';
         const isReplyable = !isPassiveWelcomeReceived && canReplyToRecipientMessage(msg, currentUserLabel);
         const isEditableSelf = canEditOwnChatMessage(msg, currentUserLabel);
@@ -24103,6 +24204,7 @@ function renderChatMessages(messages) {
         const messageItemClass = [
             'chat-message-item',
             isPassiveWelcomeReceived ? 'is-passive-welcome-received' : '',
+            isTeacherReceived ? 'is-teacher-received' : '',
             (shouldUseItemCornerTime || shouldUseLineOnlyItemCornerTime) ? 'has-item-corner-time' : '',
             isShortSimpleBubble ? 'is-short-bubble' : '',
             (isShortSimpleBubble && !!msg.edited) ? 'is-short-bubble-edited' : '',
@@ -25400,6 +25502,7 @@ async function submitChatMessage() {
         ? { ...chatEditTarget }
         : null;
     if (activeEditTarget) {
+        const editMessageScope = normalizeChatMessageScope(activeEditTarget && activeEditTarget.scope ? activeEditTarget.scope : '');
         const pendingReplacement = activeEditTarget.pendingReplacementAttachment || null;
         const hasPendingReplacementFile = !!(pendingReplacement && pendingReplacement.file);
         const hasExistingAttachment = !!getChatEditAttachmentMeta(activeEditTarget);
@@ -25445,6 +25548,7 @@ async function submitChatMessage() {
                         nombre: identity.firstName,
                         apellido: identity.lastName,
                         userDisplayName: identity.displayName,
+                        scope: editMessageScope,
                         mensaje: editPayloadMessage,
                         attachmentReuse: {
                             ...replacementReuse,
@@ -25472,6 +25576,7 @@ async function submitChatMessage() {
                             nombre: identity.firstName,
                             apellido: identity.lastName,
                             userDisplayName: identity.displayName,
+                            scope: editMessageScope,
                             mensaje: editPayloadMessage,
                             attachment: {
                                 name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
@@ -25494,6 +25599,7 @@ async function submitChatMessage() {
                             nombre: identity.firstName,
                             apellido: identity.lastName,
                             userDisplayName: identity.displayName,
+                            scope: editMessageScope,
                             mensaje: editPayloadMessage,
                             attachment: {
                                 name: String(pendingReplacement.name || `${pendingReplacement.kind || 'file'}-adjunto`).trim(),
@@ -25522,6 +25628,7 @@ async function submitChatMessage() {
                     nombre: identity.firstName,
                     apellido: identity.lastName,
                     userDisplayName: identity.displayName,
+                    scope: editMessageScope,
                     mensaje: editPayloadMessage,
                     removeAttachment: !!activeEditTarget.attachmentRemoved
                 });
@@ -25566,6 +25673,7 @@ async function submitChatMessage() {
         ? captureChatScrollSnapshot()
         : null;
     const serializedReplyTarget = serializeQuotedReplyTarget(activeReplyTarget);
+    const messageScope = getActiveChatComposerScope();
     const payloadMessage = serializedReplyTarget
         ? `<${serializedReplyTarget}> ${message}`
         : message;
@@ -25579,7 +25687,10 @@ async function submitChatMessage() {
         message,
         activeReplyTarget,
         null,
-        activeReplyTarget ? { scrollToLatest: false } : null
+        {
+            ...(activeReplyTarget ? { scrollToLatest: false } : {}),
+            scope: messageScope
+        }
     );
     if (replyScrollSnapshot) {
         restoreChatScrollSnapshot(replyScrollSnapshot);
@@ -25596,6 +25707,7 @@ async function submitChatMessage() {
             nombre: identity.firstName,
             apellido: identity.lastName,
             userDisplayName: identity.displayName,
+            scope: messageScope,
             mensaje: payloadMessage
         });
         setTimeout(() => {

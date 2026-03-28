@@ -2200,12 +2200,43 @@
     display: none !important;
 }
 
-.chat-thread-popover-title {
-    font-size: 0.82rem;
-    font-weight: 800;
-    color: #475569;
-    margin-bottom: 8px;
+.chat-thread-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
 }
+
+.chat-thread-popover-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 0;
+}
+
+.chat-thread-popover-close {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.06);
+    color: #475569;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.chat-thread-popover-close:hover {
+    background: rgba(15, 23, 42, 0.12);
+    transform: scale(1.08);
+}
+
+.chat-thread-popover-close:active {
+    transform: scale(0.92);
+}
+
 
 .chat-thread-popover-list {
     display: flex;
@@ -11267,6 +11298,8 @@ let chatUnreadIncomingCount = 0;
 let chatDismissUnreadOnManualScroll = false;
 let chatReactionPopoverState = null;
 let chatReplyThreadPopoverState = null;
+let chatThreadPopoverClosingFromOutside = false;
+let chatEmojiMenuClosingFromOutside = false;
 const chatAudioUiStateByKey = new Map();
 const chatAudioBlobUrlByFileId = new Map();
 const chatCachedAttachmentMetaByFileId = new Map();
@@ -17207,9 +17240,23 @@ function openChatReplyThreadPopover(anchorEl, replyEntry) {
     }).join('');
 
     popoverEl.innerHTML = `
-        <div class="chat-thread-popover-title">Respuestas</div>
+        <div class="chat-thread-popover-header">
+            <div class="chat-thread-popover-title">Respuestas</div>
+            <button type="button" class="chat-thread-popover-close" id="chat-thread-popover-close-btn" aria-label="Cerrar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
         <div class="chat-thread-popover-list">${listHtml}</div>
     `;
+
+    const closePopoverBtn = popoverEl.querySelector('#chat-thread-popover-close-btn');
+    if (closePopoverBtn) {
+        closePopoverBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeChatReplyThreadPopover();
+        });
+    }
+
     popoverEl.hidden = false;
     chatReplyThreadPopoverState = { anchorEl };
     positionChatReplyThreadPopover(anchorEl);
@@ -27206,16 +27253,57 @@ async function openChatModal() {
     installChatLayoutResizeObserver();
     const chatModalEl = overlay.querySelector('.chat-modal');
 
+    const blockChatOutsideInteractions = (event) => {
+        // 1. Thread Popover (Respuestas)
+        if (chatReplyThreadPopoverState && !event.target.closest('#chat-thread-popover') && !event.target.closest('.chat-message-thread-btn')) {
+            chatThreadPopoverClosingFromOutside = true;
+            closeChatReplyThreadPopover();
+            event.stopPropagation();
+            event.preventDefault();
+            return true;
+        }
+
+        // 2. Emoji Menu
+        const emojiMenu = document.getElementById('chat-emoji-menu');
+        if (emojiMenu && !emojiMenu.hidden && !event.target.closest('#chat-emoji-menu') && !event.target.closest('#chat-emoji-btn')) {
+            chatEmojiMenuClosingFromOutside = true;
+            closeChatEmojiMenu();
+            event.stopPropagation();
+            event.preventDefault();
+            return true;
+        }
+
+        // Persistent blocks for follow-up events during dismissal
+        if (chatThreadPopoverClosingFromOutside || chatEmojiMenuClosingFromOutside) {
+            event.stopPropagation();
+            event.preventDefault();
+            return true;
+        }
+        return false;
+    };
+
+    overlay.addEventListener('pointerdown', blockChatOutsideInteractions, true);
+    overlay.addEventListener('mousedown', blockChatOutsideInteractions, true);
+    overlay.addEventListener('mouseup', blockChatOutsideInteractions, true);
+
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) closeChatModal();
+        if (blockChatOutsideInteractions(event)) {
+            chatThreadPopoverClosingFromOutside = false;
+            chatEmojiMenuClosingFromOutside = false;
+            return;
+        }
+
+
+        if (event.target === overlay) {
+            closeChatModal();
+            return;
+        }
+
         if (Date.now() >= chatIgnoreMessageActionCloseUntil && !event.target.closest('#chat-action-menu')) {
             closeChatMessageActionMenu();
         }
         if (!event.target.closest('#chat-reaction-popover') && !event.target.closest('.chat-message-reaction-badge')) {
             closeChatReactionPopover();
-        }
-        if (!event.target.closest('#chat-thread-popover') && !event.target.closest('.chat-message-thread-btn')) {
-            closeChatReplyThreadPopover();
         }
         if (!event.target.closest('#chat-teacher-thread-menu') && !event.target.closest('#chat-teacher-thread-btn')) {
             closeChatTeacherThreadMenu();
@@ -27227,7 +27315,10 @@ async function openChatModal() {
             clearChatDeleteArm(true);
         }
         dismissChatComposerStateFromOutsideInteraction(event.target);
-    });
+    }, true);
+
+
+
 
     const closeBtn = document.getElementById('chat-close-btn');
     installChatHeaderFilterHandler();

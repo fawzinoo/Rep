@@ -4181,7 +4181,8 @@
 .chat-file-viewer-actions {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
+    gap: 10px;
     width: 100%;
     flex: 1 1 auto;
     pointer-events: auto;
@@ -4268,25 +4269,63 @@
 
 .chat-file-viewer-google-mask {
     position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 54px;
-    height: 54px;
+    inset: 0;
     z-index: 2;
-    pointer-events: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, #ffffff 0 18px, transparent 18px),
+        linear-gradient(90deg, transparent 0 calc(100% - 70px), #ffffff calc(100% - 70px));
 }
 
-.chat-file-viewer-google-mask img {
-    display: block;
-    width: 34px;
-    height: 34px;
-    object-fit: contain;
-    filter: drop-shadow(0 4px 10px rgba(15, 23, 42, 0.28));
+.chat-file-viewer-google-mask.is-pdf {
+    background:
+        linear-gradient(180deg, #ffffff 0 14px, transparent 14px),
+        linear-gradient(180deg, transparent 0 calc(100% - 18px), #ffffff calc(100% - 18px));
+}
+
+.chat-file-viewer-head {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.chat-file-viewer-overlay.is-touch-viewer .chat-file-viewer-head {
+    opacity: 0;
+    transform: translateY(-12px);
+}
+
+.chat-file-viewer-overlay.is-touch-viewer:not(.is-chrome-visible) .chat-file-viewer-actions {
     pointer-events: none;
+}
+
+.chat-file-viewer-overlay.is-touch-viewer.is-chrome-visible .chat-file-viewer-head {
+    opacity: 1;
+    transform: translateY(0);
+    background: linear-gradient(180deg, rgba(2, 6, 23, 0.44) 0%, rgba(2, 6, 23, 0) 100%);
+}
+
+.chat-file-viewer-overlay.is-touch-viewer .chat-file-viewer-iframe {
+    width: calc(100% + 160px);
+    height: calc(100% + 210px);
+    margin-top: -78px;
+    margin-left: -80px;
+}
+
+.chat-file-viewer-overlay.is-touch-viewer .chat-file-viewer-iframe.is-pdf {
+    width: calc(100% + 112px);
+    height: calc(100% + 184px);
+    margin-top: -66px;
+    margin-left: -56px;
+}
+
+.chat-file-viewer-overlay.is-touch-viewer .chat-file-viewer-google-mask {
+    background:
+        linear-gradient(180deg, #ffffff 0 66px, transparent 66px calc(100% - 78px), #ffffff calc(100% - 78px)),
+        linear-gradient(90deg, #ffffff 0 18px, transparent 18px calc(100% - 92px), #ffffff calc(100% - 92px));
+}
+
+.chat-file-viewer-overlay.is-touch-viewer .chat-file-viewer-google-mask.is-pdf {
+    background:
+        linear-gradient(180deg, #ffffff 0 56px, transparent 56px calc(100% - 72px), #ffffff calc(100% - 72px)),
+        linear-gradient(90deg, #ffffff 0 12px, transparent 12px calc(100% - 12px), #ffffff calc(100% - 12px));
 }
 
 .chat-file-viewer-empty {
@@ -21875,7 +21914,11 @@ function closeChatVideoViewer() {
 
 function closeChatFileViewer() {
     const overlay = document.getElementById('chat-file-viewer-overlay');
-    if (overlay) overlay.remove();
+    if (!overlay) return;
+    if (document.fullscreenElement === overlay && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+    }
+    overlay.remove();
 }
 
 function closeChatImageViewer() {
@@ -22356,6 +22399,7 @@ function isChatGviewPreviewUrl(url = '') {
 function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     const safeUrl = String(fileUrl || '').trim();
     if (!safeUrl) return;
+    closeChatTransientUiForViewer();
     closeChatImageViewer();
 
     const safeTitle = String(fileTitle || 'Archivo').trim() || 'Archivo';
@@ -22363,8 +22407,16 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
     const mimeType = String(options && options.mimeType ? options.mimeType : '').trim();
     const canPreview = shouldPreviewChatFileInViewer(safeTitle, mimeType);
     const isPdfPreview = isChatPdfFile(safeTitle, mimeType, safeUrl);
+    const isOfficeDocPreview = isChatOfficeDocFile(safeTitle, mimeType);
     const previewUrl = canPreview ? buildChatFilePreviewUrl(safeUrl, fileId, safeTitle, mimeType) : '';
+    const shouldMaskViewerUi = !!previewUrl && (isPdfPreview || isOfficeDocPreview);
     const downloadUrl = buildChatAttachmentDownloadUrl(safeUrl) || safeUrl;
+    const isTouchEnvironment = !!(
+        (typeof window !== 'undefined' && 'ontouchstart' in window)
+        || (typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints || 0) > 0)
+        || (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    );
+    const isTouchViewer = isTouchEnvironment && !!previewUrl;
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-file-viewer-overlay';
@@ -22401,11 +22453,7 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
                             loading="lazy"
                             referrerpolicy="no-referrer"
                         ></iframe>
-                        ${isPdfPreview ? '' : `
-                            <div class="chat-file-viewer-google-mask" aria-hidden="true">
-                                <img src="https://fawzinoo.github.io/Fotos/f.png" alt="">
-                            </div>
-                        `}
+                        ${shouldMaskViewerUi ? `<div class="chat-file-viewer-google-mask${isPdfPreview ? ' is-pdf' : ''}" aria-hidden="true"></div>` : ''}
                     </div>
                 ` : `
                     <div class="chat-file-viewer-empty">
@@ -22422,16 +22470,49 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
         if (event.target === overlay) closeChatFileViewer();
     });
 
+    const stageEl = overlay.querySelector('.chat-file-viewer-stage');
     const closeBtn = document.getElementById('chat-file-viewer-close-btn');
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => closeChatFileViewer());
+        closeBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeChatFileViewer();
+        });
     }
+
+    let fileViewerChromeHideTimer = 0;
+    const clearFileViewerChromeHideTimer = () => {
+        if (!fileViewerChromeHideTimer) return;
+        clearTimeout(fileViewerChromeHideTimer);
+        fileViewerChromeHideTimer = 0;
+    };
+    const setFileViewerChromeVisible = (visible) => {
+        overlay.classList.toggle('is-chrome-visible', !!visible);
+    };
+    const scheduleFileViewerChromeAutoHide = () => {
+        clearFileViewerChromeHideTimer();
+        if (!overlay.classList.contains('is-touch-viewer')) return;
+        fileViewerChromeHideTimer = window.setTimeout(() => {
+            setFileViewerChromeVisible(false);
+        }, 1800);
+    };
+    const revealFileViewerChrome = (keepVisible = false) => {
+        if (!overlay.classList.contains('is-touch-viewer')) return;
+        setFileViewerChromeVisible(true);
+        if (keepVisible) {
+            clearFileViewerChromeHideTimer();
+            return;
+        }
+        scheduleFileViewerChromeAutoHide();
+    };
+
     const downloadBtn = document.getElementById('chat-file-viewer-download-btn');
     if (downloadBtn) {
         downloadBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
             vibrar(80);
+            revealFileViewerChrome(true);
             const targetUrl = String(downloadBtn.getAttribute('data-download-url') || '').trim();
             const targetName = String(downloadBtn.getAttribute('data-download-name') || '').trim();
             const targetFileId = String(downloadBtn.getAttribute('data-download-file-id') || '').trim();
@@ -22442,6 +22523,25 @@ function openChatFileViewer(fileUrl, fileTitle = 'Archivo', options = {}) {
                 mimeType: targetMimeType
             });
         });
+    }
+
+    if (stageEl) {
+        stageEl.addEventListener('click', (event) => {
+            if (!overlay.classList.contains('is-touch-viewer')) return;
+            if (event.target.closest && event.target.closest('button, a, input, label')) return;
+            if (overlay.classList.contains('is-chrome-visible')) {
+                clearFileViewerChromeHideTimer();
+                setFileViewerChromeVisible(false);
+                return;
+            }
+            revealFileViewerChrome();
+        });
+    }
+
+    overlay.classList.toggle('is-touch-viewer', isTouchViewer);
+    setFileViewerChromeVisible(true);
+    if (isTouchViewer) {
+        scheduleFileViewerChromeAutoHide();
     }
 }
 

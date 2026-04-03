@@ -4391,6 +4391,12 @@
     max-height: 100dvh;
     height: 100dvh;
     border-radius: 0;
+    padding: 0 8px;
+    box-sizing: border-box;
+    overflow: auto;
+    justify-content: flex-start;
+    align-items: flex-start;
+    background: transparent;
 }
 
 .chat-image-viewer-overlay.is-mobile-expanded .chat-image-viewer-modal.is-file-preview-lightbox.is-docx-file-preview,
@@ -4403,6 +4409,12 @@
 @media (max-width: 640px) {
     .chat-image-viewer-overlay.is-file-preview-lightbox {
         padding: 10px;
+    }
+
+    .chat-image-viewer-overlay.is-mobile-expanded .chat-image-viewer-modal.is-file-preview-lightbox .chat-image-viewer-body,
+    .chat-image-viewer-overlay:fullscreen .chat-image-viewer-modal.is-file-preview-lightbox .chat-image-viewer-body,
+    .chat-image-viewer-overlay:-webkit-full-screen .chat-image-viewer-modal.is-file-preview-lightbox .chat-image-viewer-body {
+        padding: 0 4px;
     }
 
     .chat-image-viewer-pdf-nav {
@@ -22394,6 +22406,31 @@ function isChatViewerFullscreenActive(target) {
     return !!(fullscreenEl && (fullscreenEl === target || target.contains(fullscreenEl)));
 }
 
+function isChatImageViewerExpanded(overlay) {
+    return !!(
+        overlay instanceof Element
+        && (
+            overlay.classList.contains('is-mobile-expanded')
+            || isChatViewerFullscreenActive(overlay)
+        )
+    );
+}
+
+function isChatImageViewerMobileExpanded(overlay) {
+    return !!(
+        typeof window !== 'undefined'
+        && Number(window.innerWidth || 0) <= 640
+        && isChatImageViewerExpanded(overlay)
+    );
+}
+
+function getChatMobileExpandedBalancedScale(widthFitScale = 1, heightFitScale = 1) {
+    const safeWidthFitScale = Math.max(0.1, Number(widthFitScale || 0) || 0.1);
+    const safeHeightFitScale = Math.max(0.1, Number(heightFitScale || 0) || 0.1);
+    const gentleOverflowScale = safeWidthFitScale * 1.08;
+    return Math.max(safeWidthFitScale, Math.min(safeHeightFitScale, gentleOverflowScale));
+}
+
 function initializeChatImageViewerFullscreenToggle(overlay) {
     if (!(overlay instanceof Element) || typeof document === 'undefined') return;
     const modal = overlay.querySelector('.chat-image-viewer-modal.is-file-preview-lightbox');
@@ -22419,6 +22456,9 @@ function initializeChatImageViewerFullscreenToggle(overlay) {
     };
 
     const handleFullscreenChange = () => {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('resize'));
+        }
         syncFullscreenButton();
     };
 
@@ -22433,6 +22473,9 @@ function initializeChatImageViewerFullscreenToggle(overlay) {
                 requestedNativeFullscreen = false;
                 await exitChatFullscreen();
             }
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new Event('resize'));
+            }
             syncFullscreenButton();
             return;
         }
@@ -22445,6 +22488,9 @@ function initializeChatImageViewerFullscreenToggle(overlay) {
             } catch (_) {
                 requestedNativeFullscreen = false;
             }
+        }
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('resize'));
         }
         syncFullscreenButton();
     };
@@ -23145,7 +23191,19 @@ async function initializeChatPdfFilePreview(overlay, options = {}) {
                 1180
             )
         );
-        const cssScale = availableWidth / Math.max(1, baseViewport.width);
+        const widthFitScale = availableWidth / Math.max(1, baseViewport.width);
+        let cssScale = widthFitScale;
+        if (isChatImageViewerMobileExpanded(overlay)) {
+            const availableHeight = Math.max(
+                320,
+                Math.min(
+                    Number(body.clientHeight || 0) || Number(modal.clientHeight || 0) || Math.round(window.innerHeight * 0.98),
+                    Math.round(window.innerHeight * 0.98)
+                ) - 16
+            );
+            const heightFitScale = availableHeight / Math.max(1, baseViewport.height);
+            cssScale = getChatMobileExpandedBalancedScale(widthFitScale, heightFitScale);
+        }
         const outputScale = Math.max(1, Math.min(2.1, Number(window.devicePixelRatio || 1) || 1));
         const renderViewport = page.getViewport({ scale: cssScale * outputScale });
         const context = canvas.getContext('2d', { alpha: false });
@@ -23180,6 +23238,11 @@ async function initializeChatPdfFilePreview(overlay, options = {}) {
         canvas.hidden = false;
         if (fallbackImg instanceof HTMLImageElement) {
             fallbackImg.hidden = true;
+        }
+        if (isChatImageViewerMobileExpanded(overlay)) {
+            window.requestAnimationFrame(() => {
+                body.scrollLeft = Math.max(0, Math.round((body.scrollWidth - body.clientWidth) / 2));
+            });
         }
         syncNavigation();
     };
@@ -23443,6 +23506,18 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
         }
 
         return Math.max(0.1, Math.min(widthPriorityScale, fitByHeight));
+    };
+    const getDocxExpandedMobileScale = (naturalWidth = 0, naturalHeight = 0) => {
+        const safeNaturalWidth = Math.max(0, Number(naturalWidth || 0) || 0);
+        const safeNaturalHeight = Math.max(0, Number(naturalHeight || 0) || 0);
+        if (safeNaturalWidth <= 0 || safeNaturalHeight <= 0) {
+            return 1;
+        }
+
+        const viewportBounds = getDocxViewportBounds();
+        const widthFitScale = viewportBounds.width / safeNaturalWidth;
+        const heightFitScale = Math.max(220, viewportBounds.height - 16) / safeNaturalHeight;
+        return getChatMobileExpandedBalancedScale(widthFitScale, heightFitScale);
     };
 
     const getXmlAttributeByLocalName = (element, localName) => {
@@ -24001,7 +24076,9 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             : (measuredLooksReliable
                 ? measuredPageNaturalHeight
                 : Math.max(measuredPageNaturalHeight, estimatedPageNaturalHeight));
-        docxFitScale = getDocxWidthPriorityScale(virtualPageNaturalWidth, virtualPageNaturalHeight);
+        docxFitScale = isChatImageViewerMobileExpanded(overlay)
+            ? getDocxExpandedMobileScale(virtualPageNaturalWidth, virtualPageNaturalHeight)
+            : getDocxWidthPriorityScale(virtualPageNaturalWidth, virtualPageNaturalHeight);
         virtualPageHeight = Math.max(280, Math.ceil(virtualPageNaturalHeight * docxFitScale));
         totalPages = Math.max(
             1,
@@ -24025,6 +24102,34 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
     };
 
     const syncDocxFrameSize = (naturalWidth = 0, naturalHeight = 0) => {
+        if (isChatImageViewerMobileExpanded(overlay)) {
+            const viewportBounds = getDocxViewportBounds();
+            const scaledWidth = Math.max(
+                viewportBounds.width,
+                Math.ceil(Math.max(0, Number(naturalWidth || 0) || 0) * Math.max(0.1, docxFitScale))
+            );
+            const scaledHeight = Math.max(
+                viewportBounds.height,
+                Math.ceil(Math.max(0, Number(naturalHeight || 0) || 0) * Math.max(0.1, docxFitScale))
+            );
+            modal.style.setProperty('--chat-docx-frame-width', `${viewportBounds.width}px`);
+            modal.style.setProperty('--chat-docx-frame-height', `${viewportBounds.height}px`);
+            modal.style.width = `${viewportBounds.width}px`;
+            modal.style.height = `${viewportBounds.height}px`;
+            body.style.width = `${viewportBounds.width}px`;
+            body.style.minWidth = `${viewportBounds.width}px`;
+            body.style.maxWidth = `${viewportBounds.width}px`;
+            body.style.height = `${viewportBounds.height}px`;
+            body.style.minHeight = `${viewportBounds.height}px`;
+            body.style.maxHeight = `${viewportBounds.height}px`;
+            stage.style.width = `${scaledWidth}px`;
+            stage.style.minWidth = `${scaledWidth}px`;
+            stage.style.maxWidth = `${scaledWidth}px`;
+            stage.style.minHeight = `${scaledHeight}px`;
+            stage.style.maxHeight = `${scaledHeight}px`;
+            return;
+        }
+
         const a4FrameBounds = getDocxA4FrameBounds();
         const scaledWidth = a4FrameBounds.width;
         const scaledHeight = a4FrameBounds.height;
@@ -24148,7 +24253,9 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             const scaleReferenceMetrics = getDocxElementNaturalMetrics(scaleReferencePageEl);
             const basePageWidth = scaleReferenceMetrics.width;
             const activePageNaturalHeight = Math.max(1, activePageMetrics.height);
-            docxFitScale = getDocxWidthPriorityScale(basePageWidth, activePageNaturalHeight);
+            docxFitScale = isChatImageViewerMobileExpanded(overlay)
+                ? getDocxExpandedMobileScale(basePageWidth, activePageNaturalHeight)
+                : getDocxWidthPriorityScale(basePageWidth, activePageNaturalHeight);
             syncDocxFrameSize(basePageWidth, activePageNaturalHeight);
             stage.classList.toggle('is-paged', totalPages > 1);
             stage.classList.remove('is-virtual-paged');
@@ -24170,6 +24277,11 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
                 activePageHeight
             );
             stage.style.height = `${frameHeight}px`;
+            if (isChatImageViewerMobileExpanded(overlay)) {
+                window.requestAnimationFrame(() => {
+                    body.scrollLeft = Math.max(0, Math.round((body.scrollWidth - body.clientWidth) / 2));
+                });
+            }
         } else if (navigationMode === 'virtual' && virtualWrapperEl instanceof Element) {
             stage.classList.remove('is-paged');
             stage.classList.add('is-virtual-paged');
@@ -24183,6 +24295,11 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
                 : (docxFitScale === 1
                     ? `translate3d(0, -${naturalOffset}px, 0)`
                     : `scale(${docxFitScale}) translate3d(0, -${naturalOffset}px, 0)`);
+            if (isChatImageViewerMobileExpanded(overlay)) {
+                window.requestAnimationFrame(() => {
+                    body.scrollLeft = Math.max(0, Math.round((body.scrollWidth - body.clientWidth) / 2));
+                });
+            }
         } else {
             stage.classList.remove('is-paged');
             stage.classList.remove('is-virtual-paged');

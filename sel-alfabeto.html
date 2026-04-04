@@ -4443,7 +4443,7 @@
     min-width: 100%;
     min-height: 100%;
     background: #ffffff;
-    justify-content: flex-start;
+    justify-content: center;
     align-items: flex-start;
     overflow: hidden;
 }
@@ -4457,7 +4457,7 @@
 .chat-image-viewer-overlay.is-mobile-expanded .chat-image-viewer-docx-page,
 .chat-image-viewer-overlay:fullscreen .chat-image-viewer-docx-page,
 .chat-image-viewer-overlay:-webkit-full-screen .chat-image-viewer-docx-page {
-    margin: 0;
+    margin: 0 auto;
     box-shadow: none;
 }
 
@@ -23817,9 +23817,6 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             renderedWidth: visibleMargins.renderedWidth,
             viewportWidth: visibleMargins.viewportWidth,
             contentWidth: Math.max(1, Number(visibleMargins.contentWidth || 0) || 1),
-            naturalLeftSpace: Math.max(0, (Number(visibleMargins.leftSpace || 0) || 0) / Math.max(0.1, Number(docxFitScale || 0) || 0.1)),
-            naturalRightSpace: Math.max(0, (Number(visibleMargins.rightSpace || 0) || 0) / Math.max(0.1, Number(docxFitScale || 0) || 0.1)),
-            naturalContentWidth: Math.max(1, (Number(visibleMargins.contentWidth || 0) || 1) / Math.max(0.1, Number(docxFitScale || 0) || 0.1)),
             trimTop: Math.max(0, Number(displayBounds.trimTop || 0) || 0),
             trimBottom: Math.max(0, Number(displayBounds.trimBottom || 0) || 0),
             visibleHeight: Math.max(1, Number(displayBounds.visibleHeight || 0) || 1),
@@ -23843,44 +23840,6 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             ? docxReducedMarginSnapshot
             : null;
     };
-    const getDocxExpandedCropGeometry = (pageIndex = -1, naturalWidth = 0) => {
-        const marginSnapshot = getDocxAdaptiveMarginSnapshot(pageIndex);
-        if (
-            !marginSnapshot
-            || Number(marginSnapshot.scale || 0) <= 0
-        ) {
-            return {
-                cropLeft: 0,
-                cropRight: 0,
-                cropTop: 0,
-                cropBottom: 0,
-                visibleNaturalWidth: Math.max(1, Number(naturalWidth || 0) || 1),
-                visibleNaturalHeight: Math.max(1, Number(marginSnapshot && marginSnapshot.naturalHeight ? marginSnapshot.naturalHeight : 1) || 1)
-            };
-        }
-        const safeNaturalWidth = Math.max(
-            1,
-            Number(naturalWidth || 0) || 0,
-            Number(marginSnapshot.naturalWidth || 0) || 0,
-            1
-        );
-        const safeNaturalHeight = Math.max(1, Number(marginSnapshot.naturalHeight || 0) || 1);
-        const naturalLeftSpace = Math.max(0, Number(marginSnapshot.naturalLeftSpace || 0) || 0);
-        const naturalRightSpace = Math.max(0, Number(marginSnapshot.naturalRightSpace || 0) || 0);
-        const cropLeft = naturalLeftSpace * 0.97;
-        const cropRight = naturalRightSpace * 0.97;
-        const detectedTrimTop = Math.max(0, Number(marginSnapshot.trimTop || 0) || 0);
-        const cropTop = Math.max(0, Math.min(safeNaturalHeight * 0.18, detectedTrimTop * 1.65));
-        const cropBottom = 0;
-        return {
-            cropLeft,
-            cropRight,
-            cropTop,
-            cropBottom,
-            visibleNaturalWidth: Math.max(1, safeNaturalWidth - cropLeft - cropRight),
-            visibleNaturalHeight: Math.max(1, safeNaturalHeight - cropTop - cropBottom)
-        };
-    };
     const getDocxExpandedMobileScale = (naturalWidth = 0, naturalHeight = 0, pageIndex = -1) => {
         const safeNaturalWidth = Math.max(0, Number(naturalWidth || 0) || 0);
         const safeNaturalHeight = Math.max(0, Number(naturalHeight || 0) || 0);
@@ -23896,9 +23855,21 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             && Number(marginSnapshot.scale || 0) > 0
         ) {
             const reducedRenderedScale = Math.max(0.1, Number(marginSnapshot.scale || 0) || 0.1);
-            const cropGeometry = getDocxExpandedCropGeometry(pageIndex, safeNaturalWidth);
-            const expandedScaleFromSnapshot = viewportBounds.width / Math.max(1, cropGeometry.visibleNaturalWidth);
-            return Math.max(0.1, Math.min(Math.max(reducedRenderedScale, expandedScaleFromSnapshot), 3.2));
+            const targetLeftSpace = Math.max(0, Number(marginSnapshot.leftSpace || 0) * 0.1);
+            const targetRightSpace = Math.max(0, Number(marginSnapshot.rightSpace || 0) * 0.1);
+            const reducedContentWidth = Math.max(
+                1,
+                Number(marginSnapshot.contentWidth || 0)
+                || (
+                    Number(marginSnapshot.renderedWidth || 0)
+                    - Number(marginSnapshot.leftSpace || 0)
+                    - Number(marginSnapshot.rightSpace || 0)
+                )
+                || 1
+            );
+            const targetContentWidth = Math.max(220, viewportBounds.width - targetLeftSpace - targetRightSpace);
+            const expandedScaleFromSnapshot = reducedRenderedScale * (targetContentWidth / reducedContentWidth);
+            return Math.max(0.1, Math.min(Math.max(reducedRenderedScale, expandedScaleFromSnapshot), 1.9));
         }
 
         const reducedViewportBounds = getDocxViewportBounds('reduced');
@@ -23908,11 +23879,11 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             reducedScale,
             reducedViewportBounds.width
         );
-        const targetLeftSpace = Math.max(0, Number(reducedSpaces.leftSpace || 0) * 0.03);
-        const targetRightSpace = Math.max(0, Number(reducedSpaces.rightSpace || 0) * 0.03);
+        const targetLeftSpace = Math.max(0, Number(reducedSpaces.leftSpace || 0) * 0.1);
+        const targetRightSpace = Math.max(0, Number(reducedSpaces.rightSpace || 0) * 0.1);
         const targetRenderedWidth = Math.max(220, viewportBounds.width - targetLeftSpace - targetRightSpace);
         const expandedScale = reducedScale * (targetRenderedWidth / Math.max(1, Number(reducedSpaces.renderedWidth || 0) || 1));
-        return Math.max(0.1, Math.min(Math.max(reducedScale, expandedScale), 3.2));
+        return Math.max(0.1, Math.min(Math.max(reducedScale, expandedScale), 1.9));
     };
 
     const getXmlAttributeByLocalName = (element, localName) => {
@@ -24438,14 +24409,13 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
                 element.getBoundingClientRect().bottom - pageRect.top
             )))
         );
-        const targetHorizontalPadding = 26;
-        const targetVerticalPadding = 8;
+        const targetPadding = 26;
         const maxHorizontalTrim = Math.max(0, pageNaturalWidth * 0.22);
-        const maxVerticalTrim = Math.max(0, pageNaturalHeight * 0.24);
-        const trimLeft = Math.max(0, Math.min(maxHorizontalTrim, contentLeft - targetHorizontalPadding));
-        const trimRight = Math.max(0, Math.min(maxHorizontalTrim, (pageNaturalWidth - contentRight) - targetHorizontalPadding));
-        const trimTop = Math.max(0, Math.min(maxVerticalTrim, contentTop - targetVerticalPadding));
-        const trimBottom = Math.max(0, Math.min(maxVerticalTrim, (pageNaturalHeight - contentBottom) - targetVerticalPadding));
+        const maxTrim = Math.max(0, pageNaturalHeight * 0.18);
+        const trimLeft = Math.max(0, Math.min(maxHorizontalTrim, contentLeft - targetPadding));
+        const trimRight = Math.max(0, Math.min(maxHorizontalTrim, (pageNaturalWidth - contentRight) - targetPadding));
+        const trimTop = Math.max(0, Math.min(maxTrim, contentTop - targetPadding));
+        const trimBottom = Math.max(0, Math.min(maxTrim, (pageNaturalHeight - contentBottom) - targetPadding));
         return {
             trimLeft,
             trimRight,
@@ -24615,8 +24585,6 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
         stage.style.visibility = '';
         stage.style.pointerEvents = '';
         stage.style.height = '';
-        stage.style.paddingTop = '';
-        stage.style.paddingBottom = '';
         clearDocxFrameSize();
         stage.classList.remove('is-paged');
         stage.classList.remove('is-virtual-paged');
@@ -24690,23 +24658,14 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
                 virtualWrapperEl.style.transform = '';
                 virtualWrapperEl.style.zoom = '';
             }
-            const expandedCropGeometry = isChatImageViewerExpanded(overlay)
-                ? getDocxExpandedCropGeometry(activePageIndex, basePageWidth)
-                : null;
             pageEls.forEach((pageEl, index) => {
                 pageEl.classList.toggle('is-active', index + 1 === currentPage);
                 if (isChatImageViewerExpanded(overlay)) {
                     pageEl.style.zoom = '';
-                    pageEl.style.transformOrigin = 'top left';
-                    pageEl.style.clipPath = expandedCropGeometry
-                        ? `inset(${Math.max(0, expandedCropGeometry.cropTop || 0).toFixed(2)}px ${Math.max(0, expandedCropGeometry.cropRight).toFixed(2)}px ${Math.max(0, expandedCropGeometry.cropBottom || 0).toFixed(2)}px ${Math.max(0, expandedCropGeometry.cropLeft).toFixed(2)}px)`
-                        : '';
-                    pageEl.style.transform = expandedCropGeometry
-                        ? `scale(${docxFitScale}) translate(${-Math.max(0, expandedCropGeometry.cropLeft).toFixed(2)}px, -${Math.max(0, expandedCropGeometry.cropTop || 0).toFixed(2)}px)`
-                        : `scale(${docxFitScale})`;
+                    pageEl.style.transformOrigin = 'top center';
+                    pageEl.style.transform = `scale(${docxFitScale})`;
                     return;
                 }
-                pageEl.style.clipPath = '';
                 pageEl.style.transformOrigin = '';
                 pageEl.style.zoom = supportsCssZoom && docxFitScale !== 1 ? String(docxFitScale) : '';
                 pageEl.style.transform = supportsCssZoom || docxFitScale === 1
@@ -24714,23 +24673,12 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
                     : `scale(${docxFitScale})`;
             });
             const activePageHeight = Math.max(0, Math.ceil(activePageNaturalHeight * docxFitScale));
-            const activeVisiblePageHeight = expandedCropGeometry
-                ? Math.max(0, Math.ceil(Math.max(1, Number(expandedCropGeometry.visibleNaturalHeight || 0) || activePageNaturalHeight) * docxFitScale))
-                : activePageHeight;
             const frameHeight = Math.max(
                 220,
                 body instanceof HTMLElement ? Math.ceil(body.clientHeight || 0) : 0,
-                activeVisiblePageHeight
+                activePageHeight
             );
             stage.style.height = `${frameHeight}px`;
-            if (isChatImageViewerExpanded(overlay)) {
-                const verticalInset = Math.max(0, Math.floor((frameHeight - activeVisiblePageHeight) / 2));
-                stage.style.paddingTop = `${verticalInset}px`;
-                stage.style.paddingBottom = '0px';
-            } else {
-                stage.style.paddingTop = '0px';
-                stage.style.paddingBottom = '0px';
-            }
             if (!isChatImageViewerExpanded(overlay)) {
                 window.requestAnimationFrame(() => {
                     window.requestAnimationFrame(() => {
@@ -24750,8 +24698,6 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             updateVirtualPagingMetrics();
             syncDocxFrameSize(virtualPageNaturalWidth, virtualPageNaturalHeight);
             stage.style.height = `${Math.max(220, virtualPageHeight)}px`;
-            stage.style.paddingTop = '0px';
-            stage.style.paddingBottom = '0px';
             const naturalOffset = Math.max(0, (currentPage - 1) * virtualPageNaturalHeight);
             virtualWrapperEl.style.zoom = supportsCssZoom && docxFitScale !== 1 ? String(docxFitScale) : '';
             virtualWrapperEl.style.transform = supportsCssZoom
@@ -24775,8 +24721,6 @@ async function initializeChatDocxFilePreview(overlay, options = {}) {
             stage.classList.remove('is-paged');
             stage.classList.remove('is-virtual-paged');
             stage.style.height = '';
-            stage.style.paddingTop = '';
-            stage.style.paddingBottom = '';
             docxFitScale = 1;
             clearDocxFrameSize();
             if (virtualWrapperEl instanceof Element) {

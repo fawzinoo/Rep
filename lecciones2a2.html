@@ -1249,6 +1249,8 @@
         const PARENT_SESSION_KEY = parentSlug ? `${parentSlug}_session_v1` : '';
         const PARENT_SESSION_META_KEY = parentSlug ? `${PARENT_SESSION_KEY}_meta` : '';
         const REQUIRED_ACTIVITY_ID = 'lecciones2a2';
+        const LESSON_RESULT_KEY = `${REQUIRED_ACTIVITY_ID}LastResult`;
+        const LESSON_LOCK_KEY = `${REQUIRED_ACTIVITY_ID}QuizLockState`;
 
         const readParentSession = () => {
             let meta = null;
@@ -1296,6 +1298,26 @@
                 throw new Error(`Sesión no autorizada: abre la pagina desde ${parentSlug}.html`);
             }
         })();
+
+        const persistLessonVisitState = () => {
+            const payload = {
+                percent: 100,
+                state: 'perfect',
+                savedAt: Date.now()
+            };
+            try {
+                localStorage.setItem(LESSON_RESULT_KEY, JSON.stringify(payload));
+                localStorage.removeItem(LESSON_LOCK_KEY);
+            } catch (_) { }
+        };
+
+        document.addEventListener('DOMContentLoaded', persistLessonVisitState, { once: true });
+        window.addEventListener('pagehide', persistLessonVisitState);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                persistLessonVisitState();
+            }
+        });
 
 
 		// Configurar PDF.js worker

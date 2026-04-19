@@ -1,0 +1,3321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            min-height: 100dvh;
+    height: auto;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+    margin: 0 auto;
+    box-sizing: border-box;
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #1f3658, #3558e3);
+            border: 3px solid #aab0b4;
+            margin: 0;
+            transition: background 0.18s ease;
+        }
+        .mute-audio-button {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: auto;
+            height: auto;
+            border: none;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 5000;
+            padding: 0;
+            position: absolute;
+            pointer-events: auto;
+            touch-action: manipulation;
+            transition: transform 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+        }
+        .mute-audio-icon {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+        }
+        .mute-audio-button:hover {
+            transform: scale(1.06);
+            opacity: 0.88;
+        }
+        .mute-audio-button:active {
+            transform: scale(0.96);
+        }
+        .mute-audio-button i {
+            font-size: 1.2rem;
+            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+        }
+        .mute-audio-slash {
+            position: absolute;
+            width: 22px;
+            height: 3px;
+            background: #ff6b6b;
+            border-radius: 999px;
+            transform: rotate(-44deg) scale(0.7);
+            opacity: 0;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            pointer-events: none;
+        }
+        .mute-audio-button.is-muted,
+        .mute-audio-button[data-muted="true"] {
+            color: #ff6b6b;
+        }
+        .mute-audio-button.is-muted .mute-audio-slash,
+        .mute-audio-button[data-muted="true"] .mute-audio-slash {
+            opacity: 1;
+            transform: rotate(-44deg) scale(1);
+        }
+.flashcard, .results-card {
+            z-index: 100;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            --swipe-x: 0px;
+            --swipe-y: 0px;
+            --swipe-rotate: 0deg;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+.back {
+    width: 100%;
+    background:
+        linear-gradient(to bottom, rgba(84, 158, 24, 0.94), rgba(202, 220, 167, 0.9)),
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.12), transparent 28%); /* Fondo con mas contraste */
+    color: #ffffff; /* Color del texto */
+    transform: rotateY(180deg); /* Rotación para el efecto */
+    padding: 20px; /* Margen interno */
+    text-align: center; /* Centrado horizontal */
+    font-size: 3rem; /* Tamaño del texto */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra del texto */
+    display: flex; /* Flexbox para el centrado */
+    justify-content: center; /* Centrar horizontalmente */
+    align-items: center; /* Centrar verticalmente */
+    flex-direction: column; /* Asegura que el texto fluya en columnas */
+    height: 100%; /* Usa toda la altura disponible */
+    max-width: 100%; /* Limita el ancho máximo */
+    margin: 0 auto; /* Centra dentro del contenedor */
+    line-height: 1.4; /* Espaciado entre líneas */
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+
+
+    
+        /* El efecto de voltear */
+        .flashcard {
+            transform: translate3d(var(--swipe-x), var(--swipe-y), 0) rotate(var(--swipe-rotate));
+        }
+
+        .flashcard.flipped {
+            transform: translate3d(var(--swipe-x), var(--swipe-y), 0) rotate(var(--swipe-rotate)) rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+
+        .flashcard.swipe-like,
+        .flashcard.swipe-nope {
+            transition: transform var(--swipe-duration, 0.25s) ease-in;
+        }
+        
+        .flashcard.swiping {
+            transition: none !important;
+        }
+        /* Prevent 3D dual-face glitch during swipe by hiding the inactive face completely */
+        .flashcard.swipe-like:not(.flipped) .back,
+        .flashcard.swipe-nope:not(.flipped) .back,
+        .flashcard.swiping:not(.flipped) .back {
+            display: none !important;
+        }
+
+        .flashcard.swipe-like.flipped .front,
+        .flashcard.swipe-nope.flipped .front,
+        .flashcard.swiping.flipped .front {
+            display: none !important;
+        }
+
+
+        .flashcard.preview-next {
+            z-index: 1;
+        }
+
+        .flashcard.animating-out {
+            z-index: 2;
+        }
+
+                /* Tinder-style tint overlay using inset box-shadow to avoid pseudo-element conflicts 
+           and 3D rendering bugs. Higher opacity ensures RED/GREEN is visible over the green back. */
+        .flashcard.swipe-like .front,
+        .flashcard.swipe-like .back {
+            box-shadow: inset 0 0 0 2000px rgba(39, 174, 96, 0.85) !important;
+            transition: box-shadow 0.15s ease, background-color 0s;
+        }
+        
+        .flashcard.swipe-like .front {
+            background-color: rgba(39, 174, 96, 1) !important; /* solid opaque background for front */
+            box-shadow: none !important; /* completely solid */
+        }
+
+        .flashcard.swipe-nope .front,
+        .flashcard.swipe-nope .back {
+            box-shadow: inset 0 0 0 2000px rgba(231, 76, 60, 0.95) !important;
+            transition: box-shadow 0.15s ease, background-color 0s;
+        }
+        
+        .flashcard.swipe-nope .front {
+            background-color: rgba(231, 76, 60, 1) !important; /* solid opaque background for front */
+            box-shadow: none !important; /* completely solid */
+        }
+
+        .swipe-indicator {
+            position: absolute;
+            top: 18px;
+            padding: 0;
+            border-radius: 0;
+            font-size: 2.7rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            font-family: "Playfair Display", "Georgia", serif;
+            font-style: italic;
+            color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+            z-index: 6;
+            text-transform: none;
+            border: none;
+            backdrop-filter: none;
+            box-shadow: none;
+        }
+
+        .swipe-indicator-yes {
+            left: 20px;
+            background: none;
+            color: #fff;
+            text-shadow: 0 0 14px rgba(46, 204, 113, 0.45), 0 0 28px rgba(88, 214, 141, 0.30), 0 8px 16px rgba(0, 0, 0, 0.24);
+            transform: translateY(-2px) scale(0.92);
+        }
+
+        .swipe-indicator-no {
+            right: 20px;
+            background: none;
+            color: #fff;
+            text-shadow: 0 0 14px rgba(231, 76, 60, 0.36), 0 8px 16px rgba(0, 0, 0, 0.22);
+            transform: translateY(-2px) scale(0.92);
+        }
+
+        .flashcard.swipe-like .swipe-indicator-yes,
+        .flashcard.swipe-nope .swipe-indicator-no {
+            opacity: 1;
+            filter: saturate(1.08);
+            transform: translateY(0) scale(1);
+        }
+
+        @media (max-width: 900px) and (pointer: coarse) {
+            .swipe-indicator {
+                font-size: 2.2rem;
+            }
+        }
+
+        @media (max-width: 900px) and (pointer: coarse) {
+            .flashcard {
+                touch-action: pan-y;
+            }
+        }
+
+        .fade-card {
+            background: linear-gradient(135deg, #f8ffae 0%, #43c6ac 100%);
+            color: #222;
+            font-size: 2.8rem;
+            font-weight: bold;
+            border-radius: 25px;
+            box-shadow: 0 8px 32px rgba(67, 198, 172, 0.25), 0 2px 8px rgba(0,0,0,0.12);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            animation: fadeOutCard 4s forwards;
+            letter-spacing: 2px;
+            border: 2px solid #fff;
+        }
+
+        .fade-text {
+            width: 100%;
+            text-align: center;
+            font-family: 'Playfair Display', serif;
+            text-shadow: 0 2px 8px rgba(67,198,172,0.2), 0 1px 2px #fff;
+        }
+
+        @keyframes fadeOutCard {
+            0% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    
+/* Contenedor de botones (Estilo Tinder) */
+.button-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 12px; /* Espacio cerrado exacto entre botones, igual que Tinder */
+    align-items: center;
+    padding: 0;
+    background-color: transparent !important;
+    border-radius: 0;
+    box-shadow: none !important;
+     /* ¡SUBIR LOS BOTONES PARA QUE PISEN LA LÍNEA INFERIOR DE LA TARJETA! */
+    
+    margin-top: -38px;
+    margin-bottom: 25px;
+    position: relative;
+    z-index: 1000; /* Asegurar que se superponen a las tarjetas */
+}
+
+/* Botones circulares estilo Tinder */
+.button {
+    border: 1.5px solid rgba(170, 176, 180, 0.85);
+    background-color: #fff !important;
+    cursor: pointer;
+    border-radius: 50% !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.20), inset 0 -5px 10px rgba(0, 0, 0, 0.15), 0 6px 16px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.35) !important;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.button:hover:not(.disabled) {
+    transform: scale(1.1) !important;
+    box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.25), inset 0 -3px 8px rgba(0, 0, 0, 0.1), 0 10px 20px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+.button:active:not(.disabled) {
+    transform: scale(0.95) !important;
+    box-shadow: inset 0 5px 15px rgba(0, 0, 0, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.35) !important;
+}
+
+.button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #f1f1f1 !important;
+    box-shadow: none !important;
+    transform: scale(1) !important;
+}
+
+/* Botones secundarios pequeño (Undo/Play) */
+#reset-button, #start-exposure-button, #total-cards-container {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 1.1rem !important;
+}
+
+#reset-button, #start-exposure-button, #total-cards-container {
+    width: 52px !important;
+    height: 52px !important;
+}
+
+#reset-button {
+    color: #f5b748 !important; /* Dorado/Amarillo estilo undo */
+}
+
+#start-exposure-button {
+    color: #c940ce !important; /* Morado/rayo estilo boost/play */
+}
+
+#total-cards-container {
+    color: #f39c12 !important; /* Naranja original */
+    pointer-events: none;
+    cursor: default;
+    flex-direction: row !important;
+    gap: 2px;
+}
+#total-cards-container .button-word {
+    margin: 0 !important;
+    font-size: 1.05rem !important;
+}
+#total-cards-container .counter {
+    margin: 0 !important;
+    font-size: 0.95rem !important;
+    color: #222 !important; /* Número en negro/oscuro */
+}
+
+/* Botones principales grandes (No/Sí) */
+.button.no, .button.yes {
+    width: 62px !important;
+    height: 62px !important;
+}
+
+.button.no {
+    color: #ffffff !important;
+    background: radial-gradient(circle at 30% 25%, #ffb0b8 0%, #ff6279 30%, #d83b54 68%, #aa1f3b 100%) !important;
+    border-color: rgba(255, 196, 204, 0.95) !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.button.yes {
+    color: #ffffff !important;
+    background: radial-gradient(circle at 30% 25%, #baf8df 0%, #46e4a2 30%, #19b978 68%, #0a8553 100%) !important;
+    border-color: rgba(209, 255, 232, 0.95) !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.button-word {
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-top: 2px;
+    
+}
+
+/* Margenes/Contadores dentro de los botones */
+.counter {
+    position: static !important;
+    transform: none !important;
+    background: transparent !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    padding: 0 !important;
+    margin-top: 1px !important;
+    
+    opacity: 0.85;
+}
+
+.button.no .counter,
+.button.yes .counter {
+    min-width: 26px;
+    margin-top: 6px !important;
+    padding-top: 4px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+
+    
+        .results-card {
+            z-index: 100;
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+
+#completion-message {
+    display: none; /* Inicialmente ocultos */
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.98);
+    color: #2c3e50;
+    font-size: clamp(1.4rem, 6vw, 2em);
+    font-weight: bold;
+    white-space: nowrap;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    text-align: center;
+    line-height: 1.2;
+    z-index: 100000;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 24px;
+}
+
+#final-review-message {
+    display: none; /* Inicialmente oculto */
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+    background: linear-gradient(160deg, #27ae60 0%, #1f8e4d 100%);
+    color: #ffffff;
+    font-size: clamp(1.4rem, 6vw, 2em);
+    font-weight: bold;
+    white-space: nowrap;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    text-align: center;
+    line-height: 1.2;
+    z-index: 100001;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 24px;
+}
+
+#overlay-confetti-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    pointer-events: none;
+    z-index: 100002;
+}
+
+        #start-exposure-button {
+  border-radius: 50%;  /* Hacer el botón redondo */
+  padding: 10px;         /* Ajustar el padding para que el icono se vea bien */
+  margin-left: 15px;
+  
+}
+
+#total-cards-container {
+    color: #f39c12 !important; /* Naranja original */
+    pointer-events: none;
+    cursor: default;
+    flex-direction: row !important;
+    gap: 2px;
+}
+#total-cards-container .button-word {
+    margin: 0 !important;
+    font-size: 1.05rem !important;
+}
+#total-cards-container .counter {
+    margin: 0 !important;
+    font-size: 0.95rem !important;
+    color: #222 !important; /* Número en negro/oscuro */
+}
+
+.button.disabled {
+    background-color: #bdc3c7;  /* Gris */
+    cursor: not-allowed; 
+    opacity: 0.5;  /* Opcional: Si deseas dar un toque más opaco */
+}
+
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+        color: black; /* color negro al inicio */
+    }
+    50% {
+        opacity: 0.5;
+        color: orange; /* color naranja en la mitad del parpadeo */
+    }
+    100% {
+        opacity: 1;
+        color: black; /* color negro al final */
+    }
+}
+
+.playing {
+    animation: blink 1s infinite;
+}
+
+
+        .overlay-text {
+    position: absolute; /* Se posiciona dentro de .front */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: white; /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra para mejor legibilidad */
+    text-align: center;
+    pointer-events: none; /* El texto no interferirá con los clics */
+    width: calc(100% - 56px);
+    max-width: 88%;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+}
+.overlay-text1 {
+    position: absolute; /* Se posiciona dentro de .front */
+    bottom: 450px; /* Se ajusta a 10px desde la parte inferior */
+    transform: translate(0, 0); /* Elimina el desplazamiento */
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: rgb(185, 232, 203); /* Color del texto */
+    font-size: 2rem; /* Tamaño del texto */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* Sombra para mejor legibilidad */
+    text-align: center; /* Alinea el texto a la izquierda */
+    pointer-events: none; /* El texto no interferirá con los clics */
+    display: inline-block;
+    animation: pulse 1.5s infinite; 
+}
+.overlay-text2 {
+    position: absolute; /* Se posiciona dentro de .front */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1; /* Asegura que esté sobre la imagen */
+    color: white; /* Color del texto */
+    font-size: 1.8rem; /* Tamaño base equilibrado */
+    font-weight: bold; /* Texto en negrita */
+    text-shadow: 0 3px 10px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.75);
+    text-align: center;
+    pointer-events: none; /* El texto no interferirá con los clics */
+    width: calc(100% - 56px);
+    max-width: 88%;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+    background: rgba(76, 118, 25, 0.22);
+    padding: 14px 18px;
+    border-radius: 18px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+    backdrop-filter: blur(2px);
+}
+
+@media (min-width: 1024px) {
+    .overlay-text2 {
+        font-size: 2.2rem; /* Recupera tamaño en pantallas grandes */
+        max-width: 82%;
+        line-height: 1.25;
+    }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes moveLeftToRight {
+  0% {
+    transform: translateX(0); /* Posición inicial */
+  }
+  50% {
+    transform: translateX(10px); /* Mueve hacia la derecha */
+  }
+  100% {
+    transform: translateX(0); /* Vuelve a la posición original */
+  }
+}
+
+
+
+
+    
+/* Título elegante animado */
+.elegant-title-box {
+    background: linear-gradient(135deg, rgba(41, 182, 246, 0.35) 0%, rgba(2, 119, 189, 0.15) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-top: 1px solid rgba(255,255,255,0.4);
+    border-left: 1px solid rgba(255,255,255,0.4);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    border-radius: 15px;
+    padding: 8px 25px;
+    color: #ffffff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-align: center;
+    text-transform: uppercase;
+    position: relative;
+    margin-left: auto;
+    margin-right: auto;
+    width: fit-content;
+    margin-top: 10px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    animation: floatingTitle 3.5s ease-in-out infinite;
+    z-index: 10;
+}
+
+.elegant-title-box::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+        to bottom right,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.0) 40%,
+        rgba(255, 255, 255, 0.4) 50%,
+        rgba(255, 255, 255, 0.0) 60%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    transform: rotate(35deg);
+    animation: shimmerTitle 4s infinite linear;
+}
+
+@keyframes floatingTitle {
+    0% { transform: translateY(0px); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4); }
+    50% { transform: translateY(-4px); box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.5); }
+    100% { transform: translateY(0px); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4); }
+}
+
+@keyframes shimmerTitle {
+    0% { transform: translateX(-150%) rotate(35deg); }
+    100% { transform: translateX(150%) rotate(35deg); }
+}
+
+
+/* Barra de navegación inferior estilo Tinder */
+.bottom-nav-bar {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    position: relative;
+    z-index: 9999;
+    margin-top: -20px;
+    padding-top: 18px;
+    background: transparent;
+    border: none;
+}
+
+.bottom-nav-bar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgba(170, 176, 180, 0.55);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.bottom-nav-bar::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgba(170, 176, 180, 0.42);
+    box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #aab0b4;
+    cursor: pointer;
+    font-size: 0.60rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    width: 30%;
+    transition: all 0.2s ease;
+}
+
+.nav-item i {
+    font-size: 1.1rem;
+    margin-bottom: 5px;
+    transition: transform 0.2s ease;
+}
+
+.nav-item:hover, .nav-item:active {
+    color: #ffffff; /* Blanco al tocar */
+}
+.nav-item:hover i, .nav-item:active i {
+    transform: scale(1.1);
+}
+
+
+/* Modal Explorar Unidades */
+.unit-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 99999;
+    align-items: flex-end;
+    justify-content: center;
+}
+.unit-modal-overlay.active {
+    display: flex;
+}
+.unit-modal {
+    background: linear-gradient(160deg, #1a1f2e 0%, #0d1117 100%);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px 24px 0 0;
+    padding: 24px 20px 36px;
+    width: 100%;
+    max-width: 520px;
+    animation: slideUpModal 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes slideUpModal {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);   opacity: 1; }
+}
+.unit-modal h3 {
+    color: #fff;
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 0 0 20px;
+    opacity: 0.8;
+}
+.unit-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+.unit-grid-btn {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 14px 8px;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.2s, transform 0.15s;
+    line-height: 1.3;
+}
+.unit-grid-btn:hover, .unit-grid-btn:active {
+    background: rgba(255,75,75,0.3);
+    transform: scale(1.05);
+}
+.unit-grid-btn.current-unit {
+    border-color: #ff4b4b;
+    background: rgba(255,75,75,0.18);
+}
+.unit-grid-btn i {
+    display: block;
+    font-size: 1.3rem;
+    margin-bottom: 6px;
+    color: #aab0e0;
+}
+.unit-modal-close {
+    display: block;
+    margin: 18px auto 0;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    color: #aab0b4;
+    font-size: 0.8rem;
+    padding: 8px 24px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+}
+.unit-modal-close:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+
+/* Evitar sombra azul al presionar botones (mobile tap highlight) */
+.button, .button:focus, .button:active,
+.nav-item, .nav-item:focus, .nav-item:active,
+.unit-grid-btn, .unit-grid-btn:focus {
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    -webkit-touch-callout: none;
+}
+
+/* Evitar selección de texto y menú copiar en tarjetas */
+.flashcard, .flashcard *,
+.front, .back,
+.overlay-text, .overlay-text1, .overlay-text2,
+.fade-text, .results-card, .results-card * {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+</style>
+ 
+</head>
+<body>
+
+ <div class="elegant-title-box">Unidad 2</div>
+    <div id="flashcard-container-wrapper">
+
+    <div id="flashcard-container">
+
+        <!-- Tarjeta: Nombre -->
+            <!-- Tarjeta: Actividad 1 -->
+            <div class="flashcard is-visible" data-audio="https://fawzinoo.github.io/audios/que1.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 1:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        ماذا تريد أن تفعل صباح السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Qué quieres hacer el sábado por la mañana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 1:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أمشي في الحديقة.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero caminar en el parque.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 2 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/que2.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 2:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        ماذا تريد أن تأكل يوم الأحد؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Qué quieres comer el domingo?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 2:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن آكل البيتزا.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero comer pizza.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 3 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/que3.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 3:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        ماذا تريد أن تزور يوم الجمعة بعد الظهر؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Qué quieres visitar el viernes por la tarde?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 3:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أزور المتحف.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero visitar el museo.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 4 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/que4.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 4:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        ماذا تريد أن تتعلم في نهاية هذا الأسبوع؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Qué quieres aprender este fin de semana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 4:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أتعلم الإسبانية.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero aprender español.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 5 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/que5.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 5:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        ماذا تريد أن تشتري من السوق يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Qué quieres comprar en el mercado el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 5:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أشتري الفواكه.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero comprar frutas.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 6 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/conquien1.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 6:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        مع من تريد أن تذهب إلى السينما يوم الجمعة؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Con quién quieres ir al cine el viernes?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 6:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أذهب إلى السينما مع صديقي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero ir al cine con mi amigo.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 7 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/conquien2.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 7:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        مع من تريد أن تتعشى يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Con quién quieres cenar el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 7:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أتعشى مع عائلتي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero cenar con mi familia.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 8 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/conquien3.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 8:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        مع من تريد أن تلعب يوم الأحد؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Con quién quieres jugar el domingo?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 8:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن ألعب مع أبناء عمي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero jugar con mis primos.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 9 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/conquien4.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 9:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        مع من تريد أن تخرج للمشي يوم السبت بعد الظهر؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Con quién quieres salir a caminar el sábado por la tarde?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 9:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أمشي مع كلبي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero caminar con mi perro.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 10 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/conquien5.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 10:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        مع من تريد أن تدرس يوم الأحد صباحا؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Con quién quieres estudiar el domingo por la mañana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 10:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أدرس مع زميلي في الفصل.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero estudiar con mi compañero de clase.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 11 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/adonde.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 11:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        إلى أين تريد أن تذهب مساء السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Adónde quieres ir el sábado por la noche?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 11:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أذهب إلى المطعم.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero ir al restaurante.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 12 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/adonde2.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 12:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        إلى أين تريد أن تسافر في نهاية هذا الأسبوع؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Adónde quieres viajar este fin de semana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 12:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أسافر إلى برشلونة.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero viajar a Barcelona.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 13 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/adonde3.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 13:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        إلى أين تريد أن تخرج يوم الأحد بعد الظهر؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Adónde quieres salir el domingo por la tarde?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 13:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أخرج إلى المركز التجاري.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero salir al centro comercial.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 14 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/adonde4.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 14:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        إلى أين تريد أن تذهب للنزهة صباح السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Adónde quieres ir a pasear el sábado por la mañana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 14:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أتنزه عند النهر.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero pasear al río.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 15 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/adonde31.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 15:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        إلى أين تريد أن تذهب مع أصدقائك يوم الجمعة؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Adónde quieres ir con tus amigos el viernes?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 15:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أذهب إلى حفل موسيقي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero ir a un concierto.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 16 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/porque32.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 16:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لماذا تريد أن تذهب إلى القرية في نهاية هذا الأسبوع؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Por qué quieres ir al pueblo este fin de semana?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 16:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لكي أرى والدي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Para ver a mis padres.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 17 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/porque2.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 17:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لماذا تريد أن تمارس الرياضة يوم الأحد؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Por qué quieres practicar deporte el domingo?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 17:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لأنني أريد أن ألعب كرة القدم.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Porque quiero jugar al fútbol.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 18 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/porque3.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 18:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لماذا تريد أن تطبخ يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Por qué quieres cocinar el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 18:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لأنني أريد أن أحضر شيئا مميزا.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Porque quiero preparar algo especial.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 19 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/porque4.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 19:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لماذا تريد أن تدرس الإسبانية يوم الجمعة؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Por qué quieres estudiar español el viernes?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 19:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لأنني أريد أن أتحدث بشكل أفضل.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Porque quiero hablar mejor.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 20 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/porque5.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 20:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        لماذا تريد أن تذهب إلى الحديقة يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Por qué quieres ir al parque el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 20:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        للاستمتاع بالطبيعة.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Para disfrutar de la naturaleza.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 21 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/donde6.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 21:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أين تريد أن تتناول الغداء يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Dónde quieres almorzar el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 21:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أتناول الغداء في البيت.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero almorzar en casa.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 22 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/donde.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 22:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أين تريد أن تدرس يوم الأحد بعد الظهر؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Dónde quieres estudiar el domingo por la tarde?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 22:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أدرس في المكتبة.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero estudiar en la biblioteca.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 23 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/donde2.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 23:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أين تريد أن تجتمع مع أصدقائك يوم الجمعة؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Dónde quieres reunirte con tus amigos el viernes?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 23:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أجتمع في المقهى.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero reunirme en la cafetería.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 24 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/dondefutbol1.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 24:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أين تريد أن تلعب كرة القدم يوم السبت؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Dónde quieres jugar al fútbol el sábado?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 24:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن ألعب في ملعب كرة القدم.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero jugar en el campo de fútbol.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta: Actividad 25 -->
+            <div class="flashcard" data-audio="https://fawzinoo.github.io/audios/donde5.mp3">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>السؤال 25:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أين تريد أن تشاهد فيلما يوم الأحد؟
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        ¿Dónde quieres ver una película el domingo?
+                    </div>
+                </div>
+            </div>
+
+            <div class="flashcard">
+                <div class="front">
+                    <div class="overlay-text1" dir="rtl"><u>الجواب 25:</u></div>
+                    <div class="overlay-text" dir="rtl">
+                        أريد أن أشاهد فيلما في بيتي.
+                    </div>
+                </div>
+                <div class="back">
+                    <div class="overlay-text2">
+                        Quiero ver una película en mi casa.
+                    </div>
+                </div>
+            </div>
+    
+    
+ 
+    
+  
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+            <button id="mute-audio-button" class="mute-audio-button" type="button" aria-label="Silenciar audios" onclick="toggleMuteAudio(event)">
+                <span class="mute-audio-icon">
+                    <i class="fas fa-volume-high"></i>
+                    <span class="mute-audio-slash"></span>
+                </span>
+            </button>
+        </div>
+    </div>
+    <div id="final-review-message" style="display: none; text-align: center; font-size: 2em; font-weight: bold; color: #fff; background-color: #27ae60; padding: 20px; border-radius: 15px;">
+        ¡Repaso Finalizado! 🎉
+    </div>
+    
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <canvas id="overlay-confetti-canvas"></canvas>
+    <audio id="soundResetButton" src="ttps://www.cjoint.com/doc/24_12/NLFvBMPFH3k_bellding-254774.mp3" preload="auto"></audio>
+    <audio id="startExposureSound" src="https://www.cjoint.com/doc/24_12/NLFsmCkAHKi_start.mp3" preload="auto"></audio>
+
+
+    <audio id="soundYesButton" src="https://fawzinoo.github.io/audios/naipe.mp3" preload="auto"></audio>
+    <audio id="soundNoButton" src="https://fawzinoo.github.io/audios/naipe.mp3" preload="auto"></audio>
+
+
+   
+    <audio id="finalMessageSound" src="https://www.cjoint.com/doc/24_12/NLFqVDn2rfi_level-win-6416.mp3" preload="auto"></audio>
+
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+        <div class="button-container">
+        <button class="button no">
+            <span class="button-word">No</span>
+            <span class="counter" id="no-counter">0</span>
+        </button>
+        <button class="button" id="reset-button" onclick="handleHardReset()">
+            <i class="fas fa-undo"></i>
+        </button>
+        <div class="button" id="total-cards-container">
+            <span class="button-word"><i class="far fa-clone"></i></span>
+            <span class="counter" id="total-cards">0</span>
+        </div>
+        <button class="button yes">
+            <span class="button-word">Sí</span>
+            <span class="counter" id="yes-counter">0</span>
+        </button>
+        <button class="button" id="start-exposure-button">
+            <i class="fas fa-play"></i> 
+        </button> 
+    </div>
+    
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+<script>
+const Flashcards = document.querySelectorAll('.flashcard');
+let suppressCardClickUntil = 0;
+const overlayConfettiCanvas = document.getElementById('overlay-confetti-canvas');
+const overlayConfetti = overlayConfettiCanvas ? confetti.create(overlayConfettiCanvas, { resize: true, useWorker: true }) : null;
+
+function launchOverlayConfetti() {
+    if (!overlayConfetti) {
+        return;
+    }
+
+    overlayConfetti({
+        particleCount: 180,
+        spread: 80,
+        startVelocity: 42,
+        origin: { x: 0.5, y: 0.5 }
+    });
+
+    setTimeout(() => {
+        overlayConfetti({
+            particleCount: 120,
+            spread: 100,
+            startVelocity: 34,
+            origin: { x: 0.28, y: 0.52 }
+        });
+        overlayConfetti({
+            particleCount: 120,
+            spread: 100,
+            startVelocity: 34,
+            origin: { x: 0.72, y: 0.52 }
+        });
+    }, 180);
+}
+
+Flashcards.forEach(card => {
+    card.addEventListener('click', (event) => {
+        if (Date.now() < suppressCardClickUntil) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+});
+
+// Agregar evento de clic a cada tarjeta
+Flashcards.forEach((card, DOMIndex) => {
+    let isFlipped = false; // Bandera para verificar si la tarjeta ya fue volteada
+
+    let flipTimeout = null;
+
+    card.addEventListener('click', () => {
+        // Cancel any pending transition lock immediately
+        if (flipTimeout) {
+            clearTimeout(flipTimeout);
+            flipTimeout = null;
+        }
+
+        // Toggle flip immediately — no blocking
+        isFlipped = !isFlipped;
+        if (isFlipped) {
+            card.classList.add('flipped');
+            playCardFlipAudio(card, DOMIndex);
+        } else {
+            card.classList.remove('flipped');
+            if (typeof stopAllAudios === 'function') stopAllAudios();
+        }
+
+        // Lock only for the CSS animation duration (800ms)
+        flipTimeout = setTimeout(() => {
+            flipTimeout = null;
+        }, 820);
+    });
+});
+
+
+
+
+
+
+    
+    const baseUrl = 'https://fawzinoo.github.io/audios/';
+const audios = [
+    'que1.mp3', 'Quiero1.mp3',
+    'que2.mp3', 'Quiero2.mp3',
+    'que3.mp3', 'Quiero3.mp3',
+    'que4.mp3', 'Quiero4.mp3',
+    'que5.mp3', 'Quiero5.mp3',
+    'conquien1.mp3', 'Quiero6.mp3',
+    'conquien2.mp3', 'Quiero7.mp3',
+    'conquien3.mp3', 'Quiero8.mp3',
+    'conquien4.mp3', 'Quiero9.mp3',
+    'conquien5.mp3', 'Quiero10.mp3',
+    'adonde.mp3', 'Quiero12.mp3',
+    'adonde2.mp3', 'Quiero27.mp3',
+    'adonde3.mp3', 'Quiero14.mp3',
+    'adonde4.mp3', 'Quiero15.mp3',
+    'adonde31.mp3', 'Quiero28.mp3',
+    'porque32.mp3', 'quiero29.mp3',
+    'porque2.mp3', 'quiero30.mp3',
+    'porque3.mp3', 'Quiero19.mp3',
+    'porque4.mp3', 'Quiero20.mp3',
+    'porque5.mp3', 'Quiero31.mp3',
+    'donde6.mp3', 'Quiero22.mp3',
+    'donde.mp3', 'Quiero23.mp3',
+    'donde2.mp3', 'Quiero24.mp3',
+    'dondefutbol1.mp3', 'Quiero25.mp3',
+    'donde5.mp3', 'Quiero26.mp3',
+].map(file => new Audio(baseUrl + file));
+let isAudioMuted = localStorage.getItem('flashcards-audio-muted') === 'true';
+
+    function applyMuteToManagedAudio(audio) {
+        if (!audio) return;
+        audio.muted = isAudioMuted;
+        audio.volume = isAudioMuted ? 0 : 1;
+    }
+
+    function updateAudioMuteState() {
+        const muteAudioButton = document.getElementById('mute-audio-button');
+
+        document.querySelectorAll('audio').forEach(audio => {
+            applyMuteToManagedAudio(audio);
+        });
+
+        audios.forEach(audio => {
+            applyMuteToManagedAudio(audio);
+        });
+
+        Flashcards.forEach(card => {
+            if (card.flipAudio) {
+                applyMuteToManagedAudio(card.flipAudio);
+            }
+        });
+
+        if (muteAudioButton) {
+            muteAudioButton.classList.toggle('is-muted', isAudioMuted);
+            muteAudioButton.dataset.muted = isAudioMuted ? 'true' : 'false';
+            muteAudioButton.setAttribute('aria-label', isAudioMuted ? 'Activar audios' : 'Silenciar audios');
+        }
+    }
+
+    function toggleMuteAudio(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        isAudioMuted = !isAudioMuted;
+        localStorage.setItem('flashcards-audio-muted', String(isAudioMuted));
+        if (isAudioMuted && typeof stopAllAudios === 'function') {
+            stopAllAudios();
+        }
+        updateAudioMuteState();
+        return false;
+    }
+
+    window.toggleMuteAudio = toggleMuteAudio;
+
+    updateAudioMuteState();
+
+    function playCardFlipAudio(card, DOMIndex) {
+        if (typeof stopAllAudios === 'function') {
+            stopAllAudios();
+        }
+
+        const flipAudioSrc = card.getAttribute('data-audio');
+        if (flipAudioSrc) {
+            if (!card.flipAudio || card.flipAudio.src !== flipAudioSrc) {
+                card.flipAudio = new Audio(flipAudioSrc);
+            }
+            applyMuteToManagedAudio(card.flipAudio);
+            card.flipAudio.currentTime = 0;
+            card.flipAudio.play().catch(error => console.log('Audio error:', error));
+            return;
+        }
+
+        if (audios[DOMIndex]) {
+            audios[DOMIndex].currentTime = 0;
+            audios[DOMIndex].play().catch(error => console.log('Audio error:', error));
+        }
+    }
+
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        Flashcards.forEach(card => {
+            if (card.flipAudio) {
+                card.flipAudio.pause();
+                card.flipAudio.currentTime = 0;
+            }
+        });
+
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    const swipeModeEnabled = window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
+    let activeSwipeCard = null;
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swipeCurrentX = 0;
+    let swipeCurrentY = 0;
+    let isDraggingSwipe = false;
+    let skipChoiceAnimationOnce = false;
+    let buttonAnimationInProgress = false;
+    let activeChoiceAnimation = null;
+
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    function decorateSwipeCards() {
+        flashcards.forEach(card => {
+            if (card.querySelector('.swipe-indicator-yes')) {
+                return;
+            }
+
+            const front = card.querySelector('.front');
+            const back = card.querySelector('.back');
+
+            const addIndicators = (parent) => {
+                if (!parent) return;
+                const yesIndicator = document.createElement('div');
+                yesIndicator.className = 'swipe-indicator swipe-indicator-yes';
+                yesIndicator.textContent = 'Sí';
+
+                const noIndicator = document.createElement('div');
+                noIndicator.className = 'swipe-indicator swipe-indicator-no';
+                noIndicator.textContent = 'No';
+
+                parent.appendChild(yesIndicator);
+                parent.appendChild(noIndicator);
+            };
+
+            // Append indicators separately to front and back to guarantee they are correctly 
+            // unmirrored and anchored to the active face no matter the 3D flipping state
+            addIndicators(front);
+            addIndicators(back);
+        });
+    }
+
+    function resetSwipeCard(card) {
+        if (card._rafId) {
+            cancelAnimationFrame(card._rafId);
+            card._rafId = null;
+        }
+        card.classList.remove('swiping', 'swipe-like', 'swipe-nope', 'animating-out', 'preview-next');
+        card.style.setProperty('--swipe-x', '0px');
+        card.style.setProperty('--swipe-y', '0px');
+        card.style.setProperty('--swipe-rotate', '0deg');
+        card.style.setProperty('--swipe-duration', '0.8s');
+    }
+
+    function updateSwipeCard(card, deltaX, deltaY) {
+        const limitedY = Math.max(-18, Math.min(18, deltaY * 0.08));
+        const rotation = Math.max(-18, Math.min(18, deltaX * 0.06));
+        card.style.setProperty('--swipe-x', `${deltaX}px`);
+        card.style.setProperty('--swipe-y', `${limitedY}px`);
+        card.style.setProperty('--swipe-rotate', `${rotation}deg`);
+        card.classList.toggle('swipe-like', deltaX > 35);
+        card.classList.toggle('swipe-nope', deltaX < -35);
+    }
+
+    function getVisibleFlashcard() {
+        return flashcards.find(card => card.classList.contains('is-visible'));
+    }
+
+    function getPreviewCardIndex(direction) {
+        if (postponedCards.has(currentCardIndex)) {
+            if (postponedCards.size <= 1) {
+                return null;
+            }
+
+            let nextPostponedIndex = currentCardIndex;
+            do {
+                nextPostponedIndex++;
+                if (nextPostponedIndex >= flashcards.length) {
+                    nextPostponedIndex = 0;
+                }
+            } while (!postponedCards.has(nextPostponedIndex));
+
+            return nextPostponedIndex;
+        }
+
+        const simulatedCompletedCards = new Set(completedCards);
+
+        if (direction === 'yes') {
+            simulatedCompletedCards.add(currentCardIndex);
+        }
+
+        let nextIndex = currentCardIndex;
+        do {
+            nextIndex++;
+            if (nextIndex >= flashcards.length) {
+                nextIndex = 0;
+            }
+        } while (simulatedCompletedCards.has(nextIndex) && simulatedCompletedCards.size < flashcards.length);
+
+        if (nextIndex === currentCardIndex) {
+            return null;
+        }
+
+        return nextIndex;
+    }
+
+    function prepareNextCardPreview(card, direction, previewIndex) {
+        if (previewIndex === null) {
+            return;
+        }
+
+        const previewCard = flashcards[previewIndex];
+        if (!previewCard || previewCard === card) {
+            return;
+        }
+
+        // Show next card waiting behind (Tinder-style), mark current as animating-out
+        previewCard.classList.add('is-visible', 'preview-next');
+        card.classList.add('animating-out');
+    }
+
+    function clearPreviewState(exitingCard = null) {
+        flashcards.forEach(card => {
+            if (card === exitingCard) {
+                return;
+            }
+
+            card.classList.remove('preview-next');
+        });
+    }
+
+    function finishActiveChoiceAnimation() {
+        if (!activeChoiceAnimation) {
+            return false;
+        }
+
+        const { finalize } = activeChoiceAnimation;
+        finalize();
+        return true;
+    }
+
+    function animateChoiceCard(card, direction, onComplete, options = {}) {
+        const preserveSwipeProgress = options.preserveSwipeProgress === true;
+        finishActiveChoiceAnimation();
+        const soundToPlay = direction === 'yes' ? document.getElementById('soundYesButton') : document.getElementById('soundNoButton');
+        if (soundToPlay) {
+            soundToPlay.pause();
+            soundToPlay.currentTime = 0;
+            soundToPlay.play().catch(e => console.log('Audio playback error:', e));
+        }
+        const previewIndex = getPreviewCardIndex(direction);
+        const hasCardBehind = previewIndex !== null;
+        // pointer:coarse = touch screen (mobile), pointer:fine = mouse (PC)
+        const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+        let isFinalized = false;
+
+        const finalizeChoiceAnimation = () => {
+            if (isFinalized) {
+                return;
+            }
+
+            isFinalized = true;
+
+            if (card._choiceTimeoutId) {
+                clearTimeout(card._choiceTimeoutId);
+                card._choiceTimeoutId = null;
+            }
+
+            if (card._rafId) {
+                cancelAnimationFrame(card._rafId);
+                card._rafId = null;
+            }
+
+            resetSwipeCard(card);
+            card.classList.remove('is-visible');
+            clearPreviewState(card);
+            activeChoiceAnimation = null;
+
+            if (typeof onComplete === 'function') {
+                onComplete();
+            }
+        };
+
+        activeChoiceAnimation = {
+            card,
+            finalize: finalizeChoiceAnimation
+        };
+
+        prepareNextCardPreview(card, direction, previewIndex);
+        card.classList.remove('swiping');
+        card.classList.toggle('swipe-like', direction === 'yes');
+        card.classList.toggle('swipe-nope', direction === 'no');
+
+        const currentSwipeX = parseFloat(card.style.getPropertyValue('--swipe-x')) || 0;
+        const currentSwipeY = parseFloat(card.style.getPropertyValue('--swipe-y')) || 0;
+        const currentSwipeRotate = parseFloat(card.style.getPropertyValue('--swipe-rotate')) || 0;
+
+        if (!preserveSwipeProgress) {
+            card.style.transition = 'none';
+            card.style.setProperty('--swipe-x', '0px');
+            card.style.setProperty('--swipe-y', '0px');
+            card.style.setProperty('--swipe-rotate', '0deg');
+            void card.offsetWidth;
+        }
+
+        if (isTouchDevice) {
+            const animationDuration = preserveSwipeProgress ? (hasCardBehind ? 240 : 160) : (hasCardBehind ? 1000 : 500);
+            card.style.transition = '';
+            card.style.setProperty('--swipe-duration', `${animationDuration}ms`);
+            if (preserveSwipeProgress) {
+                card.style.setProperty('--swipe-x', `${currentSwipeX}px`);
+                card.style.setProperty('--swipe-y', `${currentSwipeY}px`);
+                card.style.setProperty('--swipe-rotate', `${currentSwipeRotate}deg`);
+            }
+            requestAnimationFrame(() => {
+                card.style.setProperty('--swipe-x', hasCardBehind ? (direction === 'yes' ? '120vw' : '-120vw') : '0px');
+                card.style.setProperty('--swipe-rotate', hasCardBehind ? (direction === 'yes' ? '18deg' : '-18deg') : '0deg');
+            });
+            card._choiceTimeoutId = setTimeout(() => {
+                card._choiceTimeoutId = null;
+                finalizeChoiceAnimation();
+            }, animationDuration);
+        } else {
+            // === PC: slow rAF animation with ease-in-out ===
+            const animationDuration = hasCardBehind ? 1200 : 800;
+            card.style.setProperty('--swipe-duration', '0ms'); // disable CSS transition
+            const isFlippedPC = card.classList.contains('flipped');
+            const targetX = hasCardBehind ? (direction === 'yes' ? window.innerWidth * 0.6 : -window.innerWidth * 0.6) : 0;
+            // No Z-rotation when flipped: compound rotateY+rotateZ in 3D shows both faces
+            const targetRotate = hasCardBehind ? (direction === 'yes' ? 20 : -20) : 0;
+            card.style.setProperty('--swipe-x', '0px');
+            card.style.setProperty('--swipe-y', '0px');
+            card.style.setProperty('--swipe-rotate', '0deg');
+            const startTime = performance.now();
+            let rafId;
+            function animFrame(now) {
+                const elapsed = now - startTime;
+                const t = Math.min(elapsed / animationDuration, 1);
+                // ease-in-out: starts slow and accelerates (so it stays visible longer)
+                const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                card.style.setProperty('--swipe-x', `${eased * targetX}px`);
+                card.style.setProperty('--swipe-rotate', `${eased * targetRotate}deg`);
+                if (t < 1) {
+                    rafId = requestAnimationFrame(animFrame);
+                    card._rafId = rafId;
+                } else {
+                    card._rafId = null;
+                    finalizeChoiceAnimation();
+                }
+            }
+            rafId = requestAnimationFrame(animFrame);
+            card._rafId = rafId;
+        }
+
+        if (direction === 'yes') {
+            const _fc = document.getElementById('flashcard-container');
+            const _rect = _fc ? _fc.getBoundingClientRect() : {left: window.innerWidth*0.5, top: window.innerHeight*0.45, width: 0, height: 0};
+            const _cx = (_rect.left + _rect.width / 2) / window.innerWidth;
+            const _cy = (_rect.top + _rect.height / 2) / window.innerHeight;
+            confetti({
+                particleCount: 40,
+                spread: 60,
+                startVelocity: 35,
+                origin: { x: _cx, y: _cy },
+                colors: ['#2ecc71', '#f1c40f', '#ffffff']
+            });
+        }
+    }
+
+    function commitSwipe(card, direction) {
+        suppressCardClickUntil = Date.now() + 450;
+        
+        animateChoiceCard(card, direction, () => {}, { preserveSwipeProgress: true });
+        
+        skipChoiceAnimationOnce = true;
+        if (direction === 'yes') {
+            yesButton.click();
+        } else {
+            noButton.click();
+        }
+    }
+
+    function handleSwipeStart(event) {
+        if (!swipeModeEnabled || yesButton.disabled || noButton.disabled) {
+            return;
+        }
+
+        const card = event.currentTarget;
+        if (!card.classList.contains('is-visible') || event.touches.length !== 1) {
+            return;
+        }
+
+        activeSwipeCard = card;
+        swipeStartX = event.touches[0].clientX;
+        swipeStartY = event.touches[0].clientY;
+        swipeCurrentX = 0;
+        swipeCurrentY = 0;
+        isDraggingSwipe = false;
+    }
+
+    function handleSwipeMove(event) {
+        if (!activeSwipeCard || activeSwipeCard !== event.currentTarget || event.touches.length !== 1) {
+            return;
+        }
+
+        const deltaX = event.touches[0].clientX - swipeStartX;
+        const deltaY = event.touches[0].clientY - swipeStartY;
+
+        if (!isDraggingSwipe) {
+            if (Math.abs(deltaX) < 12) {
+                return;
+            }
+            if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                activeSwipeCard = null;
+                return;
+            }
+            isDraggingSwipe = true;
+            activeSwipeCard.classList.add('swiping');
+        }
+
+        event.preventDefault();
+        swipeCurrentX = deltaX;
+        swipeCurrentY = deltaY;
+        updateSwipeCard(activeSwipeCard, deltaX, deltaY);
+    }
+
+    function handleSwipeEnd(event) {
+        if (!activeSwipeCard || activeSwipeCard !== event.currentTarget) {
+            return;
+        }
+
+        const card = activeSwipeCard;
+        activeSwipeCard = null;
+
+        if (!isDraggingSwipe) {
+            return;
+        }
+
+        isDraggingSwipe = false;
+        card.classList.remove('swiping');
+
+        if (swipeCurrentX > 90) {
+            commitSwipe(card, 'yes');
+        } else if (swipeCurrentX < -90) {
+            commitSwipe(card, 'no');
+        } else {
+            resetSwipeCard(card);
+        }
+    }
+
+    decorateSwipeCards();
+
+    if (swipeModeEnabled) {
+        flashcards.forEach(card => {
+            card.addEventListener('touchstart', handleSwipeStart, { passive: true });
+            card.addEventListener('touchmove', handleSwipeMove, { passive: false });
+            card.addEventListener('touchend', handleSwipeEnd);
+            card.addEventListener('touchcancel', handleSwipeEnd);
+        });
+    }
+
+    yesButton.addEventListener('click', (event) => {
+        if (skipChoiceAnimationOnce) {
+            skipChoiceAnimationOnce = false;
+            return;
+        }
+        if (buttonAnimationInProgress) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            finishActiveChoiceAnimation();
+        }
+        const visibleCard = getVisibleFlashcard();
+        if (!visibleCard || buttonAnimationInProgress) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        buttonAnimationInProgress = true;
+        // Instant counter preview
+        yesCounterSpan.textContent = yesCounter + 1;
+        if (postponedCards.has(currentCardIndex)) {
+            noCounterSpan.textContent = Math.max(0, noCounter - 1);
+        }
+        // Animate card fully, then trigger business logic
+        animateChoiceCard(visibleCard, 'yes', () => {
+            buttonAnimationInProgress = false;
+            skipChoiceAnimationOnce = true;
+            yesButton.click();
+        });
+    }, true);
+
+    noButton.addEventListener('click', (event) => {
+        if (skipChoiceAnimationOnce) {
+            skipChoiceAnimationOnce = false;
+            return;
+        }
+        if (buttonAnimationInProgress) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            finishActiveChoiceAnimation();
+        }
+        const visibleCard = getVisibleFlashcard();
+        if (!visibleCard || buttonAnimationInProgress) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        buttonAnimationInProgress = true;
+        // Instant counter preview
+        if (!postponedCards.has(currentCardIndex)) {
+            noCounterSpan.textContent = noCounter + 1;
+        }
+        // Animate card fully, then trigger business logic
+        animateChoiceCard(visibleCard, 'no', () => {
+            buttonAnimationInProgress = false;
+            skipChoiceAnimationOnce = true;
+            noButton.click();
+        });
+    }, true);
+
+    
+
+
+    const flashcardContainer = document.getElementById('flashcard-container');
+const enlargeButton = document.getElementById('enlarge-button') || document.createElement('div');
+const buttonContainer = document.querySelector('.button-container');
+let isEnlarged = false;
+
+
+
+
+
+
+
+
+let exposureInterval;
+let isExposing = false;
+let isPaused = false;
+let currentExposureIndex = 0;
+let timeouts = []; // Array para guardar los IDs de los setTimeout
+let currentExposureFrontAudio = null;
+let currentExposureRepeatInterval = null;
+let currentExposureAdvanceTimeout = null;
+let exposureAutoPausedByVisibility = false;
+
+// Función para iniciar/pausar la exposición de las tarjetas
+document.getElementById('start-exposure-button').addEventListener('click', () => {
+    const icon = document.querySelector('#start-exposure-button i');
+    const startButton = document.getElementById('start-exposure-button');
+
+    if (!isExposing) {
+        // Guardar el estado de pantalla completa antes de recargar
+        if (isEnlarged) {
+            sessionStorage.setItem('fullscreenMode', 'true'); // Indicar que estaba en pantalla completa
+        } else {
+            sessionStorage.removeItem('fullscreenMode'); // Quitar indicador si no está en pantalla completa
+        }
+
+        // Guardar indicador de iniciar exposición después de recargar
+        sessionStorage.setItem('startExposureAfterReload', 'true');
+
+        // Reproducir el sonido de inicio de exposición antes de recargar
+        const startExposureSound = document.getElementById('startExposureSound');
+        startExposureSound.play().catch(error => {
+            console.log('Error al reproducir el sonido de inicio:', error);
+        });
+
+        // Evitar que el sonido de reinicio se reproduzca
+        sessionStorage.setItem('skipResetSound', 'true');
+
+        setTimeout(() => {
+            location.reload(); // Recargar la página después de reproducir el sonido
+        }, 500); // Ajuste breve para permitir que el sonido se reproduzca
+        return; // Salir para esperar la recarga
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.remove('fa-play');
+        icon.classList.add('fa-pause'); // Volver a pausa
+        icon.classList.add('playing');
+        console.log("Reanudando exposición...");
+        resumeExposure();
+    } else {
+        isPaused = true;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.remove('fa-pause');
+        icon.classList.add('fa-play'); // Mostrar play para reanudar
+        icon.classList.remove('playing');
+        console.log("Pausando exposición...");
+        stopExposure();
+    }
+});
+
+
+
+
+
+
+// Detectar si se debe iniciar automáticamente después de la recarga
+// Detectar si se debe iniciar automáticamente después de recargar
+window.addEventListener('load', () => {
+    // Restablecer pantalla completa si estaba activa antes de recargar
+    if (sessionStorage.getItem('fullscreenMode') === 'true') {
+        flashcardContainer.style.position = 'fixed';
+        flashcardContainer.style.top = '0';
+        flashcardContainer.style.left = '0';
+        flashcardContainer.style.width = '100vw';
+        flashcardContainer.style.height = '100vh';
+        flashcardContainer.style.maxWidth = 'none';
+        flashcardContainer.style.maxHeight = 'none';
+        enlargeButton.innerHTML = '<i class="fas fa-compress"></i>';
+        buttonContainer.classList.add('fullscreen');
+        isEnlarged = true;
+    } else {
+        isEnlarged = false;
+    }
+
+    // Evitar el sonido de reinicio si está indicado
+    const skipResetSound = sessionStorage.getItem('skipResetSound');
+    if (skipResetSound === 'true') {
+        sessionStorage.removeItem('skipResetSound'); // Limpiar indicador
+    } else {
+        const soundResetButton = document.getElementById('soundResetButton');
+        soundResetButton.play().catch(error => {
+            console.log('Error al reproducir el sonido tras la recarga:', error);
+        });
+    }
+
+    // Iniciar exposición automáticamente si el indicador está activo
+    if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+        sessionStorage.removeItem('startExposureAfterReload');
+        console.log("Iniciando exposición automáticamente después de recargar.");
+        const startButton = document.getElementById('start-exposure-button');
+        const icon = document.querySelector('#start-exposure-button i');
+        isExposing = true;
+        isPaused = false;
+        icon.classList.remove('fa-sync-alt');
+        icon.classList.remove('fa-play');
+        icon.classList.add('fa-pause');
+        icon.classList.add('playing');
+        startButton.style.backgroundColor = "gold";
+        startButton.disabled = false;
+        startExposure(); // Iniciar exposición
+    }
+});
+
+
+
+
+
+// Función para iniciar la exposición
+function startExposure() {
+    console.log("Iniciando exposición...");
+    const startButton = document.getElementById('start-exposure-button');
+    const icon = document.querySelector('#start-exposure-button i');
+
+    isExposing = true;
+    isPaused = false;
+    currentCardIndex = currentExposureIndex;
+    saveProgress();
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.remove('fa-play');
+    icon.classList.add('fa-pause');
+    icon.classList.add('playing');
+    startButton.style.backgroundColor = "gold";
+    startButton.disabled = false;
+
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+
+    yesButton.disabled = true;
+    noButton.disabled = true;
+    yesButton.classList.add('disabled');
+    noButton.classList.add('disabled');
+
+    const flipDelay = currentExposureIndex === 0 ? 3000 : 4000; // 3 segundos para la primera tarjeta, 4 segundos para las siguientes
+    const preAudioDelay = 0; // 0 segundos antes del audio
+    const postAudioDelay = 10000; // 10 segundos después del audio
+
+    // Reproducir audio de la cara frontal antes de voltear la tarjeta
+    const currentCard = flashcards[currentExposureIndex];
+    const frontAudioSrc = currentCard.getAttribute('data-audio');
+    currentExposureFrontAudio = null;
+    if (frontAudioSrc) {
+        currentExposureFrontAudio = new Audio(frontAudioSrc);
+        applyMuteToManagedAudio(currentExposureFrontAudio);
+        currentExposureFrontAudio.play().catch((err) => console.log('Error al reproducir audio de la cara frontal:', err));
+        currentExposureFrontAudio.onended = () => {
+            currentExposureFrontAudio = null;
+            console.log('Audio de la cara frontal terminado.');
+            proceedToBackAudio(); // Continuar con el audio de la parte trasera
+        };
+    } else {
+        console.log('No hay audio para la cara frontal. Procediendo directamente.');
+        proceedToBackAudio();
+    }
+
+    function proceedToBackAudio() {
+        let timeoutId = setTimeout(() => {
+            flipCard(currentExposureIndex, true); // Voltear la tarjeta
+
+            let repetitions = 0;
+            const audioDuration = audios[currentExposureIndex].duration * 20; // Duración del audio en milisegundos
+
+            const playAudioWithDelays = () => {
+                const preAudioTimeoutId = setTimeout(() => {
+                    // Repetir el audio varias veces
+                    currentExposureRepeatInterval = setInterval(() => {
+                        audios[currentExposureIndex].play();
+                        repetitions++;
+
+                        if (repetitions >= 2) { // Número de repeticiones del audio
+                            clearInterval(currentExposureRepeatInterval);
+                            currentExposureRepeatInterval = null;
+
+                            console.log("Audio terminado, esperando antes de la siguiente tarjeta...");
+                            currentExposureAdvanceTimeout = setTimeout(() => {
+                                currentExposureAdvanceTimeout = null;
+                                moveToNextCard(); // Pasar a la siguiente tarjeta después del postAudioDelay
+                            }, postAudioDelay);
+                        }
+                    }, audioDuration); // Intervalo para reproducir el audio
+                }, preAudioDelay); // PreAudioDelay antes de reproducir el audio
+
+                timeouts.push(preAudioTimeoutId);
+            };
+
+            const moveToNextCard = () => {
+                currentExposureIndex++;
+                currentCardIndex = currentExposureIndex;
+
+                if (currentExposureIndex >= audios.length) {
+                    currentExposureIndex = 0;
+                    currentCardIndex = 0;
+                    clearProgress();
+                    yesButton.disabled = false;
+                    noButton.disabled = false;
+                    yesButton.classList.remove('disabled');
+                    noButton.classList.remove('disabled');
+                    isExposing = false;
+
+                    showFinalReviewMessage();
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+
+                    startButton.style.backgroundColor = "";
+                    startButton.disabled = false;
+                    icon.classList.remove('playing');
+                } else {
+                    saveProgress();
+                    startExposure(); // Continuar con la siguiente tarjeta
+                }
+                updateTotalCardsCounter();
+            };
+
+            playAudioWithDelays();
+        }, flipDelay); // Retraso inicial para voltear la tarjeta
+
+        timeouts.push(timeoutId); // Guardar el ID del timeout
+    }
+}
+
+
+
+
+
+
+
+// Función para pausar la exposición
+function stopExposure() {
+    clearInterval(exposureInterval);
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    if (currentExposureRepeatInterval) {
+        clearInterval(currentExposureRepeatInterval);
+        currentExposureRepeatInterval = null;
+    }
+    if (currentExposureAdvanceTimeout) {
+        clearTimeout(currentExposureAdvanceTimeout);
+        currentExposureAdvanceTimeout = null;
+    }
+    if (currentExposureFrontAudio) {
+        currentExposureFrontAudio.pause();
+        currentExposureFrontAudio.currentTime = 0;
+        currentExposureFrontAudio.onended = null;
+        currentExposureFrontAudio = null;
+    }
+    if (typeof stopAllAudios === 'function') {
+        stopAllAudios();
+    }
+}
+
+// Función para reanudar la exposición
+function resumeExposure() {
+    exposureAutoPausedByVisibility = false;
+    startExposure();
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        return;
+    }
+
+    if (!isExposing || isPaused) {
+        return;
+    }
+
+    const icon = document.querySelector('#start-exposure-button i');
+    isPaused = true;
+    exposureAutoPausedByVisibility = true;
+    icon.classList.remove('fa-sync-alt');
+    icon.classList.remove('fa-pause');
+    icon.classList.add('fa-play');
+    icon.classList.remove('playing');
+    stopExposure();
+});
+
+// Función para restablecer valores sin recargar
+function resetExposureValues() {
+    console.log("Restableciendo valores para la exposición.");
+    isExposing = false;
+    isPaused = false;
+    currentExposureIndex = 0;
+    currentCardIndex = 0;
+    clearProgress();
+    timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    timeouts = [];
+    showCard(currentExposureIndex);
+    flipCard(currentExposureIndex, false);
+}
+
+
+
+
+
+// Función para mostrar la tarjeta en la posición indicada
+function showCard(index) {
+    flashcards.forEach((card, i) => {
+        card.classList.remove('is-visible');
+        if (i === index) {
+            card.classList.add('is-visible');
+        }
+    });
+}
+
+// Función para voltear la tarjeta
+function flipCard(index, flipped) {
+    const card = flashcards[index];
+    if (flipped) {
+        card.classList.add('flipped'); // Voltea la tarjeta
+    } else {
+        card.classList.remove('flipped'); // Muestra la cara frontal
+    }
+}
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+    }
+}
+
+// Función para detener todos los audios
+function stopAllAudios() {
+    audios.forEach(audio => {
+            if (['soundYesButton', 'soundNoButton', 'soundResetButton', 'startExposureSound', 'buttonSound', 'finalMessageSound'].includes(audio.id)) return;
+        audio.pause();
+        audio.currentTime = 0; // Reiniciar al inicio
+    });
+}
+
+// Función para reproducir audio final
+function playFinalMessageAudio() {
+    const finalMessageSound = document.getElementById('finalMessageSound');
+    finalMessageSound.play();
+}
+
+        const resetButton = document.getElementById('reset-button');
+        const soundResetButton = document.getElementById('soundResetButton');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+        const yesActionButton = document.querySelector('.button.yes');
+        const noActionButton = document.querySelector('.button.no');
+        const totalCardsButton = document.getElementById('total-cards-container');
+        const startExposureButton = document.getElementById('start-exposure-button');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+        let noIndicatorShown = false;
+        let storageKey = `flashcard-progress:${window.location.pathname.split('/').pop()}`;
+
+        function showEndStateButtons() {
+            if (yesActionButton) yesActionButton.style.display = 'none';
+            if (noActionButton) noActionButton.style.display = 'none';
+            if (startExposureButton) startExposureButton.style.display = 'none';
+            if (resetButton) resetButton.style.display = 'flex';
+            if (totalCardsButton) totalCardsButton.style.display = 'flex';
+            if (buttonContainer) buttonContainer.style.display = 'flex';
+            const bottomNavBar = document.querySelector('.bottom-nav-bar');
+            if (bottomNavBar) bottomNavBar.style.display = 'flex';
+        }
+
+        function hideControlsForCompletionOverlay() {
+            if (buttonContainer) buttonContainer.style.display = 'none';
+            const bottomNavBar = document.querySelector('.bottom-nav-bar');
+            if (bottomNavBar) bottomNavBar.style.display = 'none';
+        }
+
+        function saveProgress() {
+            const progress = {
+                currentCardIndex,
+                currentExposureIndex,
+                yesCounter,
+                noCounter,
+                postponedCards: Array.from(postponedCards),
+                completedCards: Array.from(completedCards),
+                lastPostponedCard
+            };
+            localStorage.setItem(storageKey, JSON.stringify(progress));
+        }
+
+        function clearProgress() {
+            localStorage.removeItem(storageKey);
+        }
+
+        function restoreProgress() {
+            const raw = localStorage.getItem(storageKey);
+            if (!raw) {
+                return;
+            }
+
+            try {
+                const progress = JSON.parse(raw);
+                currentCardIndex = Number.isInteger(progress.currentCardIndex) ? progress.currentCardIndex : 0;
+                currentExposureIndex = Number.isInteger(progress.currentExposureIndex) ? progress.currentExposureIndex : currentCardIndex;
+                yesCounter = Number.isInteger(progress.yesCounter) ? progress.yesCounter : 0;
+                noCounter = Number.isInteger(progress.noCounter) ? progress.noCounter : 0;
+                postponedCards = new Set(Array.isArray(progress.postponedCards) ? progress.postponedCards : []);
+                completedCards = new Set(Array.isArray(progress.completedCards) ? progress.completedCards : []);
+                lastPostponedCard = Number.isInteger(progress.lastPostponedCard) ? progress.lastPostponedCard : null;
+
+                if (completedCards.size < flashcards.length && completedCards.has(currentCardIndex)) {
+                    let nextIndex = currentCardIndex;
+                    do {
+                        nextIndex = (nextIndex + 1) % flashcards.length;
+                    } while (completedCards.has(nextIndex) && completedCards.size < flashcards.length);
+                    currentCardIndex = nextIndex;
+                    currentExposureIndex = nextIndex;
+                }
+
+                yesCounterSpan.textContent = yesCounter;
+                noCounterSpan.textContent = noCounter;
+            } catch (error) {
+                console.log('No se pudo restaurar el progreso:', error);
+                clearProgress();
+            }
+        }
+    
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.remove('animating-out');
+                    resetSwipeCard(card);
+                    card.classList.add('is-visible');
+                    return;
+                }
+                
+                if (!card.classList.contains('animating-out')) {
+                    resetSwipeCard(card);
+                    card.classList.remove('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+            saveProgress();
+        }
+
+        function mostrarTarjetaNoMemorizadas(callback) {
+            yesButton.disabled = true;
+            noButton.disabled = true;
+
+            const tarjeta = document.createElement('div');
+            tarjeta.className = 'flashcard fade-card is-visible';
+            tarjeta.innerHTML = '<div class="fade-text">Las tarjetas No memorizadas</div>';
+            tarjeta.style.display = 'flex';
+            tarjeta.style.justifyContent = 'center';
+            tarjeta.style.alignItems = 'center';
+            tarjeta.style.position = 'absolute';
+            tarjeta.style.top = '0';
+            tarjeta.style.left = '0';
+            tarjeta.style.width = '100%';
+            tarjeta.style.height = '100%';
+            tarjeta.style.zIndex = '100';
+            tarjeta.style.background = 'linear-gradient(135deg, #ff5858 0%, #f857a6 100%)';
+            tarjeta.style.color = 'blue';
+            tarjeta.style.fontSize = '2.5rem';
+            tarjeta.style.fontWeight = 'bold';
+            tarjeta.style.borderRadius = '25px';
+            tarjeta.style.boxShadow = '0 8px 32px rgba(248, 87, 166, 0.25), 0 2px 8px rgba(0,0,0,0.12)';
+
+            flashcardContainer.appendChild(tarjeta);
+
+            setTimeout(() => {
+                tarjeta.remove();
+                yesButton.disabled = false;
+                noButton.disabled = false;
+
+                if (typeof callback === 'function') {
+                    callback();
+                }
+            }, 3000);
+        }
+
+        function showInitialProgressCard() {
+            if (
+                postponedCards.size > 0 &&
+                postponedCards.has(currentCardIndex) &&
+                !noIndicatorShown
+            ) {
+                noIndicatorShown = true;
+                mostrarTarjetaNoMemorizadas(() => {
+                    showCard(currentCardIndex);
+                });
+                return;
+            }
+
+            showCard(currentCardIndex);
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+
+            if (
+                postponedCards.size > 0 &&
+                postponedCards.has(currentCardIndex) &&
+                !noIndicatorShown
+            ) {
+                noIndicatorShown = true;
+                mostrarTarjetaNoMemorizadas(() => {
+                    showCard(currentCardIndex);
+                });
+                return;
+            }
+    
+            if (completedCards.size === flashcards.length) {
+                clearProgress();
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+
+    
+    // Resto de la lógica del botón "No"
+    if (postponedCards.has(currentCardIndex)) {
+        const wasLastPostponedCard = lastPostponedCard === currentCardIndex;
+        
+        if (wasLastPostponedCard) {
+            completedCards.add(currentCardIndex);
+            updateTotalCardsCounter();
+            clearProgress();
+            showCompletionMessage();
+            setTimeout(showResultsCard, 3000);
+            disableButtons();
+        } else {
+            completedCards.add(currentCardIndex);
+            updateTotalCardsCounter();
+            saveProgress();
+            moveToNextCard();
+        }
+    } else {
+        noCounter++;
+        noCounterSpan.textContent = noCounter;
+        postponedCards.add(currentCardIndex);
+        lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+        saveProgress();
+        moveToNextCard();
+    }
+});
+
+yesButton.addEventListener('click', () => {
+
+    
+    // Resto de la lógica del botón "Sí"
+    yesCounter++;
+    yesCounterSpan.textContent = yesCounter;
+
+    if (postponedCards.has(currentCardIndex)) {
+        postponedCards.delete(currentCardIndex);
+        noCounter--;
+        noCounterSpan.textContent = noCounter;
+    }
+
+    completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+    updateTotalCardsCounter(); // Actualizar el total de tarjetas
+    saveProgress();
+    moveToNextCard();
+});
+
+
+
+    
+resetButton.addEventListener('click', () => {
+    // Detener y reiniciar el audio para evitar fallos o tardanzas
+    const soundResetButton = document.getElementById('soundResetButton');
+    clearProgress();
+    
+    soundResetButton.pause(); // Detener cualquier reproducción anterior
+    soundResetButton.currentTime = 0; // Reiniciar el tiempo al principio
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido del botón Reiniciar:', error);
+    });
+
+    // Recargar la página y asegurarnos que el sonido se reproduzca después de la recarga
+    location.reload(); // Recarga la página inmediatamente
+});
+
+// Después de la recarga, reproducir el sonido de inmediato
+window.addEventListener('load', () => {
+    const soundResetButton = document.getElementById('soundResetButton');
+    soundResetButton.play().catch(error => {
+        console.log('Error al reproducir el sonido tras la recarga:', error);
+    });
+});
+
+
+
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+    clearProgress();
+    showEndStateButtons();
+    resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+    totalCardsInfo.textContent = flashcards.length;
+    cardsRemembered.textContent = noCounter;
+    cardsNotRemembered.textContent = yesCounter;
+
+    // Calcular porcentaje y actualizar el progreso circular
+    const percentage = (yesCounter / flashcards.length) * 100;
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+    progressCircle.style.setProperty('--progress', `${percentage}deg`);
+
+    // Desactivar el botón después de mostrar el resumen
+    const startButton = document.getElementById('start-exposure-button');
+    startButton.disabled = true;  // Desactivar el botón
+    startButton.classList.add('disabled');  // Añadir la clase 'disabled' para cambiar el estilo
+}
+
+
+
+    
+        function showCompletionMessage() {
+            hideControlsForCompletionOverlay();
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            launchOverlayConfetti();
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+// Función para mostrar el mensaje de "Repaso Finalizado"
+function showFinalReviewMessage() {
+    console.log('Mensaje de repaso finalizado a punto de mostrarse');
+    const finalReviewMessage = document.getElementById('final-review-message');
+    const resetButton = document.getElementById('reset-button');
+    const startButton = document.getElementById('start-exposure-button');
+    const bottomNavBar = document.querySelector('.bottom-nav-bar');
+    finalReviewMessage.style.display = 'flex';
+    if (resetButton) resetButton.style.display = 'none';
+    if (startButton) startButton.style.display = 'none';
+    if (bottomNavBar) bottomNavBar.style.display = 'none';
+
+    // Efecto de confeti
+    launchOverlayConfetti();
+
+    // Reproducir el audio de "Repaso Finalizado"
+    playFinalMessageAudio();
+
+    // Desactivar el botón después de mostrar el mensaje de repaso finalizado
+    if (startButton) {
+        startButton.disabled = true;
+        startButton.classList.add('disabled');
+    }
+
+    setTimeout(() => {
+        console.log('Ocultando el mensaje de repaso finalizado');
+        finalReviewMessage.style.display = 'none';
+    }, 3000);
+}
+
+
+
+function playAudio(index) {
+    console.log('Reproduciendo audio de la tarjeta', index);
+    if (audios[index]) {
+        stopAllAudios();
+        audios[index].play();
+
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) {
+                console.log('Última tarjeta terminada, mostrando mensaje');
+                showFinalReviewMessage();
+                resetFlashcards();
+            }
+        };
+    }
+}
+
+
+
+
+// Función para reproducir el audio correspondiente a la tarjeta
+function playAudio(index) {
+    if (audios[index]) {
+        stopAllAudios(); // Detener cualquier audio previamente reproducido
+        audios[index].play();
+
+        // Si es el último audio, mostrar el mensaje de repaso finalizado
+        audios[index].onended = function() {
+            if (index === flashcards.length - 1) { // Si es la última tarjeta
+                showFinalReviewMessage(); // Muestra el mensaje de repaso finalizado
+                resetFlashcards(); // Regresar a la primera tarjeta
+            }
+        };
+    }
+}
+
+
+// Función para reiniciar las tarjetas (volver a la primera tarjeta)
+function resetFlashcards() {
+    currentExposureIndex = 0;
+    currentCardIndex = 0;
+    clearProgress();
+    showCard(currentExposureIndex); // Mostrar la primera tarjeta
+    flipCard(currentExposureIndex, false); // Voltear la tarjeta
+    updateTotalCardsCounter(); // Actualizar el contador
+}
+
+
+
+        
+// ── Explorar Modal ──────────────────────────────────────────
+function openUnitModal() {
+    document.getElementById('unitModalOverlay').classList.add('active');
+}
+function closeUnitModal() {
+    document.getElementById('unitModalOverlay').classList.remove('active');
+}
+// ────────────────────────────────────────────────────────────
+
+
+        
+// ── Hard Reset for Restart Button ──
+function handleHardReset() {
+    const file = window.location.pathname.split('/').pop();
+    localStorage.removeItem(`flashcard-cards-progress:${file}`);
+    localStorage.removeItem(`flashcard-exposure-progress:${file}`);
+    sessionStorage.removeItem('startExposureAfterReload');
+    sessionStorage.removeItem('skipResetSound');
+    location.reload();
+}
+// ─────────────────────────────────────
+
+        function selectMode(mode) {
+            const overlay = document.getElementById('modeModalOverlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+                overlay.style.display = 'none';
+            }
+            
+            // Asignar storage key única por modo y archivo
+            storageKey = `flashcard-${mode}-progress:${window.location.pathname.split('/').pop()}`;
+            
+            restoreProgress();
+            updateTotalCardsCounter();
+            showInitialProgressCard();
+
+            const btnContainer = document.querySelector('.button-container');
+
+            if (mode === 'exposure') {
+                const yesBtn = document.querySelector('.button.yes');
+                const noBtn = document.querySelector('.button.no');
+                const totalBtn = document.getElementById('total-cards-container');
+                if(yesBtn) yesBtn.style.display = 'none';
+                if(noBtn) noBtn.style.display = 'none';
+                if(totalBtn) totalBtn.style.display = 'none';
+                if(btnContainer) btnContainer.style.marginTop = '-31px';
+            } else {
+                const playBtn = document.getElementById('start-exposure-button');
+                if(playBtn) playBtn.style.display = 'none';
+                if(btnContainer) btnContainer.style.marginTop = '-38px';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('startExposureAfterReload') === 'true') {
+                selectMode('exposure');
+            }
+        });
+    </script>
+    
+    
+
+    <!-- Barra de navegación inferior -->
+    <div class="bottom-nav-bar">
+        <div class="nav-item" onclick="window.location.href='https://fawzinoo.github.io/Rep/grup2.html'">
+            <i class="fas fa-home"></i>
+            <span>Home</span>
+        </div>
+        <div class="nav-item next-unit-label">
+            <i class="fas fa-layer-group"></i>
+            <span>Unidad 3</span>
+        </div>
+        <div class="nav-item" onclick="openUnitModal()">
+            <i class="fas fa-compass"></i>
+            <span>Explorar</span>
+        </div>
+    </div>
+
+    <!-- Modal Explorar -->
+    <div class="unit-modal-overlay" id="unitModalOverlay" onclick="if(event.target===this)closeUnitModal()">
+        <div class="unit-modal">
+            <h3>📚 Elige una Unidad</h3>
+            <div class="unit-grid">
+        <div class="unit-grid-btn" onclick="location.href='U1Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 1<br><small style="opacity:0.6;font-weight:400">Datos personales</small>
+        </div>
+        <div class="unit-grid-btn current-unit" onclick="location.href='U2Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 2<br><small style="opacity:0.6;font-weight:400">Fin de semana</small>
+        </div>
+        <div class="unit-grid-btn" onclick="location.href='U3Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 3<br><small style="opacity:0.6;font-weight:400">¿Dónde está...?</small>
+        </div>
+        <div class="unit-grid-btn" onclick="location.href='U4Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 4<br><small style="opacity:0.6;font-weight:400">En la tienda</small>
+        </div>
+        <div class="unit-grid-btn" onclick="location.href='U5Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 5<br><small style="opacity:0.6;font-weight:400">A mí también</small>
+        </div>
+        <div class="unit-grid-btn" onclick="location.href='U6Com.html'">
+            <i class="fas fa-book-open"></i>
+            Unidad 6<br><small style="opacity:0.6;font-weight:400">Actividades diarias</small>
+        </div>
+            </div>
+            <button class="unit-modal-close" onclick="closeUnitModal()">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Modal Modo de Estudio -->
+    <div class="unit-modal-overlay active" id="modeModalOverlay" style="z-index: 100000;">
+        <div class="unit-modal">
+            <h3>🎯 Selecciona el Modo</h3>
+            <p style="color:#aaa; font-size:0.85rem; margin-bottom: 20px;">Elige cómo quieres estudiar esta unidad. Los progresos de cada modo se guardan por separado.</p>
+            <div class="unit-grid" style="grid-template-columns: 1fr; gap: 15px;">
+                <div class="unit-grid-btn" onclick="selectMode('cards')">
+                    <i class="fas fa-layer-group" style="color:#4caf50;"></i>
+                    Modo Tarjetas
+                </div>
+                <div class="unit-grid-btn" onclick="selectMode('exposure')">
+                    <i class="fas fa-play-circle" style="color:#ffca28;"></i>
+                    Modo Exposición 
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

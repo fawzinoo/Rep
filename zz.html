@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <title>Flashcards con lógica Sí/No</title>
     <style>
@@ -1314,9 +1317,27 @@
 
 <script>
 const Flashcards = document.querySelectorAll('.flashcard');
+const currentFile = window.location.pathname.split('/').pop();
+const APP_VERSION = '2026-04-21-1';
+const appVersionStorageKey = `flashcard-app-version:${currentFile}`;
 let suppressCardClickUntil = 0;
 const overlayConfettiCanvas = document.getElementById('overlay-confetti-canvas');
 const overlayConfetti = overlayConfettiCanvas ? confetti.create(overlayConfettiCanvas, { resize: true, useWorker: true }) : null;
+
+function clearLegacyProgressForCurrentFile() {
+    [
+        `flashcard-progress:${currentFile}`,
+        `flashcard-cards-progress:${currentFile}`,
+        `flashcard-exposure-progress:${currentFile}`,
+        `flashcard-cards-progress:${currentFile}:v0`,
+        `flashcard-exposure-progress:${currentFile}:v0`
+    ].forEach(key => localStorage.removeItem(key));
+}
+
+if (localStorage.getItem(appVersionStorageKey) !== APP_VERSION) {
+    clearLegacyProgressForCurrentFile();
+    localStorage.setItem(appVersionStorageKey, APP_VERSION);
+}
 
 function launchOverlayConfetti() {
     if (!overlayConfetti) {
@@ -2347,7 +2368,7 @@ function playFinalMessageAudio() {
         let completedCards = new Set();
         let lastPostponedCard = null;
         let noIndicatorShown = false;
-        let storageKey = `flashcard-progress:${window.location.pathname.split('/').pop()}`;
+        let storageKey = `flashcard-cards-progress:${currentFile}:v1`;
 
         function showEndStateButtons() {
             if (yesActionButton) yesActionButton.style.display = 'none';
@@ -2744,9 +2765,11 @@ function closeUnitModal() {
         
 // ── Hard Reset for Restart Button ──
 function handleHardReset() {
-    const file = window.location.pathname.split('/').pop();
-    localStorage.removeItem(`flashcard-cards-progress:${file}`);
-    localStorage.removeItem(`flashcard-exposure-progress:${file}`);
+    localStorage.removeItem(`flashcard-progress:${currentFile}`);
+    localStorage.removeItem(`flashcard-cards-progress:${currentFile}`);
+    localStorage.removeItem(`flashcard-exposure-progress:${currentFile}`);
+    localStorage.removeItem(`flashcard-cards-progress:${currentFile}:v1`);
+    localStorage.removeItem(`flashcard-exposure-progress:${currentFile}:v1`);
     sessionStorage.removeItem('startExposureAfterReload');
     sessionStorage.removeItem('skipResetSound');
     location.reload();
@@ -2768,7 +2791,7 @@ function handleHardReset() {
             }
             
             // Asignar storage key única por modo y archivo
-            storageKey = `flashcard-${mode}-progress:${window.location.pathname.split('/').pop()}`;
+            storageKey = `flashcard-${mode}-progress:${currentFile}:v1`;
             
             restoreProgress();
             updateTotalCardsCounter();

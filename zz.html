@@ -1289,7 +1289,7 @@
     <audio id="buttonSound" src="https://fawzinoo.github.io/audios/goodresult-82807.mp3" preload="auto"></audio>
 
         <div class="button-container">
-        <button class="button no">
+        <button class="button no" id="no-button" onclick="return onChoiceButtonClick(event, 'no')">
             <span class="button-word">No</span>
             <span class="counter" id="no-counter">0</span>
         </button>
@@ -1303,7 +1303,7 @@
             <span class="button-word"><i class="far fa-clone"></i></span>
             <span class="counter" id="total-cards">0</span>
         </div>
-        <button class="button yes">
+        <button class="button yes" id="yes-button" onclick="return onChoiceButtonClick(event, 'yes')">
             <span class="button-word">Sí</span>
             <span class="counter" id="yes-counter">0</span>
         </button>
@@ -1318,7 +1318,7 @@
 <script>
 const Flashcards = document.querySelectorAll('.flashcard');
 const currentFile = window.location.pathname.split('/').pop();
-const APP_VERSION = '2026-04-21-1';
+const APP_VERSION = '2026-04-21-2';
 const appVersionStorageKey = `flashcard-app-version:${currentFile}`;
 let suppressCardClickUntil = 0;
 const overlayConfettiCanvas = document.getElementById('overlay-confetti-canvas');
@@ -1560,14 +1560,9 @@ const audios = [
     let swipeCurrentX = 0;
     let swipeCurrentY = 0;
     let isDraggingSwipe = false;
-    let skipChoiceAnimationOnce = false;
     let buttonAnimationInProgress = false;
     let activeChoiceAnimation = null;
 
-
-    // Detener todos los audios al presionar los botones "Sí" o "No"
-    yesButton.addEventListener('click', stopAllAudios);
-    noButton.addEventListener('click', stopAllAudios);
 
     function decorateSwipeCards() {
         flashcards.forEach(card => {
@@ -1918,58 +1913,6 @@ const audios = [
             card.addEventListener('touchcancel', handleSwipeEnd);
         });
     }
-
-    yesButton.addEventListener('click', (event) => {
-        if (buttonAnimationInProgress) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            finishActiveChoiceAnimation();
-        }
-        const visibleCard = getVisibleFlashcard();
-        if (!visibleCard || buttonAnimationInProgress) {
-            return;
-        }
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        buttonAnimationInProgress = true;
-        // Instant counter preview
-        yesCounterSpan.textContent = yesCounter + 1;
-        if (postponedCards.has(currentCardIndex)) {
-            noCounterSpan.textContent = Math.max(0, noCounter - 1);
-        }
-        // Animate card fully, then trigger business logic
-        animateChoiceCard(visibleCard, 'yes', () => {
-            buttonAnimationInProgress = false;
-            handleYesAction();
-        });
-    }, true);
-
-    noButton.addEventListener('click', (event) => {
-        if (buttonAnimationInProgress) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            finishActiveChoiceAnimation();
-        }
-        const visibleCard = getVisibleFlashcard();
-        if (!visibleCard || buttonAnimationInProgress) {
-            return;
-        }
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        buttonAnimationInProgress = true;
-        // Instant counter preview
-        if (!postponedCards.has(currentCardIndex)) {
-            noCounterSpan.textContent = noCounter + 1;
-        }
-        // Animate card fully, then trigger business logic
-        animateChoiceCard(visibleCard, 'no', () => {
-            buttonAnimationInProgress = false;
-            handleNoAction();
-        });
-    }, true);
-
-    
-
 
     const flashcardContainer = document.getElementById('flashcard-container');
 const enlargeButton = document.getElementById('enlarge-button') || document.createElement('div');
@@ -2582,8 +2525,69 @@ function handleYesAction() {
     moveToNextCard();
 }
 
-noButton.addEventListener('click', handleNoAction);
-yesButton.addEventListener('click', handleYesAction);
+function runButtonActionWithAnimation(direction) {
+    const isYesAction = direction === 'yes';
+    const actionButton = isYesAction ? yesButton : noButton;
+
+    if (!actionButton || actionButton.disabled || isExposing) {
+        return;
+    }
+
+    stopAllAudios();
+
+    if (buttonAnimationInProgress) {
+        finishActiveChoiceAnimation();
+    }
+
+    const visibleCard = getVisibleFlashcard();
+
+    if (!visibleCard) {
+        if (isYesAction) {
+            handleYesAction();
+        } else {
+            handleNoAction();
+        }
+        return;
+    }
+
+    buttonAnimationInProgress = true;
+
+    if (isYesAction) {
+        yesCounterSpan.textContent = yesCounter + 1;
+        if (postponedCards.has(currentCardIndex)) {
+            noCounterSpan.textContent = Math.max(0, noCounter - 1);
+        }
+    } else if (!postponedCards.has(currentCardIndex)) {
+        noCounterSpan.textContent = noCounter + 1;
+    }
+
+    let finished = false;
+    const finalizeAction = () => {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        buttonAnimationInProgress = false;
+        if (isYesAction) {
+            handleYesAction();
+        } else {
+            handleNoAction();
+        }
+    };
+
+    animateChoiceCard(visibleCard, direction, finalizeAction);
+    setTimeout(finalizeAction, 1500);
+}
+
+function onChoiceButtonClick(event, direction) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    runButtonActionWithAnimation(direction);
+    return false;
+}
 
 
 
@@ -2807,6 +2811,9 @@ function handleHardReset() {
                 if(resetBtn) resetBtn.style.display = 'flex';
                 if(playBtn) playBtn.style.display = 'none';
                 if(btnContainer) btnContainer.style.marginTop = '-38px';
+                if (completedCards.size < flashcards.length) {
+                    enableButtons();
+                }
             }
         }
 

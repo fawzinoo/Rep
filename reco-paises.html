@@ -35547,7 +35547,7 @@ function installChatButtonHandler() {
     if (overlay) overlay.remove();
   }
 
-  function renderRankingTable(rows) {
+  function renderRankingTable(rows, modeKey = 'test') {
     if (!Array.isArray(rows) || rows.length === 0) {
       return '<div class="ranking-empty">No hay datos de ranking todavia.</div>';
     }
@@ -35556,8 +35556,12 @@ function installChatButtonHandler() {
     const tbody = rows.map((item, idx) => {
       const puesto = Number(item.puesto) || (idx + 1);
       const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
-      const parsedPuntos = parseLessonPointsValue(item.puntos);
-      const puntos = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+      const puntos = modeKey === 'test'
+        ? (() => {
+            const parsedPuntos = parseLessonPointsValue(item.puntos);
+            return Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+          })()
+        : (Number(item.puntos) || 0);
       const isCurrentUser = !!currentStudent &&
         normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
         normalizeStudentName(item.apellido || '') === currentStudent.apellido;
@@ -35591,7 +35595,7 @@ function installChatButtonHandler() {
 
     try {
       const rankingRows = await fetchRankingData(modeKey);
-      tableContainer.innerHTML = renderRankingTable(rankingRows);
+      tableContainer.innerHTML = renderRankingTable(rankingRows, modeKey);
     } catch (error) {
       tableContainer.innerHTML = '<div class="ranking-empty">No se pudo cargar el ranking. Intenta de nuevo.</div>';
       console.warn('Error cargando ranking:', error);

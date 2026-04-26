@@ -11801,7 +11801,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXbbcw6vzJ2Oaz2lK1WRJ-giPhXa8Y9DhRug4BJHUZKZTwNfqHj2xtA4ECDTWJidko/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzKr6Y_8V80CMPwGSbOLBjj8ZvckMwund2WIT3r6JRtZ0-o-qc09cjrnRjtp-6yflrN/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1L0T1';
 const TEST_UNLOCK_STATE_KEY = 'alfabeto-test-unlock-state-v2';
@@ -12855,13 +12855,26 @@ async function postToPortalB(payload, options = {}) {
     if (signal && signal.aborted) {
         throw createChatAttachmentUploadCancelledError();
     }
+    const normalizedPayload = payload && typeof payload === 'object' ? { ...payload } : {};
+    if (
+        normalizedPayload &&
+        typeof normalizedPayload.type === 'string' &&
+        normalizedPayload.type.toLowerCase().indexOf('chat_') === 0 &&
+        !String(normalizedPayload.token || '').trim()
+    ) {
+        normalizedPayload.token = String(
+            localStorage.getItem('access_token') ||
+            sessionStorage.getItem('access_token') ||
+            ''
+        ).trim();
+    }
     if (hasAppsScriptHtmlServiceBridge() && isChatPayloadSupportedByHtmlService(payload)) {
-        return postChatPayloadViaHtmlService(payload);
+        return postChatPayloadViaHtmlService(normalizedPayload);
     }
 
     const allowBeacon = options && options.allowBeacon !== false;
     const onlyNoCors = options && options.onlyNoCors === true;
-    const requestBody = JSON.stringify(payload || {});
+    const requestBody = JSON.stringify(normalizedPayload || {});
     const urls = getPortalBCandidateUrls();
     const modeOrder = onlyNoCors ? ['no-cors'] : ['no-cors', 'cors'];
     let lastError = null;

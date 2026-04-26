@@ -31624,7 +31624,7 @@ function skipCurrentCardAsUnknown() {
     try {
         const currentCard = flashcardsList[currentCardIndex];
         const back = currentCard.querySelector('.back');
-        const targetWord = currentCard.dataset.answer || (back ? back.textContent.trim() : '');
+        const targetWord = currentCard.dataset.answer || getOriginalBackText(back);
         if (targetWord) {
             incorrectWords.push(targetWord);
             incorrectWordDetails.push({ front: getFrontTextFromCard(currentCard), back: targetWord });
@@ -31817,7 +31817,7 @@ function playSuccessSound() {
 }
 
 // ======= Control de mute para sonidos de botones =======
-const BTN_SOUNDS_LS_KEY = 'de0a100_btn_sounds_muted';
+const BTN_SOUNDS_LS_KEY = 'finde1_btn_sounds_muted';
 function areButtonSoundsMuted() {
     try { return localStorage.getItem(BTN_SOUNDS_LS_KEY) === '1'; } catch(e) { return false; }
 }
@@ -32929,21 +32929,13 @@ function showCorrectWords() {
         animation: fadeInOverlay 0.3s ease-out forwards;
     `;
 
-    const detailList = correctWordDetails.length > 0
-        ? correctWordDetails
-        : correctWords.map(word => ({ front: '', back: word }));
-    const wordsHtml = detailList.length > 0
-        ? detailList.map(entry => {
-            const frontLabel = entry.front || deriveFrontLabelFromText(entry.back);
-            return `
-                <div class="result-word-card correct-result-card">
-                    <div class="result-word-front">${frontLabel}</div>
-                    <div class="result-word-details">
-                        <div class="result-word-back">${entry.back}</div>
-                    </div>
-                </div>
-            `;
-        }).join('')
+    const wordsHtml = correctWords.length > 0 
+        ? correctWords.map(word => `
+            <div class="word-card correct-word" onclick="vibrar(50); playButtonSound(); showItemImage('${word}')">
+                <span class="word-text">${word}</span>
+                <div class="word-checkmark">✓</div>
+            </div>
+        `).join('')
         : '<div class="no-words-message"><span class="no-words-icon">🎯</span><p>No hay tarjetas acertadas</p></div>';
 
     overlay.innerHTML = `
@@ -33001,21 +32993,13 @@ function showIncorrectWords() {
         animation: fadeInOverlay 0.3s ease-out forwards;
     `;
 
-    const detailList = incorrectWordDetails.length > 0
-        ? incorrectWordDetails
-        : incorrectWords.map(word => ({ front: '', back: word }));
-    const wordsHtml = detailList.length > 0
-        ? detailList.map(entry => {
-            const frontLabel = entry.front || deriveFrontLabelFromText(entry.back);
-            return `
-                <div class="result-word-card incorrect-result-card">
-                    <div class="result-word-front">${frontLabel}</div>
-                    <div class="result-word-details">
-                        <div class="result-word-back">${entry.back}</div>
-                    </div>
-                </div>
-            `;
-        }).join('')
+    const wordsHtml = incorrectWords.length > 0 
+        ? incorrectWords.map(word => `
+            <div class="word-card incorrect-word" onclick="vibrar(50); playButtonSound(); showItemImage('${word}')">
+                <span class="word-text">${word}</span>
+                <div class="word-checkmark">✗</div>
+            </div>
+        `).join('')
         : '<div class="no-words-message"><span class="no-words-icon">🎯</span><p>No hay tarjetas incorrectas</p></div>';
 
     overlay.innerHTML = `
@@ -33067,7 +33051,7 @@ const cardOptionsCache = new Map(); // key: índice de tarjeta, value: array de 
 function generateMultipleChoiceOptions(correctAnswer) {
     // Obtener todas las respuestas posibles de las tarjetas
     const allAnswers = flashcards.map(card => {
-        return card.dataset.answer || card.querySelector('.back').textContent.trim();
+        return getBackTextFromCard(card);
     }).filter(answer => answer && answer !== correctAnswer);
 
     const availableOptions = [...new Set(allAnswers)];
@@ -34226,8 +34210,15 @@ function normalizeFrontDisplays() {
 
 normalizeFrontDisplays();
 
+function getOriginalBackText(backElement) {
+    if (!backElement) return '';
+    const originalText = String(backElement.dataset.originalText || '').trim();
+    return originalText || backElement.textContent.trim();
+}
+
 function getBackTextFromCard(card) {
-    return card.dataset.answer || card.querySelector('.back')?.textContent?.trim() || '';
+    const backElement = card.querySelector('.back');
+    return card.dataset.answer || getOriginalBackText(backElement) || '';
 }
 
 function shuffleCards() {
@@ -34242,7 +34233,7 @@ const allCardData = flashcards.map((card, index) => ({
     frontImg: getFrontImage(card)?.src || '',
     frontAlt: getFrontImage(card)?.alt || '',
     frontText: getFrontTextFromCard(card),
-    backText: card.querySelector('.back').textContent.trim(),
+    backText: getOriginalBackText(card.querySelector('.back')),
     numberLabel: card.querySelector('.number-display')?.textContent?.trim() || ''
 }));
 
@@ -34326,15 +34317,7 @@ canFlipBack = true;
 }
 
 function getCountryText(backElement) {
-    // Clonamos el nodo para no modificar el original
-    const clone = backElement.cloneNode(true);
-    // Buscamos y eliminamos el contador de intentos si existe
-    const attemptsDiv = clone.querySelector('.intentos-back');
-    if (attemptsDiv) {
-        attemptsDiv.remove();
-    }
-    // Devolvemos el texto limpio
-    return clone.textContent.trim();
+    return getOriginalBackText(backElement);
 }
 
 function attachFlashcardHandlers() {
@@ -34344,7 +34327,7 @@ function attachFlashcardHandlers() {
         // Guardar la respuesta correcta original en un atributo data-answer SOLO una vez
         if (!card.dataset.answer) {
             const back = card.querySelector('.back');
-            card.dataset.answer = back.textContent.trim();
+            card.dataset.answer = getOriginalBackText(back);
         }
 
         card.addEventListener('click', (e) => {
@@ -34531,7 +34514,7 @@ function initializePage() {
     updateCounters();
     // Precargar audio correcto para la tarjeta visible tras primera mezcla
     const firstBack = document.querySelector('.flashcard.is-visible .back');
-    const visibleAnswer = firstBack ? firstBack.textContent.trim() : null;
+    const visibleAnswer = firstBack ? getOriginalBackText(firstBack) : null;
     const visibleSrc = visibleAnswer ? getAudioSrcForCountryName(visibleAnswer) : null;
     if (visibleSrc && audios[currentCardIndex]) {
         try { audios[currentCardIndex].pause(); } catch {}
@@ -34608,7 +34591,7 @@ function updatePointsPillFromCurrentPercentage(percentage, hasCards = true) {
 function reassignAudiosToCards() {
     try {
         flashcards.forEach((card, index) => {
-            const answer = card.dataset.answer || (card.querySelector('.back')?.textContent?.trim() || '');
+            const answer = getBackTextFromCard(card);
             const src = getAudioSrcForCountryName(answer);
             if (src) {
                 try { audios[index].pause(); } catch {}

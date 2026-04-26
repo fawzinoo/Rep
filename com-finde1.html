@@ -18319,15 +18319,30 @@ async function postToPortalB(payload, options = {}) {
     if (signal && signal.aborted) {
         throw createChatAttachmentUploadCancelledError();
     }
+    const normalizedPayload = payload && typeof payload === 'object' ? { ...payload } : {};
+    const isChatPayload = !!(
+        normalizedPayload &&
+        typeof normalizedPayload.type === 'string' &&
+        normalizedPayload.type.toLowerCase().indexOf('chat_') === 0
+    );
+    if (
+        isChatPayload &&
+        !String(normalizedPayload.token || '').trim()
+    ) {
+        normalizedPayload.token = getChatAccessTokenFromStorage();
+    }
+    if (isChatPayload && !String(normalizedPayload.token || '').trim()) {
+        throw new Error('chat_token_missing');
+    }
     if (hasAppsScriptHtmlServiceBridge() && isChatPayloadSupportedByHtmlService(payload)) {
-        return postChatPayloadViaHtmlService(payload);
+        return postChatPayloadViaHtmlService(normalizedPayload);
     }
 
     const allowBeacon = options && options.allowBeacon !== false;
     const onlyNoCors = options && options.onlyNoCors === true;
-    const requestBody = JSON.stringify(payload || {});
+    const requestBody = JSON.stringify(normalizedPayload || {});
     const urls = getPortalBCandidateUrls();
-    const modeOrder = onlyNoCors ? ['no-cors'] : ['no-cors', 'cors'];
+    const modeOrder = onlyNoCors ? ['no-cors'] : (isChatPayload ? ['cors', 'no-cors'] : ['no-cors', 'cors']);
     let lastError = null;
 
     for (const baseUrl of urls) {
@@ -18346,6 +18361,21 @@ async function postToPortalB(payload, options = {}) {
                     body: requestBody,
                     signal: signal || undefined
                 });
+                if (modeValue === 'cors' && isChatPayload) {
+                    const responseText = String(await response.text()).trim();
+                    if (!response.ok) {
+                        throw new Error(responseText || `portalb_http_${response.status}`);
+                    }
+                    if (
+                        responseText &&
+                        /forbidden|not found|invalid|empty|failed|missing/i.test(responseText) &&
+                        !/saved|edited|deleted/i.test(responseText)
+                    ) {
+                        throw new Error(responseText);
+                    }
+                    PORTALB_SCRIPT_URL = baseUrl;
+                    return { ok: true, text: responseText };
+                }
                 PORTALB_SCRIPT_URL = baseUrl;
                 return response;
             } catch (error) {
@@ -32614,6 +32644,46 @@ function getChatIdentityStorageValue(...keys) {
     return '';
 }
 
+function getChatAccessTokenFromStorage() {
+    const directToken = getChatIdentityStorageValue(
+        'access_token',
+        'token',
+        'authToken',
+        'sessionToken',
+        'userToken'
+    );
+    if (directToken) return directToken;
+
+    const readSessionTokenFromStorage = (storageObj) => {
+        if (!storageObj || typeof storageObj.length !== 'number') return '';
+        for (let idx = 0; idx < storageObj.length; idx += 1) {
+            let key = '';
+            try {
+                key = String(storageObj.key(idx) || '').trim();
+            } catch (_) {
+                key = '';
+            }
+            if (!key || !key.endsWith('_session_v1')) continue;
+
+            try {
+                const rawSessionToken = String(storageObj.getItem(key) || '').trim();
+                if (rawSessionToken) return rawSessionToken;
+            } catch (_) {}
+
+            try {
+                const rawMeta = String(localStorage.getItem(`${key}_meta`) || sessionStorage.getItem(`${key}_meta`) || '').trim();
+                if (!rawMeta) continue;
+                const parsedMeta = JSON.parse(rawMeta);
+                const metaToken = String(parsedMeta && parsedMeta.token ? parsedMeta.token : '').trim();
+                if (metaToken) return metaToken;
+            } catch (_) {}
+        }
+        return '';
+    };
+
+    return readSessionTokenFromStorage(sessionStorage) || readSessionTokenFromStorage(localStorage) || '';
+}
+
 function parseChatIdentityFullName(fullName) {
     const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
     if (!clean) return { firstName: '', lastName: '' };
@@ -35684,6 +35754,13 @@ async function submitChatMessage() {
         }, 450);
     } catch (error) {
         console.warn('Error enviando mensaje al chat:', error);
+        const errorMessage = String(error && error.message ? error.message : error || '').trim();
+        if (document.getElementById('chat-overlay')) {
+            void refreshChatMessages(false, false);
+        }
+        if (errorMessage === 'chat_token_missing' || /Chat Identity Forbidden/i.test(errorMessage)) {
+            alert('No se pudo enviar el mensaje. Abre la actividad desde la página principal para recuperar la sesión.');
+        }
     }
 }
 

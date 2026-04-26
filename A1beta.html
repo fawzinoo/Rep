@@ -6035,6 +6035,7 @@
                             requestAnimationFrame(() => lastSubToggle.scrollIntoView({ block: 'center', behavior: 'auto' }));
                         }
                     } catch (e) { /* ignore */ }
+                    scheduleTopicBadgeRelayout();
                 }
             }
             // preload click sound and helper to play with light volume + vibration
@@ -6134,6 +6135,7 @@
                                 } catch (e) { /* ignore scroll save errors */ }
                             }
                         } catch (e) { /* ignore */ }
+                        scheduleTopicBadgeRelayout();
                     }
                 });
             });
@@ -6188,6 +6190,7 @@
                             }
                         }
                     } catch (e) { }
+                    scheduleTopicBadgeRelayout();
                 });
             });
 
@@ -7125,6 +7128,37 @@
             badge.style.top = `${desiredTop}px`;
         }
 
+        let topicBadgeRelayoutRaf1 = null;
+        let topicBadgeRelayoutRaf2 = null;
+        let topicBadgeRelayoutTimeout = null;
+
+        function scheduleTopicBadgeRelayout() {
+            if (topicBadgeRelayoutRaf1 !== null) {
+                cancelAnimationFrame(topicBadgeRelayoutRaf1);
+                topicBadgeRelayoutRaf1 = null;
+            }
+            if (topicBadgeRelayoutRaf2 !== null) {
+                cancelAnimationFrame(topicBadgeRelayoutRaf2);
+                topicBadgeRelayoutRaf2 = null;
+            }
+            if (topicBadgeRelayoutTimeout !== null) {
+                clearTimeout(topicBadgeRelayoutTimeout);
+                topicBadgeRelayoutTimeout = null;
+            }
+
+            refreshTopicTotalBadgePositions();
+            topicBadgeRelayoutRaf1 = requestAnimationFrame(() => {
+                refreshTopicTotalBadgePositions();
+                topicBadgeRelayoutRaf2 = requestAnimationFrame(() => {
+                    refreshTopicTotalBadgePositions();
+                });
+            });
+            topicBadgeRelayoutTimeout = window.setTimeout(() => {
+                refreshTopicTotalBadgePositions();
+                topicBadgeRelayoutTimeout = null;
+            }, 140);
+        }
+
         function refreshTopicTotalBadgePositions() {
             const selector = TOPIC_SEMAPHORE_CONFIG
                 .map((config) => config?.cardId)
@@ -7455,7 +7489,7 @@
                 // Pre-render local inmediato para evitar parpadeo al terminar el access gate.
                 syncCandadosFromLocalProgress();
                 applyCandadosToCards();
-                requestAnimationFrame(refreshTopicTotalBadgePositions);
+                scheduleTopicBadgeRelayout();
                 return;
             }
 
@@ -7489,7 +7523,7 @@
                 console.warn('No se pudieron actualizar candados por progreso:', error);
             } finally {
                 applyCandadosToCards();
-                requestAnimationFrame(refreshTopicTotalBadgePositions);
+                scheduleTopicBadgeRelayout();
                 if (shouldBlockUntilHydration) {
                     requestAnimationFrame(() => hideGlobalLoading(false));
                 }
@@ -7501,18 +7535,20 @@
         document.addEventListener('DOMContentLoaded', () => {
             refreshDynamicCandados({ allowBeforeVisible: true });
         });
-        window.addEventListener('load', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
-        window.addEventListener('focus', refreshDynamicCandados);
-        window.addEventListener('pageshow', (event) => {
-            if (event && event.persisted) {
-                refreshDynamicCandados();
-            }
+        window.addEventListener('load', scheduleTopicBadgeRelayout);
+        window.addEventListener('focus', () => {
+            refreshDynamicCandados();
+            scheduleTopicBadgeRelayout();
         });
-        window.addEventListener('resize', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
-        window.addEventListener('orientationchange', () => requestAnimationFrame(refreshTopicTotalBadgePositions));
+        window.addEventListener('pageshow', (event) => {
+            if (event && event.persisted) refreshDynamicCandados();
+            scheduleTopicBadgeRelayout();
+        });
+        window.addEventListener('resize', scheduleTopicBadgeRelayout);
+        window.addEventListener('orientationchange', scheduleTopicBadgeRelayout);
         if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
             document.fonts.ready
-                .then(() => requestAnimationFrame(refreshTopicTotalBadgePositions))
+                .then(() => scheduleTopicBadgeRelayout())
                 .catch(() => { });
         }
 
@@ -8237,8 +8273,19 @@
 
         // Safari no dispara storage al volver atrás desde otra pestaña/iframe y usa bfcache.
         // Re-render al recuperar foco o al pageshow (incluye bfcache).
-        window.addEventListener('focus', renderAllBadges);
-        window.addEventListener('pageshow', renderAllBadges);
+        window.addEventListener('focus', () => {
+            renderAllBadges();
+            scheduleTopicBadgeRelayout();
+        });
+        window.addEventListener('pageshow', () => {
+            renderAllBadges();
+            scheduleTopicBadgeRelayout();
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                scheduleTopicBadgeRelayout();
+            }
+        });
 
         // === FUNCIÓN PARA ABRIR ENLACES EN IFRAME ===
         function abrirEnIframe(url, nombreActividad) {

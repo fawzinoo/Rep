@@ -11848,7 +11848,7 @@ let lockedAfterSecondIncorrect = false;    // bloquea el botón tras segundo int
 let lockedAfterCorrect = false;            // bloquea el botón tras acierto hasta pasar de tarjeta
 
 // Endpoint Apps Script (PortalB) para guardar puntos por lección
-let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzKr6Y_8V80CMPwGSbOLBjj8ZvckMwund2WIT3r6JRtZ0-o-qc09cjrnRjtp-6yflrN/exec';
+let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZAK2QyK1mb6Ii2EKFuAyEcLjhZLobyq1dblpX9nhpptazsB5DCsss_7d1ZI626typ/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U2L1T1';
 const TEST_UNLOCK_STATE_KEY = 'finde1-test-unlock-state-v2';
@@ -27214,8 +27214,82 @@ function normalizeStudentName(name) {
     return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function toLooseBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    const raw = String(value ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'si' || raw === 'sí';
+}
+
+function parseLessonPointsValue(value) {
+    const parseRaw = (rawValue) => {
+        const raw = String(rawValue ?? '').trim().toLowerCase().replace(',', '.');
+        if (!raw) return { points: null, forced: false };
+
+        const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
+        if (exact) {
+            return {
+                points: Number(exact[1]),
+                forced: Boolean(exact[2])
+            };
+        }
+
+        const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
+        if (forced) {
+            return {
+                points: Number(forced[1]),
+                forced: true
+            };
+        }
+
+        const numeric = raw.match(/([0-5])(?:\.0+)?/);
+        if (numeric) {
+            return {
+                points: Number(numeric[1]),
+                forced: false
+            };
+        }
+
+        return { points: null, forced: false };
+    };
+
+    if (value && typeof value === 'object') {
+        const forcedFromFlags =
+            toLooseBoolean(value.forcedUnlock) ||
+            toLooseBoolean(value.forced) ||
+            toLooseBoolean(value.unlockForced) ||
+            toLooseBoolean(value.isForced);
+
+        const candidates = [
+            value.puntosRaw,
+            value.puntos,
+            value.pointsRaw,
+            value.points,
+            value.value,
+            value.score,
+            value.resultado,
+            value.nota,
+            value.calificacion,
+            value.valor
+        ];
+
+        for (const candidate of candidates) {
+            const parsed = parseRaw(candidate);
+            if (!Number.isFinite(parsed.points)) continue;
+            return {
+                points: parsed.points,
+                forced: Boolean(parsed.forced || forcedFromFlags)
+            };
+        }
+
+        return { points: null, forced: forcedFromFlags };
+    }
+
+    return parseRaw(value);
+}
+
 function normalizeLessonPoints(value) {
-    const numeric = Number(value);
+    const parsed = parseLessonPointsValue(value);
+    const numeric = Number(parsed.points);
     if (!Number.isFinite(numeric)) return 0;
     return Math.max(0, Math.min(5, Math.round(numeric)));
 }
@@ -27336,9 +27410,13 @@ function escapeHtml(value) {
 }
 
 async function fetchRankingData(modeKey = 'test1') {
-    let mode = RANKING_TEST1_MODE;
-    if (modeKey === 'finde1') mode = RANKING_FINDE1_MODE;
-    if (modeKey === 'global') mode = RANKING_GENERAL_MODE;
+    if (modeKey === 'test1') {
+        return fetchRankingByColumn(LESSON_COLUMN_KEY);
+    }
+    if (modeKey === 'finde1') {
+        return fetchAggregatedRankingByColumns(['U2L1T1', 'U2L1T2', 'U2L1T3', 'U2L1T4']);
+    }
+    let mode = RANKING_GENERAL_MODE;
     const url = `${PORTALB_SCRIPT_URL}?mode=${encodeURIComponent(mode)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
     const response = await fetch(url, { cache: 'no-store' });
     const data = await response.json();
@@ -27346,6 +27424,55 @@ async function fetchRankingData(modeKey = 'test1') {
         throw new Error('No se pudo obtener el ranking.');
     }
     return data.ranking;
+}
+
+async function fetchRankingByColumn(columna) {
+    const url = `${PORTALB_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
+        throw new Error('No se pudo obtener el ranking.');
+    }
+    return data.ranking;
+}
+
+async function fetchAggregatedRankingByColumns(columnas) {
+    const columnList = Array.isArray(columnas) ? columnas.filter(Boolean) : [];
+    const rankingLists = await Promise.all(columnList.map((columna) => fetchRankingByColumn(columna)));
+    const totalsByStudent = new Map();
+
+    rankingLists.forEach((rows) => {
+        (Array.isArray(rows) ? rows : []).forEach((item) => {
+            const nombre = String(item && item.nombre ? item.nombre : '').trim();
+            const apellido = String(item && item.apellido ? item.apellido : '').trim();
+            if (!nombre && !apellido) return;
+            const key = `${normalizeStudentName(nombre)}||${normalizeStudentName(apellido)}`;
+            const parsedPuntos = parseLessonPointsValue(item);
+            const points = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+            const existing = totalsByStudent.get(key) || {
+                nombre,
+                apellido,
+                puntos: 0
+            };
+            existing.puntos += points;
+            totalsByStudent.set(key, existing);
+        });
+    });
+
+    return Array.from(totalsByStudent.values())
+        .sort((left, right) => {
+            const pointDiff = (Number(right.puntos) || 0) - (Number(left.puntos) || 0);
+            if (pointDiff !== 0) return pointDiff;
+            const leftName = `${left.apellido || ''} ${left.nombre || ''}`.trim().toLowerCase();
+            const rightName = `${right.apellido || ''} ${right.nombre || ''}`.trim().toLowerCase();
+            return leftName.localeCompare(rightName, 'es');
+        })
+        .map((item, idx) => ({
+            puesto: idx + 1,
+            nombre: item.nombre,
+            apellido: item.apellido,
+            puntos: item.puntos
+        }));
 }
 
 function closeRankingModal() {
@@ -27362,7 +27489,12 @@ function renderRankingTable(rows, pointsHeader = 'Pts.') {
     const tbody = rows.map((item, idx) => {
         const puesto = Number(item.puesto) || (idx + 1);
         const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
-        const puntos = Number(item.puntos) || 0;
+        const puntos = pointsHeader === 'Test1'
+            ? (() => {
+                const parsedPuntos = parseLessonPointsValue(item);
+                return Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+            })()
+            : (Number(item.puntos) || 0);
         const isCurrentUser = !!currentStudent &&
             normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
             normalizeStudentName(item.apellido || '') === currentStudent.apellido;

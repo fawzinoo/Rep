@@ -18558,6 +18558,24 @@ function reconcileLocalEchoWithServer(serverMessages, previousServerMessages = n
         }
         return true;
     });
+
+    const now = Date.now();
+    let hasNewFailed = false;
+    chatLocalEchoMessages.forEach((msg) => {
+        if (msg.pending && !msg.failed) {
+            const elapsed = now - new Date(msg.timestamp).getTime();
+            if (elapsed > 8000) { // 8 seconds timeout
+                msg.pending = false;
+                msg.failed = true;
+                hasNewFailed = true;
+            }
+        }
+    });
+    if (hasNewFailed) {
+        setTimeout(() => {
+            alert('No se pudo enviar el mensaje. Abre la actividad desde la página principal para recuperar la sesión o verifica tu conexión.');
+        }, 100);
+    }
 }
 
 function renderMergedChatMessages(serverMessages) {
@@ -21332,6 +21350,12 @@ async function sendQuickReactionToChatMessage(targetMessage, emoji) {
         }
     } catch (error) {
         console.warn('Error enviando reaccion rapida del chat:', error);
+        const matchingLocalEcho = [...chatLocalEchoMessages].reverse().find(m => m.pending && m.message === cleanEmoji);
+        if (matchingLocalEcho) {
+            matchingLocalEcho.pending = false;
+            matchingLocalEcho.failed = true;
+            renderMergedChatMessages(chatLatestServerMessages);
+        }
         if (document.getElementById('chat-overlay')) {
             void refreshChatMessages(false, false);
         }
@@ -31248,9 +31272,11 @@ function renderChatMessages(messages) {
         const useLongMessageLayout = shouldUseLongChatLineLayout(msg.message);
         const messageStatusOverlayHtml = isPendingSend
             ? `<span class="chat-message-status-inline pending" aria-hidden="true"><span class="chat-message-sending-indicator"></span></span>`
-            : (isRecentlyConfirmed
-                ? `<span class="chat-message-status-inline confirmed" aria-hidden="true"><span class="chat-message-confirmed-indicator">✓</span></span>`
-                : '');
+            : (msg.failed
+                ? `<span class="chat-message-status-inline failed" aria-hidden="true" style="color: #ef4444; margin-right: 6px; font-weight: bold; cursor: pointer;" title="No se pudo enviar. Revisa tu conexión o vuelve a iniciar sesión en la página principal.">⚠️</span>`
+                : (isRecentlyConfirmed
+                    ? `<span class="chat-message-status-inline confirmed" aria-hidden="true"><span class="chat-message-confirmed-indicator">✓</span></span>`
+                    : ''));
         const uploadProgressHtml = isPendingSend && !!attachmentUrl
             ? buildChatPendingUploadBarHtml(pendingUploadProgress, attachmentUrl)
             : '';
@@ -33541,6 +33567,19 @@ async function submitChatMessage() {
         }, 450);
     } catch (error) {
         console.warn('Error enviando mensaje al chat:', error);
+        const matchingLocalEcho = [...chatLocalEchoMessages].reverse().find(m => m.pending && m.message === message);
+        if (matchingLocalEcho) {
+            matchingLocalEcho.pending = false;
+            matchingLocalEcho.failed = true;
+            renderMergedChatMessages(chatLatestServerMessages);
+        }
+        const errorMessage = String(error && error.message ? error.message : error || '').trim();
+        if (document.getElementById('chat-overlay')) {
+            void refreshChatMessages(false, false);
+        }
+        if (errorMessage === 'chat_token_missing' || /Chat Identity Forbidden/i.test(errorMessage)) {
+            alert('No se pudo enviar el mensaje. Abre la actividad desde la página principal para recuperar la sesión.');
+        }
     }
 }
 

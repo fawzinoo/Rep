@@ -34741,13 +34741,11 @@ function installChatButtonHandler() {
 
       .ranking-table th {
         color: #d1d5db;
-        -webkit-text-fill-color: #d1d5db;
         font-weight: 700;
       }
 
       .ranking-table td {
         color: #f8fafc !important;
-        -webkit-text-fill-color: #f8fafc !important;
         font-weight: 600;
       }
 
@@ -34778,6 +34776,66 @@ function installChatButtonHandler() {
         color: #d1d5db;
       }
 
+      .ranking-loading {
+        min-height: 180px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .ranking-loading-spinner {
+        position: relative;
+        width: 68px;
+        height: 68px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, rgba(255, 214, 102, 0.2) 0%, rgba(34, 197, 94, 0.06) 54%, rgba(255, 255, 255, 0) 72%);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+      }
+
+      .ranking-loading-spinner::before,
+      .ranking-loading-spinner::after {
+        content: '';
+        position: absolute;
+        border-radius: 50%;
+        inset: 0;
+      }
+
+      .ranking-loading-spinner::before {
+        border: 4px solid rgba(255, 255, 255, 0.12);
+        border-top-color: #facc15;
+        border-right-color: #f97316;
+        animation: chatLoadingSpin 0.95s linear infinite;
+      }
+
+      .ranking-loading-spinner::after {
+        inset: 11px;
+        border: 3px solid rgba(255, 255, 255, 0.08);
+        border-bottom-color: #22c55e;
+        border-left-color: rgba(250, 204, 21, 0.5);
+        animation: chatLoadingSpinReverse 1.25s linear infinite;
+      }
+
+      .ranking-loading-spinner-core {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: linear-gradient(180deg, #fde68a 0%, #4ade80 100%);
+        box-shadow: 0 0 14px rgba(250, 204, 21, 0.42);
+      }
+
+      @keyframes chatLoadingSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      @keyframes chatLoadingSpinReverse {
+        from { transform: rotate(360deg); }
+        to { transform: rotate(0deg); }
+      }
+
       #points-pill {
         display: inline-flex;
         align-items: center;
@@ -34798,11 +34856,11 @@ function installChatButtonHandler() {
 
       #porcentaje-guardado,
       #last-game-pill {
-        background: #6b7280 !important;
-        color: #FFD700 !important;
-        font-weight: 600 !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%) !important;
+        color: #2d3748 !important;
+        font-weight: 700 !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3) !important;
       }
 
       #porcentaje-guardado::before {
@@ -35467,22 +35525,52 @@ function installChatButtonHandler() {
     if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
       throw new Error('No se pudo obtener el ranking.');
     }
-    const expected = String(columna || '').trim().toUpperCase();
-    const received = String(data.columna || '').trim().toUpperCase();
-    if (expected && received && expected !== received) {
-      throw new Error(`Columna inesperada: ${data.columna}`);
-    }
     return data.ranking;
+  }
+
+  async function fetchAggregatedRankingByColumns(columnas) {
+    const columnList = Array.isArray(columnas) ? columnas.filter(Boolean) : [];
+    const rankingLists = await Promise.all(columnList.map((columna) => fetchRankingByColumn(columna)));
+    const totalsByStudent = new Map();
+
+    rankingLists.forEach((rows) => {
+      (Array.isArray(rows) ? rows : []).forEach((item) => {
+        const nombre = String(item && item.nombre ? item.nombre : '').trim();
+        const apellido = String(item && item.apellido ? item.apellido : '').trim();
+        if (!nombre && !apellido) return;
+        const key = `${normalizeStudentName(nombre)}||${normalizeStudentName(apellido)}`;
+        const parsedPuntos = parseLessonPointsValue(item);
+        const points = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+        const existing = totalsByStudent.get(key) || { nombre, apellido, puntos: 0 };
+        existing.puntos += points;
+        totalsByStudent.set(key, existing);
+      });
+    });
+
+    return Array.from(totalsByStudent.values())
+      .sort((left, right) => {
+        const pointDiff = (Number(right.puntos) || 0) - (Number(left.puntos) || 0);
+        if (pointDiff !== 0) return pointDiff;
+        const leftName = `${left.apellido || ''} ${left.nombre || ''}`.trim().toLowerCase();
+        const rightName = `${right.apellido || ''} ${right.nombre || ''}`.trim().toLowerCase();
+        return leftName.localeCompare(rightName, 'es');
+      })
+      .map((item, idx) => ({
+        puesto: idx + 1,
+        nombre: item.nombre,
+        apellido: item.apellido,
+        puntos: item.puntos
+      }));
   }
 
   async function fetchRankingData(modeKey = 'test') {
     if (modeKey === 'test') {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
-    let mode = RANKING_TEST_MODE;
-    if (modeKey === 'arbol') mode = RANKING_ROPAMASCULINA_MODE;
-    if (modeKey === 'global') mode = RANKING_GENERAL_MODE;
-    return fetchRankingByMode(mode);
+    if (modeKey === 'arbol') {
+      return fetchAggregatedRankingByColumns(['U5L1T1', 'U5L1T2', 'U5L1T3', 'U5L1T4']);
+    }
+    return fetchRankingByMode(RANKING_GENERAL_MODE);
   }
 
   function closeRankingModal() {
@@ -35501,7 +35589,7 @@ function installChatButtonHandler() {
       const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
       const puntos = modeKey === 'test'
         ? (() => {
-            const parsedPuntos = parseLessonPointsValue(item.puntos);
+            const parsedPuntos = parseLessonPointsValue(item);
             return Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
           })()
         : (Number(item.puntos) || 0);
@@ -35534,7 +35622,7 @@ function installChatButtonHandler() {
   async function refreshRankingTable(modeKey) {
     const tableContainer = document.getElementById('ranking-table-container');
     if (!tableContainer) return;
-    tableContainer.innerHTML = '<div class="ranking-empty">Cargando ranking...</div>';
+    tableContainer.innerHTML = getRankingLoadingMarkup();
 
     try {
       const rankingRows = await fetchRankingData(modeKey);
@@ -35566,7 +35654,7 @@ function installChatButtonHandler() {
             <button type="button" class="ranking-mode-btn" id="ranking-mode-general">Global</button>
           </div>
           <div id="ranking-table-container">
-            <div class="ranking-empty">Cargando ranking...</div>
+            ${getRankingLoadingMarkup()}
           </div>
         </div>
       </div>

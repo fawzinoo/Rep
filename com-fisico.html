@@ -36949,6 +36949,79 @@ function installChatButtonHandler() {
     return data.ranking;
   }
 
+  function toLooseBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    const raw = String(value ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'si' || raw === 'sí';
+  }
+
+  function parseLessonPointsValue(value) {
+    const parseRaw = (rawValue) => {
+      const raw = String(rawValue ?? '').trim().toLowerCase().replace(',', '.');
+      if (!raw) return { points: null, forced: false };
+
+      const exact = raw.match(/^([0-5])(?:\.0+)?\s*([ft])?$/);
+      if (exact) {
+        return {
+          points: Number(exact[1]),
+          forced: Boolean(exact[2])
+        };
+      }
+
+      const forced = raw.match(/([0-5])(?:\.0+)?\s*[ft]/);
+      if (forced) {
+        return {
+          points: Number(forced[1]),
+          forced: true
+        };
+      }
+
+      const numeric = raw.match(/([0-5])(?:\.0+)?/);
+      if (numeric) {
+        return {
+          points: Number(numeric[1]),
+          forced: false
+        };
+      }
+
+      return { points: null, forced: false };
+    };
+
+    if (value && typeof value === 'object') {
+      const forcedFromFlags =
+        toLooseBoolean(value.forcedUnlock) ||
+        toLooseBoolean(value.forced) ||
+        toLooseBoolean(value.unlockForced) ||
+        toLooseBoolean(value.isForced);
+
+      const candidates = [
+        value.puntosRaw,
+        value.puntos,
+        value.pointsRaw,
+        value.points,
+        value.value,
+        value.score,
+        value.resultado,
+        value.nota,
+        value.calificacion,
+        value.valor
+      ];
+
+      for (const candidate of candidates) {
+        const parsed = parseRaw(candidate);
+        if (!Number.isFinite(parsed.points)) continue;
+        return {
+          points: parsed.points,
+          forced: Boolean(parsed.forced || forcedFromFlags)
+        };
+      }
+
+      return { points: null, forced: forcedFromFlags };
+    }
+
+    return parseRaw(value);
+  }
+
   async function fetchRankingByColumn(columna) {
     const url = `${PORTALB_SCRIPT_URL}?mode=ranking&columna=${encodeURIComponent(columna)}&scope=${encodeURIComponent(RANKING_SCOPE)}&t=${Date.now()}`;
     const response = await fetch(url, { cache: 'no-store' });
@@ -36956,22 +37029,52 @@ function installChatButtonHandler() {
     if (!data || data.ok !== true || !Array.isArray(data.ranking)) {
       throw new Error('No se pudo obtener el ranking.');
     }
-    const expected = String(columna || '').trim().toUpperCase();
-    const received = String(data.columna || '').trim().toUpperCase();
-    if (expected && received && expected !== received) {
-      throw new Error(`Columna inesperada: ${data.columna}`);
-    }
     return data.ranking;
+  }
+
+  async function fetchAggregatedRankingByColumns(columnas) {
+    const columnList = Array.isArray(columnas) ? columnas.filter(Boolean) : [];
+    const rankingLists = await Promise.all(columnList.map((columna) => fetchRankingByColumn(columna)));
+    const totalsByStudent = new Map();
+
+    rankingLists.forEach((rows) => {
+      (Array.isArray(rows) ? rows : []).forEach((item) => {
+        const nombre = String(item && item.nombre ? item.nombre : '').trim();
+        const apellido = String(item && item.apellido ? item.apellido : '').trim();
+        if (!nombre && !apellido) return;
+        const key = `${normalizeStudentName(nombre)}||${normalizeStudentName(apellido)}`;
+        const parsedPuntos = parseLessonPointsValue(item);
+        const points = Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+        const existing = totalsByStudent.get(key) || { nombre, apellido, puntos: 0 };
+        existing.puntos += points;
+        totalsByStudent.set(key, existing);
+      });
+    });
+
+    return Array.from(totalsByStudent.values())
+      .sort((left, right) => {
+        const pointDiff = (Number(right.puntos) || 0) - (Number(left.puntos) || 0);
+        if (pointDiff !== 0) return pointDiff;
+        const leftName = `${left.apellido || ''} ${left.nombre || ''}`.trim().toLowerCase();
+        const rightName = `${right.apellido || ''} ${right.nombre || ''}`.trim().toLowerCase();
+        return leftName.localeCompare(rightName, 'es');
+      })
+      .map((item, idx) => ({
+        puesto: idx + 1,
+        nombre: item.nombre,
+        apellido: item.apellido,
+        puntos: item.puntos
+      }));
   }
 
   async function fetchRankingData(modeKey = 'test') {
     if (modeKey === 'test') {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
-    let mode = RANKING_TEST_MODE;
-    if (modeKey === 'fisico') mode = RANKING_PAISES_MODE;
-    if (modeKey === 'global') mode = RANKING_GENERAL_MODE;
-    return fetchRankingByMode(mode);
+    if (modeKey === 'fisico') {
+      return fetchAggregatedRankingByColumns(['U5L2T1', 'U5L2T2', 'U5L2T3', 'U5L2T4']);
+    }
+    return fetchRankingByMode(RANKING_GENERAL_MODE);
   }
 
   function closeRankingModal() {
@@ -36979,7 +37082,7 @@ function installChatButtonHandler() {
     if (overlay) overlay.remove();
   }
 
-  function renderRankingTable(rows) {
+  function renderRankingTable(rows, modeKey) {
     if (!Array.isArray(rows) || rows.length === 0) {
       return '<div class="ranking-empty">No hay datos de ranking todavia.</div>';
     }
@@ -36988,7 +37091,12 @@ function installChatButtonHandler() {
     const tbody = rows.map((item, idx) => {
       const puesto = Number(item.puesto) || (idx + 1);
       const nombre = `${item.nombre || ''} ${item.apellido || ''}`.trim();
-      const puntos = Number(item.puntos) || 0;
+      const puntos = modeKey === 'test'
+        ? (() => {
+            const parsedPuntos = parseLessonPointsValue(item);
+            return Number.isFinite(parsedPuntos.points) ? parsedPuntos.points : 0;
+          })()
+        : (Number(item.puntos) || 0);
       const isCurrentUser = !!currentStudent &&
         normalizeStudentName(item.nombre || '') === currentStudent.nombre &&
         normalizeStudentName(item.apellido || '') === currentStudent.apellido;
@@ -37022,7 +37130,7 @@ function installChatButtonHandler() {
 
     try {
       const rankingRows = await fetchRankingData(modeKey);
-      tableContainer.innerHTML = renderRankingTable(rankingRows);
+      tableContainer.innerHTML = renderRankingTable(rankingRows, modeKey);
     } catch (error) {
       tableContainer.innerHTML = '<div class="ranking-empty">No se pudo cargar el ranking. Intenta de nuevo.</div>';
       console.warn('Error cargando ranking:', error);

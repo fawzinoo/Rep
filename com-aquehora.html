@@ -12017,7 +12017,7 @@ body.chat-typing .chat-footer {
 <div class="flashcard">
     <div class="front">
         <div class="overlay-text">16:30</div>
-        <img src="https://fawzinoo.github.io/Fotos/merendar.png" alt="Imagen 57">
+        <img src="https://fawzinoo.github.io/Fotos/merendar1.png" alt="Imagen 57">
     </div>
     <div class="back">
         <span>Mer<span style="color: red;">ie</span>nda</span> a las cuatro y media
@@ -12361,6 +12361,27 @@ body.chat-typing .chat-footer {
 const MINOR_WORDS_LIST = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'a', 'de', 'en', 'con', 'por', 'para', 'al', 'del', 'mi', 'tu', 'su', 'mis', 'tus', 'sus', 'este', 'esta', 'ese', 'esa', 'aquel', 'aquella', 'ante', 'bajo', 'desde', 'durante', 'entre', 'hacia', 'hasta', 'mediante', 'según', 'sin', 'sobre', 'tras'];
         const MINOR_WORDS_SET = new Set(MINOR_WORDS_LIST);
         const GAME_STATE_VERSION = 2;
+
+        function splitSentenceIntoActionAndTime(text) {
+            const textLower = text.toLowerCase();
+            let splitIdx = -1;
+            
+            if (textLower.includes(" a las ")) {
+                splitIdx = textLower.indexOf(" a las ");
+            } else if (textLower.includes(" a la ")) {
+                splitIdx = textLower.indexOf(" a la ");
+            } else if (textLower.includes(" ocho horas")) {
+                splitIdx = textLower.indexOf(" ocho horas");
+            }
+            
+            if (splitIdx !== -1) {
+                const actionPart = text.substring(0, splitIdx).trim();
+                const timePart = text.substring(splitIdx).trim();
+                return { actionPart, timePart };
+            }
+            
+            return { actionPart: text, timePart: "" };
+        }
 
         function isMinorWord(w) {
             if (!w || typeof w !== 'string') return false;
@@ -14298,7 +14319,10 @@ function showLetterCombination(backElement, correctAnswer) {
     container.className = 'letter-combination-container';
     
     const cleanAnswer = normalizeAnswerText(correctAnswer);
-    const words = splitAnswerIntoWords(cleanAnswer);
+    const { actionPart, timePart } = splitSentenceIntoActionAndTime(cleanAnswer);
+    
+    
+    const words = splitAnswerIntoWords(actionPart);
     currentPhraseWords = words; // Guardar en global
     targetWordLengths = words.map(w => w.length);
     currentWordCount = words.length;
@@ -14363,19 +14387,40 @@ function showLetterCombination(backElement, correctAnswer) {
     container.appendChild(wordAreaDiv);
     wordAreaDiv.addEventListener('click', (e) => { e.stopPropagation(); }, false);
     
+    if (timePart) {
+        const timeFooter = document.createElement('div');
+        timeFooter.className = 'time-given-footer';
+        timeFooter.style.cssText = `
+            color: #facc15;
+            font-size: 1.5rem;
+            font-weight: bold;
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            margin: 18px auto 0 auto;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            display: inline-block;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            text-align: center;
+        `;
+        timeFooter.textContent = timePart;
+        container.appendChild(timeFooter);
+    }
+    
     // Separador visual entre ventanas y botones
     const separator = document.createElement('div');
     separator.className = 'letter-combination-separator';
     container.appendChild(separator);
     
-    const answerKey = cleanAnswer.toLowerCase();
+    const answerKey = actionPart.toLowerCase();
     let letterData = cardOptionsCache.get(keyIndex);
     if (letterData && !letterData.letterData) {
         letterData = { letterData: letterData };
     }
     const cachedAnswerKey = letterData && letterData.letterData ? String(letterData.letterData.answerKey || '').toLowerCase() : '';
     if (!letterData || cachedAnswerKey !== answerKey) {
-        letterData = { letterData: generateLettersForWord(cleanAnswer) };
+        letterData = { letterData: generateLettersForWord(actionPart) };
         cardOptionsCache.set(keyIndex, letterData);
     }
     
@@ -15099,10 +15144,14 @@ function restoreGameState(gameState) {
                 const cardData = gameState.cardOrder[index];
                 if (cardData) {
                     const resolvedCardId = String(cardData.cardId || index);
-                    const canonical = getCanonicalCardData('', card, resolvedCardId);
+                    const canonical = ORIGINAL_CARD_DATA_BY_ID.get(resolvedCardId) || getCanonicalCardData('', card, resolvedCardId);
                     card.dataset.cardId = String(canonical.cardId || resolvedCardId);
                     card.querySelector('.front img').src = canonical.frontImg;
                     card.querySelector('.front img').alt = canonical.frontAlt;
+                    const overlayTextEl = card.querySelector('.front .overlay-text');
+                    if (overlayTextEl && canonical.frontText !== undefined && canonical.frontText !== null) {
+                        overlayTextEl.textContent = canonical.frontText;
+                    }
                     const back = card.querySelector('.back');
                     setCanonicalBackText(back, canonical.backText);
                     card.dataset.answer = getCleanBackText(back);
@@ -15669,8 +15718,16 @@ audioFiles.forEach(file => {
 function getAudioSrcForCountryName(textoBack) {
     const key = normalizeAudioKey(textoBack);
     if (!key) return null;
-    const directFile = audioFilenameByKey[key];
-    return directFile ? baseUrl + directFile : null;
+    if (audioFilenameByKey[key]) {
+        return baseUrl + audioFilenameByKey[key];
+    }
+    const sortedKeys = Object.keys(audioFilenameByKey).sort((a, b) => b.length - a.length);
+    for (const audioKey of sortedKeys) {
+        if (key.startsWith(audioKey) || key.includes(audioKey)) {
+            return baseUrl + audioFilenameByKey[audioKey];
+        }
+    }
+    return null;
 }
 
 function deriveFrontLabelFromText(backText) {

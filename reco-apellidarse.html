@@ -12064,24 +12064,35 @@ function palabrasSimilares(a, b) {
         const targetPronoun = wordsB[0];
         const targetVerb = wordsB[1];
 
+        // Para "nos" y "os", ignoramos por completo el pronombre y nos enfocamos en detectar el verbo
+        // (gestionando la posible 's' pegada al inicio por liaison, ej: "no sapellidamos").
+        if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            const hasVerbWithTolerance = wordsA.some(w => {
+                if (areWordsSimilar(w, targetVerb)) return true;
+                if (w.startsWith('s') && w.length > 1) {
+                    const withoutS = w.slice(1);
+                    if (areWordsSimilar(withoutS, targetVerb)) return true;
+                }
+                return false;
+            });
+            if (hasVerbWithTolerance) {
+                return true;
+            }
+        }
+
         const pronounMap = {
             'me': ['me', 'mi', 'no', 'yo', 'm'],
             'te': ['te', 'tu', 'de', 't'],
-            'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes', 's'],
-            'nos': ['nos', 'nosotros', 'nosotras', 'no', 'los', 'un', 'hoy', 's'],
-            'os': ['os', 'vosotros', 'vosotras', 'o', 'los', 'se', 'nos', 's']
+            'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes', 's']
         };
         const allowedPronouns = pronounMap[targetPronoun] || [targetPronoun];
 
-        // 2a. Si el verbo está presente por separado
+        // 2a. Si el verbo está presente por separado (para me, te, se)
         if (containsSimilarWord(wordsA, targetVerb)) {
-            if (targetPronoun === 'nos' || targetPronoun === 'os') {
-                return true;
-            }
             return wordsA.some(w => allowedPronouns.includes(w));
         }
 
-        // 2b. Casos de fusión o enlace fonético (liaison)
+        // 2b. Casos de fusión o enlace fonético (liaison) (para me, te, se)
         const possibleCombinations = [];
         if (targetPronoun === 'me') {
             possibleCombinations.push('me' + targetVerb, 'm' + targetVerb);
@@ -12089,10 +12100,6 @@ function palabrasSimilares(a, b) {
             possibleCombinations.push('te' + targetVerb, 't' + targetVerb);
         } else if (targetPronoun === 'se') {
             possibleCombinations.push('se' + targetVerb, 's' + targetVerb);
-        } else if (targetPronoun === 'nos') {
-            possibleCombinations.push('nos' + targetVerb, 'no' + targetVerb, 's' + targetVerb);
-        } else if (targetPronoun === 'os') {
-            possibleCombinations.push('os' + targetVerb, 'o' + targetVerb, 's' + targetVerb);
         }
 
         if (wordsA.some(w => possibleCombinations.some(comb => areWordsSimilar(w, comb)))) {

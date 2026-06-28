@@ -11694,8 +11694,10 @@ function startSpeechRecognition(targetWord, backElement) {
     
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-ES';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+
+    let hasMatchedInterim = false;
 
     // El indicador se muestra solamente al voltear a back, no aquí
 
@@ -11709,19 +11711,47 @@ function startSpeechRecognition(targetWord, backElement) {
     }, 5000); // 5 segundos para pruebas
 
     recognition.onresult = function(event) {
-        // Solo procesar si la tarjeta sigue volteada (no permitir contestar en front)
         clearTimeout(autoFlipTimer);
         const card = backElement.closest('.flashcard');
-        if (!card || !card.classList.contains('flipped')) {
-            // Ignorar resultado si se volvió a front
+        if (!card || !card.classList.contains('flipped') || hasMatchedInterim) {
+            // Ignorar resultado si se volvió a front o ya coincidió
             return;
         }
-        const spokenWord = event.results[0][0].transcript;
-        handleVoiceResult(spokenWord, targetWord, backElement);
+
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript = transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // Si hay un resultado final disponible, procesarlo directamente
+        if (finalTranscript.trim().length > 0) {
+            handleVoiceResult(finalTranscript.trim(), targetWord, backElement);
+            return;
+        }
+
+        // Si es un resultado provisional (interim), verificar si ya es correcto
+        // para dar una respuesta instantánea y no tener que esperar al silencio final.
+        if (interimTranscript.trim().length > 0) {
+            if (palabrasSimilares(interimTranscript, targetWord)) {
+                hasMatchedInterim = true;
+                recognition.abort(); // Detener inmediatamente
+                handleVoiceResult(interimTranscript.trim(), targetWord, backElement);
+            }
+        }
     };
 
     recognition.onerror = function(event) {
         console.error("Error de reconocimiento:", event.error); // Muestra el error en la consola para depuración
+        if (event.error === 'aborted') {
+            return; // Ignorar si fue cancelado a propósito
+        }
         // NO eliminar el indicador automáticamente, que persista
         clearTimeout(autoFlipTimer); // Limpiar timer
         const card = backElement.closest('.flashcard');

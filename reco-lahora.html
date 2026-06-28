@@ -12214,97 +12214,77 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 }
 
 function palabrasSimilares(a, b) {
-    const convertDigitalTimeToSpanish = (timeStr) => {
-        const match = timeStr.match(/\b(\d{1,2}):(\d{2})\b/);
-        if (!match) return timeStr;
-        let hour = parseInt(match[1], 10);
-        const minute = parseInt(match[2], 10);
-        
-        const hoursWords = [
-            "", "una", "dos", "tres", "cuatro", "cinco", "seis", 
-            "siete", "ocho", "nueve", "diez", "once", "doce"
-        ];
-        
-        let displayHour = hour;
-        if (displayHour > 12) displayHour -= 12;
-        if (displayHour === 0) displayHour = 12;
-        
-        if (minute >= 35) {
-            displayHour = displayHour === 12 ? 1 : displayHour + 1;
-        }
-        
-        const article = displayHour === 1 ? "la" : "las";
-        const hourWord = hoursWords[displayHour];
-        
-        let minuteWord = "";
-        switch (minute) {
-            case 0: minuteWord = "en punto"; break;
-            case 5: minuteWord = "y cinco"; break;
-            case 10: minuteWord = "y diez"; break;
-            case 15: minuteWord = "y cuarto"; break;
-            case 20: minuteWord = "y veinte"; break;
-            case 25: minuteWord = "y veinticinco"; break;
-            case 30: minuteWord = "y media"; break;
-            case 35: minuteWord = "menos veinticinco"; break;
-            case 40: minuteWord = "menos veinte"; break;
-            case 45: minuteWord = "menos cuarto"; break;
-            case 50: minuteWord = "menos diez"; break;
-            case 55: minuteWord = "menos cinco"; break;
-            default:
-                if (minute < 35) {
-                    minuteWord = "y " + minute;
-                } else {
-                    minuteWord = "menos " + (60 - minute);
-                }
-        }
-        
-        return `${article} ${hourWord} ${minuteWord}`.trim();
-    };
-
-    const cleanSpeech = (str) => {
-        if (!str) return '';
-        // Convertir formato de hora digital (H:MM) primero
-        let s = convertDigitalTimeToSpanish(str);
-        
-        s = s.toLowerCase()
+    const normalize = (str) => {
+        return (str || '')
+            .trim()
+            .toLowerCase()
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '') // quitar acentos
-            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?¿¡]/g, ' ') // quitar puntuación
-            .replace(/\s+/g, ' ')
-            .trim();
-            
-        // Reemplazar números por palabras en español para la hora
-        s = s.replace(/\b1\b/g, 'una')
-             .replace(/\b2\b/g, 'dos')
-             .replace(/\b3\b/g, 'tres')
-             .replace(/\b4\b/g, 'cuatro')
-             .replace(/\b5\b/g, 'cinco')
-             .replace(/\b6\b/g, 'seis')
-             .replace(/\b7\b/g, 'siete')
-             .replace(/\b8\b/g, 'ocho')
-             .replace(/\b9\b/g, 'nueve')
-             .replace(/\b10\b/g, 'diez')
-             .replace(/\b11\b/g, 'once')
-             .replace(/\b12\b/g, 'doce')
-             .replace(/\b20\b/g, 'veinte')
-             .replace(/\b25\b/g, 'veinticinco')
-             .replace(/\b30\b/g, 'media')
-             .replace(/\btreinta\b/g, 'media')
-             .replace(/\bquince\b/g, 'cuarto')
-             .replace(/\by un cuarto\b/g, 'y cuarto')
-             .replace(/\ben punto\b/g, '')
-             .trim();
-             
-        // Quitar artículos iniciales
-        s = s.replace(/^\s*(el|la|los|las|un|una|unos|unas)\s+/i, '')
-             .replace(/\s+/g, ' ')
-             .trim();
-             
-        return s;
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
     };
 
-    return cleanSpeech(a) === cleanSpeech(b);
+    const normA = normalize(a);
+    const normB = normalize(b);
+
+    // 1. Comparación directa (sin espacios)
+    if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
+        return true;
+    }
+
+    const wordsA = normA.split(/\s+/).filter(w => w.length > 0);
+    const wordsB = normB.split(/\s+/).filter(w => w.length > 0);
+
+    // 2. Caso especial para verbos reflexivos (ej: "nos apellidamos", "os llamáis", "me dedico")
+    if (wordsB.length === 2 && ['me', 'te', 'se', 'nos', 'os'].includes(wordsB[0])) {
+        const targetPronoun = wordsB[0];
+        const targetVerb = wordsB[1];
+
+        // Para "nos" y "os", aceptamos si el verbo está presente
+        if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            return wordsA.includes(targetVerb);
+        }
+
+        // Para los pronombres singulares ("me", "te", "se"), exigimos que se pronuncie el pronombre Y el verbo.
+        if (['me', 'te', 'se'].includes(targetPronoun)) {
+            // Buscamos si existe el pronombre (o variante fonética cercana) Y el verbo
+            const pronounMap = {
+                'me': ['me', 'mi', 'no', 'yo'],
+                'te': ['te', 'tu', 'de'],
+                'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes']
+            };
+            const allowedPronouns = pronounMap[targetPronoun];
+            const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+            const hasVerb = wordsA.includes(targetVerb);
+            return hasPronoun && hasVerb;
+        }
+    }
+
+    // 3. Caso especial para verbos simples (ej: "vivo", "estudiamos")
+    // El target (b) tiene 1 sola palabra
+    if (wordsB.length === 1) {
+        const targetVerb = wordsB[0];
+        if (wordsA.includes(targetVerb)) {
+            const allowedSubjects = [
+                'yo', 'tu', 'el', 'ella', 'usted', 
+                'nosotros', 'nosotras', 'vosotros', 'vosotras', 
+                'ellos', 'ellas', 'ustedes', 'vos'
+            ];
+            const otherWords = wordsA.filter(w => w !== targetVerb);
+            return otherWords.every(w => allowedSubjects.includes(w));
+        }
+    }
+
+    // 4. Comparación por contención parcial como fallback
+    const cleanA = normA.replace(/\s+/g, '');
+    const cleanB = normB.replace(/\s+/g, '');
+    if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    return false;
 }
+
+
 
 function showListeningIndicator(backElement, text = 'Habla ahora') {
     console.log(`showListeningIndicator llamada con voiceAttempts: ${voiceAttempts}`);

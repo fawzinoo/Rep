@@ -13110,8 +13110,8 @@ function saveGameProgress() {
         voiceAttempts: voiceAttempts,
         timestamp: Date.now(),
         cardOrder: flashcards.map(card => ({
-            frontImg: card.querySelector('.front img').src,
-            frontAlt: card.querySelector('.front img').alt,
+            frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
+            frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
             backText: card.dataset.answer
         }))
     };
@@ -13322,8 +13322,8 @@ function restoreGameState(gameState) {
             flashcards.forEach((card, index) => {
                 const cardData = gameState.cardOrder[index];
                 if (cardData) {
-                    card.querySelector('.front img').src = cardData.frontImg;
-                    card.querySelector('.front img').alt = cardData.frontAlt;
+                    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = cardData.frontImg;
+                    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = cardData.frontAlt;
                     const back = card.querySelector('.back');
                     back.innerHTML = cardData.backText;
                     card.dataset.answer = cardData.backText;
@@ -13926,11 +13926,31 @@ function playCardAudio(card, onEnded) {
         }
         const a = card._audioEl;
         try { a.pause(); } catch {}
+        
+        let timeoutId = null;
+        const cleanUp = () => {
+            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+            a.onended = null;
+            a.onerror = null;
+        };
+
+        const handleEnded = () => {
+            cleanUp();
+            if (onEnded) onEnded();
+        };
+
         a.src = src;
         a.currentTime = 0;
-        a.onended = null;
-        if (typeof onEnded === 'function') a.onended = onEnded;
-        a.play().catch(() => { if (onEnded) onEnded(); });
+        a.onended = handleEnded;
+        a.onerror = handleEnded;
+
+        // Limite de seguridad de 2.5 segundos para reproducir el audio de una conjugación (suele durar 1-1.5s)
+        timeoutId = setTimeout(() => {
+            console.log('⏰ Safety timeout reached for card audio playback, advancing...');
+            handleEnded();
+        }, 2500);
+
+        a.play().catch(() => { handleEnded(); });
     } catch (e) { if (onEnded) onEnded(); }
 }
 
@@ -13954,8 +13974,8 @@ document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indica
 
     // 1. Obtener los datos de todas las tarjetas.
 const allCardData = flashcards.map((card, index) => ({
-    frontImg: card.querySelector('.front img').src,
-    frontAlt: card.querySelector('.front img').alt,
+    frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
+    frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
     // CORRECTO: usar el texto del reverso real
     backText: getCountryText(card.querySelector('.back'))
 }));
@@ -13984,8 +14004,8 @@ const allCardData = flashcards.map((card, index) => ({
 flashcards.forEach((card, index) => {
     const data = newCardOrder[index];
     card.classList.remove('is-visible', 'flipped');
-    card.querySelector('.front img').src = data.frontImg;
-    card.querySelector('.front img').alt = data.frontAlt;
+    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = data.frontImg;
+    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = data.frontAlt;
     // Restaurar el texto original del reverso por si había cambiado a "Incorrecto"
     const back = card.querySelector('.back');
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
@@ -14806,6 +14826,7 @@ function attachFlashcardHandlers() {
                                 winEl.removeEventListener('timeupdate', onTimeUpdate);
                                 winEl.removeEventListener('loadedmetadata', onMeta);
                                 winEl.removeEventListener('ended', onEndedFallback);
+                                winEl.removeEventListener('error', onEndedFallback);
                             }
                         } catch {}
                         // 3) Reproducir audio de la tarjeta y, al terminar, iniciar countdown
@@ -14839,8 +14860,9 @@ function attachFlashcardHandlers() {
                         winEl.addEventListener('loadedmetadata', onMeta);
                         winEl.addEventListener('timeupdate', onTimeUpdate);
                         winEl.addEventListener('ended', onEndedFallback);
-                        // Fallback por si no llegan eventos (máximo 5s)
-                        setTimeout(() => triggerCardAudio(), 5000);
+                        winEl.addEventListener('error', onEndedFallback);
+                        // Fallback por si no llegan eventos (máximo 1.5s para evitar congelamiento si no carga)
+                        setTimeout(() => triggerCardAudio(), 1500);
                     } else {
                         // Si falló la reproducción del win, avanzamos directamente
                         triggerCardAudio();

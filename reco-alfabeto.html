@@ -35712,152 +35712,77 @@ function normalizeStudentName(name) {
         }
 
         function palabrasSimilares(a, b) {
-            if (!a || !b) return false;
-            // Normalizar ambas cadenas extrayendo clave canónica (soporta equivalencias de pronunciación)
-            const keyA = getCanonicalAlphabetKey(a);
-            const keyB = getCanonicalAlphabetKey(b);
+    const normalize = (str) => {
+        return (str || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // quitar acentos
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
+    };
 
-            // Si las claves derivadas son iguales, es un match perfecto
-            if (keyA === keyB) return true;
+    const normA = normalize(a);
+    const normB = normalize(b);
 
-            // Boost para respuestas cortas/monosílabas: el motor suele devolver palabras más largas
-            // (ej. "te" -> "tengo") o consonantes cercanas por ruido.
-            const spokenNorm = normalizePronunciationKey(a);
-            const targetNorm = normalizePronunciationKey(b);
-            const isShortTarget = targetNorm.length <= 2 || /^[bcdfghjklmnñpqrstvwxyz]$/.test(targetNorm);
+    // 1. Comparación directa (sin espacios)
+    if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
+        return true;
+    }
 
-            if (isShortTarget) {
-                const spokenTokens = spokenNorm.split(/\s+/).filter(Boolean);
-                const levenshtein = (x, y) => {
-                    const a = String(x || '');
-                    const b = String(y || '');
-                    const m = a.length;
-                    const n = b.length;
-                    if (m === 0) return n;
-                    if (n === 0) return m;
-                    const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-                    for (let i = 0; i <= m; i++) dp[i][0] = i;
-                    for (let j = 0; j <= n; j++) dp[0][j] = j;
-                    for (let i = 1; i <= m; i++) {
-                        for (let j = 1; j <= n; j++) {
-                            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-                            dp[i][j] = Math.min(
-                                dp[i - 1][j] + 1,
-                                dp[i][j - 1] + 1,
-                                dp[i - 1][j - 1] + cost
-                            );
-                        }
-                    }
-                    return dp[m][n];
-                };
+    const wordsA = normA.split(/\s+/).filter(w => w.length > 0);
+    const wordsB = normB.split(/\s+/).filter(w => w.length > 0);
 
-                for (const token of spokenTokens) {
-                    // Coincidencia directa o por prefijo de sílaba corta
-                    if (token === targetNorm) return true;
-                    if (token.startsWith(targetNorm) && targetNorm.length >= 1) return true;
-                    if (targetNorm.startsWith(token) && token.length >= 1) return true;
-                    // Tolerancia extra para ASR en sílabas cortas (te/de, pe/be, etc.)
-                    if (token.length <= 3 && targetNorm.length <= 3 && levenshtein(token, targetNorm) <= 1) return true;
-                }
+    // 2. Caso especial para verbos reflexivos (ej: "nos apellidamos", "os llamáis", "me dedico")
+    if (wordsB.length === 2 && ['me', 'te', 'se', 'nos', 'os'].includes(wordsB[0])) {
+        const targetPronoun = wordsB[0];
+        const targetVerb = wordsB[1];
 
-                // Confusiones frecuentes del ASR para sílabas cortas
-                const confusions = {
-                    t: ['d'],
-                    d: ['t'],
-                    p: ['b'],
-                    b: ['p', 'v'],
-                    v: ['b'],
-                    c: ['s', 'k', 'q'],
-                    q: ['k', 'c'],
-                    g: ['j'],
-                    j: ['g']
-                };
-                const confused = confusions[keyB] || [];
-                if (confused.includes(keyA)) return true;
+        // Para "nos" y "os", aceptamos si el verbo está presente
+        if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            return wordsA.includes(targetVerb);
+        }
 
-                // Equivalencias por familia de sílabas cortas (más tolerante para micrófonos débiles)
-                const shortFamilies = [
-                    ['be', 've', 'de', 'te', 'pe', 'ge', 'ce'],
-                    ['b', 'v', 'd', 't', 'p', 'g', 'c'],
-                    ['ka', 'ca', 'qa', 'cu', 'q']
-                ];
-                for (const family of shortFamilies) {
-                    if (!family.includes(targetNorm)) continue;
-                    if (spokenTokens.some(tk => family.includes(tk))) return true;
-                }
-
-                // Variantes fonéticas por clave objetivo corta (ultra-tolerante)
-                const shortKeyVariants = {
-                    b: ['be', 've', 'b', 'v', 'pe', 'p'],
-                    c: ['ce', 'se', 'c'],
-                    d: ['de', 'd', 'te'],
-                    t: ['te', 't', 'de'],
-                    p: ['pe', 'p', 'be', 've', 'v'],
-                    q: ['cu', 'que', 'qe', 'qu', 'k', 'q'],
-                    g: ['ge', 'je', 'g', 'j'],
-                    v: ['uve', 've', 'v', 'be']
-                };
-                const keyVariants = shortKeyVariants[keyB] || [];
-                if (keyVariants.length) {
-                    for (const token of spokenTokens) {
-                        const tk = normalizePronunciationKey(token);
-                        if (!tk) continue;
-                        if (keyVariants.some(v => tk === v || tk.startsWith(v) || v.startsWith(tk))) return true;
-                    }
-                    if (keyVariants.some(v => spokenNorm.includes(v))) return true;
-                }
-            }
-
-            // Fallback adicional por alias del objetivo dentro de frases largas reconocidas.
-            // Ejemplo: "la letra es erre doble" debe acertar a "erre doble".
-            const aliasesByCanonical = {
-                b: ['be', 'b', 've', 'v', 'pe', 'p'],
-                c: ['ce', 'c'],
-                ch: ['tche', 'che', 'ch'],
-                d: ['de', 'd'],
-                f: ['efe', 'f'],
-                g: ['ge', 'g'],
-                h: ['hache', 'h'],
-                j: ['jota', 'j'],
-                k: ['ka', 'k'],
-                l: ['ele', 'l'],
-                ll: ['elle', 'll'],
-                m: ['eme', 'm'],
-                n: ['ene', 'n'],
-                nn: ['eñe', 'enye', 'ñ'],
-                p: ['pe', 'p', 'be', 'b', 've', 'v'],
-                q: ['cu', 'q'],
-                r: ['erre', 'r'],
-                rr: ['erre doble', 'r doble', 'doble erre', 'r r', 'rr'],
-                s: ['ese', 's'],
-                t: ['te', 't'],
-                v: ['uve', 've', 'v'],
-                w: ['uve doble', 'w'],
-                x: ['equis', 'x'],
-                y: ['ye', 'y'],
-                z: ['zeta', 'z']
+        // Para los pronombres singulares ("me", "te", "se"), exigimos que se pronuncie el pronombre Y el verbo.
+        if (['me', 'te', 'se'].includes(targetPronoun)) {
+            // Buscamos si existe el pronombre (o variante fonética cercana) Y el verbo
+            const pronounMap = {
+                'me': ['me', 'mi', 'no', 'yo'],
+                'te': ['te', 'tu', 'de'],
+                'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes']
             };
-
-            const targetAliases = aliasesByCanonical[keyB] || [];
-            for (const alias of targetAliases) {
-                const aliasNorm = normalizePronunciationKey(alias);
-                const aliasRegex = new RegExp(`\\b${aliasNorm.replace(/\s+/g, '\\s+')}\\b`);
-                if (aliasRegex.test(spokenNorm)) return true;
-            }
-
-            // Si el reconocimiento devolvió una frase larga que contiene literalmente
-            // la respuesta esperada, también cuenta como acierto.
-            if (targetNorm && spokenNorm.includes(targetNorm)) return true;
-
-            // Fallback: normalización robusta manual por si fallan las claves
-            const normA = quitarAcentos(a).replace(/[.,]/g, '');
-            const normB = quitarAcentos(b).replace(/[.,]/g, '');
-            return normA === normB;
+            const allowedPronouns = pronounMap[targetPronoun];
+            const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+            const hasVerb = wordsA.includes(targetVerb);
+            return hasPronoun && hasVerb;
         }
+    }
 
-        function stripLeadingArticle(str) {
-            return (str || '').replace(/^\s*(el|la|los|las)\s+/i, '');
+    // 3. Caso especial para verbos simples (ej: "vivo", "estudiamos")
+    // El target (b) tiene 1 sola palabra
+    if (wordsB.length === 1) {
+        const targetVerb = wordsB[0];
+        if (wordsA.includes(targetVerb)) {
+            const allowedSubjects = [
+                'yo', 'tu', 'el', 'ella', 'usted', 
+                'nosotros', 'nosotras', 'vosotros', 'vosotras', 
+                'ellos', 'ellas', 'ustedes', 'vos'
+            ];
+            const otherWords = wordsA.filter(w => w !== targetVerb);
+            return otherWords.every(w => allowedSubjects.includes(w));
         }
+    }
+
+    // 4. Comparación por contención parcial como fallback
+    const cleanA = normA.replace(/\s+/g, '');
+    const cleanB = normB.replace(/\s+/g, '');
+    if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    return false;
+}
+
+
 
         function showListeningIndicator(backElement, text = 'Habla ahora') {
             console.log(`showListeningIndicator llamada con voiceAttempts: ${voiceAttempts}`);

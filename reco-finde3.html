@@ -11880,15 +11880,77 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 }
 
 function palabrasSimilares(a, b) {
-    // Normalizar ambas cadenas para una comparación flexible:
-    // 1. Eliminar espacios al principio y al final.
-    // 2. Convertir todo a minúsculas.
-    // 3. Eliminar puntos y comas que pueda añadir el reconocimiento de voz.
-    const normA = a.trim().toLowerCase().replace(/[.,]/g, '');
-    const normB = b.trim().toLowerCase().replace(/[.,]/g, '');
-    
-    return normA === normB;
+    const normalize = (str) => {
+        return (str || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // quitar acentos
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
+    };
+
+    const normA = normalize(a);
+    const normB = normalize(b);
+
+    // 1. Comparación directa (sin espacios)
+    if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
+        return true;
+    }
+
+    const wordsA = normA.split(/\s+/).filter(w => w.length > 0);
+    const wordsB = normB.split(/\s+/).filter(w => w.length > 0);
+
+    // 2. Caso especial para verbos reflexivos (ej: "nos apellidamos", "os llamáis", "me dedico")
+    if (wordsB.length === 2 && ['me', 'te', 'se', 'nos', 'os'].includes(wordsB[0])) {
+        const targetPronoun = wordsB[0];
+        const targetVerb = wordsB[1];
+
+        // Para "nos" y "os", aceptamos si el verbo está presente
+        if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            return wordsA.includes(targetVerb);
+        }
+
+        // Para los pronombres singulares ("me", "te", "se"), exigimos que se pronuncie el pronombre Y el verbo.
+        if (['me', 'te', 'se'].includes(targetPronoun)) {
+            // Buscamos si existe el pronombre (o variante fonética cercana) Y el verbo
+            const pronounMap = {
+                'me': ['me', 'mi', 'no', 'yo'],
+                'te': ['te', 'tu', 'de'],
+                'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes']
+            };
+            const allowedPronouns = pronounMap[targetPronoun];
+            const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+            const hasVerb = wordsA.includes(targetVerb);
+            return hasPronoun && hasVerb;
+        }
+    }
+
+    // 3. Caso especial para verbos simples (ej: "vivo", "estudiamos")
+    // El target (b) tiene 1 sola palabra
+    if (wordsB.length === 1) {
+        const targetVerb = wordsB[0];
+        if (wordsA.includes(targetVerb)) {
+            const allowedSubjects = [
+                'yo', 'tu', 'el', 'ella', 'usted', 
+                'nosotros', 'nosotras', 'vosotros', 'vosotras', 
+                'ellos', 'ellas', 'ustedes', 'vos'
+            ];
+            const otherWords = wordsA.filter(w => w !== targetVerb);
+            return otherWords.every(w => allowedSubjects.includes(w));
+        }
+    }
+
+    // 4. Comparación por contención parcial como fallback
+    const cleanA = normA.replace(/\s+/g, '');
+    const cleanB = normB.replace(/\s+/g, '');
+    if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    return false;
 }
+
+
 
 function showListeningIndicator(backElement, text = 'Habla ahora') {
     console.log(`showListeningIndicator llamada con voiceAttempts: ${voiceAttempts}`);
@@ -13092,8 +13154,8 @@ function saveGameProgress() {
         voiceAttempts: voiceAttempts,
         timestamp: Date.now(),
         cardOrder: flashcards.map(card => ({
-            frontImg: card.querySelector('.front img').src,
-            frontAlt: card.querySelector('.front img').alt,
+            frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
+            frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
             backText: card.dataset.answer
         }))
     };
@@ -13296,8 +13358,8 @@ function restoreGameState(gameState) {
             flashcards.forEach((card, index) => {
                 const cardData = gameState.cardOrder[index];
                 if (cardData) {
-                    card.querySelector('.front img').src = cardData.frontImg;
-                    card.querySelector('.front img').alt = cardData.frontAlt;
+                    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = cardData.frontImg;
+                    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = cardData.frontAlt;
                     const back = card.querySelector('.back');
                     back.innerHTML = cardData.backText;
                     card.dataset.answer = cardData.backText;
@@ -13960,8 +14022,8 @@ document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indica
 
     // 1. Obtener los datos de todas las tarjetas.
 const allCardData = flashcards.map((card, index) => ({
-    frontImg: card.querySelector('.front img').src,
-    frontAlt: card.querySelector('.front img').alt,
+    frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
+    frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
     // CORRECTO: usar el texto del reverso real
     backText: getCountryText(card.querySelector('.back'))
 }));
@@ -13990,8 +14052,8 @@ const allCardData = flashcards.map((card, index) => ({
 flashcards.forEach((card, index) => {
     const data = newCardOrder[index];
     card.classList.remove('is-visible', 'flipped');
-    card.querySelector('.front img').src = data.frontImg;
-    card.querySelector('.front img').alt = data.frontAlt;
+    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = data.frontImg;
+    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = data.frontAlt;
     // Restaurar el texto original del reverso por si había cambiado a "Incorrecto"
     const back = card.querySelector('.back');
 // Elimina cualquier contador de intentos antes de restaurar el texto

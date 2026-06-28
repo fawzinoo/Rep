@@ -14296,11 +14296,31 @@ function playCardAudio(card, onEnded) {
         }
         const a = card._audioEl;
         try { a.pause(); } catch {}
+        
+        let timeoutId = null;
+        const cleanUp = () => {
+            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+            a.onended = null;
+            a.onerror = null;
+        };
+
+        const handleEnded = () => {
+            cleanUp();
+            if (onEnded) onEnded();
+        };
+
         a.src = src;
         a.currentTime = 0;
-        a.onended = null;
-        if (typeof onEnded === 'function') a.onended = onEnded;
-        a.play().catch(() => { if (onEnded) onEnded(); });
+        a.onended = handleEnded;
+        a.onerror = handleEnded;
+
+        // Limite de seguridad de 2.5 segundos para reproducir el audio de una conjugación (suele durar 1-1.5s)
+        timeoutId = setTimeout(() => {
+            console.log('⏰ Safety timeout reached for card audio playback, advancing...');
+            handleEnded();
+        }, 2500);
+
+        a.play().catch(() => { handleEnded(); });
     } catch (e) { if (onEnded) onEnded(); }
 }
 
@@ -15194,6 +15214,7 @@ function attachFlashcardHandlers() {
                                 winEl.removeEventListener('timeupdate', onTimeUpdate);
                                 winEl.removeEventListener('loadedmetadata', onMeta);
                                 winEl.removeEventListener('ended', onEndedFallback);
+                                winEl.removeEventListener('error', onEndedFallback);
                             }
                         } catch {}
                         // 3) Reproducir audio de la tarjeta y, al terminar, iniciar countdown
@@ -15227,8 +15248,9 @@ function attachFlashcardHandlers() {
                         winEl.addEventListener('loadedmetadata', onMeta);
                         winEl.addEventListener('timeupdate', onTimeUpdate);
                         winEl.addEventListener('ended', onEndedFallback);
-                        // Fallback por si no llegan eventos (máximo 5s)
-                        setTimeout(() => triggerCardAudio(), 5000);
+                        winEl.addEventListener('error', onEndedFallback);
+                        // Fallback por si no llegan eventos (máximo 1.5s para evitar congelamiento si no carga)
+                        setTimeout(() => triggerCardAudio(), 1500);
                     } else {
                         // Si falló la reproducción del win, avanzamos directamente
                         triggerCardAudio();

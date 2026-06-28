@@ -33061,23 +33061,77 @@ function installChatButtonHandler() {
         }
 
         function palabrasSimilares(a, b) {
-            if (!a || !b) return false;
-            // Normalizar ambas cadenas extrayendo la clave de comparación (soporta números texto vs dígitos)
-            const keyA = deriveComparisonKey(a);
-            const keyB = deriveComparisonKey(b);
+    const normalize = (str) => {
+        return (str || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // quitar acentos
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
+    };
 
-            // Si las claves derivadas son iguales, es un match perfecto (ej: "15" === "15")
-            if (keyA === keyB) return true;
+    const normA = normalize(a);
+    const normB = normalize(b);
 
-            // Fallback: normalización robusta manual por si fallan las claves
-            const normA = quitarAcentos(a).replace(/[.,]/g, '');
-            const normB = quitarAcentos(b).replace(/[.,]/g, '');
-            return normA === normB;
+    // 1. Comparación directa (sin espacios)
+    if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
+        return true;
+    }
+
+    const wordsA = normA.split(/\s+/).filter(w => w.length > 0);
+    const wordsB = normB.split(/\s+/).filter(w => w.length > 0);
+
+    // 2. Caso especial para verbos reflexivos (ej: "nos apellidamos", "os llamáis", "me dedico")
+    if (wordsB.length === 2 && ['me', 'te', 'se', 'nos', 'os'].includes(wordsB[0])) {
+        const targetPronoun = wordsB[0];
+        const targetVerb = wordsB[1];
+
+        // Para "nos" y "os", aceptamos si el verbo está presente
+        if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            return wordsA.includes(targetVerb);
         }
 
-        function stripLeadingArticle(str) {
-            return (str || '').replace(/^\s*(el|la|los|las)\s+/i, '');
+        // Para los pronombres singulares ("me", "te", "se"), exigimos que se pronuncie el pronombre Y el verbo.
+        if (['me', 'te', 'se'].includes(targetPronoun)) {
+            // Buscamos si existe el pronombre (o variante fonética cercana) Y el verbo
+            const pronounMap = {
+                'me': ['me', 'mi', 'no', 'yo'],
+                'te': ['te', 'tu', 'de'],
+                'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes']
+            };
+            const allowedPronouns = pronounMap[targetPronoun];
+            const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+            const hasVerb = wordsA.includes(targetVerb);
+            return hasPronoun && hasVerb;
         }
+    }
+
+    // 3. Caso especial para verbos simples (ej: "vivo", "estudiamos")
+    // El target (b) tiene 1 sola palabra
+    if (wordsB.length === 1) {
+        const targetVerb = wordsB[0];
+        if (wordsA.includes(targetVerb)) {
+            const allowedSubjects = [
+                'yo', 'tu', 'el', 'ella', 'usted', 
+                'nosotros', 'nosotras', 'vosotros', 'vosotras', 
+                'ellos', 'ellas', 'ustedes', 'vos'
+            ];
+            const otherWords = wordsA.filter(w => w !== targetVerb);
+            return otherWords.every(w => allowedSubjects.includes(w));
+        }
+    }
+
+    // 4. Comparación por contención parcial como fallback
+    const cleanA = normA.replace(/\s+/g, '');
+    const cleanB = normB.replace(/\s+/g, '');
+    if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    return false;
+}
+
+
 
         function showListeningIndicator(backElement, text = 'Habla ahora') {
             console.log(`showListeningIndicator llamada con voiceAttempts: ${voiceAttempts}`);

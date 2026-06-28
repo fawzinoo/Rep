@@ -2652,7 +2652,38 @@ button[type="submit"]:hover {
 </div>
     <script>
 
-
+// Polyfill localStorage in case it is blocked (e.g. Incognito mode or custom security settings)
+let safeLocalStorage;
+try {
+    const testKey = '__test_storage__';
+    window.localStorage.setItem(testKey, 'test');
+    window.localStorage.removeItem(testKey);
+    safeLocalStorage = window.localStorage;
+} catch (e) {
+    console.warn('localStorage is blocked or not supported. Using memory fallback.');
+    const store = {};
+    safeLocalStorage = {
+        getItem(key) {
+            return key in store ? store[key] : null;
+        },
+        setItem(key, value) {
+            store[key] = String(value);
+        },
+        removeItem(key) {
+            delete store[key];
+        },
+        clear() {
+            for (let k in store) delete store[k];
+        },
+        key(index) {
+            return Object.keys(store)[index] || null;
+        },
+        get length() {
+            return Object.keys(store).length;
+        }
+    };
+}
+const localStorage = safeLocalStorage;
 
 // Generar identificador personalizado si no existe
 let identificador = localStorage.getItem('identificadorUnico');
@@ -3621,11 +3652,24 @@ function cambiarSeccion(seccionId) {
         seccion.classList.remove('active');
     });
     
-    document.getElementById(seccionId).classList.add('active');
+    const targetElement = document.getElementById(seccionId);
+    if (targetElement) {
+        targetElement.classList.add('active');
+    }
     window.scrollTo(0, 0);
 
     // Guardar la sección activa en localStorage
     localStorage.setItem('activeSection', seccionId);
+
+    // OCULTAR EL TIMER EN RESULTADOS Y RANKING
+    const timerElement = document.getElementById('examTimer');
+    if (timerElement) {
+        if (seccionId === 'resultados' || seccionId === 'ranking') {
+            timerElement.classList.remove('active');
+            timerElement.style.opacity = 0;
+            timerElement.style.visibility = 'hidden';
+        }
+    }
 
     if (seccionId === 'produccion') {
         const initialOptions = document.querySelector('.segment-options-a[data-dialog="1"][data-part="1"]');
@@ -3634,7 +3678,6 @@ function cambiarSeccion(seccionId) {
     
     // Si es la sección de Comprensión Auditiva, restaurar el timer
     if (seccionId === 'comprension-auditiva') {
-        const timerElement = document.getElementById('examTimer');
         if (timerElement && !examTimerInterval) {
             startExamTimer();
             forzarAparicionTimer();
@@ -5235,33 +5278,6 @@ if (document.readyState === "complete" || document.readyState === "interactive")
 }
 
 // ...existing code...
-function cambiarSeccion(seccionId) {
-    playNextSound();
-    document.querySelectorAll('.section').forEach(seccion => {
-        seccion.classList.remove('active');
-    });
-    document.getElementById(seccionId).classList.add('active');
-    window.scrollTo(0, 0);
-
-    // Guardar la sección activa en localStorage
-    localStorage.setItem('activeSection', seccionId);
-
-    // OCULTAR EL TIMER EN RESULTADOS Y RANKING
-    const timerElement = document.getElementById('examTimer');
-    if (timerElement) {
-        if (seccionId === 'resultados' || seccionId === 'ranking') {
-            timerElement.classList.remove('active');
-            timerElement.style.opacity = 0;
-            timerElement.style.visibility = 'hidden';
-        }
-    }
-
-    if (seccionId === 'produccion') {
-        const initialOptions = document.querySelector('.segment-options-a[data-dialog="1"][data-part="1"]');
-        if (initialOptions) shuffleButtons(initialOptions);
-    }
-    // ...resto de tu función...
-}
 
 // Al cargar la página, restaurar la sección activa si existe
 document.addEventListener('DOMContentLoaded', function() {

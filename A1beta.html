@@ -7816,17 +7816,30 @@
             if (!card || !badge) return;
             const gallery = card.closest('.gallery');
             if (!gallery) return;
-            const cardRect = card.getBoundingClientRect();
-            const galleryRect = gallery.getBoundingClientRect();
+
+            // Calcular offsets acumulados respecto a la galería para evitar distorsiones por transformaciones CSS (scale, translateY)
+            let offsetTop = 0;
+            let offsetLeft = 0;
+            let current = card;
+            while (current && current !== gallery) {
+                offsetTop += current.offsetTop;
+                offsetLeft += current.offsetLeft;
+                current = current.offsetParent;
+            }
+
+            const cardWidth = card.offsetWidth;
             const badgeHeight = badge.offsetHeight || 34;
             const badgeWidth = badge.offsetWidth || 120;
             const horizontalMargin = 8;
-            const cardCenterX = (cardRect.left - galleryRect.left) + (cardRect.width / 2);
+
+            const cardCenterX = offsetLeft + (cardWidth / 2);
+            const galleryWidth = gallery.offsetWidth || gallery.getBoundingClientRect().width;
             const minCenterX = horizontalMargin + (badgeWidth / 2);
-            const maxCenterX = Math.max(minCenterX, galleryRect.width - horizontalMargin - (badgeWidth / 2));
+            const maxCenterX = Math.max(minCenterX, galleryWidth - horizontalMargin - (badgeWidth / 2));
             const clampedCenterX = Math.min(Math.max(cardCenterX, minCenterX), maxCenterX);
             const topGapAboveCard = 0;
-            const desiredTop = (cardRect.top - galleryRect.top) - badgeHeight - topGapAboveCard;
+            const desiredTop = offsetTop - badgeHeight - topGapAboveCard;
+
             badge.style.left = `${clampedCenterX}px`;
             badge.style.top = `${desiredTop}px`;
         }

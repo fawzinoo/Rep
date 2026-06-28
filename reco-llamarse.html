@@ -12025,6 +12025,8 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 }
 
 function palabrasSimilares(a, b) {
+    const verbConjugations = ["llamo", "llamas", "llama", "llamamos", "llamais", "llaman"];
+
     const normalize = (str) => {
         return (str || '')
             .trim()
@@ -12063,6 +12065,12 @@ function palabrasSimilares(a, b) {
     const areWordsSimilar = (w1, w2) => {
         if (!w1 || !w2) return false;
         if (w1 === w2) return true;
+
+        // Si la palabra dicha es otra conjugación del mismo verbo, la rechazamos
+        if (verbConjugations.includes(w1) && w1 !== w2) {
+            return false;
+        }
+
         const lenDiff = Math.abs(w1.length - w2.length);
         if (lenDiff > 3) return false;
         const maxLen = Math.max(w1.length, w2.length);
@@ -12098,6 +12106,31 @@ function palabrasSimilares(a, b) {
         // Para "nos" y "os", ignoramos por completo el pronombre y nos enfocamos en detectar el verbo
         // (gestionando la posible 's' pegada al inicio por liaison, ej: "no sapellidamos").
         if (targetPronoun === 'nos' || targetPronoun === 'os') {
+            const cleanSpoken = normA.replace(/\s+/g, '');
+            
+            // Soporte para transcripciones incorrectas conocidas por fonética/acentos locales
+            if (targetVerb === 'apellidais') {
+                if (cleanSpoken.includes('osakidetz') || 
+                    cleanSpoken.includes('osaquidetz') || 
+                    cleanSpoken.includes('osaki') || 
+                    cleanSpoken.includes('osaqui') ||
+                    cleanSpoken.includes('apellidaes') ||
+                    cleanSpoken.includes('apellides')) {
+                    return true;
+                }
+            }
+            if (targetVerb === 'apellidamos') {
+                if (normA.includes('ha pedido') || 
+                    normA.includes('han pedido') || 
+                    normA.includes('he pedido') || 
+                    cleanSpoken.includes('nosapedido') ||
+                    cleanSpoken.includes('nosapedidos') ||
+                    cleanSpoken.includes('apellidados') ||
+                    cleanSpoken.includes('apellidarnos')) {
+                    return true;
+                }
+            }
+
             const hasVerbWithTolerance = wordsA.some(w => {
                 if (areWordsSimilar(w, targetVerb)) return true;
                 if (w.startsWith('s') && w.length > 1) {

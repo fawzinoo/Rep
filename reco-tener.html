@@ -11698,6 +11698,8 @@ function startSpeechRecognition(targetWord, backElement) {
     recognition.maxAlternatives = 1;
 
     let hasMatchedInterim = false;
+    let silenceTimer = null;
+    let accumulatedTranscript = '';
 
     // El indicador se muestra solamente al voltear a back, no aquí
 
@@ -11710,11 +11712,22 @@ function startSpeechRecognition(targetWord, backElement) {
         }
     }, 5000); // 5 segundos para pruebas
 
+    const processFinalResult = (transcript) => {
+        clearTimeout(autoFlipTimer);
+        clearTimeout(silenceTimer);
+        const card = backElement.closest('.flashcard');
+        if (!card || !card.classList.contains('flipped') || hasMatchedInterim) {
+            return;
+        }
+        hasMatchedInterim = true;
+        recognition.abort(); // Detener inmediatamente
+        handleVoiceResult(transcript.trim(), targetWord, backElement);
+    };
+
     recognition.onresult = function(event) {
         clearTimeout(autoFlipTimer);
         const card = backElement.closest('.flashcard');
         if (!card || !card.classList.contains('flipped') || hasMatchedInterim) {
-            // Ignorar resultado si se volvió a front o ya coincidió
             return;
         }
 
@@ -11730,9 +11743,13 @@ function startSpeechRecognition(targetWord, backElement) {
             }
         }
 
+        if (interimTranscript.trim().length > 0) {
+            accumulatedTranscript = interimTranscript;
+        }
+
         // Si hay un resultado final disponible, procesarlo directamente
         if (finalTranscript.trim().length > 0) {
-            handleVoiceResult(finalTranscript.trim(), targetWord, backElement);
+            processFinalResult(finalTranscript);
             return;
         }
 
@@ -11740,11 +11757,19 @@ function startSpeechRecognition(targetWord, backElement) {
         // para dar una respuesta instantánea y no tener que esperar al silencio final.
         if (interimTranscript.trim().length > 0) {
             if (palabrasSimilares(interimTranscript, targetWord)) {
-                hasMatchedInterim = true;
-                recognition.abort(); // Detener inmediatamente
-                handleVoiceResult(interimTranscript.trim(), targetWord, backElement);
+                processFinalResult(interimTranscript);
+                return;
             }
         }
+
+        // Reiniciar el temporizador de silencio de 1.0 segundo si el usuario está hablando
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+            if (accumulatedTranscript.trim().length > 0) {
+                console.log("⏱️ Detectado 1.0s de silencio en resultados provisionales. Evaluando...");
+                processFinalResult(accumulatedTranscript);
+            }
+        }, 1000);
     };
 
     recognition.onerror = function(event) {
@@ -11754,6 +11779,7 @@ function startSpeechRecognition(targetWord, backElement) {
         }
         // NO eliminar el indicador automáticamente, que persista
         clearTimeout(autoFlipTimer); // Limpiar timer
+        clearTimeout(silenceTimer);
         const card = backElement.closest('.flashcard');
 
         // Si el error es 'no-speech' o un problema de red, simplemente voltea la tarjeta
@@ -11772,10 +11798,12 @@ function startSpeechRecognition(targetWord, backElement) {
     recognition.onend = function() {
         // NO eliminar el indicador automáticamente, que persista
         clearTimeout(autoFlipTimer); // Limpiar timer
+        clearTimeout(silenceTimer);
     };
 
     recognition.start();
 }
+
 function handleVoiceResult(spokenWord, targetWord, backElement) {
     // Bloquear procesamiento si la tarjeta NO está volteada (no se puede contestar en front)
     const cardElement = backElement.closest('.flashcard');

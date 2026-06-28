@@ -11993,17 +11993,88 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 }
 
 function palabrasSimilares(a, b) {
-    // Normalizar para comparación flexible (insensible a acentos, espacios y puntuación)
     const normalize = (str) => {
         return (str || '')
             .trim()
             .toLowerCase()
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '') // quitar acentos
-            .replace(/\s+/g, '')             // quitar todos los espacios
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
     };
-    return normalize(a) === normalize(b);
+
+    const normA = normalize(a);
+    const normB = normalize(b);
+
+    // 1. Comparación directa (sin espacios)
+    if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
+        return true;
+    }
+
+    const wordsA = normA.split(/\s+/).filter(w => w.length > 0);
+    const wordsB = normB.split(/\s+/).filter(w => w.length > 0);
+
+    // 2. Caso especial para verbos reflexivos (ej: "nos apellidamos", "os llamáis", "me dedico")
+    // El target (b) normalmente tiene 2 palabras: el pronombre reflexivo y el verbo conjugado
+    if (wordsB.length === 2 && ['me', 'te', 'se', 'nos', 'os'].includes(wordsB[0])) {
+        const targetPronoun = wordsB[0];
+        const targetVerb = wordsB[1];
+
+        if (wordsA.includes(targetVerb)) {
+            if (targetPronoun === 'nos') {
+                const allowedPronouns = ['nos', 'nosotros', 'nosotras', 'no', 'los', 'un', 'hoy'];
+                const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+                return hasPronoun || wordsA.length === 1 || wordsA.includes('nosotros') || wordsA.includes('nosotras');
+            }
+
+            if (targetPronoun === 'os') {
+                const allowedPronouns = ['os', 'vosotros', 'vosotras', 'o', 'los', 'se', 'nos'];
+                const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+                return hasPronoun || wordsA.length === 1 || wordsA.includes('vosotros') || wordsA.includes('vosotras');
+            }
+
+            if (targetPronoun === 'me') {
+                const allowedPronouns = ['me', 'yo', 'no', 'mi'];
+                const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+                return hasPronoun || wordsA.length === 1;
+            }
+
+            if (targetPronoun === 'te') {
+                const allowedPronouns = ['te', 'tu', 'de'];
+                const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+                return hasPronoun || wordsA.length === 1;
+            }
+
+            if (targetPronoun === 'se') {
+                const allowedPronouns = ['se', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes', 'si', 'su'];
+                const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
+                return hasPronoun || wordsA.length === 1;
+            }
+        }
+    }
+
+    // 3. Caso especial para verbos simples (ej: "vivo", "estudiamos")
+    // El target (b) tiene 1 sola palabra
+    if (wordsB.length === 1) {
+        const targetVerb = wordsB[0];
+        if (wordsA.includes(targetVerb)) {
+            const allowedSubjects = [
+                'yo', 'tu', 'el', 'ella', 'usted', 
+                'nosotros', 'nosotras', 'vosotros', 'vosotras', 
+                'ellos', 'ellas', 'ustedes', 'vos'
+            ];
+            const otherWords = wordsA.filter(w => w !== targetVerb);
+            return otherWords.every(w => allowedSubjects.includes(w));
+        }
+    }
+
+    // 4. Comparación por contención parcial como fallback
+    const cleanA = normA.replace(/\s+/g, '');
+    const cleanB = normB.replace(/\s+/g, '');
+    if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    return false;
 }
 
 function showListeningIndicator(backElement, text = 'Habla ahora') {

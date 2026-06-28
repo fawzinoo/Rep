@@ -12018,23 +12018,39 @@ function palabrasSimilares(a, b) {
         const targetPronoun = wordsB[0];
         const targetVerb = wordsB[1];
 
-        // Para "nos" y "os", aceptamos si el verbo está presente
-        if (targetPronoun === 'nos' || targetPronoun === 'os') {
-            return wordsA.includes(targetVerb);
+        const pronounMap = {
+            'me': ['me', 'mi', 'no', 'yo', 'm'],
+            'te': ['te', 'tu', 'de', 't'],
+            'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes', 's'],
+            'nos': ['nos', 'nosotros', 'nosotras', 'no', 'los', 'un', 'hoy', 's'],
+            'os': ['os', 'vosotros', 'vosotras', 'o', 'los', 'se', 'nos', 's']
+        };
+        const allowedPronouns = pronounMap[targetPronoun] || [targetPronoun];
+
+        // 2a. Si el verbo está presente por separado
+        if (wordsA.includes(targetVerb)) {
+            if (targetPronoun === 'nos' || targetPronoun === 'os') {
+                return true;
+            }
+            return wordsA.some(w => allowedPronouns.includes(w));
         }
 
-        // Para los pronombres singulares ("me", "te", "se"), exigimos que se pronuncie el pronombre Y el verbo.
-        if (['me', 'te', 'se'].includes(targetPronoun)) {
-            // Buscamos si existe el pronombre (o variante fonética cercana) Y el verbo
-            const pronounMap = {
-                'me': ['me', 'mi', 'no', 'yo'],
-                'te': ['te', 'tu', 'de'],
-                'se': ['se', 'si', 'su', 'el', 'ella', 'usted', 'ellos', 'ellas', 'ustedes']
-            };
-            const allowedPronouns = pronounMap[targetPronoun];
-            const hasPronoun = wordsA.some(w => allowedPronouns.includes(w));
-            const hasVerb = wordsA.includes(targetVerb);
-            return hasPronoun && hasVerb;
+        // 2b. Casos de fusión o enlace fonético (liaison)
+        const possibleCombinations = [];
+        if (targetPronoun === 'me') {
+            possibleCombinations.push('me' + targetVerb, 'm' + targetVerb);
+        } else if (targetPronoun === 'te') {
+            possibleCombinations.push('te' + targetVerb, 't' + targetVerb);
+        } else if (targetPronoun === 'se') {
+            possibleCombinations.push('se' + targetVerb, 's' + targetVerb);
+        } else if (targetPronoun === 'nos') {
+            possibleCombinations.push('nos' + targetVerb, 'no' + targetVerb, 's' + targetVerb);
+        } else if (targetPronoun === 'os') {
+            possibleCombinations.push('os' + targetVerb, 'o' + targetVerb, 's' + targetVerb);
+        }
+
+        if (wordsA.some(w => possibleCombinations.includes(w))) {
+            return true;
         }
     }
 

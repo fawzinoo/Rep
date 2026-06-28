@@ -12002,6 +12002,52 @@ function palabrasSimilares(a, b) {
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
     };
 
+    const levenshteinDistance = (s1, s2) => {
+        const len1 = s1.length;
+        const len2 = s2.length;
+        if (len1 === 0) return len2;
+        if (len2 === 0) return len1;
+
+        let matrix = [];
+        for (let i = 0; i <= len1; i++) {
+            matrix[i] = [i];
+        }
+        for (let j = 0; j <= len2; j++) {
+            matrix[0][j] = j;
+        }
+
+        for (let i = 1; i <= len1; i++) {
+            for (let j = 1; j <= len2; j++) {
+                const cost = (s1[i - 1] === s2[j - 1]) ? 0 : 1;
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j] + 1,      // deletion
+                    matrix[i][j - 1] + 1,      // insertion
+                    matrix[i - 1][j - 1] + cost // substitution
+                );
+            }
+        }
+        return matrix[len1][len2];
+    };
+
+    const areWordsSimilar = (w1, w2) => {
+        if (!w1 || !w2) return false;
+        if (w1 === w2) return true;
+        const lenDiff = Math.abs(w1.length - w2.length);
+        if (lenDiff > 3) return false;
+        const maxLen = Math.max(w1.length, w2.length);
+        if (maxLen <= 4) {
+            return w1 === w2;
+        } else if (maxLen <= 7) {
+            return levenshteinDistance(w1, w2) <= 1;
+        } else {
+            return levenshteinDistance(w1, w2) <= 2;
+        }
+    };
+
+    const containsSimilarWord = (wordsArray, targetWord) => {
+        return wordsArray.some(w => areWordsSimilar(w, targetWord));
+    };
+
     const normA = normalize(a);
     const normB = normalize(b);
 
@@ -12028,7 +12074,7 @@ function palabrasSimilares(a, b) {
         const allowedPronouns = pronounMap[targetPronoun] || [targetPronoun];
 
         // 2a. Si el verbo está presente por separado
-        if (wordsA.includes(targetVerb)) {
+        if (containsSimilarWord(wordsA, targetVerb)) {
             if (targetPronoun === 'nos' || targetPronoun === 'os') {
                 return true;
             }
@@ -12049,7 +12095,7 @@ function palabrasSimilares(a, b) {
             possibleCombinations.push('os' + targetVerb, 'o' + targetVerb, 's' + targetVerb);
         }
 
-        if (wordsA.some(w => possibleCombinations.includes(w))) {
+        if (wordsA.some(w => possibleCombinations.some(comb => areWordsSimilar(w, comb)))) {
             return true;
         }
     }
@@ -12058,13 +12104,14 @@ function palabrasSimilares(a, b) {
     // El target (b) tiene 1 sola palabra
     if (wordsB.length === 1) {
         const targetVerb = wordsB[0];
-        if (wordsA.includes(targetVerb)) {
+        const matchedWordInA = wordsA.find(w => areWordsSimilar(w, targetVerb));
+        if (matchedWordInA) {
             const allowedSubjects = [
                 'yo', 'tu', 'el', 'ella', 'usted', 
                 'nosotros', 'nosotras', 'vosotros', 'vosotras', 
                 'ellos', 'ellas', 'ustedes', 'vos'
             ];
-            const otherWords = wordsA.filter(w => w !== targetVerb);
+            const otherWords = wordsA.filter(w => w !== matchedWordInA);
             return otherWords.every(w => allowedSubjects.includes(w));
         }
     }
@@ -12073,6 +12120,10 @@ function palabrasSimilares(a, b) {
     const cleanA = normA.replace(/\s+/g, '');
     const cleanB = normB.replace(/\s+/g, '');
     if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+    }
+
+    if (areWordsSimilar(cleanA, cleanB)) {
         return true;
     }
 

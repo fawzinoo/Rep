@@ -11493,6 +11493,196 @@ body.chat-typing .chat-footer {
                     </div>
                 </div>
             </div>
+
+            
+
+    <style>
+        /* Icono del porcentaje actual */
+        #porcentaje-guardado {
+            display: inline-flex;
+            align-items: center;
+            position: relative; /* Para hints posicionados */
+            overflow: visible;
+        }
+        #porcentaje-guardado::before {
+            content: "\f295"; /* fa-percent */
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 16px;
+            margin-right: 6px;
+            color: currentColor;
+        }
+    </style>
+
+    <!-- Icono de la píldora de puntos -->
+    <style>
+        #points-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #points-pill::before {
+            content: "\f091"; /* fa-trophy */
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 16px;
+            margin-right: 6px;
+        }
+        /* Transición para ocultar/mostrar el cuadro de stats */
+        #stats-box {
+            transition: opacity 320ms ease, transform 320ms ease, filter 320ms ease;
+        }
+        #stats-box.hidden {
+            opacity: 0;
+            transform: scale(0.75);
+            filter: blur(2px);
+            pointer-events: none;
+        }
+        /* Hints: texto limpio sin brillos/luces, en amarillo sólido */
+        .pill-hint {
+            position: absolute;
+            right: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-right: 14px;
+            white-space: nowrap;
+            z-index: 100;
+            overflow: hidden; /* para el tipeo */
+            pointer-events: none; /* no bloquea clics */
+            /* Tipografía y color moderno */
+            font-weight: 900;
+            font-size: 18px;
+            letter-spacing: 0.3px;
+            line-height: 1.1;
+            color: #ffeb3b; /* amarillo sólido */
+            text-shadow: none; /* sin efecto de luz */
+            -webkit-text-stroke: 1.25px #000; /* contorno negro para "revistido de negro" */
+            paint-order: stroke fill;
+            /* Efectos */
+            opacity: 0;
+            width: 0ch; /* arranca sin ancho y “tipea” */
+            will-change: transform, opacity;
+            animation:
+                typing var(--type-dur, 1200ms) steps(var(--chars, 12)) var(--delay, 0ms) both,
+                hintEnter 640ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--delay, 0ms) + var(--intro-delay, 180ms)) both,
+                hintFadeOut 480ms ease-in var(--fade-delay, 2200ms) forwards;
+        }
+        .pill-hint::before {
+            /* Quitar aura/halo */
+            content: none !important;
+            display: none !important;
+        }
+        .pill-hint::after { display: none; }
+        @keyframes typing {
+            from { width: 0ch; }
+            to { width: calc(var(--chars, 12) * 1ch); }
+        }
+        @keyframes hintEnter {
+            0%   { opacity: 0; transform: translateY(-50%) translateX(14px) scale(0.96) rotate(-1.5deg); filter: blur(3px); }
+            60%  { opacity: 1; transform: translateY(-50%) translateX(-2px) scale(1.02) rotate(0.3deg); filter: blur(0.5px); }
+            100% { opacity: 1; transform: translateY(-50%) translateX(0) scale(1) rotate(0); filter: blur(0); }
+        }
+        /* caretBlink eliminado: sin cursor parpadeante */
+        @keyframes hintFadeOut {
+            0%   { opacity: 1; transform: translateY(-50%) translateX(0); filter: blur(0); }
+            100% { opacity: 0; transform: translateY(-50%) translateX(-6px); filter: blur(2px); }
+        }
+    </style>
+
+    <!-- Firma del editor dentro del contenedor de tarjetas -->
+    <style>
+        .editor-name {
+            position: absolute;
+            bottom: 5px;
+            left: 15px; /* abajo izquierda del contenedor */
+            font-size: 9px;
+            animation: colorTintineo 3s infinite;
+            font-weight: bold;
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+            z-index: 21; /* sobre el contenido base */
+            pointer-events: none; /* no bloquea clics */
+        }
+        @keyframes colorTintineo {
+            0% { color: #ff0000; }
+            20% { color: #ffff00; }
+            40% { color: #0000ff; }
+            60% { color: #ffffff; }
+            80% { color: #000000; }
+            100% { color: #ff0000; }
+        }
+    </style>
+
+    <!-- Cuadro unificado para ambos porcentajes (misma talla de pills, separados por línea) -->
+    <div id="stats-box" style="
+        position: absolute;
+        bottom: 6px;
+        right: 8px;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        /* Caja elegante sin alterar el tamaño de los pills */
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-radius: 14px;
+        padding: 6px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+        border: 1px solid rgba(255,255,255,0.14);
+        transform: scale(0.8);
+        transform-origin: bottom right;
+    ">
+    <!-- Puntos (calculados con la misma lógica de doPost) -->
+    <div class="pill" id="points-pill" style="
+        background: #6b7280;
+        color: #FFD700;
+        font-weight: 600;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        min-width: 65px;
+        text-align: center;
+    "><span id="current-points">0 pts</span></div>
+
+    <!-- Separador fino -->
+    <div style="
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.35), rgba(255,255,255,0));
+    "></div>
+
+    <!-- Porcentaje de aciertos (sin cambiar su tamaño) -->
+    <div class="pill" id="porcentaje-guardado" style="
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
+        min-width: 65px;
+        text-align: center;
+    "><span id="current-percentage">0%</span></div>
+
+    <!-- Separador fino entre ambos -->
+    <div style="
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.35), rgba(255,255,255,0));
+    "></div>
+
+    <!-- Porcentaje del último partido (sin cambiar su tamaño) -->
+    <div class="pill" id="last-game-pill" style="
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #2d3748;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(168, 237, 234, 0.3);
+        min-width: 65px;
+        position: relative; /* Para hints posicionados */
+        overflow: visible;
+    ">
+        <span><i class="fas fa-chart-line"></i> <span id="last-game-percentage">0%</span></span>
+    </div>
+    </div>
+
 </div>
     </div
     

@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flashcards con lógica Sí/No</title>
+    <style>
+        /* Estilos básicos */
+        body, html {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #505255, #00020a);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #flashcard-container-wrapper {
+            position: relative;
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #flashcard-container {
+            width: 100%;
+            height: 500px;
+            max-height: 500px;
+            perspective: 1000px; /* Para el efecto 3D */
+            border-radius: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(to right, #505255, #00020a);
+            border: 3px solid #aab0b4;
+            margin: 0;
+        }
+        .flashcard, .results-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            border-radius: 15px;
+            cursor: pointer;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .flashcard.is-visible { display: flex; }
+        
+        /* Parte frontal y trasera de la tarjeta */
+        .front, .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Evita que se vea la parte trasera al voltearse */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    
+        .card-back {
+            transform: rotateY(180deg); /* Gira la parte trasera */
+        }
+    
+        /* Estilo de la parte frontal */
+        .front img, .back img { width: 100%; height: 100%; }
+    
+        /* Estilo de la parte trasera */
+        .back {
+    background: linear-gradient(to bottom, rgba(223, 233, 243, 0.8), rgba(17, 92, 189, 0.8)); /* Fondo refinado con transparencia */
+    color: #ffffff;
+    transform: rotateY(180deg);
+    padding: 20px; /* Ajuste de padding para un margen más elegante */
+    text-align: center;
+    font-size: 50px; /* Tamaño de fuente ajustado */
+    font-family: 'Playfair Display', serif; /* Fuente elegante */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para un efecto moderno */
+    text-shadow: -1px -1px 2px rgba(0, 5, 5, 2.5), 
+                 1px -1px 2px rgba(0, 5, 5, 2.5),
+                 -1px 1px 2px rgba(0, 5, 5, 2.5),
+                 1px 1px 2px rgba(0, 5, 5, 2.5); /* Sombra para crear contorno */
+    position: relative; /* Necesario para los elementos absolutos */
+    overflow: hidden; /* Oculta los elementos que sobresalen */
+   
+}
+
+
+
+.back::before, .back::after {
+    content: '';
+    position: absolute;
+    width: 150px; /* Ajusta el tamaño de la forma */
+    height: 150px; /* Ajusta el tamaño de la forma */
+    background: rgba(255, 255, 255, 0.4); /* Forma sutil */
+    border-radius: 50%; /* Forma circular */
+    z-index: 0; /* Coloca detrás del texto */
+}
+
+.back::before {
+    top: -30px; /* Ajusta la posición */
+    left: -30px; /* Ajusta la posición */
+}
+
+.back::after {
+    bottom: -30px; /* Ajusta la posición */
+    right: -30px; /* Ajusta la posición */
+}
+
+
+
+    
+        /* El efecto de voltear */
+        .flashcard.flipped {
+            transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
+        }
+    
+        /* Botones de acción */
+        .button-container {
+            width: 100%;
+            max-width: 370px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px 0;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        .button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 50px;
+            background-color: #3498db;
+            color: #fff;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .button.yes { background-color: #27ae60; }
+        .button.no { background-color: #e74c3c; }
+        .button.disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .button:hover:not(.disabled) { transform: translateY(-3px); }
+        .counter {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #f0f2f5;
+            color: #333;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        #total-cards-container {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    
+        .results-card {
+            background: linear-gradient(to right, #f4e2d8, #ba5370);
+            color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+    
+        .results-card h2 {
+            margin-bottom: 50px;
+            font-size: 2em;
+            color: #12235a;
+        }
+    
+        .results-card p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+    
+        .results-card .highlight {
+            font-weight: bold;
+            color: #f1c40f;
+        }
+    
+        .circular-progress {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(#27ae60 var(--progress), #e0e0e0 0deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+        }
+        .circular-progress::before {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #fff;
+        }
+        .circular-progress span {
+            position: absolute;
+            font-size: 1.5em;                                  
+            font-weight: bold;
+            color: #27ae60;
+        }
+    
+        #completion-message {
+            display: none;
+            position: absolute;
+            width: 100%;                                     
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: white;
+            color: #2c3e50;
+            font-size: 2em;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+ 
+</head>
+<body>
+    <div id="total-cards-container">Faltan: <span id="total-cards"></span></div>
+    <div id="flashcard-container-wrapper">
+
+<!--------------------------------------------------------------------->
+
+<div id="flashcard-container">
+    <!-- Tarjetas de imágenes -->
+    <div class="flashcard is-visible">
+        <div class="front">                 
+            <img src="https://fawzinoo.github.io/Fotos/camisa larga.png" alt="Caqui">
+        </div>
+        <div class="back">Una camisa de manga larga</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/camisa corta.png" alt="Chirimoya">
+        </div>
+        <div class="back">Una camisa de manga corta</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/camiseta larga.png" alt="Nectarina">
+        </div>
+        <div class="back">Una camiseta de manga larga</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/polo.png" alt="Aguacate">
+        </div>
+        <div class="back">Una camiseta de manga corta</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/jersey redondo.png" alt="Uva Verde">
+        </div>
+        <div class="back">Un jersey de cuello redondo</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/jersey cuello.png" alt="Ciruela">
+        </div>
+        <div class="back">Un jersey de cuello</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/jersey chimenea.png" alt="Mandarina">
+        </div>
+        <div class="back">Un jersey de cuello chimenea</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/jersey barco.png" alt="Pomelo">
+        </div>
+        <div class="back">Un jersey de cuello barco</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/sudadera.png" alt="Coco">
+        </div>
+        <div class="back">Una sudadera</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/abrigo.png" alt="Frambuesa">
+        </div>
+        <div class="back">Un abrigo</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/chaleco.png" alt="Granada">
+        </div>
+        <div class="back">Un chaleco</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/tunica.png" alt="Pera">
+        </div>
+        <div class="back">Una túnica</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/parka.png" alt="Pera">
+        </div>
+        <div class="back">Una parka</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/disfraz.png" alt="Pera">
+        </div>
+        <div class="back">Un disfraz</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/mono trabajo.png" alt="Pera">
+        </div>
+        <div class="back">Un mono de trabajo</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/traje.png" alt="Piña">
+        </div>
+        <div class="back">Un traje</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/ropa trabajo.png" alt="Mango">
+        </div>
+        <div class="back">Ropa de trabajo</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/traje gala.png" alt="Uva">
+        </div>
+        <div class="back">Un traje de gala</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/traje neoprino.png" alt="Fresa">
+        </div>
+        <div class="back">Un traje neopreno</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/chaqueta.png" alt="Plátano">
+        </div>
+        <div class="back">Una chaqueta</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/chaqueta impermeable.png" alt="Manzana">
+        </div>
+        <div class="back">Una chaqueta impermeable</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/gabardina.png" alt="Naranja">
+        </div>
+        <div class="back">Una gabardina</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/anorak.png" alt="Naranja">
+        </div>
+        <div class="back">Un anorak</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/chandal.png" alt="Naranja">
+        </div>
+        <div class="back">Un chándal</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/pantalones.png" alt="Cereza">
+        </div>
+        <div class="back">Unos pantalones</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/vaqueros.png" alt="Papaya">
+        </div>
+        <div class="back">Unos vaqueros</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/pantalones chinos.png" alt="Kiwi">
+        </div>
+        <div class="back">Unos pantalones chinos</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/pantalones cargo.png" alt="Melón">
+        </div>
+        <div class="back">Unos pantalones de cargo</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/pantalones pinzas.png" alt="Sandía">
+        </div>
+        <div class="back">Unos pantalones de pinzas</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/pantalones cortos.png" alt="Sandía">
+        </div>
+        <div class="back">Unos pantalones cortos</div>
+    </div>
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/shorts deportivos.png" alt="Naranja">
+        </div>
+        <div class="back">Unos shorts deportivos</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/bermudas largas.png" alt="Naranja">
+        </div>
+        <div class="back">Unas bermudas largas</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/unas bermudas baño.png" alt="Naranja">
+        </div>
+        <div class="back">Unas bermudas de baño</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/zapatos.png" alt="Naranja">
+        </div>
+        <div class="back">Unos zapatos</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/botines.png" alt="Naranja">
+        </div>
+        <div class="back">Unos botines</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/zapatillas deportivas.png" alt="Naranja">
+        </div>
+        <div class="back">Unas zapatillas deportivas</div>
+    </div>
+
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/mocasines.png" alt="Naranja">
+        </div>
+        <div class="back">unos mocasines</div>
+    </div>
+    <div class="flashcard">
+        <div class="front">
+            <img src="https://fawzinoo.github.io/Fotos/sandalias.png" alt="Naranja">
+        </div>
+        <div class="back">Unas sandalias</div>
+    </div>
+
+
+
+
+            <!-- Tarjeta de resultados -->
+            <div class="results-card" id="results-card">
+                <h2>Resumen de Tarjetas</h2>
+                <div style="border: #12235a solid 1px;padding: 10px; border-radius: 10px;background-color: #6e7f85;">
+                <p>Total de tarjetas: <span id="total-cards-info" class="highlight">--</span></p>
+                <p>Tarjetas no memorizadas (Botón No): <span id="cards-remembered" class="highlight">--</span></p>
+                <p>Tarjetas memorizadas (Botón Sí): <span id="cards-not-remembered" class="highlight">--</span></p>
+                </div>
+                <div class="circular-progress" id="progress-circle">
+                    <span id="progress-percentage">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="completion-message">¡Selección finalizada! 🎉</div>
+    <audio id="buttonSound" src="https://www.cjoint.com/doc/24_11/NKuljoCHcWJ_goodresult-82807.mp3" preload="auto"></audio>
+
+    <div class="button-container">
+        <button class="button yes">Sí<span class="counter" id="yes-counter">0</span></button>
+        <button class="button no">No<span class="counter" id="no-counter">0</span></button>
+        <button class="button" id="reset-button" onclick="location.reload()">Reiniciar</button>
+    </div>
+    
+
+    <!-- Agregar la librería de confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <script>
+    
+    const baseUrl = 'https://fawzinoo.github.io/audios/';
+const audios = [
+    'camisa de manga larga.mp3', 'camisa de manga corta.mp3', 'camiseta de manga larga.mp3', 'camiseta de manga corta.mp3', 'jersey de cuello redondo.mp3',
+    'jersey de cuello.mp3', 'jersey de cuello chimenea.mp3', 'jersey de cuello barco.mp3', 'sudadera.mp3', 'abrigo.mp3',
+    'chaleco.mp3', 'tunica.mp3', 'parka.mp3', 'disfraz.mp3', 'mono de trabajo.mp3',
+    'traje.mp3', 'ropa de trabajo.mp3', 'traje de gala.mp3', 'traje neoprino.mp3', 'chaqueta.mp3',
+    'chaqueta impermeable.mp3', 'gabardina.mp3', 'anorak.mp3', 'chandal.mp3', 'pantalones.mp3', 'vaqueros.mp3', 'pantalones chinos.mp3','pantalones de cargo.mp3', 'pantalones de pinzas.mp3', 'pantalones cortos.mp3', 'shorts deportivos.mp3', 'bermudas largas.mp3', 'bermudas de baño.mp3', 'zapatos.mp3', 'x.mp3', 'zapatillas deportivas.mp3', 'mocasines.mp3', 'sandalias.mp3'
+].map(file => new Audio(baseUrl + file));
+
+
+    // Función para detener todos los audios
+    function stopAllAudios() {
+        audios.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0; // Reiniciar al inicio
+        });
+    }
+
+    // Seleccionar solo las tarjetas de imágenes
+    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    const yesButton = document.querySelector('.button.yes');
+    const noButton = document.querySelector('.button.no');
+
+    // Acción de voltear la tarjeta al hacer clic
+    flashcards.forEach((card, index) => {
+        let isAudioPlaying = false; // Bandera para rastrear si el audio está en reproducción
+        card.addEventListener('click', () => {
+            card.classList.toggle('flipped'); // Alterna la clase 'flipped' para voltear la tarjeta
+
+            if (card.classList.contains('flipped')) {
+                // Reproducir el audio correspondiente después de 1 segundo si la tarjeta se está volteando
+                if (audios[index]) {
+                    stopAllAudios(); // Detener otros audios antes de reproducir el nuevo
+                    setTimeout(() => {
+                        audios[index].play();
+                        isAudioPlaying = true;
+                    }, 1000); // 1000 ms = 1 segundo
+                }
+            } else {
+                // Detener el audio si la tarjeta se voltea de nuevo
+                if (isAudioPlaying && audios[index]) {
+                    audios[index].pause();
+                    audios[index].currentTime = 0; // Reiniciar el audio
+                    isAudioPlaying = false;
+                }
+            }
+        });
+    });
+
+    // Detener todos los audios al presionar los botones "Sí" o "No"
+    yesButton.addEventListener('click', stopAllAudios);
+    noButton.addEventListener('click', stopAllAudios);
+
+    // Continuación de tu lógica para los botones y tarjetas...
+
+
+
+
+
+
+
+
+        const resetButton = document.getElementById('reset-button');
+        const resultsCard = document.getElementById('results-card');
+        const completionMessage = document.getElementById('completion-message');
+        const yesCounterSpan = document.getElementById('yes-counter');
+        const noCounterSpan = document.getElementById('no-counter');
+        const totalCardsSpan = document.getElementById('total-cards');
+        const cardsRemembered = document.getElementById('cards-remembered');
+        const cardsNotRemembered = document.getElementById('cards-not-remembered');
+        const totalCardsInfo = document.getElementById('total-cards-info');
+        const progressCircle = document.getElementById('progress-circle');
+        const progressPercentage = document.getElementById('progress-percentage');
+    
+        let currentCardIndex = 0;
+        let yesCounter = 0;
+        let noCounter = 0;
+        let postponedCards = new Set();
+        let completedCards = new Set();
+        let lastPostponedCard = null;
+    
+        function updateTotalCardsCounter() {
+            totalCardsSpan.textContent = flashcards.length - completedCards.size; // Actualizar el contador excluyendo tarjetas completadas
+        }
+    
+        function showCard(index) {
+            flashcards.forEach((card, i) => {
+                card.classList.remove('is-visible');
+                if (i === index && !completedCards.has(i)) {
+                    card.classList.add('is-visible');
+                }
+            });
+            resultsCard.style.display = 'none'; // Asegurar que no se muestre al principio
+            completionMessage.style.display = 'none'; // Ocultar el mensaje de finalización al mostrar tarjetas
+        }
+    
+        function moveToNextCard() {
+            do {
+                currentCardIndex++;
+                if (currentCardIndex >= flashcards.length) {
+                    currentCardIndex = 0;
+                }
+            } while (completedCards.has(currentCardIndex) && completedCards.size < flashcards.length);
+    
+            if (completedCards.size === flashcards.length) {
+                showCompletionMessage();
+                setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                disableButtons();
+            } else {
+                showCard(currentCardIndex);
+            }
+        }
+    
+        noButton.addEventListener('click', () => {
+            if (postponedCards.has(currentCardIndex)) {
+                // Si es la última tarjeta pospuesta y se presiona "No" nuevamente
+                if (lastPostponedCard === currentCardIndex) {
+                    showCompletionMessage();
+                    setTimeout(showResultsCard, 3000); // Mostrar el resumen después del mensaje de finalización
+                    disableButtons();
+                } else {
+                    moveToNextCard(); // Mover al siguiente si ya estaba pospuesta
+                }
+            } else {
+                noCounter++;
+                noCounterSpan.textContent = noCounter;
+                postponedCards.add(currentCardIndex);
+                lastPostponedCard = currentCardIndex; // Registrar como la última tarjeta pospuesta
+                moveToNextCard();
+            }
+        });
+    
+        yesButton.addEventListener('click', () => {
+            yesCounter++;
+            yesCounterSpan.textContent = yesCounter;
+    
+            if (postponedCards.has(currentCardIndex)) {
+                postponedCards.delete(currentCardIndex);
+                noCounter--;
+                noCounterSpan.textContent = noCounter;
+            }
+    
+            completedCards.add(currentCardIndex); // Marcar la tarjeta como completada
+            updateTotalCardsCounter(); // Actualizar el total de tarjetas
+            moveToNextCard();
+        });
+    
+        resetButton.addEventListener('click', () => {
+            yesCounter = 0;
+            noCounter = 0;
+            yesCounterSpan.textContent = yesCounter;
+            noCounterSpan.textContent = noCounter;
+            postponedCards.clear();
+            completedCards.clear();
+            currentCardIndex = 0;
+            lastPostponedCard = null;
+            showCard(currentCardIndex);
+            enableButtons();
+            resultsCard.style.display = 'none';
+            completionMessage.style.display = 'none';
+            updateTotalCardsCounter(); // Restablecer el total de tarjetas
+        });
+    
+        function enableButtons() {
+            yesButton.classList.remove('disabled');
+            noButton.classList.remove('disabled');
+            yesButton.disabled = false;
+            noButton.disabled = false;
+        }
+    
+        function disableButtons() {
+            yesButton.classList.add('disabled');
+            noButton.classList.add('disabled');
+            yesButton.disabled = true;
+            noButton.disabled = true;
+        }
+    
+        function showResultsCard() {
+            resultsCard.style.display = 'flex'; // Mostrar el resumen al final
+            totalCardsInfo.textContent = flashcards.length;
+            cardsRemembered.textContent = noCounter;
+            cardsNotRemembered.textContent = yesCounter;
+    
+            // Calcular porcentaje y actualizar el progreso circular
+            const percentage = (yesCounter / flashcards.length) * 100;
+            progressPercentage.textContent = `${Math.round(percentage)}%`;
+            progressCircle.style.setProperty('--progress', `${percentage}deg`);
+        }
+    
+        function showCompletionMessage() {
+            const buttonSound = document.getElementById('buttonSound');
+            buttonSound.play().catch(error => {
+                console.log('Audio playback failed:', error);
+            });
+            completionMessage.style.display = 'flex';
+            // Efecto de confeti utilizando Canvas Confetti
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+            setTimeout(() => {
+                completionMessage.style.display = 'none';
+            }, 3000);
+        }
+    
+        updateTotalCardsCounter();
+        showCard(currentCardIndex);
+    </script>
+    
+    
+</body>
+</html>

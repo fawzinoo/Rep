@@ -1,0 +1,3520 @@
+function jsonOut_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function normalizeUser_(nombre, apellido) {
+  return (String(nombre || '') + String(apellido || ''))
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function normalizeName_(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeDigits_(value) {
+  return String(value || '')
+    .replace(/[٠-٩]/g, function(d) { return String(d.charCodeAt(0) - 1632); }) // Arabic-Indic
+    .replace(/[۰-۹]/g, function(d) { return String(d.charCodeAt(0) - 1776); }); // Eastern Arabic-Indic
+}
+
+function isExcludedFromRanking_(nombre, apellido) {
+  return normalizeName_(nombre) === CHAT_ADMIN_FIRST_NAME_ &&
+    normalizeName_(apellido) === CHAT_ADMIN_LAST_NAME_;
+}
+
+function normalizeLessonPointRaw_(value) {
+  var text = normalizeDigits_(value == null ? '' : value);
+  return text
+    .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width chars
+    .replace(/\u00A0/g, ' ') // nbsp
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, ''); // wrapping quotes/apostrophes
+}
+
+function parseLessonPoints_(value) {
+  if (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 5 &&
+    Math.floor(value) === value
+  ) {
+    return value;
+  }
+
+  const raw = normalizeLessonPointRaw_(value);
+  if (!raw) return null;
+
+  const compact = raw.toLowerCase().replace(/\s+/g, '').replace(',', '.');
+
+  // Caso normal: 0..5 o 0f..5f (admite 1.0f)
+  const exact = compact.match(/^([0-5])(?:\.0+)?(f)?$/);
+  if (exact) {
+    const base = Number(exact[1]);
+    return exact[2] ? `${base}f` : base;
+  }
+
+  // Fallback tolerante: si el valor trae texto adicional, pero contiene Xf válido.
+  const forced = compact.match(/([0-5])(?:\.0+)?f/);
+  if (forced) {
+    return `${Number(forced[1])}f`;
+  }
+
+  // Fallback tolerante: número válido embebido sin sufijo f.
+  const numeric = compact.match(/([0-5])(?:\.0+)?/);
+  if (numeric) {
+    return Number(numeric[1]);
+  }
+
+  return null;
+}
+
+function lessonPointsToNumber_(value) {
+  const parsed = parseLessonPoints_(value);
+  if (parsed === null) return 0;
+  if (typeof parsed === 'number') return parsed;
+  const m = String(parsed).match(/^([0-5])(?:\.0+)?[fF]$/);
+  if (m) return Number(m[1]);
+  const n = Number(String(parsed).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
+
+function isFinalUnlockPoints_(value) {
+  const parsed = parseLessonPoints_(value);
+  return typeof parsed === 'string' && /[fF]$/.test(parsed);
+}
+
+function toNumberSafe_(value) {
+  const n = Number(String(value == null ? '' : value).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
+
+// Para verify: prioriza hoja 'codigo'
+function getCodeSheet_(ss) {
+  return ss.getSheetByName('codigo') || ss.getSheetByName('sinc') || null;
+}
+
+function getCodeValues_(ss) {
+  const sheet = getCodeSheet_(ss);
+  if (!sheet) return [];
+
+  const values = sheet.getDataRange().getValues();
+  const out = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const v = String(values[i][0] || '').trim();
+    if (!v) continue;
+
+    const lower = v.toLowerCase();
+    if (
+      lower === 'codigo' ||
+      lower === 'código' ||
+      lower === 'code' ||
+      lower === 'password' ||
+      lower === 'contraseña' ||
+      lower === 'contrasena'
+    ) {
+      continue;
+    }
+
+    out.push(v.toUpperCase());
+  }
+
+  return out;
+}
+
+function getPrimaryCodeFromCodeSheet_(ss) {
+  const codes = getCodeValues_(ss);
+  return codes.length ? codes[0] : '';
+}
+
+/**
+ * Regla de prioridad solicitada:
+ * - Si PortalB(C) = 'bloc' => bloqueado (mantener esta lógica)
+ * - Si PortalB(C) != codigoSheet => manda PortalB(C)
+ * - Si PortalB(C) == codigoSheet => manda codigoSheet
+ */
+function getEffectiveLoginCode_(portalCode, sheetCode) {
+  const portal = String(portalCode || '').trim().toUpperCase();
+  const sheet = String(sheetCode || '').trim().toUpperCase();
+
+  if (portal.toLowerCase() === 'bloc') return 'BLOC';
+
+  if (portal && sheet) {
+    return portal !== sheet ? portal : sheet;
+  }
+
+  if (portal) return portal;
+  if (sheet) return sheet;
+  return '';
+}
+
+// Para sync password: prioriza hoja 'sinc', ignorando encabezado en A1
+function getSyncPassword_(ss) {
+  const sheet = ss.getSheetByName('sinc') || ss.getSheetByName('codigo');
+  if (!sheet) return '';
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return ''; // no hay datos debajo del encabezado
+
+  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues(); // desde A2
+  for (let i = 0; i < values.length; i++) {
+    const v = String(values[i][0] || '').trim();
+    if (!v) continue;
+
+    const lower = v.toLowerCase();
+    if (
+      lower === 'codigo' ||
+      lower === 'código' ||
+      lower === 'code' ||
+      lower === 'password' ||
+      lower === 'contraseña' ||
+      lower === 'contrasena'
+    ) {
+      continue;
+    }
+
+    return v.toUpperCase();
+  }
+
+  return '';
+}
+
+// ==================== CHAT (hoja: chat) ====================
+const CHAT_SHEET_NAME_ = 'chat';
+const CHAT_DEFAULT_COLUMN_ = 'U1L0T1';
+const CHAT_MAX_MESSAGE_LENGTH_ = 280;
+const CHAT_IMAGE_PROXY_MAX_BYTES_ = 5 * 1024 * 1024;
+// 0 = sin limite propio de la aplicacion; siguen aplicando limites de Apps Script/Drive/navegador.
+const CHAT_ATTACHMENT_MAX_BYTES_ = 0;
+const CHAT_ATTACHMENT_MAX_BASE64_CHARS_ = CHAT_ATTACHMENT_MAX_BYTES_ > 0
+  ? Math.ceil(CHAT_ATTACHMENT_MAX_BYTES_ * 4 / 3) + 2048
+  : 0;
+const CHAT_ATTACHMENT_MARKER_ = '__CHAT_ATTACHMENT_V1__';
+const CHAT_META_MARKER_ = '__CHAT_META_V1__';
+const CHAT_ATTACHMENT_FOLDER_PREFIX_ = 'chat_';
+const CHAT_ATTACHMENT_FOLDER_SUFFIX_ = '_attachments';
+const CHAT_ATTACHMENT_FOLDER_ID_PROP_PREFIX_ = 'chat_attachment_folder_id_';
+const CHAT_ATTACHMENT_FOLDER_SHARED_PROP_PREFIX_ = 'chat_attachment_folder_shared_';
+const CHAT_NEXT_ROW_PROP_PREFIX_ = 'chat_next_row_';
+const CHAT_RECENT_MESSAGES_CACHE_KEY_PREFIX_ = 'chat_recent_messages_v2_';
+const CHAT_RECENT_MESSAGES_CACHE_LIMIT_ = 80;
+const CHAT_RECENT_MESSAGES_CACHE_TTL_SECONDS_ = 180;
+// La fila 2 queda reservada fuera del historial normal del chat para mensajes de bienvenida u otros textos fijos.
+const CHAT_WELCOME_ROW_ = 2;
+const CHAT_FIRST_VISIBLE_ROW_ = 3;
+const CHAT_FIRST_MESSAGE_ROW_ = 3;
+const CHAT_ADMIN_FIRST_NAME_ = 'profe';
+const CHAT_ADMIN_LAST_NAME_ = 'faouzi';
+const CHAT_ADMIN_DISPLAY_NAME_ = 'Profe Faouzi';
+const CHAT_URLFETCH_SCOPE_ = 'https://www.googleapis.com/auth/script.external_request';
+const CHAT_DRIVE_SCOPE_ = 'https://www.googleapis.com/auth/drive';
+const CHAT_TIMEZONE_ = 'Africa/Casablanca';
+const CHAT_ATTACHMENT_INDEX_SHEET_NAME_ = 'chat_attachment_index';
+const CHAT_ATTACHMENT_INDEX_HEADER_ = ['sha256', 'columna', 'fileId', 'name', 'mimeType', 'size', 'kind', 'sourceKind', 'url', 'createdAt', 'updatedAt'];
+
+// Ejecuta esta funcion manualmente una vez para forzar autorizacion de UrlFetchApp.
+function authUrlFetch_() {
+  const testUrl = 'https://www.google.com/favicon.ico';
+  const response = UrlFetchApp.fetch(testUrl, {
+    method: 'get',
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  const status = Number(response.getResponseCode() || 0);
+  Logger.log('authUrlFetch_ status=' + status + ' url=' + testUrl);
+  return status;
+}
+
+// Ejecuta esta funcion manualmente una vez para autorizar DriveApp (adjuntos del chat).
+function authDrive_(columna) {
+  const resolvedColumn = normalizeChatColumn_(columna || CHAT_DEFAULT_COLUMN_);
+  const folder = ensureChatAttachmentFolder_(resolvedColumn);
+  const folderId = String(folder && folder.getId ? folder.getId() : '').trim();
+  Logger.log('authDrive_ columna=' + resolvedColumn + ' folderId=' + folderId);
+  return folderId;
+}
+
+function normalizeChatColumn_(columna) {
+  const normalized = String(columna || '').trim().toUpperCase();
+  return normalized || CHAT_DEFAULT_COLUMN_;
+}
+
+function getChatAttachmentFolderName_(columna) {
+  return CHAT_ATTACHMENT_FOLDER_PREFIX_ + normalizeChatColumn_(columna).toLowerCase() + CHAT_ATTACHMENT_FOLDER_SUFFIX_;
+}
+
+function getChatAttachmentFolderIdPropKey_(columna) {
+  return CHAT_ATTACHMENT_FOLDER_ID_PROP_PREFIX_ + normalizeChatColumn_(columna).toLowerCase();
+}
+
+function getChatAttachmentFolderSharedPropKey_(columna) {
+  return CHAT_ATTACHMENT_FOLDER_SHARED_PROP_PREFIX_ + normalizeChatColumn_(columna).toLowerCase();
+}
+
+function getChatSheet_(ss) {
+  return ss.getSheetByName(CHAT_SHEET_NAME_) || null;
+}
+
+function getChatColumnIndex_(sheet, columna) {
+  if (!sheet) return -1;
+  const target = normalizeChatColumn_(columna);
+  const lastColumn = sheet.getLastColumn();
+  if (lastColumn < 1) return -1;
+
+  const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  for (let i = 0; i < header.length; i++) {
+    if (String(header[i] || '').trim().toUpperCase() === target) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function normalizeChatMessage_(mensaje) {
+  const cleaned = String(mensaje || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.slice(0, CHAT_MAX_MESSAGE_LENGTH_);
+}
+
+function buildChatDisplayName_(data) {
+  const explicitName = String((data && data.userDisplayName) || '').trim();
+  if (explicitName) {
+    const safeExplicitName = explicitName.replace(/[\r\n]+/g, ' ').trim();
+    return /^an[oó]nimo$/i.test(safeExplicitName) ? 'Anónimo' : safeExplicitName;
+  }
+
+  const nombre = String((data && data.nombre) || '').trim();
+  const apellido = String((data && data.apellido) || '').trim();
+  const combined = [nombre, apellido].filter(Boolean).join(' ').trim();
+  return combined || 'Anónimo';
+}
+
+function normalizeChatParticipantKey_(value) {
+  return String(value || '')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function findPortalBUserRowByName_(sheet, nombre, apellido) {
+  if (!sheet) return 0;
+  const firstName = normalizeName_(nombre);
+  const lastName = normalizeName_(apellido);
+  if (!firstName || !lastName) return 0;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (normalizeName_(values[i][0]) === firstName && normalizeName_(values[i][1]) === lastName) {
+      return i + 2;
+    }
+  }
+  return 0;
+}
+
+function isChatAdminRequest_(ss, data) {
+  var nombre = normalizeName_(data && data.nombre);
+  var apellido = normalizeName_(data && data.apellido);
+  if (nombre !== CHAT_ADMIN_FIRST_NAME_ || apellido !== CHAT_ADMIN_LAST_NAME_) {
+    return false;
+  }
+
+  var sheetPortal = ss && ss.getSheetByName ? ss.getSheetByName('PortalB') : null;
+  if (!sheetPortal) return false;
+  return findPortalBUserRowByName_(sheetPortal, nombre, apellido) > 0;
+}
+
+function getAuthenticatedChatPortalBUser_(ss, data) {
+  var nombre = normalizeName_(data && data.nombre);
+  var apellido = normalizeName_(data && data.apellido);
+  var tokenCliente = String((data && data.token) || '').trim();
+  if (!nombre || !apellido || !tokenCliente) return null;
+
+  var sheetPortal = ss && ss.getSheetByName ? ss.getSheetByName('PortalB') : null;
+  if (!sheetPortal) return null;
+
+  var values = sheetPortal.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    if (normalizeName_(row[0]) !== nombre || normalizeName_(row[1]) !== apellido) continue;
+    var tokenGuardado = String(row[3] || '').trim();
+    if (!tokenGuardado || tokenCliente !== tokenGuardado) return null;
+    return {
+      row: i + 1,
+      nombre: String(row[0] || '').trim(),
+      apellido: String(row[1] || '').trim(),
+      displayName: buildPortalBDisplayName_(row[0], row[1]),
+      token: tokenGuardado
+    };
+  }
+
+  return null;
+}
+
+function formatChatCellValue_(displayName, mensaje) {
+  const safeName = String(displayName || 'Anónimo')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .trim() || 'Anónimo';
+  const normalizedName = /^an[oó]nimo$/i.test(safeName) ? 'Anónimo' : safeName;
+  const safeMessage = normalizeChatMessage_(mensaje);
+  return '-' + normalizedName + '-\n' + safeMessage;
+}
+
+function normalizeChatMessageScope_(value) {
+  const scope = String(value || '').trim().toLowerCase();
+  return scope === 'teacher' ? 'teacher' : 'all';
+}
+
+function normalizeChatScopeOwner_(value) {
+  const raw = String(value || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .trim();
+  if (!raw) return '';
+  return /^an[oó]nimo$/i.test(raw) ? 'Anónimo' : raw;
+}
+
+function resolveChatScopeOwner_(scope, requestedScopeOwner, fallbackScopeOwner) {
+  if (normalizeChatMessageScope_(scope) !== 'teacher') return '';
+  const explicitOwner = normalizeChatScopeOwner_(requestedScopeOwner);
+  if (explicitOwner) return explicitOwner;
+  return normalizeChatScopeOwner_(fallbackScopeOwner);
+}
+
+function parseChatQuotedReplyScopeOwner_(quotedReply) {
+  const raw = String(quotedReply || '').trim();
+  if (!raw) return '';
+  const firstLine = raw.split('\n')[0].trim();
+  const colonIndex = firstLine.indexOf(':');
+  if (colonIndex <= 0) return '';
+  return normalizeChatScopeOwner_(firstLine.slice(0, colonIndex));
+}
+
+function inferChatScopeOwnerFromParsed_(parsed) {
+  const explicitOwner = normalizeChatScopeOwner_(parsed && parsed.scopeOwner);
+  if (explicitOwner) return explicitOwner;
+  if (normalizeChatMessageScope_(parsed && parsed.scope) !== 'teacher') return '';
+
+  const quotedOwner = parseChatQuotedReplyScopeOwner_(parsed && parsed.quotedReply);
+  if (quotedOwner && normalizeChatParticipantKey_(quotedOwner) !== normalizeChatParticipantKey_(CHAT_ADMIN_DISPLAY_NAME_)) {
+    return quotedOwner;
+  }
+
+  const authorOwner = normalizeChatScopeOwner_(parsed && parsed.user);
+  if (authorOwner && normalizeChatParticipantKey_(authorOwner) !== normalizeChatParticipantKey_(CHAT_ADMIN_DISPLAY_NAME_)) {
+    return authorOwner;
+  }
+
+  return '';
+}
+
+function formatChatMetaRecord_(meta) {
+  return CHAT_META_MARKER_ + JSON.stringify({
+    edited: !!(meta && meta.edited),
+    scope: normalizeChatMessageScope_(meta && meta.scope),
+    scopeOwner: normalizeChatScopeOwner_(meta && meta.scopeOwner),
+    clientToken: normalizeChatAttachmentClientToken_(meta && meta.clientToken),
+    timestamp: String(meta && meta.timestamp || '').trim(),
+    timeLabel: String(meta && meta.timeLabel || '').trim(),
+    editTimestamp: String(meta && meta.editTimestamp || '').trim(),
+    editTimeLabel: String(meta && meta.editTimeLabel || '').trim()
+  });
+}
+
+function buildChatTimestampMeta_() {
+  var now = new Date();
+  return {
+    timestamp: now.toISOString(),
+    timeLabel: Utilities.formatDate(now, CHAT_TIMEZONE_, 'HH:mm')
+  };
+}
+
+function inferAttachmentKindFromMime_(mimeType, fileName) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.indexOf('image/') === 0) return 'image';
+  if (mime.indexOf('video/') === 0) return 'video';
+  if (mime.indexOf('audio/') === 0) return 'audio';
+
+  const lowerName = String(fileName || '').toLowerCase();
+  if (/\.(png|jpe?g|webp|gif|bmp|svg|heic|heif)$/i.test(lowerName)) return 'image';
+  if (/\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(lowerName)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|amr|weba|webm|opus)$/i.test(lowerName)) return 'audio';
+  return 'file';
+}
+
+function toDriveFileUrl_(fileId) {
+  return 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(String(fileId || '').trim());
+}
+
+function toDriveImageThumbnailUrl_(fileId) {
+  return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(String(fileId || '').trim()) + '&sz=w1200';
+}
+
+function inferExtensionFromFileName_(fileName) {
+  const cleanName = String(fileName || '').trim().split('?')[0].split('#')[0].trim();
+  const match = cleanName.match(/\.([a-z0-9]{2,8})$/i);
+  return match && match[1] ? String(match[1]).toLowerCase() : '';
+}
+
+function sanitizeUploadFileName_(name, mimeType) {
+  const requested = String(name || '').trim();
+  const extFromMime = inferMimeExtension_(mimeType);
+  const requestedExt = inferExtensionFromFileName_(requested);
+  const finalExt = (extFromMime && extFromMime !== 'bin')
+    ? extFromMime
+    : (requestedExt || extFromMime || 'bin');
+  const requestedBase = requested.replace(/\.[a-z0-9]{2,8}$/i, '');
+  const fallbackName = sanitizeFileName_(requestedBase || 'adjunto-chat', finalExt);
+  const clean = String(fallbackName || 'adjunto-chat.bin').replace(/-+/g, '-').replace(/\s+/g, '-').trim();
+  return clean || ('adjunto-chat.' + finalExt);
+}
+
+function stripDataUrlPrefix_(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (text.indexOf('data:') === 0) {
+    const commaIndex = text.indexOf(',');
+    if (commaIndex !== -1) return text.slice(commaIndex + 1).trim();
+  }
+  return text;
+}
+
+function normalizeChatAttachmentSha256_(value) {
+  const hash = String(value || '').trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(hash) ? hash : '';
+}
+
+function bytesToHex_(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i++) {
+    const value = Number(bytes[i]);
+    const normalized = value < 0 ? value + 256 : value;
+    out.push((normalized < 16 ? '0' : '') + normalized.toString(16));
+  }
+  return out.join('');
+}
+
+function computeChatAttachmentSha256FromBytes_(bytes) {
+  if (!bytes || !bytes.length) return '';
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes);
+  return bytesToHex_(digest);
+}
+
+function getChatAttachmentIndexSheet_(ss) {
+  return ss ? ss.getSheetByName(CHAT_ATTACHMENT_INDEX_SHEET_NAME_) : null;
+}
+
+function ensureChatAttachmentIndexSheet_(ss) {
+  if (!ss) return null;
+  let sheet = getChatAttachmentIndexSheet_(ss);
+  if (!sheet) {
+    sheet = ss.insertSheet(CHAT_ATTACHMENT_INDEX_SHEET_NAME_);
+  }
+
+  const headerLength = CHAT_ATTACHMENT_INDEX_HEADER_.length;
+  let existingLastColumn = sheet.getLastColumn();
+  let existingHeader = existingLastColumn > 0
+    ? sheet.getRange(1, 1, 1, existingLastColumn).getDisplayValues()[0]
+    : [];
+  const existingHeaderKeys = existingHeader.map(function(value) {
+    return String(value || '').trim();
+  });
+
+  if (
+    existingHeaderKeys.indexOf('sha256') !== -1 &&
+    existingHeaderKeys.indexOf('columna') === -1
+  ) {
+    const shaIndex = existingHeaderKeys.indexOf('sha256');
+    sheet.insertColumnAfter(shaIndex + 1);
+    existingLastColumn = sheet.getLastColumn();
+    existingHeader = sheet.getRange(1, 1, 1, existingLastColumn).getDisplayValues()[0];
+  }
+
+  const currentHeader = sheet.getLastColumn() >= headerLength
+    ? sheet.getRange(1, 1, 1, headerLength).getDisplayValues()[0]
+    : [];
+  let shouldWriteHeader = sheet.getLastRow() < 1 || currentHeader.length < headerLength;
+  if (!shouldWriteHeader) {
+    for (let i = 0; i < headerLength; i++) {
+      if (String(currentHeader[i] || '').trim() !== CHAT_ATTACHMENT_INDEX_HEADER_[i]) {
+        shouldWriteHeader = true;
+        break;
+      }
+    }
+  }
+  if (shouldWriteHeader) {
+    sheet.getRange(1, 1, 1, headerLength).setValues([CHAT_ATTACHMENT_INDEX_HEADER_]);
+  }
+
+  try {
+    if (!sheet.isSheetHidden()) sheet.hideSheet();
+  } catch (err) {
+    try {
+      sheet.hideSheet();
+    } catch (ignoreErr) {}
+  }
+
+  return sheet;
+}
+
+function getChatAttachmentIndexHeaderMap_(sheet) {
+  const map = {};
+  if (!sheet) return map;
+
+  const headerLength = Math.max(sheet.getLastColumn(), CHAT_ATTACHMENT_INDEX_HEADER_.length);
+  if (headerLength < 1) return map;
+
+  const header = sheet.getRange(1, 1, 1, headerLength).getDisplayValues()[0];
+  for (let i = 0; i < header.length; i++) {
+    const key = String(header[i] || '').trim();
+    if (!key) continue;
+    map[key] = i;
+  }
+  return map;
+}
+
+function buildChatAttachmentStoredMeta_(meta) {
+  const source = meta && typeof meta === 'object' ? meta : {};
+  const fileId = String(source.fileId || '').trim();
+  if (!fileId) return null;
+
+  const mimeType = String(source.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const fileName = sanitizeUploadFileName_(source.name || 'adjunto-chat', mimeType);
+  const kindRaw = String(source.kind || '').trim().toLowerCase();
+  const kind = kindRaw || inferAttachmentKindFromMime_(mimeType, fileName);
+  const sourceKindRaw = String(source.sourceKind || '').trim().toLowerCase();
+  const sourceKind = sourceKindRaw === 'audio' || sourceKindRaw === 'file' || sourceKindRaw === 'image' || sourceKindRaw === 'video'
+    ? sourceKindRaw
+    : kind;
+  const size = Number(source.size);
+  const sha256 = normalizeChatAttachmentSha256_(source.sha256 || source.hash);
+  const clientToken = normalizeChatAttachmentClientToken_(source.clientToken);
+  const mediaWidth = normalizeChatAttachmentMediaDimension_(source.mediaWidth);
+  const mediaHeight = normalizeChatAttachmentMediaDimension_(source.mediaHeight);
+  const url = String(source.url || '').trim() || (kind === 'image'
+    ? toDriveImageThumbnailUrl_(fileId)
+    : toDriveFileUrl_(fileId));
+
+  return {
+    sha256: sha256,
+    columna: normalizeChatColumn_(source.columna || ''),
+    fileId: fileId,
+    name: fileName,
+    mimeType: mimeType,
+    size: Number.isFinite(size) && size > 0 ? size : 0,
+    kind: kind,
+    sourceKind: sourceKind,
+    clientToken: clientToken,
+    mediaWidth: mediaWidth,
+    mediaHeight: mediaHeight,
+    url: url
+  };
+}
+
+function findChatAttachmentIndexRowByHash_(sheet, hash, columna) {
+  if (!sheet) return 0;
+  const safeHash = normalizeChatAttachmentSha256_(hash);
+  if (!safeHash) return 0;
+  const safeColumn = normalizeChatColumn_(columna || '');
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const headerMap = getChatAttachmentIndexHeaderMap_(sheet);
+  const hashIndex = Number(headerMap.sha256);
+  const columnIndex = Number(headerMap.columna);
+  if (!Number.isFinite(hashIndex)) return 0;
+
+  const headerLength = Math.max(sheet.getLastColumn(), CHAT_ATTACHMENT_INDEX_HEADER_.length);
+  const values = sheet.getRange(2, 1, lastRow - 1, headerLength).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    if (normalizeChatAttachmentSha256_(values[i][hashIndex]) !== safeHash) continue;
+    if (safeColumn && Number.isFinite(columnIndex) && normalizeChatColumn_(values[i][columnIndex]) !== safeColumn) continue;
+    if (safeColumn && !Number.isFinite(columnIndex)) continue;
+    if (safeColumn && Number.isFinite(columnIndex) && !String(values[i][columnIndex] || '').trim()) continue;
+      return i + 2;
+  }
+  return 0;
+}
+
+function findChatReusableAttachmentByHash_(ss, hash, columna) {
+  const safeHash = normalizeChatAttachmentSha256_(hash);
+  if (!safeHash || !ss) return null;
+  const safeColumn = normalizeChatColumn_(columna || '');
+
+  const sheet = getChatAttachmentIndexSheet_(ss);
+  if (!sheet) return null;
+
+  const targetRow = findChatAttachmentIndexRowByHash_(sheet, safeHash, safeColumn);
+  if (targetRow < 2) return null;
+
+  const headerLength = CHAT_ATTACHMENT_INDEX_HEADER_.length;
+  const row = sheet.getRange(targetRow, 1, 1, headerLength).getValues()[0];
+  const headerMap = getChatAttachmentIndexHeaderMap_(sheet);
+  const storedColumn = normalizeChatColumn_(row[headerMap.columna]);
+  if (safeColumn && storedColumn !== safeColumn) return null;
+  const meta = buildChatAttachmentStoredMeta_({
+    sha256: row[headerMap.sha256],
+    columna: row[headerMap.columna],
+    fileId: row[headerMap.fileId],
+    name: row[headerMap.name],
+    mimeType: row[headerMap.mimeType],
+    size: row[headerMap.size],
+    kind: row[headerMap.kind],
+    sourceKind: row[headerMap.sourceKind],
+    url: row[headerMap.url]
+  });
+  if (!meta) return null;
+  try {
+    DriveApp.getFileById(meta.fileId);
+  } catch (err) {
+    return null;
+  }
+  meta.sha256 = safeHash;
+  meta.columna = storedColumn;
+  return meta;
+}
+
+function upsertChatAttachmentIndexRecord_(ss, meta) {
+  if (!ss) return;
+  const storedMeta = buildChatAttachmentStoredMeta_(meta);
+  if (!storedMeta || !storedMeta.sha256) return;
+
+  const sheet = ensureChatAttachmentIndexSheet_(ss);
+  if (!sheet) return;
+
+  const headerMap = getChatAttachmentIndexHeaderMap_(sheet);
+  const rowValues = new Array(CHAT_ATTACHMENT_INDEX_HEADER_.length).fill('');
+  const nowIso = new Date().toISOString();
+  const storedColumn = normalizeChatColumn_(meta && meta.columna);
+  const targetRow = findChatAttachmentIndexRowByHash_(sheet, storedMeta.sha256, storedColumn);
+
+  rowValues[headerMap.sha256] = storedMeta.sha256;
+  rowValues[headerMap.columna] = storedColumn;
+  rowValues[headerMap.fileId] = storedMeta.fileId;
+  rowValues[headerMap.name] = storedMeta.name;
+  rowValues[headerMap.mimeType] = storedMeta.mimeType;
+  rowValues[headerMap.size] = storedMeta.size;
+  rowValues[headerMap.kind] = storedMeta.kind;
+  rowValues[headerMap.sourceKind] = storedMeta.sourceKind;
+  rowValues[headerMap.url] = storedMeta.url;
+  rowValues[headerMap.updatedAt] = nowIso;
+
+  if (targetRow >= 2) {
+    const existing = sheet.getRange(targetRow, 1, 1, CHAT_ATTACHMENT_INDEX_HEADER_.length).getValues()[0];
+    const createdAtIndex = Number(headerMap.createdAt);
+    if (Number.isFinite(createdAtIndex) && existing[createdAtIndex]) {
+      rowValues[createdAtIndex] = existing[createdAtIndex];
+    } else {
+      rowValues[createdAtIndex] = nowIso;
+    }
+    sheet.getRange(targetRow, 1, 1, CHAT_ATTACHMENT_INDEX_HEADER_.length).setValues([rowValues]);
+    return;
+  }
+
+  rowValues[headerMap.createdAt] = nowIso;
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, CHAT_ATTACHMENT_INDEX_HEADER_.length).setValues([rowValues]);
+}
+
+function safeUpsertChatAttachmentIndexRecord_(ss, meta) {
+  try {
+    upsertChatAttachmentIndexRecord_(ss, meta);
+  } catch (error) {
+    try {
+      Logger.log('chat_attachment_index_upsert_failed: ' + (error && error.message ? error.message : error));
+    } catch (ignoreErr) {}
+  }
+}
+
+function logChatAttachmentTrace_(label, meta) {
+  try {
+    const source = meta && typeof meta === 'object' ? meta : {};
+    const payload = {
+      label: String(label || '').trim() || 'chat_attachment_trace',
+      fileId: String(source.fileId || '').trim(),
+      name: String(source.name || '').trim(),
+      kind: String(source.kind || '').trim(),
+      sourceKind: String(source.sourceKind || '').trim(),
+      mimeType: String(source.mimeType || '').trim(),
+      size: Math.max(0, Number(source.size) || 0),
+      clientToken: String(source.clientToken || '').trim(),
+      mediaWidth: normalizeChatAttachmentMediaDimension_(source.mediaWidth),
+      mediaHeight: normalizeChatAttachmentMediaDimension_(source.mediaHeight),
+      columna: String(source.columna || '').trim(),
+      row: Math.max(0, Number(source.row) || 0),
+      mode: String(source.mode || '').trim(),
+      user: String(source.user || '').trim(),
+      error: String(source.error || '').trim()
+    };
+    Logger.log(JSON.stringify(payload));
+  } catch (ignoreErr) {}
+}
+
+function normalizeChatAttachmentReuse_(attachmentRaw) {
+  return buildChatAttachmentStoredMeta_(attachmentRaw);
+}
+
+function normalizeChatAttachmentClientToken_(value) {
+  const token = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9_-]{7,127}$/.test(token) ? token : '';
+}
+
+function normalizeChatAttachmentMediaDimension_(value) {
+  const dimension = Math.round(Number(value) || 0);
+  return dimension > 1 ? dimension : 0;
+}
+
+function normalizeChatAttachmentPayload_(attachmentRaw) {
+  if (!attachmentRaw || typeof attachmentRaw !== 'object') return null;
+
+  const mimeType = String(attachmentRaw.mimeType || 'application/octet-stream').trim().toLowerCase() || 'application/octet-stream';
+  const fileName = sanitizeUploadFileName_(attachmentRaw.name || 'adjunto-chat', mimeType);
+  const kindRaw = String(attachmentRaw.kind || '').trim().toLowerCase();
+  const kind = kindRaw || inferAttachmentKindFromMime_(mimeType, fileName);
+  const sourceKindRaw = String(attachmentRaw.sourceKind || attachmentRaw.originKind || '').trim().toLowerCase();
+  const sourceKind = sourceKindRaw === 'audio' || sourceKindRaw === 'file' || sourceKindRaw === 'image' || sourceKindRaw === 'video'
+    ? sourceKindRaw
+    : kind;
+  const base64Raw = stripDataUrlPrefix_(attachmentRaw.dataBase64 || attachmentRaw.base64 || attachmentRaw.data || '');
+  const normalizedBase64 = String(base64Raw || '').replace(/\s+/g, '');
+  if (!normalizedBase64) return null;
+  if (CHAT_ATTACHMENT_MAX_BASE64_CHARS_ > 0 && normalizedBase64.length > CHAT_ATTACHMENT_MAX_BASE64_CHARS_) return null;
+
+  const size = Number(attachmentRaw.size);
+  const sha256 = normalizeChatAttachmentSha256_(attachmentRaw.sha256 || attachmentRaw.hash);
+  const clientToken = normalizeChatAttachmentClientToken_(attachmentRaw.clientToken);
+  const mediaWidth = normalizeChatAttachmentMediaDimension_(attachmentRaw.mediaWidth);
+  const mediaHeight = normalizeChatAttachmentMediaDimension_(attachmentRaw.mediaHeight);
+  return {
+    kind: kind,
+    sourceKind: sourceKind,
+    name: fileName,
+    mimeType: mimeType,
+    size: Number.isFinite(size) && size > 0 ? size : 0,
+    dataBase64: normalizedBase64,
+    sha256: sha256,
+    clientToken: clientToken,
+    mediaWidth: mediaWidth,
+    mediaHeight: mediaHeight
+  };
+}
+
+function ensureChatAttachmentFolderSharing_(folder, columna) {
+  if (!folder) return null;
+  const props = PropertiesService.getScriptProperties();
+  const sharedPropKey = getChatAttachmentFolderSharedPropKey_(columna);
+  if (String(props.getProperty(sharedPropKey) || '').trim() === '1') {
+    return folder;
+  }
+  try {
+    folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    props.setProperty(sharedPropKey, '1');
+  } catch (err) {}
+  return folder;
+}
+
+function ensureChatAttachmentFolder_(columna) {
+  const normalizedColumn = normalizeChatColumn_(columna);
+  const folderName = getChatAttachmentFolderName_(normalizedColumn);
+  const folderIdPropKey = getChatAttachmentFolderIdPropKey_(normalizedColumn);
+  const folderSharedPropKey = getChatAttachmentFolderSharedPropKey_(normalizedColumn);
+  const props = PropertiesService.getScriptProperties();
+  const cachedFolderId = String(props.getProperty(folderIdPropKey) || '').trim();
+  if (cachedFolderId) {
+    try {
+      const cachedFolder = DriveApp.getFolderById(cachedFolderId);
+      return ensureChatAttachmentFolderSharing_(cachedFolder, normalizedColumn);
+    } catch (err) {
+      try {
+        props.deleteProperty(folderIdPropKey);
+        props.deleteProperty(folderSharedPropKey);
+      } catch (ignoreErr) {}
+    }
+  }
+
+  const existing = DriveApp.getFoldersByName(folderName);
+  const folder = existing.hasNext()
+    ? existing.next()
+    : DriveApp.createFolder(folderName);
+  try {
+    props.setProperty(folderIdPropKey, String(folder.getId() || '').trim());
+  } catch (err) {}
+  return ensureChatAttachmentFolderSharing_(folder, normalizedColumn);
+}
+
+function isChatBlobLike_(value) {
+  return !!(value &&
+    typeof value.getBytes === 'function' &&
+    typeof value.getContentType === 'function');
+}
+
+function extractChatBlobFromFormValue_(value) {
+  if (!value) return null;
+  if (isChatBlobLike_(value)) return value;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      if (isChatBlobLike_(value[i])) return value[i];
+    }
+  }
+  return null;
+}
+
+function findChatAttachmentBlobInForm_(formObject) {
+  const form = formObject && typeof formObject === 'object' ? formObject : null;
+  if (!form) return null;
+  const blobKeys = [
+    'chat_attach_photo',
+    'chat_attach_audio',
+    'chat_attach_video',
+    'chat_attach_file'
+  ];
+  for (let i = 0; i < blobKeys.length; i++) {
+    const blob = extractChatBlobFromFormValue_(form[blobKeys[i]]);
+    if (blob) return blob;
+  }
+  return null;
+}
+
+function normalizeChatAttachmentMetaOnly_(attachmentRaw, blobSource) {
+  const blob = isChatBlobLike_(blobSource) ? blobSource : null;
+  const requestedMimeType = String(attachmentRaw && attachmentRaw.mimeType || '').trim().toLowerCase();
+  const blobMimeType = String(blob && blob.getContentType ? blob.getContentType() : '').trim().toLowerCase();
+  const mimeType = requestedMimeType || blobMimeType || 'application/octet-stream';
+  const requestedName = String(attachmentRaw && attachmentRaw.name || '').trim();
+  const blobName = String(blob && blob.getName ? blob.getName() : '').trim();
+  const fileName = sanitizeUploadFileName_(requestedName || blobName || 'adjunto-chat', mimeType);
+  const kindRaw = String(attachmentRaw && attachmentRaw.kind || '').trim().toLowerCase();
+  const kind = kindRaw || inferAttachmentKindFromMime_(mimeType, fileName);
+  const sourceKindRaw = String(attachmentRaw && (attachmentRaw.sourceKind || attachmentRaw.originKind) || '').trim().toLowerCase();
+  const sourceKind = sourceKindRaw === 'audio' || sourceKindRaw === 'file' || sourceKindRaw === 'image' || sourceKindRaw === 'video'
+    ? sourceKindRaw
+    : kind;
+  const size = Number(attachmentRaw && attachmentRaw.size);
+  const sha256 = normalizeChatAttachmentSha256_(attachmentRaw && (attachmentRaw.sha256 || attachmentRaw.hash));
+  const clientToken = normalizeChatAttachmentClientToken_(attachmentRaw && attachmentRaw.clientToken);
+  const mediaWidth = normalizeChatAttachmentMediaDimension_(attachmentRaw && attachmentRaw.mediaWidth);
+  const mediaHeight = normalizeChatAttachmentMediaDimension_(attachmentRaw && attachmentRaw.mediaHeight);
+  return {
+    kind: kind,
+    sourceKind: sourceKind,
+    name: fileName,
+    mimeType: mimeType,
+    size: Number.isFinite(size) && size > 0 ? size : 0,
+    sha256: sha256,
+    clientToken: clientToken,
+    mediaWidth: mediaWidth,
+    mediaHeight: mediaHeight
+  };
+}
+
+function saveChatAttachmentBlobToDrive_(ss, blobSource, attachmentMeta, displayName, columna) {
+  if (!isChatBlobLike_(blobSource)) throw new Error('chat_attachment_missing_blob');
+
+  const normalizedAttachment = normalizeChatAttachmentMetaOnly_(attachmentMeta, blobSource);
+  const bytes = blobSource.getBytes();
+  const byteLength = bytes.length;
+  if (byteLength <= 0) throw new Error('chat_attachment_empty_data');
+  if (CHAT_ATTACHMENT_MAX_BYTES_ > 0 && byteLength > CHAT_ATTACHMENT_MAX_BYTES_) throw new Error('chat_attachment_too_large');
+
+  const mimeType = String(normalizedAttachment.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const fileName = sanitizeUploadFileName_(normalizedAttachment.name || 'adjunto-chat', mimeType);
+  const stampedName = Utilities.formatDate(new Date(), 'GMT+1', 'yyyyMMdd_HHmmss') + '_' + fileName;
+  const blob = Utilities.newBlob(bytes, mimeType, stampedName);
+  const folder = ensureChatAttachmentFolder_(columna);
+  const file = folder.createFile(blob);
+  const fileId = String(file.getId() || '').trim();
+  const attachmentKind = String(normalizedAttachment.kind || '').trim().toLowerCase() || inferAttachmentKindFromMime_(mimeType, fileName);
+  const attachmentSourceKind = String(normalizedAttachment.sourceKind || '').trim().toLowerCase() || attachmentKind;
+  const attachmentUrl = attachmentKind === 'image'
+    ? toDriveImageThumbnailUrl_(fileId)
+    : toDriveFileUrl_(fileId);
+  const attachmentHash = normalizeChatAttachmentSha256_(normalizedAttachment.sha256) || computeChatAttachmentSha256FromBytes_(bytes);
+  const storedMeta = {
+    kind: attachmentKind,
+    sourceKind: attachmentSourceKind,
+    name: fileName,
+    mimeType: mimeType,
+    size: byteLength,
+    fileId: fileId,
+    url: attachmentUrl,
+    sha256: attachmentHash,
+    clientToken: normalizeChatAttachmentClientToken_(normalizedAttachment.clientToken),
+    mediaWidth: normalizeChatAttachmentMediaDimension_(normalizedAttachment.mediaWidth),
+    mediaHeight: normalizeChatAttachmentMediaDimension_(normalizedAttachment.mediaHeight),
+    owner: String(displayName || 'Anónimo').trim(),
+    columna: normalizeChatColumn_(columna)
+  };
+  logChatAttachmentTrace_('chat_attachment_blob_saved_to_drive', storedMeta);
+  safeUpsertChatAttachmentIndexRecord_(ss, storedMeta);
+  return storedMeta;
+}
+
+function saveChatAttachmentToDrive_(ss, attachmentPayload, displayName, columna) {
+  const dataBase64 = String(attachmentPayload && attachmentPayload.dataBase64 || '').trim();
+  if (!dataBase64) throw new Error('chat_attachment_missing_data');
+
+  const bytes = Utilities.base64Decode(dataBase64);
+  const byteLength = bytes.length;
+  if (byteLength <= 0) throw new Error('chat_attachment_empty_data');
+  if (CHAT_ATTACHMENT_MAX_BYTES_ > 0 && byteLength > CHAT_ATTACHMENT_MAX_BYTES_) throw new Error('chat_attachment_too_large');
+
+  const mimeType = String(attachmentPayload.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const fileName = sanitizeUploadFileName_(attachmentPayload.name || 'adjunto-chat', mimeType);
+  const stampedName = Utilities.formatDate(new Date(), 'GMT+1', 'yyyyMMdd_HHmmss') + '_' + fileName;
+  const blob = Utilities.newBlob(bytes, mimeType, stampedName);
+  const folder = ensureChatAttachmentFolder_(columna);
+  const file = folder.createFile(blob);
+  const fileId = String(file.getId() || '').trim();
+  const requestedKind = String(attachmentPayload && attachmentPayload.kind || '').trim().toLowerCase();
+  const requestedSourceKind = String(attachmentPayload && attachmentPayload.sourceKind || '').trim().toLowerCase();
+  const attachmentKind = requestedKind === 'image' || requestedKind === 'audio' || requestedKind === 'video' || requestedKind === 'file'
+    ? requestedKind
+    : inferAttachmentKindFromMime_(mimeType, fileName);
+  const attachmentSourceKind = requestedSourceKind === 'audio' || requestedSourceKind === 'file' || requestedSourceKind === 'image' || requestedSourceKind === 'video'
+    ? requestedSourceKind
+    : attachmentKind;
+
+  const attachmentUrl = attachmentKind === 'image'
+    ? toDriveImageThumbnailUrl_(fileId)
+    : toDriveFileUrl_(fileId);
+  const attachmentHash = normalizeChatAttachmentSha256_(attachmentPayload && attachmentPayload.sha256) || computeChatAttachmentSha256FromBytes_(bytes);
+  const storedMeta = {
+    kind: attachmentKind,
+    sourceKind: attachmentSourceKind,
+    name: fileName,
+    mimeType: mimeType,
+    size: byteLength,
+    fileId: fileId,
+    url: attachmentUrl,
+    sha256: attachmentHash,
+    clientToken: normalizeChatAttachmentClientToken_(attachmentPayload && attachmentPayload.clientToken),
+    mediaWidth: normalizeChatAttachmentMediaDimension_(attachmentPayload && attachmentPayload.mediaWidth),
+    mediaHeight: normalizeChatAttachmentMediaDimension_(attachmentPayload && attachmentPayload.mediaHeight),
+    owner: String(displayName || 'Anónimo').trim(),
+    columna: normalizeChatColumn_(columna)
+  };
+  logChatAttachmentTrace_('chat_attachment_payload_saved_to_drive', storedMeta);
+  safeUpsertChatAttachmentIndexRecord_(ss, storedMeta);
+  return storedMeta;
+}
+
+function saveChatAttachmentSourceToDrive_(ss, attachmentSource, displayName, columna) {
+  const source = attachmentSource && typeof attachmentSource === 'object' ? attachmentSource : null;
+  if (!source) throw new Error('chat_attachment_missing_source');
+  if (source.payload) {
+    logChatAttachmentTrace_('chat_attachment_source_payload', {
+      kind: source.payload && source.payload.kind,
+      sourceKind: source.payload && source.payload.sourceKind,
+      name: source.payload && source.payload.name,
+      mimeType: source.payload && source.payload.mimeType,
+      size: source.payload && source.payload.size,
+      columna: columna,
+      user: displayName,
+      mode: 'payload'
+    });
+    return saveChatAttachmentToDrive_(ss, source.payload, displayName, columna);
+  }
+  if (source.blob) {
+    logChatAttachmentTrace_('chat_attachment_source_blob', {
+      kind: source.meta && source.meta.kind,
+      sourceKind: source.meta && source.meta.sourceKind,
+      name: source.meta && source.meta.name,
+      mimeType: source.meta && source.meta.mimeType,
+      size: source.meta && source.meta.size,
+      columna: columna,
+      user: displayName,
+      mode: 'blob'
+    });
+    return saveChatAttachmentBlobToDrive_(ss, source.blob, source.meta || {}, displayName, columna);
+  }
+  if (source.reuse) {
+    const reusedMeta = normalizeChatAttachmentReuse_(source.reuse);
+    if (!reusedMeta) throw new Error('chat_attachment_invalid_reuse');
+    const storedMeta = {
+      kind: reusedMeta.kind,
+      sourceKind: reusedMeta.sourceKind,
+      name: reusedMeta.name,
+      mimeType: reusedMeta.mimeType,
+      size: reusedMeta.size,
+      fileId: reusedMeta.fileId,
+      url: reusedMeta.url,
+      sha256: reusedMeta.sha256,
+      clientToken: reusedMeta.clientToken,
+      mediaWidth: normalizeChatAttachmentMediaDimension_(reusedMeta.mediaWidth),
+      mediaHeight: normalizeChatAttachmentMediaDimension_(reusedMeta.mediaHeight),
+      owner: String(displayName || 'Anónimo').trim(),
+      columna: normalizeChatColumn_(columna)
+    };
+    logChatAttachmentTrace_('chat_attachment_source_reuse', storedMeta);
+    safeUpsertChatAttachmentIndexRecord_(ss, storedMeta);
+    return storedMeta;
+  }
+  throw new Error('chat_attachment_missing_source');
+}
+
+function formatChatAttachmentCellValue_(displayName, mensaje, attachmentMeta) {
+  const safeName = String(displayName || 'Anónimo')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .trim() || 'Anónimo';
+  const safeMessage = normalizeChatMessage_(mensaje || '');
+  const meta = attachmentMeta && typeof attachmentMeta === 'object' ? attachmentMeta : {};
+  const payload = {
+    chatRecordV: 1,
+    kind: 'attachment',
+    user: safeName,
+    scope: normalizeChatMessageScope_(meta && meta.scope),
+    scopeOwner: normalizeChatScopeOwner_(meta && meta.scopeOwner),
+    message: safeMessage,
+    timestamp: String(meta.timestamp || '').trim(),
+    timeLabel: String(meta.timeLabel || '').trim(),
+    attachment: {
+      kind: String(meta.kind || 'file').trim().toLowerCase() || 'file',
+      sourceKind: String(meta.sourceKind || meta.kind || 'file').trim().toLowerCase() || 'file',
+      url: String(meta.url || '').trim(),
+      name: String(meta.name || 'adjunto-chat').trim(),
+      mimeType: String(meta.mimeType || 'application/octet-stream').trim(),
+      size: Number(meta.size) || 0,
+      fileId: String(meta.fileId || '').trim(),
+      clientToken: normalizeChatAttachmentClientToken_(meta.clientToken),
+      mediaWidth: normalizeChatAttachmentMediaDimension_(meta.mediaWidth),
+      mediaHeight: normalizeChatAttachmentMediaDimension_(meta.mediaHeight)
+    }
+  };
+  return CHAT_ATTACHMENT_MARKER_ + JSON.stringify(payload);
+}
+
+function parseChatAttachmentRecord_(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  if (raw.indexOf(CHAT_ATTACHMENT_MARKER_) !== 0) return null;
+  const jsonText = raw.slice(CHAT_ATTACHMENT_MARKER_.length);
+  if (!jsonText) return null;
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (String(parsed.kind || '').toLowerCase() !== 'attachment') return null;
+    const attachment = parsed.attachment && typeof parsed.attachment === 'object' ? parsed.attachment : {};
+    return {
+      user: String(parsed.user || 'Anónimo').trim() || 'Anónimo',
+      scope: normalizeChatMessageScope_(parsed && parsed.scope),
+      scopeOwner: normalizeChatScopeOwner_(parsed && parsed.scopeOwner),
+      message: normalizeChatMessage_(parsed.message || ''),
+      timestamp: String(parsed.timestamp || '').trim(),
+      timeLabel: String(parsed.timeLabel || '').trim(),
+      attachmentKind: String(attachment.kind || '').trim().toLowerCase() || inferAttachmentKindFromMime_(attachment.mimeType, attachment.name),
+      attachmentSourceKind: String(attachment.sourceKind || attachment.kind || '').trim().toLowerCase() || inferAttachmentKindFromMime_(attachment.mimeType, attachment.name),
+      attachmentUrl: String(attachment.url || '').trim(),
+      attachmentName: String(attachment.name || 'Adjunto').trim() || 'Adjunto',
+      attachmentMimeType: String(attachment.mimeType || '').trim(),
+      attachmentSize: Number(attachment.size) || 0,
+      attachmentFileId: String(attachment.fileId || '').trim(),
+      attachmentClientToken: normalizeChatAttachmentClientToken_(attachment.clientToken),
+      attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(attachment.mediaWidth),
+      attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(attachment.mediaHeight)
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function parseChatMetaRecord_(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.indexOf(CHAT_META_MARKER_) !== 0) return null;
+  const jsonText = raw.slice(CHAT_META_MARKER_.length);
+  if (!jsonText) return null;
+  try {
+    const parsed = JSON.parse(jsonText);
+    return {
+      edited: !!(parsed && parsed.edited),
+      scope: normalizeChatMessageScope_(parsed && parsed.scope),
+      scopeOwner: normalizeChatScopeOwner_(parsed && parsed.scopeOwner),
+      clientToken: normalizeChatAttachmentClientToken_(parsed && parsed.clientToken),
+      timestamp: String(parsed && parsed.timestamp || '').trim(),
+      timeLabel: String(parsed && parsed.timeLabel || '').trim(),
+      editTimestamp: String(parsed && parsed.editTimestamp || '').trim(),
+      editTimeLabel: String(parsed && parsed.editTimeLabel || '').trim()
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function buildCellImage_(imageUrl, imageTitle) {
+  const safeUrl = String(imageUrl || '').trim();
+  if (!safeUrl) return null;
+  try {
+    if (SpreadsheetApp && typeof SpreadsheetApp.newCellImage === 'function') {
+      var cellImageBuilder = SpreadsheetApp.newCellImage().setSourceUrl(safeUrl);
+      var safeTitle = String(imageTitle || '').trim();
+      if (safeTitle) {
+        cellImageBuilder = cellImageBuilder.setAltTextTitle(safeTitle);
+      }
+      if (typeof cellImageBuilder.build === 'function') {
+        return cellImageBuilder.build();
+      }
+      return cellImageBuilder;
+    }
+  } catch (err) {}
+  return null;
+}
+
+function writeChatAttachmentCellWithFallback_(range, cellValue, savedAttachment) {
+  if (!range) throw new Error('chat_attachment_missing_range');
+  const attachmentMeta = savedAttachment && typeof savedAttachment === 'object' ? savedAttachment : {};
+  const attachmentKind = String(attachmentMeta.kind || '').trim().toLowerCase();
+  const attachmentUrl = String(attachmentMeta.url || '').trim();
+  const attachmentName = String(attachmentMeta.name || 'Imagen').trim() || 'Imagen';
+
+  if (attachmentKind === 'image' && attachmentUrl) {
+    const cellImage = buildCellImage_(attachmentUrl, attachmentName);
+    if (cellImage) {
+      try {
+        range.setValue(cellImage);
+        range.setNote(cellValue);
+        logChatAttachmentTrace_('chat_attachment_written_as_cell_image', {
+          ...attachmentMeta,
+          row: range.getRow()
+        });
+        return 'image';
+      } catch (imageError) {}
+    }
+  }
+
+  range.setValue(cellValue);
+  range.setNote('');
+  logChatAttachmentTrace_('chat_attachment_written_as_text', {
+    ...attachmentMeta,
+    row: range.getRow()
+  });
+  return 'text';
+}
+
+function isCellImageValue_(rawValue) {
+  return !!rawValue && typeof rawValue === 'object' && String(rawValue) === 'CellImage';
+}
+
+function getCellImageMeta_(cellImage) {
+  var imageUrl = '';
+  var imageTitle = '';
+  if (!isCellImageValue_(cellImage)) return { imageUrl: '', imageTitle: '' };
+
+  try {
+    if (typeof cellImage.getContentUrl === 'function') {
+      imageUrl = String(cellImage.getContentUrl() || '').trim();
+    }
+  } catch (err1) {}
+
+  if (!imageUrl) {
+    try {
+      if (typeof cellImage.getUrl === 'function') {
+        imageUrl = String(cellImage.getUrl() || '').trim();
+      }
+    } catch (err2) {}
+  }
+
+  try {
+    if (typeof cellImage.getAltTextTitle === 'function') {
+      imageTitle = String(cellImage.getAltTextTitle() || '').trim();
+    }
+  } catch (err3) {}
+
+  if (!imageTitle) imageTitle = 'Imagen';
+  return { imageUrl: imageUrl, imageTitle: imageTitle };
+}
+
+function extractChatMessageAndReply_(rawMessage) {
+  var sourceLines = String(rawMessage || '').split(/\r?\n/);
+  var messageLines = [];
+  var replyLines = [];
+  var quotedReplyLines = [];
+
+  sourceLines.forEach(function(lineRaw) {
+    var line = String(lineRaw || '').trim();
+    if (!line) return;
+
+    var quotedMatch = line.match(/^<([^<>]+)>\s*(.*)$/);
+    if (quotedMatch) {
+      var quotedText = String(quotedMatch[1] || '').trim();
+      if (quotedText) quotedReplyLines.push(quotedText);
+      line = String(quotedMatch[2] || '').trim();
+    }
+
+    var inlineBracketReplies = [];
+    line = line.replace(/<([^<>]+)>/g, function(_, bracketReplyRaw) {
+      var bracketReply = String(bracketReplyRaw || '').trim();
+      if (bracketReply) inlineBracketReplies.push(bracketReply);
+      return ' ';
+    }).replace(/\s+/g, ' ').trim();
+    if (inlineBracketReplies.length > 0) {
+      replyLines = replyLines.concat(inlineBracketReplies);
+    }
+
+    var inlineReplies = [];
+    var lineWithoutReplies = line.replace(/\(([^()]*)\)/g, function(_, commentRaw) {
+      var comment = String(commentRaw || '').trim();
+      if (comment) inlineReplies.push(comment);
+      return ' ';
+    }).replace(/\s+/g, ' ').trim();
+
+    if (inlineReplies.length > 0) {
+      replyLines = replyLines.concat(inlineReplies);
+    }
+    if (lineWithoutReplies) {
+      messageLines.push(lineWithoutReplies);
+    }
+  });
+
+  return {
+    message: messageLines.join('\n').trim(),
+    teacherReply: replyLines.join('\n').trim(),
+    quotedReply: quotedReplyLines.join('\n').trim()
+  };
+}
+
+function parseChatCellValue_(rawValue, noteValue) {
+  const noteText = String(noteValue || '').trim();
+  const noteAttachment = parseChatAttachmentRecord_(noteText);
+  const hasNoteAttachment = !!noteAttachment;
+  const noteMeta = hasNoteAttachment ? null : parseChatMetaRecord_(noteText);
+  const isEdited = !!(noteMeta && noteMeta.edited);
+  const scope = normalizeChatMessageScope_((noteMeta && noteMeta.scope) || (noteAttachment && noteAttachment.scope) || '');
+  const scopeOwner = normalizeChatScopeOwner_((noteMeta && noteMeta.scopeOwner) || (noteAttachment && noteAttachment.scopeOwner) || '');
+  const clientToken = normalizeChatAttachmentClientToken_((noteMeta && noteMeta.clientToken) || '');
+  const timeLabel = String((noteMeta && noteMeta.timeLabel) || (noteAttachment && noteAttachment.timeLabel) || '').trim();
+  const timestamp = String((noteMeta && noteMeta.timestamp) || (noteAttachment && noteAttachment.timestamp) || '').trim();
+  const editTimeLabel = String((noteMeta && noteMeta.editTimeLabel) || '').trim();
+  const editTimestamp = String((noteMeta && noteMeta.editTimestamp) || '').trim();
+
+  if (isCellImageValue_(rawValue)) {
+    var meta = getCellImageMeta_(rawValue);
+    if (hasNoteAttachment) {
+      const attachmentUrl = String(noteAttachment.attachmentUrl || meta.imageUrl || '').trim();
+      const attachmentKind = String(noteAttachment.attachmentKind || 'image').trim().toLowerCase() || 'image';
+      const attachmentName = String(noteAttachment.attachmentName || meta.imageTitle || 'Imagen').trim() || 'Imagen';
+      const parsedAttachmentBody = extractChatMessageAndReply_(noteAttachment.message || '');
+      return {
+        user: String(noteAttachment.user || 'Anónimo').trim() || 'Anónimo',
+        scope: normalizeChatMessageScope_(noteAttachment && noteAttachment.scope || scope),
+        scopeOwner: normalizeChatScopeOwner_(noteAttachment && noteAttachment.scopeOwner || scopeOwner),
+        message: String(parsedAttachmentBody.message || '').trim(),
+        teacherReply: String(parsedAttachmentBody.teacherReply || '').trim(),
+        quotedReply: String(parsedAttachmentBody.quotedReply || '').trim(),
+        value: noteText || 'CellImage',
+        imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
+        imageTitle: attachmentKind === 'image' ? attachmentName : '',
+        attachmentKind: attachmentKind,
+        attachmentSourceKind: String(noteAttachment.attachmentSourceKind || attachmentKind).trim().toLowerCase(),
+        attachmentUrl: attachmentUrl,
+        attachmentName: attachmentName,
+        attachmentMimeType: String(noteAttachment.attachmentMimeType || '').trim(),
+        attachmentSize: Number(noteAttachment.attachmentSize) || 0,
+        attachmentFileId: String(noteAttachment.attachmentFileId || '').trim(),
+        attachmentClientToken: String(noteAttachment.attachmentClientToken || '').trim(),
+        attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaWidth),
+        attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaHeight),
+        edited: false,
+        clientToken: clientToken,
+        timestamp: timestamp,
+        timeLabel: timeLabel
+      };
+    }
+    return {
+      user: 'Anónimo',
+      scope: scope,
+      scopeOwner: scopeOwner,
+      message: meta.imageUrl ? '' : 'CellImage',
+      teacherReply: '',
+      quotedReply: '',
+      value: 'CellImage',
+      imageUrl: meta.imageUrl || '',
+      imageTitle: meta.imageTitle || 'Imagen',
+      attachmentKind: meta.imageUrl ? 'image' : '',
+      attachmentSourceKind: meta.imageUrl ? 'image' : '',
+      attachmentUrl: meta.imageUrl || '',
+      attachmentName: meta.imageTitle || 'Imagen',
+      attachmentMimeType: '',
+      attachmentSize: 0,
+      attachmentMediaWidth: 0,
+      attachmentMediaHeight: 0,
+      edited: false,
+      clientToken: clientToken,
+      timestamp: '',
+      timeLabel: ''
+    };
+  }
+
+  const text = String(rawValue || '').trim();
+  if (!text) {
+    if (!hasNoteAttachment) return null;
+    const attachmentUrl = String(noteAttachment.attachmentUrl || '').trim();
+    const attachmentKind = String(noteAttachment.attachmentKind || '').trim().toLowerCase();
+    const attachmentName = String(noteAttachment.attachmentName || 'Adjunto').trim() || 'Adjunto';
+    const parsedAttachmentBody = extractChatMessageAndReply_(noteAttachment.message || '');
+    return {
+      user: String(noteAttachment.user || 'Anónimo').trim() || 'Anónimo',
+      scope: normalizeChatMessageScope_(noteAttachment && noteAttachment.scope || scope),
+      scopeOwner: normalizeChatScopeOwner_(noteAttachment && noteAttachment.scopeOwner || scopeOwner),
+      message: String(parsedAttachmentBody.message || '').trim(),
+      teacherReply: String(parsedAttachmentBody.teacherReply || '').trim(),
+      quotedReply: String(parsedAttachmentBody.quotedReply || '').trim(),
+      value: noteText,
+      imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
+      imageTitle: attachmentKind === 'image' ? attachmentName : '',
+      attachmentKind: attachmentKind,
+      attachmentSourceKind: String(noteAttachment.attachmentSourceKind || attachmentKind).trim().toLowerCase(),
+      attachmentUrl: attachmentUrl,
+      attachmentName: attachmentName,
+      attachmentMimeType: String(noteAttachment.attachmentMimeType || '').trim(),
+      attachmentSize: Number(noteAttachment.attachmentSize) || 0,
+      attachmentFileId: String(noteAttachment.attachmentFileId || '').trim(),
+      attachmentClientToken: String(noteAttachment.attachmentClientToken || '').trim(),
+      attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaWidth),
+      attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaHeight),
+      edited: false,
+      clientToken: clientToken,
+      timestamp: timestamp,
+      timeLabel: timeLabel
+    };
+  }
+
+  const attachmentRecord = parseChatAttachmentRecord_(text);
+  if (attachmentRecord) {
+    const attachmentUrl = String(attachmentRecord.attachmentUrl || '').trim();
+    const attachmentKind = String(attachmentRecord.attachmentKind || '').trim().toLowerCase();
+    const attachmentName = String(attachmentRecord.attachmentName || 'Adjunto').trim() || 'Adjunto';
+    const parsedAttachmentBody = extractChatMessageAndReply_(attachmentRecord.message || '');
+    return {
+      user: String(attachmentRecord.user || 'Anónimo').trim() || 'Anónimo',
+      scope: normalizeChatMessageScope_(attachmentRecord && attachmentRecord.scope || scope),
+      scopeOwner: normalizeChatScopeOwner_(attachmentRecord && attachmentRecord.scopeOwner || scopeOwner),
+      message: String(parsedAttachmentBody.message || '').trim(),
+      teacherReply: String(parsedAttachmentBody.teacherReply || '').trim(),
+      quotedReply: String(parsedAttachmentBody.quotedReply || '').trim(),
+      value: text,
+      imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
+      imageTitle: attachmentKind === 'image' ? attachmentName : '',
+      attachmentKind: attachmentKind,
+      attachmentSourceKind: String(attachmentRecord.attachmentSourceKind || attachmentKind).trim().toLowerCase(),
+      attachmentUrl: attachmentUrl,
+      attachmentName: attachmentName,
+      attachmentMimeType: String(attachmentRecord.attachmentMimeType || '').trim(),
+      attachmentSize: Number(attachmentRecord.attachmentSize) || 0,
+      attachmentFileId: String(attachmentRecord.attachmentFileId || '').trim(),
+      attachmentClientToken: String(attachmentRecord.attachmentClientToken || '').trim(),
+      attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(attachmentRecord.attachmentMediaWidth),
+      attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(attachmentRecord.attachmentMediaHeight),
+      edited: isEdited,
+      clientToken: clientToken,
+      timestamp: String(attachmentRecord.timestamp || '').trim(),
+      timeLabel: String(attachmentRecord.timeLabel || '').trim(),
+      editTimestamp: editTimestamp,
+      editTimeLabel: editTimeLabel
+    };
+  }
+
+  if (hasNoteAttachment) {
+    const attachmentUrl = String(noteAttachment.attachmentUrl || '').trim();
+    const attachmentKind = String(noteAttachment.attachmentKind || '').trim().toLowerCase();
+    const attachmentName = String(noteAttachment.attachmentName || 'Adjunto').trim() || 'Adjunto';
+    const parsedAttachmentBody = extractChatMessageAndReply_(noteAttachment.message || '');
+    return {
+      user: String(noteAttachment.user || 'Anónimo').trim() || 'Anónimo',
+      scope: normalizeChatMessageScope_(noteAttachment && noteAttachment.scope || scope),
+      scopeOwner: normalizeChatScopeOwner_(noteAttachment && noteAttachment.scopeOwner || scopeOwner),
+      message: String(parsedAttachmentBody.message || '').trim(),
+      teacherReply: String(parsedAttachmentBody.teacherReply || '').trim(),
+      quotedReply: String(parsedAttachmentBody.quotedReply || '').trim(),
+      value: noteText,
+      imageUrl: attachmentKind === 'image' ? attachmentUrl : '',
+      imageTitle: attachmentKind === 'image' ? attachmentName : '',
+      attachmentKind: attachmentKind,
+      attachmentSourceKind: String(noteAttachment.attachmentSourceKind || attachmentKind).trim().toLowerCase(),
+      attachmentUrl: attachmentUrl,
+      attachmentName: attachmentName,
+      attachmentMimeType: String(noteAttachment.attachmentMimeType || '').trim(),
+      attachmentSize: Number(noteAttachment.attachmentSize) || 0,
+      attachmentFileId: String(noteAttachment.attachmentFileId || '').trim(),
+      attachmentClientToken: String(noteAttachment.attachmentClientToken || '').trim(),
+      attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaWidth),
+      attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(noteAttachment.attachmentMediaHeight),
+      edited: false,
+      timestamp: timestamp,
+      timeLabel: timeLabel,
+      editTimestamp: '',
+      editTimeLabel: ''
+    };
+  }
+
+  const firstBreak = text.indexOf('\n');
+  if (firstBreak === -1) {
+    const parsedBody = extractChatMessageAndReply_(text);
+    return {
+      user: 'Anónimo',
+      scope: scope,
+      scopeOwner: scopeOwner,
+      message: String(parsedBody.message || '').trim(),
+      teacherReply: String(parsedBody.teacherReply || '').trim(),
+      quotedReply: String(parsedBody.quotedReply || '').trim(),
+      value: text,
+      imageUrl: '',
+      imageTitle: '',
+      attachmentKind: '',
+      attachmentSourceKind: '',
+      attachmentUrl: '',
+      attachmentName: '',
+      attachmentMimeType: '',
+      attachmentSize: 0,
+      attachmentMediaWidth: 0,
+      attachmentMediaHeight: 0,
+      edited: isEdited,
+      clientToken: clientToken,
+      timestamp: timestamp,
+      timeLabel: timeLabel,
+      editTimestamp: editTimestamp,
+      editTimeLabel: editTimeLabel
+    };
+  }
+
+  const userRaw = text.slice(0, firstBreak).trim();
+  const messageRaw = text.slice(firstBreak + 1).trim();
+  const user = userRaw.replace(/^-+/, '').replace(/-+$/, '').trim() || 'Anónimo';
+  const parsedBody = extractChatMessageAndReply_(messageRaw);
+
+  return {
+    user: user,
+    scope: scope,
+    scopeOwner: scopeOwner,
+    message: String(parsedBody.message || '').trim(),
+    teacherReply: String(parsedBody.teacherReply || '').trim(),
+    quotedReply: String(parsedBody.quotedReply || '').trim(),
+    value: text,
+    imageUrl: '',
+    imageTitle: '',
+    attachmentKind: '',
+    attachmentSourceKind: '',
+    attachmentUrl: '',
+    attachmentName: '',
+    attachmentMimeType: '',
+    attachmentSize: 0,
+    edited: isEdited,
+    clientToken: clientToken,
+    timestamp: timestamp,
+    timeLabel: timeLabel,
+    editTimestamp: editTimestamp,
+    editTimeLabel: editTimeLabel
+  };
+}
+
+function getLastChatMessageRow_(sheet, colIndex, columna) {
+  if (!sheet || colIndex < 0) return 0;
+
+  const props = PropertiesService.getScriptProperties();
+  const cacheKey = getChatNextRowCacheKey_(columna);
+  const cachedNextRow = Number(props.getProperty(cacheKey) || 0) || 0;
+  const columnNumber = colIndex + 1;
+
+  if (cachedNextRow > CHAT_FIRST_MESSAGE_ROW_ && cachedNextRow <= sheet.getMaxRows() + 1) {
+    const cachedLastRow = cachedNextRow - 1;
+    const scanStart = Math.max(CHAT_FIRST_MESSAGE_ROW_, cachedLastRow - 24);
+    const tailRange = sheet.getRange(
+      scanStart,
+      columnNumber,
+      cachedLastRow - scanStart + 1,
+      1
+    );
+    const tailValues = tailRange.getValues();
+    const tailNotes = tailRange.getNotes();
+    for (let i = tailValues.length - 1; i >= 0; i--) {
+      if (isOccupiedChatCell_(tailValues[i][0], tailNotes[i][0])) {
+        const detectedRow = scanStart + i;
+        props.setProperty(cacheKey, String(detectedRow + 1));
+        return detectedRow;
+      }
+    }
+  }
+
+  const sheetLastRow = sheet.getLastRow();
+  if (sheetLastRow < CHAT_FIRST_MESSAGE_ROW_) {
+    return 0;
+  }
+
+  const range = sheet.getRange(
+    CHAT_FIRST_MESSAGE_ROW_,
+    columnNumber,
+    sheetLastRow - CHAT_FIRST_MESSAGE_ROW_ + 1,
+    1
+  );
+  const values = range.getValues();
+  const notes = range.getNotes();
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (isOccupiedChatCell_(values[i][0], notes[i][0])) {
+      const detectedRow = CHAT_FIRST_MESSAGE_ROW_ + i;
+      props.setProperty(cacheKey, String(detectedRow + 1));
+      return detectedRow;
+    }
+  }
+
+  return 0;
+}
+
+function parseChatFetchLimit_(value) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.max(1, Math.min(400, Math.floor(limit)));
+}
+
+function getChatRecentMessagesCacheKey_(columna) {
+  return CHAT_RECENT_MESSAGES_CACHE_KEY_PREFIX_ + normalizeChatColumn_(columna);
+}
+
+function buildChatRecentMessagesCacheValidationSignature_(rawValue, noteValue) {
+  return JSON.stringify({
+    value: String(rawValue == null ? '' : rawValue),
+    note: String(noteValue == null ? '' : noteValue)
+  });
+}
+
+function clearChatRecentMessagesCache_(columna) {
+  try {
+    CacheService.getScriptCache().remove(getChatRecentMessagesCacheKey_(columna));
+  } catch (err) {}
+}
+
+function getChatRecentMessagesFromCache_(sheet, colIndex, columna, limit) {
+  const safeLimit = parseChatFetchLimit_(limit);
+  if (safeLimit < 1 || safeLimit > CHAT_RECENT_MESSAGES_CACHE_LIMIT_) return null;
+  if (!sheet || colIndex < 0) return null;
+
+  try {
+    const cache = CacheService.getScriptCache();
+    const raw = cache.get(getChatRecentMessagesCacheKey_(columna));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.messages)) {
+      clearChatRecentMessagesCache_(columna);
+      return null;
+    }
+
+    const currentLastRow = getLastChatMessageRow_(sheet, colIndex, columna);
+    const cachedLastRow = Number(parsed.lastRow) || 0;
+    if (currentLastRow !== cachedLastRow) {
+      clearChatRecentMessagesCache_(columna);
+      return null;
+    }
+
+    if (currentLastRow >= CHAT_FIRST_VISIBLE_ROW_) {
+      const range = sheet.getRange(currentLastRow, colIndex + 1);
+      const currentSignature = buildChatRecentMessagesCacheValidationSignature_(range.getValue(), range.getNote());
+      if (String(parsed.lastSignature || '') !== currentSignature) {
+        clearChatRecentMessagesCache_(columna);
+        return null;
+      }
+    }
+
+    const messages = parsed.messages;
+    return messages.length > safeLimit ? messages.slice(-safeLimit) : messages;
+  } catch (err) {
+    return null;
+  }
+}
+
+function putChatRecentMessagesInCache_(sheet, colIndex, columna, messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  try {
+    const lastRow = list.length ? (Number(list[list.length - 1].row) || 0) : 0;
+    let lastSignature = '';
+    if (sheet && colIndex >= 0 && lastRow >= CHAT_FIRST_VISIBLE_ROW_) {
+      const range = sheet.getRange(lastRow, colIndex + 1);
+      lastSignature = buildChatRecentMessagesCacheValidationSignature_(range.getValue(), range.getNote());
+    }
+    const cache = CacheService.getScriptCache();
+    const payload = JSON.stringify({
+      lastRow: lastRow,
+      lastSignature: lastSignature,
+      messages: list.slice(-CHAT_RECENT_MESSAGES_CACHE_LIMIT_)
+    });
+    cache.put(
+      getChatRecentMessagesCacheKey_(columna),
+      payload,
+      CHAT_RECENT_MESSAGES_CACHE_TTL_SECONDS_
+    );
+  } catch (err) {}
+}
+
+function refreshChatRecentMessagesCache_(sheet, colIndex, columna) {
+  const messages = getChatMessagesFromColumn_(sheet, colIndex, columna, CHAT_RECENT_MESSAGES_CACHE_LIMIT_);
+  putChatRecentMessagesInCache_(sheet, colIndex, columna, messages);
+  return messages;
+}
+
+function syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna) {
+  try {
+    refreshChatRecentMessagesCache_(sheet, colIndex, columna);
+  } catch (err) {}
+}
+
+function buildChatMessageSummary_(parsed, row) {
+  if (!parsed || (!parsed.message && !parsed.imageUrl && !parsed.attachmentUrl)) return null;
+  return {
+    row: Number(row) || 0,
+    user: parsed.user,
+    scope: normalizeChatMessageScope_(parsed.scope),
+    scopeOwner: inferChatScopeOwnerFromParsed_(parsed),
+    message: parsed.message,
+    value: parsed.value,
+    imageUrl: parsed.imageUrl || '',
+    imageTitle: parsed.imageTitle || '',
+    attachmentKind: parsed.attachmentKind || '',
+    attachmentSourceKind: parsed.attachmentSourceKind || '',
+    attachmentUrl: parsed.attachmentUrl || '',
+    attachmentName: parsed.attachmentName || '',
+    attachmentMimeType: parsed.attachmentMimeType || '',
+    attachmentSize: Number(parsed.attachmentSize) || 0,
+    attachmentFileId: String(parsed.attachmentFileId || '').trim(),
+    attachmentClientToken: String(parsed.attachmentClientToken || '').trim(),
+    attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(parsed.attachmentMediaWidth),
+    attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(parsed.attachmentMediaHeight),
+    edited: !!parsed.edited,
+    clientToken: String(parsed.clientToken || '').trim(),
+    timestamp: parsed.timestamp || '',
+    timeLabel: parsed.timeLabel || '',
+    editTimestamp: parsed.editTimestamp || '',
+    editTimeLabel: parsed.editTimeLabel || ''
+  };
+}
+
+function getChatWelcomeMessageFromColumn_(sheet, colIndex) {
+  if (!sheet || colIndex < 0) return null;
+  if (sheet.getMaxRows() < CHAT_WELCOME_ROW_) return null;
+
+  const range = sheet.getRange(CHAT_WELCOME_ROW_, colIndex + 1);
+  const rawValue = range.getValue();
+  const noteValue = range.getNote();
+  const parsed = parseChatCellValue_(rawValue, noteValue);
+  const rawText = isCellImageValue_(rawValue) ? '' : String(rawValue || '').trim();
+  if (!parsed && !rawText) return null;
+
+  return {
+    row: CHAT_WELCOME_ROW_,
+    user: CHAT_ADMIN_DISPLAY_NAME_,
+    scope: normalizeChatMessageScope_(parsed && parsed.scope),
+    scopeOwner: inferChatScopeOwnerFromParsed_(parsed),
+    message: rawText || String(parsed && parsed.message || '').trim(),
+    value: rawText || String(parsed && parsed.value || '').trim(),
+    imageUrl: String(parsed && parsed.imageUrl || '').trim(),
+    imageTitle: String(parsed && parsed.imageTitle || '').trim(),
+    attachmentKind: String(parsed && parsed.attachmentKind || '').trim(),
+    attachmentSourceKind: String(parsed && parsed.attachmentSourceKind || '').trim(),
+    attachmentUrl: String(parsed && parsed.attachmentUrl || '').trim(),
+    attachmentName: String(parsed && parsed.attachmentName || '').trim(),
+    attachmentMimeType: String(parsed && parsed.attachmentMimeType || '').trim(),
+    attachmentSize: Number(parsed && parsed.attachmentSize) || 0,
+    attachmentFileId: String(parsed && parsed.attachmentFileId || '').trim(),
+    attachmentClientToken: String(parsed && parsed.attachmentClientToken || '').trim(),
+    attachmentMediaWidth: normalizeChatAttachmentMediaDimension_(parsed && parsed.attachmentMediaWidth),
+    attachmentMediaHeight: normalizeChatAttachmentMediaDimension_(parsed && parsed.attachmentMediaHeight),
+    edited: !!(parsed && parsed.edited),
+    clientToken: String(parsed && parsed.clientToken || '').trim(),
+    timestamp: String(parsed && parsed.timestamp || '').trim(),
+    timeLabel: String(parsed && parsed.timeLabel || '').trim(),
+    editTimestamp: String(parsed && parsed.editTimestamp || '').trim(),
+    editTimeLabel: String(parsed && parsed.editTimeLabel || '').trim()
+  };
+}
+
+function isOccupiedChatCell_(rawValue, noteValue) {
+  const parsed = parseChatCellValue_(rawValue, noteValue);
+  if (!parsed) return false;
+  return !!(
+    String(parsed.message || '').trim() ||
+    String(parsed.imageUrl || '').trim() ||
+    String(parsed.attachmentUrl || '').trim() ||
+    String(parsed.value || '').trim()
+  );
+}
+
+function getChatMessagesFromColumn_(sheet, colIndex, columna, limit) {
+  if (!sheet || colIndex < 0) return [];
+  const lastRow = getLastChatMessageRow_(sheet, colIndex, columna);
+  if (lastRow < CHAT_FIRST_VISIBLE_ROW_) return [];
+  const safeLimit = parseChatFetchLimit_(limit);
+  const startRow = safeLimit > 0
+    ? Math.max(CHAT_FIRST_VISIBLE_ROW_, lastRow - safeLimit + 1)
+    : CHAT_FIRST_VISIBLE_ROW_;
+
+  const range = sheet.getRange(
+    startRow,
+    colIndex + 1,
+    lastRow - startRow + 1,
+    1
+  );
+  const values = range.getValues();
+  const notes = range.getNotes();
+  const messages = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const parsed = parseChatCellValue_(values[i][0], notes[i][0]);
+    const summary = buildChatMessageSummary_(parsed, i + startRow);
+    if (!summary) continue;
+    messages.push(summary);
+  }
+
+  return messages;
+}
+
+function getOlderChatMessagesFromColumn_(sheet, colIndex, beforeRow, limit) {
+  const safeBeforeRow = Math.max(0, Number(beforeRow) || 0);
+  const safeLimit = parseChatFetchLimit_(limit);
+  if (!sheet || colIndex < 0 || safeBeforeRow <= CHAT_FIRST_VISIBLE_ROW_ || safeLimit < 1) {
+    return { messages: [], hasMoreOlder: false };
+  }
+
+  const lastCandidateRow = Math.min(sheet.getLastRow(), safeBeforeRow - 1);
+  if (lastCandidateRow < CHAT_FIRST_VISIBLE_ROW_) {
+    return { messages: [], hasMoreOlder: false };
+  }
+
+  const columnNumber = colIndex + 1;
+  const chunkSize = Math.max(80, safeLimit * 2);
+  const collected = [];
+  let cursorRow = lastCandidateRow;
+
+  while (cursorRow >= CHAT_FIRST_VISIBLE_ROW_ && collected.length < safeLimit + 1) {
+    const chunkStartRow = Math.max(CHAT_FIRST_VISIBLE_ROW_, cursorRow - chunkSize + 1);
+    const chunkHeight = cursorRow - chunkStartRow + 1;
+    const range = sheet.getRange(chunkStartRow, columnNumber, chunkHeight, 1);
+    const values = range.getValues();
+    const notes = range.getNotes();
+
+    for (let i = values.length - 1; i >= 0; i--) {
+      const rowNumber = chunkStartRow + i;
+      const parsed = parseChatCellValue_(values[i][0], notes[i][0]);
+      const summary = buildChatMessageSummary_(parsed, rowNumber);
+      if (!summary) continue;
+      collected.unshift(summary);
+      if (collected.length >= safeLimit + 1) break;
+    }
+
+    cursorRow = chunkStartRow - 1;
+  }
+
+  const hasMoreOlder = collected.length > safeLimit;
+  return {
+    messages: hasMoreOlder ? collected.slice(collected.length - safeLimit) : collected,
+    hasMoreOlder: hasMoreOlder
+  };
+}
+
+function hasOlderChatMessagesBeforeRow_(sheet, colIndex, beforeRow) {
+  const safeBeforeRow = Math.max(0, Number(beforeRow) || 0);
+  if (!sheet || colIndex < 0 || safeBeforeRow <= CHAT_FIRST_VISIBLE_ROW_) {
+    return false;
+  }
+
+  const lastCandidateRow = Math.min(sheet.getLastRow(), safeBeforeRow - 1);
+  if (lastCandidateRow < CHAT_FIRST_VISIBLE_ROW_) {
+    return false;
+  }
+
+  const columnNumber = colIndex + 1;
+  const chunkSize = 160;
+  let cursorRow = lastCandidateRow;
+
+  while (cursorRow >= CHAT_FIRST_VISIBLE_ROW_) {
+    const chunkStartRow = Math.max(CHAT_FIRST_VISIBLE_ROW_, cursorRow - chunkSize + 1);
+    const chunkHeight = cursorRow - chunkStartRow + 1;
+    const range = sheet.getRange(chunkStartRow, columnNumber, chunkHeight, 1);
+    const values = range.getValues();
+    const notes = range.getNotes();
+
+    for (let i = values.length - 1; i >= 0; i--) {
+      if (isOccupiedChatCell_(values[i][0], notes[i][0])) {
+        return true;
+      }
+    }
+
+    cursorRow = chunkStartRow - 1;
+  }
+
+  return false;
+}
+
+function getChatNextRowCacheKey_(columna) {
+  return CHAT_NEXT_ROW_PROP_PREFIX_ + normalizeChatColumn_(columna);
+}
+
+function allocateNextChatRow_(sheet, colIndex, columna) {
+  if (!sheet || colIndex < 0) return CHAT_FIRST_MESSAGE_ROW_;
+
+  const props = PropertiesService.getScriptProperties();
+  const cacheKey = getChatNextRowCacheKey_(columna);
+  const cachedNextRow = Number(props.getProperty(cacheKey) || 0) || 0;
+  const lastRow = sheet.getLastRow();
+  let nextRow = CHAT_FIRST_MESSAGE_ROW_;
+  const columnNumber = colIndex + 1;
+
+  // Camino rapido: reutiliza la siguiente fila cacheada si sigue siendo valida.
+  if (cachedNextRow >= CHAT_FIRST_MESSAGE_ROW_ && cachedNextRow <= sheet.getMaxRows()) {
+    const targetRange = sheet.getRange(cachedNextRow, columnNumber);
+    const targetOccupied = isOccupiedChatCell_(targetRange.getValue(), targetRange.getNote());
+    const previousOccupied = cachedNextRow === CHAT_FIRST_MESSAGE_ROW_
+      ? true
+      : isOccupiedChatCell_(
+          sheet.getRange(cachedNextRow - 1, columnNumber).getValue(),
+          sheet.getRange(cachedNextRow - 1, columnNumber).getNote()
+        );
+    if (!targetOccupied && previousOccupied) {
+      props.setProperty(cacheKey, String(cachedNextRow + 1));
+      return cachedNextRow;
+    }
+  }
+
+  // Recalcula la siguiente fila real desde la hoja para evitar caches obsoletos
+  // cuando el usuario borra mensajes manualmente.
+  if (lastRow >= CHAT_FIRST_MESSAGE_ROW_) {
+    const range = sheet.getRange(
+      CHAT_FIRST_MESSAGE_ROW_,
+      columnNumber,
+      lastRow - CHAT_FIRST_MESSAGE_ROW_ + 1,
+      1
+    );
+    const values = range.getValues();
+    const notes = range.getNotes();
+    for (let i = values.length - 1; i >= 0; i--) {
+      if (isOccupiedChatCell_(values[i][0], notes[i][0])) {
+        nextRow = i + CHAT_FIRST_MESSAGE_ROW_ + 1;
+        break;
+      }
+    }
+  }
+
+  props.setProperty(cacheKey, String(nextRow + 1));
+  return nextRow;
+}
+
+function findFirstEmptyChatRow_(sheet, colIndex) {
+  if (!sheet || colIndex < 0) return CHAT_FIRST_MESSAGE_ROW_;
+
+  const lastRow = Math.max(sheet.getLastRow(), CHAT_FIRST_MESSAGE_ROW_);
+  const values = sheet.getRange(
+    CHAT_FIRST_MESSAGE_ROW_,
+    colIndex + 1,
+    lastRow - CHAT_FIRST_MESSAGE_ROW_ + 1,
+    1
+  ).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    if (!String(values[i][0] || '').trim()) {
+      return i + CHAT_FIRST_MESSAGE_ROW_;
+    }
+  }
+
+  return lastRow + 1;
+}
+
+function inferMimeExtension_(mimeType) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.indexOf('png') !== -1) return 'png';
+  if (mime.indexOf('jpeg') !== -1 || mime.indexOf('jpg') !== -1) return 'jpg';
+  if (mime.indexOf('webp') !== -1) return 'webp';
+  if (mime.indexOf('gif') !== -1) return 'gif';
+  if (mime.indexOf('bmp') !== -1) return 'bmp';
+  if (mime.indexOf('svg') !== -1) return 'svg';
+  if (mime.indexOf('heic') !== -1) return 'heic';
+  if (mime.indexOf('heif') !== -1) return 'heif';
+  if (mime.indexOf('quicktime') !== -1) return 'mov';
+  if (mime.indexOf('webm') !== -1 || mime.indexOf('weba') !== -1) return 'webm';
+  if (mime.indexOf('mpeg') !== -1 || mime.indexOf('mp3') !== -1) return 'mp3';
+  if (mime.indexOf('wav') !== -1 || mime.indexOf('x-wav') !== -1) return 'wav';
+  if (mime.indexOf('ogg') !== -1) return 'ogg';
+  if (mime.indexOf('audio/mp4') !== -1 || mime.indexOf('m4a') !== -1) return 'm4a';
+  if (mime.indexOf('video/mp4') !== -1) return 'mp4';
+  if (mime.indexOf('mp4') !== -1) return 'mp4';
+  if (mime.indexOf('aac') !== -1) return 'aac';
+  if (mime.indexOf('opus') !== -1) return 'opus';
+  if (mime.indexOf('pdf') !== -1) return 'pdf';
+  if (mime.indexOf('zip') !== -1) return 'zip';
+  if (mime.indexOf('plain') !== -1) return 'txt';
+  return 'bin';
+}
+
+function sanitizeFileName_(name, defaultExt) {
+  const ext = String(defaultExt || inferExtensionFromFileName_(name) || 'bin').replace(/^\./, '').toLowerCase() || 'bin';
+  const base = String(name || 'imagen-chat')
+    .replace(/\.[a-z0-9]{2,8}$/i, '')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .trim() || 'imagen-chat';
+  return base + '.' + ext;
+}
+
+function isUrlFetchPermissionError_(error) {
+  const msg = String(error && error.message ? error.message : error).toLowerCase();
+  return (
+    msg.indexOf('urlfetchapp.fetch') !== -1 &&
+    (
+      msg.indexOf('script.external_request') !== -1 ||
+      msg.indexOf('permiso') !== -1 ||
+      msg.indexOf('permission') !== -1 ||
+      msg.indexOf('scope') !== -1
+    )
+  );
+}
+
+function isDrivePermissionError_(error) {
+  const msg = String(error && error.message ? error.message : error).toLowerCase();
+  return (
+    msg.indexOf('driveapp') !== -1 &&
+    (
+      msg.indexOf('permiso') !== -1 ||
+      msg.indexOf('permission') !== -1 ||
+      msg.indexOf('scope') !== -1 ||
+      msg.indexOf('https://www.googleapis.com/auth/drive') !== -1
+    )
+  );
+}
+
+function fetchChatImageWithFallback_(imageUrl) {
+  const attempts = [
+    {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ChatImageProxy/1.0)',
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Referer': 'https://docs.google.com/'
+      }
+    },
+    {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true
+    }
+  ];
+
+  let lastError = '';
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const resp = UrlFetchApp.fetch(imageUrl, attempts[i]);
+      return { resp: resp, attempt: i + 1 };
+    } catch (err) {
+      // Si falta autorización de UrlFetch, reintentar no aporta nada.
+      if (isUrlFetchPermissionError_(err)) throw err;
+      lastError = String(err && err.message ? err.message : err);
+    }
+  }
+
+  throw new Error(lastError || 'urlfetch_failed');
+}
+
+function tryHandleChatImageBlobGet_(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_image_blob') return null;
+
+  const imageUrl = String((e && e.parameter && e.parameter.url) || '').trim();
+  if (!imageUrl) {
+    return jsonOut_({ ok: false, error: 'missing_url' });
+  }
+
+  try {
+    const fetched = fetchChatImageWithFallback_(imageUrl);
+    const resp = fetched.resp;
+    const status = Number(resp.getResponseCode() || 0);
+    if (status < 200 || status >= 300) {
+      return jsonOut_({
+        ok: false,
+        error: 'image_fetch_failed',
+        status: status,
+        attempt: fetched.attempt
+      });
+    }
+
+    const blob = resp.getBlob();
+    const bytes = blob.getBytes();
+    if (bytes.length > CHAT_IMAGE_PROXY_MAX_BYTES_) {
+      return jsonOut_({ ok: false, error: 'image_too_large', bytes: bytes.length, maxBytes: CHAT_IMAGE_PROXY_MAX_BYTES_ });
+    }
+
+    const mimeType = String(blob.getContentType() || 'application/octet-stream');
+    const ext = inferMimeExtension_(mimeType);
+    const requestedName = String((e && e.parameter && e.parameter.filename) || '').trim();
+    const fileName = sanitizeFileName_(requestedName || 'imagen-chat', ext);
+    const base64 = Utilities.base64Encode(bytes);
+
+    return jsonOut_({
+      ok: true,
+      mimeType: mimeType,
+      fileName: fileName,
+      data: base64
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (isUrlFetchPermissionError_(error)) {
+      return jsonOut_({
+        ok: false,
+        error: 'missing_external_request_scope',
+        message: message,
+        requiredScope: CHAT_URLFETCH_SCOPE_,
+        fix: 'Autoriza el proyecto con ese scope y vuelve a desplegar la web app.',
+        imageUrl: imageUrl
+      });
+    }
+
+    return jsonOut_({
+      ok: false,
+      error: 'proxy_exception',
+      message: message,
+      imageUrl: imageUrl
+    });
+  }
+}
+
+function tryHandleChatAttachmentBlobGet_(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_attachment_blob') return null;
+
+  const fileId = String((e && e.parameter && e.parameter.fileId) || '').trim();
+  if (!fileId) {
+    return jsonOut_({ ok: false, error: 'missing_file_id' });
+  }
+
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    const bytes = blob.getBytes();
+    if (!bytes || bytes.length <= 0) {
+      return jsonOut_({ ok: false, error: 'attachment_empty' });
+    }
+    if (CHAT_ATTACHMENT_MAX_BYTES_ > 0 && bytes.length > CHAT_ATTACHMENT_MAX_BYTES_) {
+      return jsonOut_({ ok: false, error: 'attachment_too_large', bytes: bytes.length, maxBytes: CHAT_ATTACHMENT_MAX_BYTES_ });
+    }
+
+    const mimeType = String(blob.getContentType() || file.getMimeType() || 'application/octet-stream').trim();
+    const ext = inferMimeExtension_(mimeType);
+    const requestedName = String((e && e.parameter && e.parameter.filename) || '').trim();
+    const fileName = sanitizeFileName_(requestedName || file.getName() || 'adjunto-chat', ext);
+    const base64 = Utilities.base64Encode(bytes);
+
+    return jsonOut_({
+      ok: true,
+      mimeType: mimeType,
+      fileName: fileName,
+      data: base64
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (isDrivePermissionError_(error)) {
+      return jsonOut_({
+        ok: false,
+        error: 'missing_drive_scope',
+        message: message,
+        requiredScope: CHAT_DRIVE_SCOPE_
+      });
+    }
+
+    return jsonOut_({
+      ok: false,
+      error: 'attachment_blob_exception',
+      message: message,
+      fileId: fileId
+    });
+  }
+}
+
+function tryHandleChatAttachmentPdfGet_(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_attachment_pdf') return null;
+
+  const fileId = String((e && e.parameter && e.parameter.fileId) || '').trim();
+  if (!fileId) {
+    return jsonOut_({ ok: false, error: 'missing_file_id' });
+  }
+
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const pdfBlob = file.getMimeType() === MimeType.PDF ? file.getBlob() : file.getAs(MimeType.PDF);
+    const bytes = pdfBlob.getBytes();
+    if (!bytes || bytes.length <= 0) {
+      return jsonOut_({ ok: false, error: 'attachment_empty' });
+    }
+    if (CHAT_ATTACHMENT_MAX_BYTES_ > 0 && bytes.length > CHAT_ATTACHMENT_MAX_BYTES_) {
+      return jsonOut_({ ok: false, error: 'attachment_too_large', bytes: bytes.length, maxBytes: CHAT_ATTACHMENT_MAX_BYTES_ });
+    }
+
+    const requestedName = String((e && e.parameter && e.parameter.filename) || '').trim();
+    const fileName = sanitizeFileName_(requestedName || file.getName() || 'adjunto-chat', 'pdf');
+    const base64 = Utilities.base64Encode(bytes);
+
+    return jsonOut_({
+      ok: true,
+      mimeType: 'application/pdf',
+      fileName: fileName,
+      data: base64
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (isDrivePermissionError_(error)) {
+      return jsonOut_({
+        ok: false,
+        error: 'missing_drive_scope',
+        message: message,
+        requiredScope: CHAT_DRIVE_SCOPE_
+      });
+    }
+
+    return jsonOut_({
+      ok: false,
+      error: 'attachment_pdf_exception',
+      message: message,
+      fileId: fileId
+    });
+  }
+}
+
+function tryHandleChatAttachmentHealthGet_(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_attachment_health') return null;
+
+  try {
+    const columna = normalizeChatColumn_(e && e.parameter && e.parameter.columna);
+    const folder = ensureChatAttachmentFolder_(columna);
+    return jsonOut_({
+      ok: true,
+      driveReady: true,
+      folderId: String(folder && folder.getId ? folder.getId() : '').trim(),
+      folderName: String(folder && folder.getName ? folder.getName() : getChatAttachmentFolderName_(columna)).trim(),
+      columna: columna
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (isDrivePermissionError_(error)) {
+      return jsonOut_({
+        ok: false,
+        driveReady: false,
+        error: 'missing_drive_scope',
+        requiredScope: CHAT_DRIVE_SCOPE_,
+        message: message
+      });
+    }
+    return jsonOut_({
+      ok: false,
+      driveReady: false,
+      error: 'attachment_health_exception',
+      message: message
+    });
+  }
+}
+
+function lookupChatAttachmentReuse_(ss, data) {
+  const safeHash = normalizeChatAttachmentSha256_(data && (data.sha256 || data.hash));
+  if (!safeHash) {
+    return { ok: false, found: false, error: 'missing_sha256' };
+  }
+  const columna = normalizeChatColumn_(data && data.columna);
+
+  const attachment = findChatReusableAttachmentByHash_(ss, safeHash, columna);
+  if (!attachment) {
+    return { ok: true, found: false, sha256: safeHash, columna: columna };
+  }
+
+  return {
+    ok: true,
+    found: true,
+    sha256: safeHash,
+    columna: columna,
+    attachment: attachment
+  };
+}
+
+function chatLookupAttachmentHtmlService(data) {
+  const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+  return lookupChatAttachmentReuse_(ss, data || {});
+}
+
+function tryHandleChatAttachmentLookupGet_(ss, e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_attachment_lookup') return null;
+
+  return jsonOut_(lookupChatAttachmentReuse_(ss, {
+    sha256: e && e.parameter && e.parameter.sha256,
+    columna: e && e.parameter && e.parameter.columna
+  }));
+}
+
+function tryHandleChatGet_(ss, e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_messages') return null;
+
+  const columna = normalizeChatColumn_(e && e.parameter && e.parameter.columna);
+  const limit = parseChatFetchLimit_(e && e.parameter && e.parameter.limit);
+  const beforeRow = Math.max(0, Number(e && e.parameter && e.parameter.beforeRow) || 0);
+  const sheet = getChatSheet_(ss);
+  if (!sheet) return jsonOut_({ ok: false, error: 'chat_sheet_not_found', columna: columna, messages: [] });
+
+  const colIndex = getChatColumnIndex_(sheet, columna);
+  if (colIndex === -1) {
+    return jsonOut_({ ok: false, error: 'chat_column_not_found', columna: columna, messages: [] });
+  }
+  const welcomeMessage = getChatWelcomeMessageFromColumn_(sheet, colIndex);
+
+  if (beforeRow > CHAT_FIRST_VISIBLE_ROW_) {
+    const olderWindow = getOlderChatMessagesFromColumn_(sheet, colIndex, beforeRow, limit);
+    const olderMessages = Array.isArray(olderWindow.messages) ? olderWindow.messages : [];
+    return jsonOut_({
+      ok: true,
+      columna: columna,
+      count: olderMessages.length,
+      limitApplied: limit,
+      beforeRow: beforeRow,
+      oldestRow: olderMessages.length ? Number(olderMessages[0].row) || 0 : 0,
+      newestRow: olderMessages.length ? Number(olderMessages[olderMessages.length - 1].row) || 0 : 0,
+      hasMoreOlder: !!olderWindow.hasMoreOlder,
+      welcomeMessage: welcomeMessage,
+      messages: olderMessages
+    });
+  }
+
+  const currentLastRow = getLastChatMessageRow_(sheet, colIndex, columna);
+  if (currentLastRow < CHAT_FIRST_VISIBLE_ROW_) {
+    clearChatRecentMessagesCache_(columna);
+    return jsonOut_({
+      ok: true,
+      columna: columna,
+      count: 0,
+      limitApplied: limit,
+      oldestRow: 0,
+      newestRow: 0,
+      hasMoreOlder: false,
+      welcomeMessage: welcomeMessage,
+      cached: false,
+      messages: []
+    });
+  }
+
+  const cachedMessages = getChatRecentMessagesFromCache_(sheet, colIndex, columna, limit);
+  if (cachedMessages) {
+    const oldestCachedRow = cachedMessages.length ? (Number(cachedMessages[0].row) || 0) : 0;
+    return jsonOut_({
+      ok: true,
+      columna: columna,
+      count: cachedMessages.length,
+      limitApplied: limit,
+      oldestRow: oldestCachedRow,
+      newestRow: cachedMessages.length ? Number(cachedMessages[cachedMessages.length - 1].row) || 0 : 0,
+      hasMoreOlder: oldestCachedRow > CHAT_FIRST_VISIBLE_ROW_
+        ? hasOlderChatMessagesBeforeRow_(sheet, colIndex, oldestCachedRow)
+        : false,
+      welcomeMessage: welcomeMessage,
+      cached: true,
+      messages: cachedMessages
+    });
+  }
+
+  const messages = getChatMessagesFromColumn_(sheet, colIndex, columna, limit);
+  if (limit > 0 && limit <= CHAT_RECENT_MESSAGES_CACHE_LIMIT_) {
+    putChatRecentMessagesInCache_(sheet, colIndex, columna, messages);
+  }
+  const oldestMessageRow = messages.length ? (Number(messages[0].row) || 0) : 0;
+  return jsonOut_({
+    ok: true,
+    columna: columna,
+    count: messages.length,
+    limitApplied: limit,
+    oldestRow: oldestMessageRow,
+    newestRow: messages.length ? Number(messages[messages.length - 1].row) || 0 : 0,
+    hasMoreOlder: oldestMessageRow > CHAT_FIRST_VISIBLE_ROW_
+      ? hasOlderChatMessagesBeforeRow_(sheet, colIndex, oldestMessageRow)
+      : false,
+    welcomeMessage: welcomeMessage,
+    messages: messages
+  });
+}
+
+function findExistingChatAttachmentRowByClientToken_(sheet, colIndex, clientToken) {
+  const safeClientToken = normalizeChatAttachmentClientToken_(clientToken);
+  if (!sheet || colIndex < 0 || !safeClientToken) return 0;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CHAT_FIRST_MESSAGE_ROW_) return 0;
+
+  const rowCount = lastRow - CHAT_FIRST_MESSAGE_ROW_ + 1;
+  if (rowCount < 1) return 0;
+
+  const values = sheet.getRange(CHAT_FIRST_MESSAGE_ROW_, colIndex + 1, rowCount, 1).getValues();
+  const notes = sheet.getRange(CHAT_FIRST_MESSAGE_ROW_, colIndex + 1, rowCount, 1).getNotes();
+  for (let i = values.length - 1; i >= 0; i--) {
+    const parsed = parseChatCellValue_(values[i][0], notes[i][0]);
+    if (normalizeChatAttachmentClientToken_(parsed && parsed.attachmentClientToken) === safeClientToken) {
+      return CHAT_FIRST_MESSAGE_ROW_ + i;
+    }
+  }
+  return 0;
+}
+
+function findExistingChatMessageRowByClientToken_(sheet, colIndex, clientToken) {
+  const safeClientToken = normalizeChatAttachmentClientToken_(clientToken);
+  if (!sheet || colIndex < 0 || !safeClientToken) return 0;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CHAT_FIRST_MESSAGE_ROW_) return 0;
+
+  const rowCount = lastRow - CHAT_FIRST_MESSAGE_ROW_ + 1;
+  if (rowCount < 1) return 0;
+
+  const values = sheet.getRange(CHAT_FIRST_MESSAGE_ROW_, colIndex + 1, rowCount, 1).getValues();
+  const notes = sheet.getRange(CHAT_FIRST_MESSAGE_ROW_, colIndex + 1, rowCount, 1).getNotes();
+  for (let i = values.length - 1; i >= 0; i--) {
+    const parsed = parseChatCellValue_(values[i][0], notes[i][0]);
+    if (normalizeChatAttachmentClientToken_(parsed && parsed.clientToken) === safeClientToken) {
+      return CHAT_FIRST_MESSAGE_ROW_ + i;
+    }
+  }
+  return 0;
+}
+
+function tryHandleChatPost_(ss, data, options) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const respond = function(text) {
+    const safeText = String(text || '').trim() || 'OK';
+    return opts.asText === true ? safeText : ContentService.createTextOutput(safeText);
+  };
+  const type = String((data && data.type) || '').toLowerCase();
+  if (type !== 'chat_message' && type !== 'chat_attachment' && type !== 'chat_edit_message' && type !== 'chat_delete_message' && type !== 'chat_delete_all_messages') return null;
+  const isAttachment = type === 'chat_attachment';
+  const isEdit = type === 'chat_edit_message';
+  const isDelete = type === 'chat_delete_message';
+  const isDeleteAll = type === 'chat_delete_all_messages';
+  const normalizedEditAttachmentReuse = isEdit
+    ? normalizeChatAttachmentReuse_(data && data.attachmentReuse)
+    : null;
+  const normalizedEditAttachment = isEdit
+    ? (opts.normalizedEditAttachment !== undefined
+      ? opts.normalizedEditAttachment
+      : normalizeChatAttachmentPayload_(data && data.attachment))
+    : null;
+  const editAttachmentSource = isEdit
+    ? (opts.editAttachmentSource || (normalizedEditAttachmentReuse
+      ? { reuse: normalizedEditAttachmentReuse }
+      : (normalizedEditAttachment ? { payload: normalizedEditAttachment } : null)))
+    : null;
+  const wantsRemoveAttachment = isEdit && (
+    data && data.removeAttachment === true ||
+    String(data && data.removeAttachment || '').trim().toLowerCase() === 'true' ||
+    String(data && data.removeAttachment || '').trim() === '1'
+  );
+  const normalizedAttachmentReuse = isAttachment
+    ? normalizeChatAttachmentReuse_(data && data.attachmentReuse)
+    : null;
+  const normalizedAttachment = isAttachment
+    ? (opts.normalizedAttachment !== undefined
+      ? opts.normalizedAttachment
+      : normalizeChatAttachmentPayload_(data && data.attachment))
+    : null;
+  const attachmentSource = isAttachment
+    ? (opts.attachmentSource || (normalizedAttachmentReuse
+      ? { reuse: normalizedAttachmentReuse }
+      : (normalizedAttachment ? { payload: normalizedAttachment } : null)))
+    : null;
+  const authenticatedChatUser = getAuthenticatedChatPortalBUser_(ss, data);
+  if (!authenticatedChatUser) {
+    return respond('Chat Identity Forbidden');
+  }
+  data.nombre = authenticatedChatUser.nombre;
+  data.apellido = authenticatedChatUser.apellido;
+  data.userDisplayName = authenticatedChatUser.displayName;
+  const isAdminRequest = isChatAdminRequest_(ss, data);
+  const displayName = buildChatDisplayName_(data);
+  const messageClientToken = normalizeChatAttachmentClientToken_(data && (data.clientToken || data.messageClientToken));
+
+  const columna = normalizeChatColumn_(data && data.columna);
+  const mensaje = normalizeChatMessage_(data && data.mensaje);
+  const requestedScopeRaw = String(data && data.scope || '').trim();
+  const messageScope = normalizeChatMessageScope_(requestedScopeRaw);
+  const requestedScopeOwnerRaw = String(data && data.scopeOwner || '').trim();
+  const requestedScopeOwner = normalizeChatScopeOwner_(requestedScopeOwnerRaw);
+  const messageScopeOwner = resolveChatScopeOwner_(
+    messageScope,
+    isAdminRequest ? requestedScopeOwner : '',
+    !isAdminRequest ? displayName : ''
+  );
+  const hasEditAttachmentIncoming = !!editAttachmentSource;
+  if ((!isAttachment && !isDelete && !isDeleteAll && !mensaje && !hasEditAttachmentIncoming) || (isEdit && !mensaje && !hasEditAttachmentIncoming)) {
+    return respond('Chat Message Empty');
+  }
+
+  const sheet = getChatSheet_(ss);
+  if (!sheet) return respond('Chat Sheet Not Found');
+
+  const colIndex = getChatColumnIndex_(sheet, columna);
+  if (colIndex === -1) return respond('Chat Column Not Found');
+  if (isDeleteAll) {
+    if (!isAdminRequest) {
+      return respond('Chat Delete All Forbidden');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= CHAT_FIRST_MESSAGE_ROW_) {
+      const rowCount = lastRow - CHAT_FIRST_MESSAGE_ROW_ + 1;
+      const range = sheet.getRange(CHAT_FIRST_MESSAGE_ROW_, colIndex + 1, rowCount, 1);
+      range.clearContent();
+      range.clearNote();
+    }
+    syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+    return respond('Chat Conversation Deleted');
+  }
+
+  if (isDelete) {
+    const targetRow = Number(data && data.row);
+    if (!Number.isFinite(targetRow) || targetRow < CHAT_WELCOME_ROW_) {
+      return respond('Chat Delete Row Invalid');
+    }
+    if (targetRow > sheet.getLastRow()) {
+      return respond('Chat Delete Row Not Found');
+    }
+
+    const range = sheet.getRange(targetRow, colIndex + 1);
+    const parsed = parseChatCellValue_(range.getValue(), range.getNote());
+    if (!parsed || (!parsed.message && !parsed.imageUrl && !parsed.attachmentUrl && !parsed.value)) {
+      return respond('Chat Delete Message Not Found');
+    }
+
+    const sameOwner =
+      normalizeChatParticipantKey_(parsed.user) === normalizeChatParticipantKey_(displayName) ||
+      (targetRow === CHAT_WELCOME_ROW_ &&
+        normalizeChatParticipantKey_(displayName) === normalizeChatParticipantKey_(CHAT_ADMIN_DISPLAY_NAME_));
+    if (!sameOwner && !isAdminRequest) {
+      return respond('Chat Delete Forbidden');
+    }
+
+    range.clearContent();
+    range.setNote('');
+    syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+    return respond('Chat Message Deleted');
+  }
+
+  if (isEdit) {
+    const targetRow = Number(data && data.row);
+    if (!Number.isFinite(targetRow) || targetRow < CHAT_WELCOME_ROW_) {
+      return respond('Chat Edit Row Invalid');
+    }
+    if (targetRow > sheet.getLastRow()) {
+      return respond('Chat Edit Row Not Found');
+    }
+
+    const range = sheet.getRange(targetRow, colIndex + 1);
+    const parsed = parseChatCellValue_(range.getValue(), range.getNote());
+    if (!parsed || (!parsed.message && !parsed.value)) {
+      return respond('Chat Edit Message Not Found');
+    }
+
+    const sameOwner =
+      normalizeChatParticipantKey_(parsed.user) === normalizeChatParticipantKey_(displayName) ||
+      (targetRow === CHAT_WELCOME_ROW_ &&
+        normalizeChatParticipantKey_(displayName) === normalizeChatParticipantKey_(CHAT_ADMIN_DISPLAY_NAME_));
+    if (!sameOwner && !isAdminRequest) {
+      return respond('Chat Edit Forbidden');
+    }
+    const editMeta = buildChatTimestampMeta_();
+    const targetAuthorDisplayName = targetRow === CHAT_WELCOME_ROW_
+      ? CHAT_ADMIN_DISPLAY_NAME_
+      : (String(parsed.user || '').trim() || displayName);
+    const shouldKeepWelcomeRowPlainText = targetRow === CHAT_WELCOME_ROW_;
+    const currentScope = normalizeChatMessageScope_(parsed && parsed.scope);
+    const currentScopeOwner = inferChatScopeOwnerFromParsed_(parsed);
+    const targetScope = requestedScopeRaw ? messageScope : currentScope;
+    const targetScopeOwner = resolveChatScopeOwner_(
+      targetScope,
+      isAdminRequest ? requestedScopeOwner : '',
+      currentScopeOwner || (!isAdminRequest ? displayName : '')
+    );
+    const nextEditMetaRecord = shouldKeepWelcomeRowPlainText
+      ? {
+          edited: false,
+          scope: targetScope,
+          scopeOwner: targetScopeOwner,
+          clientToken: String(parsed.clientToken || '').trim(),
+          timestamp: String(parsed.timestamp || '').trim(),
+          timeLabel: String(parsed.timeLabel || '').trim(),
+          editTimestamp: '',
+          editTimeLabel: ''
+        }
+      : {
+          edited: true,
+          scope: targetScope,
+          scopeOwner: targetScopeOwner,
+          clientToken: String(parsed.clientToken || '').trim(),
+          timestamp: String(parsed.timestamp || '').trim(),
+          timeLabel: String(parsed.timeLabel || '').trim(),
+          editTimestamp: String(editMeta.timestamp || '').trim(),
+          editTimeLabel: String(editMeta.timeLabel || '').trim()
+        };
+
+    let editedAttachmentMeta = null;
+    if (editAttachmentSource) {
+      try {
+        editedAttachmentMeta = saveChatAttachmentSourceToDrive_(ss, editAttachmentSource, targetAuthorDisplayName, columna);
+      } catch (error) {
+        if (isDrivePermissionError_(error)) {
+          return respond('Chat Attachment Scope Missing: ' + CHAT_DRIVE_SCOPE_);
+        }
+        return respond('Chat Attachment Save Failed');
+      }
+      editedAttachmentMeta.timestamp = String(parsed.timestamp || '').trim();
+      editedAttachmentMeta.timeLabel = String(parsed.timeLabel || '').trim();
+      editedAttachmentMeta.scope = targetScope;
+      editedAttachmentMeta.scopeOwner = targetScopeOwner;
+      range.setValue(formatChatAttachmentCellValue_(targetAuthorDisplayName, mensaje, editedAttachmentMeta));
+      range.setNote(formatChatMetaRecord_(nextEditMetaRecord));
+      syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+      return respond('Chat Attachment Edited');
+    }
+
+    const hasMedia =
+      !!String(parsed.imageUrl || '').trim() ||
+      !!String(parsed.attachmentUrl || '').trim() ||
+      !!String(parsed.attachmentKind || '').trim();
+    if (hasMedia) {
+      if (wantsRemoveAttachment) {
+        if (!mensaje) {
+          return respond('Chat Edit Message Empty');
+        }
+        range.setValue(shouldKeepWelcomeRowPlainText ? normalizeChatMessage_(mensaje) : formatChatCellValue_(targetAuthorDisplayName, mensaje));
+        range.setNote(formatChatMetaRecord_(nextEditMetaRecord));
+        syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+        return respond('Chat Attachment Removed');
+      }
+      range.setValue(formatChatAttachmentCellValue_(targetAuthorDisplayName, mensaje, {
+        kind: String(parsed.attachmentKind || 'file').trim().toLowerCase() || 'file',
+        sourceKind: String(parsed.attachmentSourceKind || parsed.attachmentKind || 'file').trim().toLowerCase() || 'file',
+        url: String(parsed.attachmentUrl || '').trim(),
+        name: String(parsed.attachmentName || 'adjunto-chat').trim() || 'adjunto-chat',
+        mimeType: String(parsed.attachmentMimeType || 'application/octet-stream').trim() || 'application/octet-stream',
+        size: Number(parsed.attachmentSize) || 0,
+        fileId: String(parsed.attachmentFileId || '').trim(),
+        clientToken: String(parsed.attachmentClientToken || '').trim(),
+        mediaWidth: normalizeChatAttachmentMediaDimension_(parsed.attachmentMediaWidth),
+        mediaHeight: normalizeChatAttachmentMediaDimension_(parsed.attachmentMediaHeight),
+        scope: targetScope,
+        scopeOwner: targetScopeOwner,
+        timestamp: String(parsed.timestamp || '').trim(),
+        timeLabel: String(parsed.timeLabel || '').trim()
+      }));
+      range.setNote(formatChatMetaRecord_(nextEditMetaRecord));
+      syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+      return respond('Chat Attachment Edited');
+    }
+
+    range.setValue(shouldKeepWelcomeRowPlainText ? normalizeChatMessage_(mensaje) : formatChatCellValue_(targetAuthorDisplayName, mensaje));
+    range.setNote(formatChatMetaRecord_(nextEditMetaRecord));
+    syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+    return respond('Chat Message Edited');
+  }
+
+  let cellValue = '';
+  let savedAttachment = null;
+  const timestampMeta = {
+    ...buildChatTimestampMeta_(),
+    clientToken: messageClientToken,
+    scope: messageScope,
+    scopeOwner: messageScopeOwner
+  };
+  if (isAttachment) {
+    if (!attachmentSource) return respond('Chat Attachment Invalid');
+
+    try {
+      savedAttachment = saveChatAttachmentSourceToDrive_(ss, attachmentSource, displayName, columna);
+    } catch (error) {
+      logChatAttachmentTrace_('chat_attachment_save_failed', {
+        columna: columna,
+        user: displayName,
+        mode: 'save',
+        error: error && error.message ? error.message : error
+      });
+      if (isDrivePermissionError_(error)) {
+        return respond('Chat Attachment Scope Missing: ' + CHAT_DRIVE_SCOPE_);
+      }
+      return respond('Chat Attachment Save Failed');
+    }
+    savedAttachment.timestamp = timestampMeta.timestamp;
+    savedAttachment.timeLabel = timestampMeta.timeLabel;
+    savedAttachment.scope = messageScope;
+    savedAttachment.scopeOwner = messageScopeOwner;
+    cellValue = formatChatAttachmentCellValue_(displayName, mensaje, savedAttachment);
+  } else {
+    cellValue = formatChatCellValue_(displayName, mensaje);
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    if (isAttachment && savedAttachment) {
+      const existingAttachmentRow = findExistingChatAttachmentRowByClientToken_(sheet, colIndex, savedAttachment.clientToken);
+      if (existingAttachmentRow >= CHAT_FIRST_MESSAGE_ROW_) {
+        syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+        return respond('Chat Message Saved');
+      }
+    } else if (messageClientToken) {
+      const existingMessageRow = findExistingChatMessageRowByClientToken_(sheet, colIndex, messageClientToken);
+      if (existingMessageRow >= CHAT_FIRST_MESSAGE_ROW_) {
+        syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+        return respond('Chat Message Saved');
+      }
+    }
+    const targetRow = allocateNextChatRow_(sheet, colIndex, columna);
+    const range = sheet.getRange(targetRow, colIndex + 1);
+    if (isAttachment && savedAttachment) {
+      try {
+        writeChatAttachmentCellWithFallback_(range, cellValue, savedAttachment);
+      } catch (writeError) {
+        logChatAttachmentTrace_('chat_attachment_sheet_write_failed', {
+          ...savedAttachment,
+          columna: columna,
+          user: displayName,
+          row: targetRow,
+          mode: 'sheet_write',
+          error: writeError && writeError.message ? writeError.message : writeError
+        });
+        throw writeError;
+      }
+    } else {
+      range.setValue(cellValue);
+      range.setNote(isAttachment ? '' : formatChatMetaRecord_(timestampMeta));
+    }
+  } finally {
+    lock.releaseLock();
+  }
+
+  syncChatRecentMessagesCacheAfterMutation_(sheet, colIndex, columna);
+  return respond('Chat Message Saved');
+}
+
+function chatPostHtmlService(data) {
+  const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+  const response = tryHandleChatPost_(ss, data || {}, { asText: true });
+  if (response === null) throw new Error('chat_request_invalid');
+  return response;
+}
+
+function chatUploadAttachmentHtmlService(formObject) {
+  const form = formObject && typeof formObject === 'object' ? formObject : null;
+  if (!form) throw new Error('chat_form_invalid');
+
+  const payloadJson = String(form.chat_payload_json || '').trim();
+  if (!payloadJson) throw new Error('chat_form_missing_payload');
+
+  let data = {};
+  try {
+    data = JSON.parse(payloadJson);
+  } catch (err) {
+    throw new Error('chat_form_invalid_payload');
+  }
+
+  const type = String(data && data.type || '').trim().toLowerCase();
+  if (type !== 'chat_attachment' && type !== 'chat_edit_message') {
+    throw new Error('chat_form_invalid_type');
+  }
+
+  const attachmentBlob = findChatAttachmentBlobInForm_(form);
+  if (!attachmentBlob) throw new Error('chat_form_missing_blob');
+
+  const attachmentMeta = normalizeChatAttachmentMetaOnly_(data && data.attachment, attachmentBlob);
+  const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+  const response = tryHandleChatPost_(ss, data, {
+    asText: true,
+    normalizedAttachment: type === 'chat_attachment' ? attachmentMeta : undefined,
+    attachmentSource: type === 'chat_attachment'
+      ? { blob: attachmentBlob, meta: attachmentMeta }
+      : null,
+    normalizedEditAttachment: type === 'chat_edit_message' ? attachmentMeta : undefined,
+    editAttachmentSource: type === 'chat_edit_message'
+      ? { blob: attachmentBlob, meta: attachmentMeta }
+      : null
+  });
+  if (response === null) throw new Error('chat_request_invalid');
+  return response;
+}
+
+function renderSelAlfabetoHtml_() {
+  return HtmlService
+    .createHtmlOutputFromFile('sel-alfabeto')
+    .setTitle('El Alfabeto')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function normalizePortalBStatus_(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function isPortalBStatusOnline_(value) {
+  return normalizeName_(value) === 'en linea';
+}
+
+function buildPortalBDisplayName_(nombre, apellido) {
+  return [String(nombre || '').trim(), String(apellido || '').trim()]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function tryHandleChatPortalUsersGet_(ss, e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (mode !== 'chat_portal_users') return null;
+
+  const requester = {
+    nombre: String(e && e.parameter && e.parameter.nombre || '').trim(),
+    apellido: String(e && e.parameter && e.parameter.apellido || '').trim()
+  };
+  if (!isChatAdminRequest_(ss, requester)) {
+    return jsonOut_({ ok: false, error: 'forbidden', users: [] });
+  }
+
+  const sheetPortal = ss && ss.getSheetByName ? ss.getSheetByName('PortalB') : null;
+  if (!sheetPortal) {
+    return jsonOut_({ ok: false, error: 'no_sheet', users: [] });
+  }
+
+  const values = sheetPortal.getDataRange().getValues();
+  const users = [];
+  const seen = {};
+
+  for (let i = 1; i < values.length; i++) {
+    const nombre = String(values[i][0] || '').trim();
+    const apellido = String(values[i][1] || '').trim();
+    if (!nombre && !apellido) continue;
+
+    const displayName = buildPortalBDisplayName_(nombre, apellido);
+    if (!displayName) continue;
+    if (normalizeChatParticipantKey_(displayName) === normalizeChatParticipantKey_(CHAT_ADMIN_DISPLAY_NAME_)) continue;
+
+    const key = normalizeChatParticipantKey_(displayName);
+    if (!key || seen[key]) continue;
+    seen[key] = true;
+
+    const status = normalizePortalBStatus_(values[i][4] || '');
+    users.push({
+      nombre: nombre,
+      apellido: apellido,
+      displayName: displayName,
+      status: status,
+      isOnline: isPortalBStatusOnline_(status)
+    });
+  }
+
+  users.sort(function(a, b) {
+    if (!!b.isOnline !== !!a.isOnline) return Number(!!b.isOnline) - Number(!!a.isOnline);
+    return normalizeChatParticipantKey_(a.displayName).localeCompare(normalizeChatParticipantKey_(b.displayName));
+  });
+
+  return jsonOut_({ ok: true, users: users });
+}
+
+function doGet(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').toLowerCase();
+  if (!mode || mode === 'app' || mode === 'html' || mode === 'sel-alfabeto') {
+    return renderSelAlfabetoHtml_();
+  }
+  const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+
+  // --- CHAT: verificar estado de adjuntos (Drive scope/folder) ---
+  const chatAttachmentHealthResponse = tryHandleChatAttachmentHealthGet_(e);
+  if (chatAttachmentHealthResponse) return chatAttachmentHealthResponse;
+
+  // --- CHAT: buscar adjunto existente por hash ---
+  const chatAttachmentLookupResponse = tryHandleChatAttachmentLookupGet_(ss, e);
+  if (chatAttachmentLookupResponse) return chatAttachmentLookupResponse;
+
+  // --- CHAT: proxy de imagen para descarga sin bloqueo CORS ---
+  const chatImageBlobResponse = tryHandleChatImageBlobGet_(e);
+  if (chatImageBlobResponse) return chatImageBlobResponse;
+
+  // --- CHAT: adjunto DOCX convertido a PDF ---
+  const chatAttachmentPdfResponse = tryHandleChatAttachmentPdfGet_(e);
+  if (chatAttachmentPdfResponse) return chatAttachmentPdfResponse;
+
+  // --- CHAT: blob de adjunto por fileId (audio/archivo) ---
+  const chatAttachmentBlobResponse = tryHandleChatAttachmentBlobGet_(e);
+  if (chatAttachmentBlobResponse) return chatAttachmentBlobResponse;
+
+  // --- CHAT: leer mensajes por columna ---
+  const chatGetResponse = tryHandleChatGet_(ss, e);
+  if (chatGetResponse) return chatGetResponse;
+
+  // --- CHAT: lista completa de usuarios de PortalB para privados del profe ---
+  const chatPortalUsersResponse = tryHandleChatPortalUsersGet_(ss, e);
+  if (chatPortalUsersResponse) return chatPortalUsersResponse;
+
+  // --- MODO: ONLINE COUNT ---
+  if (mode === 'online_count') {
+    const sheetPortal = ss.getSheetByName('PortalB');
+    if (!sheetPortal) return ContentService.createTextOutput('0');
+
+    const data = sheetPortal.getDataRange().getValues();
+    let count = 0;
+    for (let i = 1; i < data.length; i++) {
+      const status = String(data[i][4] || '').toLowerCase().trim();
+      if (status === 'en linea' || status === 'en línea') count++;
+    }
+    return ContentService.createTextOutput(String(count));
+  }
+
+  // --- MODO NUEVO: USER POINTS (hidratación inicial del local) ---
+  if (mode === 'user_points') {
+    const nombre = normalizeName_(e && e.parameter && e.parameter.nombre);
+    const apellido = normalizeName_(e && e.parameter && e.parameter.apellido);
+    const codeParam = String((e && e.parameter && e.parameter.code) || '').trim().toUpperCase();
+    const tokenParam = String((e && e.parameter && e.parameter.token) || '').trim();
+    const columnsParam = String((e && e.parameter && e.parameter.columns) || '').trim().toUpperCase();
+
+    if (!nombre || !apellido) {
+      return jsonOut_({ ok: false, error: 'missing_name', pointsByColumn: {} });
+    }
+
+    const sheetPortal = ss.getSheetByName('PortalB');
+    if (!sheetPortal) return jsonOut_({ ok: false, error: 'no_sheet', pointsByColumn: {} });
+
+    const data = sheetPortal.getDataRange().getValues();
+    if (!data || data.length < 2) return jsonOut_({ ok: false, error: 'no_data', pointsByColumn: {} });
+
+    const header = data[0].map(h => String(h || '').trim().toUpperCase());
+
+    let rowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (
+        normalizeName_(data[i][0]) === nombre &&
+        normalizeName_(data[i][1]) === apellido
+      ) {
+        rowIndex = i;
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      return jsonOut_({ ok: false, error: 'user_not_found', pointsByColumn: {} });
+    }
+
+    const row = data[rowIndex];
+    const codigoGuardado = String(row[2] || '').trim().toUpperCase(); // tabla PortalB
+    const tokenGuardado = String(row[3] || '').trim();
+    const statusGuardado = String(row[4] || '').trim();
+
+    const codigoHoja = getPrimaryCodeFromCodeSheet_(ss); // hoja codigo
+    const codigoEfectivo = getEffectiveLoginCode_(codigoGuardado, codigoHoja);
+
+    if (codigoEfectivo.toLowerCase() === 'bloc') {
+      return jsonOut_({ ok: false, blocked: true, error: 'blocked', pointsByColumn: {} });
+    }
+
+    if (codeParam && codigoEfectivo && codeParam !== codigoEfectivo) {
+      return jsonOut_({ ok: false, error: 'code_mismatch', pointsByColumn: {} });
+    }
+
+    if (tokenParam && tokenGuardado && tokenParam !== tokenGuardado) {
+      return jsonOut_({ ok: false, error: 'session_mismatch', pointsByColumn: {} });
+    }
+
+    let filter = null;
+    if (columnsParam) {
+      filter = {};
+      columnsParam.split(',').forEach((c) => {
+        const col = String(c || '').trim().toUpperCase();
+        if (/^U\d+L\d+(?:T|E|OT)\d+$/i.test(col)) filter[col] = true;
+      });
+    }
+
+    const pointsByColumn = {};
+    for (let c = 0; c < header.length; c++) {
+      const colName = header[c];
+      if (!/^U\d+L\d+(?:T|E|OT)\d+$/i.test(colName)) continue;
+      if (filter && !filter[colName]) continue;
+
+      const parsed = parseLessonPoints_(row[c]);
+      if (parsed !== null) {
+        pointsByColumn[colName] = parsed;
+      }
+    }
+
+    return jsonOut_({
+      ok: true,
+      nombre: String(row[0] || '').trim(),
+      apellido: String(row[1] || '').trim(),
+      codigo: codigoEfectivo || codigoGuardado,
+      status: statusGuardado,
+      pointsByColumn: pointsByColumn
+    });
+  }
+
+  // --- MODOS: RANKING ---
+  const rankingModeToColumn = {
+    u1l1: 'U1L1T1',
+    u1l1e1: 'U1L1E1',
+    u1l1e2: 'U1L1E2',
+    u1l1e3: 'U1L1E3',
+    u1l1e4: 'U1L1E4',
+    u1l1t1: 'U1L1T1',
+    u1lt1: 'U1L1T1',
+    u1l1t2: 'U1L1T2',
+    u1l1t3: 'U1L1T3',
+    u1l1t4: 'U1L1T4',
+    u1l0t1: 'U1L0T1',
+    u1l0t2: 'U1L0T2',
+    u1l0t3: 'U1L0T3',
+    u1l0t4: 'U1L0T4',
+    u1l2t1: 'U1L2T1',
+    u1l2t2: 'U1L2T2',
+    u1l2t3: 'U1L2T3',
+    u1l2t4: 'U1L2T4',
+    u1l3t1: 'U1L3T1',
+    u1l3t2: 'U1L3T2',
+    u1l3t3: 'U1L3T3',
+    u1l3t4: 'U1L3T4',
+    u1l4t1: 'U1L4T1',
+    u1l4t2: 'U1L4T2',
+    u1l4t3: 'U1L4T3',
+    u1l4t4: 'U1L4T4',
+    u1l5t1: 'U1L5T1',
+    u1l5t2: 'U1L5T2',
+    u1l5t3: 'U1L5T3',
+    u1l5t4: 'U1L5T4',
+    u1l6t1: 'U1L6T1',
+    u1l6t2: 'U1L6T2',
+    u1l6t3: 'U1L6T3',
+    u1l6t4: 'U1L6T4',
+    u1l7t1: 'U1L7T1',
+    u1l7t2: 'U1L7T2',
+    u1l7t3: 'U1L7T3',
+    u1l7t4: 'U1L7T4',
+    u2l1t1: 'U2L1T1',
+    u2l1t2: 'U2L1T2',
+    u2l1t3: 'U2L1T3',
+    u2l1t4: 'U2L1T4',
+   
+  };
+
+  const scopeRaw = String((e && e.parameter && e.parameter.scope) || 'alfabeto').toLowerCase();
+  const validScopes = { de0a100: true, alfabeto: true, silabas: true, paises: true, gentilicios: true, idiomas: true, profesiones1: true, lugares: true, finde1: true };
+  const scope = validScopes[scopeRaw] ? scopeRaw : 'alfabeto';
+
+  const SCOPE_CONFIG = {
+    de0a100: {
+      groupToken: '__DE0A100_FROM_F_TO_I__',
+      groupLabel: 'DE0A100_FROM_F_TO_I',
+      groupStart: 5,
+      groupEnd: 8,
+      testTokens: ['__TEST1_FROM_F__', '__TEST2_FROM_G__', '__TEST3_FROM_H__', '__TEST4_FROM_I__'],
+      testLabels: ['TEST1_FROM_F', 'TEST2_FROM_G', 'TEST3_FROM_H', 'TEST4_FROM_I'],
+      testCols: [5, 6, 7, 8]
+    },
+    alfabeto: {
+      groupToken: '__ALFABETO_FROM_J_TO_M__',
+      groupLabel: 'ALFABETO_FROM_J_TO_M',
+      groupStart: 9,
+      groupEnd: 12,
+      testTokens: ['__TEST1_FROM_J__', '__TEST2_FROM_K__', '__TEST3_FROM_L__', '__TEST4_FROM_M__'],
+      testLabels: ['TEST1_FROM_J', 'TEST2_FROM_K', 'TEST3_FROM_L', 'TEST4_FROM_M'],
+      testCols: [9, 10, 11, 12]
+    },
+    silabas: {
+      groupToken: '__SILABAS_FROM_N_TO_Q__',
+      groupLabel: 'SILABAS_FROM_N_TO_Q',
+      groupStart: 13,
+      groupEnd: 16,
+      testTokens: ['__TEST1_FROM_N__', '__TEST2_FROM_O__', '__TEST3_FROM_P__', '__TEST4_FROM_Q__'],
+      testLabels: ['TEST1_FROM_N', 'TEST2_FROM_O', 'TEST3_FROM_P', 'TEST4_FROM_Q'],
+      testCols: [13, 14, 15, 16]
+    },
+    paises: {
+      groupToken: '__PAISES_FROM_R_TO_U__',
+      groupLabel: 'PAISES_FROM_R_TO_U',
+      groupStart: 17,
+      groupEnd: 20,
+      testTokens: ['__TEST1_FROM_R__', '__TEST2_FROM_S__', '__TEST3_FROM_T__', '__TEST4_FROM_U__'],
+      testLabels: ['TEST1_FROM_R', 'TEST2_FROM_S', 'TEST3_FROM_T', 'TEST4_FROM_U'],
+      testCols: [17, 18, 19, 20]
+    },
+    gentilicios: {
+      groupToken: '__GENTILICIOS_FROM_V_TO_Y__',
+      groupLabel: 'GENTILICIOS_FROM_V_TO_Y',
+      groupStart: 21,
+      groupEnd: 24,
+      testTokens: ['__TEST1_FROM_V__', '__TEST2_FROM_W__', '__TEST3_FROM_X__', '__TEST4_FROM_Y__'],
+      testLabels: ['TEST1_FROM_V', 'TEST2_FROM_W', 'TEST3_FROM_X', 'TEST4_FROM_Y'],
+      testCols: [21, 22, 23, 24]
+    },
+    idiomas: {
+      groupToken: '__IDIOMAS_FROM_Z_TO_AC__',
+      groupLabel: 'IDIOMAS_FROM_Z_TO_AC',
+      groupStart: 25,
+      groupEnd: 28,
+      testTokens: ['__TEST1_FROM_Z__', '__TEST2_FROM_AA__', '__TEST3_FROM_AB__', '__TEST4_FROM_AC__'],
+      testLabels: ['TEST1_FROM_Z', 'TEST2_FROM_AA', 'TEST3_FROM_AB', 'TEST4_FROM_AC'],
+      testCols: [25, 26, 27, 28]
+    },
+    profesiones1: {
+      groupToken: '__PROFESIONES1_FROM_AD_TO_AG__',
+      groupLabel: 'PROFESIONES1_FROM_AD_TO_AG',
+      groupStart: 29,
+      groupEnd: 32,
+      testTokens: ['__TEST1_FROM_AD__', '__TEST2_FROM_AE__', '__TEST3_FROM_AF__', '__TEST4_FROM_AG__'],
+      testLabels: ['TEST1_FROM_AD', 'TEST2_FROM_AE', 'TEST3_FROM_AF', 'TEST4_FROM_AG'],
+      testCols: [29, 30, 31, 32]
+    },
+    lugares: {
+      groupToken: '__LUGARES_FROM_AH_TO_AK__',
+      groupLabel: 'LUGARES_FROM_AH_TO_AK',
+      groupStart: 33,
+      groupEnd: 36,
+      testTokens: ['__TEST1_FROM_AH__', '__TEST2_FROM_AI__', '__TEST3_FROM_AJ__', '__TEST4_FROM_AK__'],
+      testLabels: ['TEST1_FROM_AH', 'TEST2_FROM_AI', 'TEST3_FROM_AJ', 'TEST4_FROM_AK'],
+      testCols: [33, 34, 35, 36]
+    },
+    finde1: {
+      groupToken: '__FINDE1_FROM_AG_TO_AJ__',
+      groupLabel: 'FINDE1_FROM_AG_TO_AJ',
+      groupStart: 32,
+      groupEnd: 35,
+      testTokens: ['__TEST1_FROM_AG__', '__TEST2_FROM_AH__', '__TEST3_FROM_AI__', '__TEST4_FROM_AJ__'],
+      testLabels: ['TEST1_FROM_AG', 'TEST2_FROM_AH', 'TEST3_FROM_AI', 'TEST4_FROM_AJ'],
+      testCols: [32, 33, 34, 35]
+    }
+  };
+
+  const scopeCfg = SCOPE_CONFIG[scope];
+
+  const SPECIAL_TOKENS = {
+    '__GENERAL_FROM_F__': { kind: 'range', start: 5, end: null, label: 'GENERAL_FROM_F' }
+  };
+
+  Object.keys(SCOPE_CONFIG).forEach((k) => {
+    const cfg = SCOPE_CONFIG[k];
+    SPECIAL_TOKENS[cfg.groupToken] = {
+      kind: 'range',
+      start: cfg.groupStart,
+      end: cfg.groupEnd,
+      label: cfg.groupLabel
+    };
+    for (let i = 0; i < 4; i++) {
+      SPECIAL_TOKENS[cfg.testTokens[i]] = {
+        kind: 'single',
+        index: cfg.testCols[i],
+        label: cfg.testLabels[i]
+      };
+    }
+  });
+
+  let columnaRanking = null;
+
+  if (mode === 'ranking_general' || mode === 'general') {
+    columnaRanking = '__GENERAL_FROM_F__';
+  } else if (mode === 'ranking_de0a100' || mode === 'de0a100') {
+    columnaRanking = SCOPE_CONFIG.de0a100.groupToken;
+  } else if (mode === 'ranking_alfabeto' || mode === 'alfabeto') {
+    columnaRanking = SCOPE_CONFIG.alfabeto.groupToken;
+  } else if (mode === 'ranking_silabas' || mode === 'silabas') {
+    columnaRanking = SCOPE_CONFIG.silabas.groupToken;
+  } else if (mode === 'ranking_paises' || mode === 'paises') {
+    columnaRanking = SCOPE_CONFIG.paises.groupToken;
+  } else if (mode === 'ranking_gentilicios' || mode === 'gentilicios') {
+    columnaRanking = SCOPE_CONFIG.gentilicios.groupToken;
+  } else if (mode === 'ranking_idiomas' || mode === 'idiomas') {
+    columnaRanking = SCOPE_CONFIG.idiomas.groupToken;
+  } else if (mode === 'ranking_profesiones1' || mode === 'profesiones1') {
+    columnaRanking = SCOPE_CONFIG.profesiones1.groupToken;
+  } else if (mode === 'ranking_lugares' || mode === 'lugares') {
+    columnaRanking = SCOPE_CONFIG.lugares.groupToken;
+  } else if (mode === 'ranking_finde1' || mode === 'finde1') {
+    columnaRanking = SCOPE_CONFIG.finde1.groupToken;
+  } else if (mode === 'ranking_test1' || mode === 'test1' || mode === 'ranking_ronda' || mode === 'ronda') {
+    columnaRanking = scopeCfg.testTokens[0];
+  } else if (mode === 'ranking_test2' || mode === 'test2') {
+    columnaRanking = scopeCfg.testTokens[1];
+  } else if (mode === 'ranking_test3' || mode === 'test3') {
+    columnaRanking = scopeCfg.testTokens[2];
+  } else if (mode === 'ranking_test4' || mode === 'test4') {
+    columnaRanking = scopeCfg.testTokens[3];
+  } else if (mode === 'ranking') {
+    const columnaParam = String((e && e.parameter && e.parameter.columna) || 'U1L1T1').trim().toUpperCase();
+
+    if (columnaParam === 'GENERAL' || columnaParam === 'TOTAL') {
+      columnaRanking = '__GENERAL_FROM_F__';
+    } else if (columnaParam === 'DE0A100') {
+      columnaRanking = SCOPE_CONFIG.de0a100.groupToken;
+    } else if (columnaParam === 'ALFABETO') {
+      columnaRanking = SCOPE_CONFIG.alfabeto.groupToken;
+    } else if (columnaParam === 'SILABAS') {
+      columnaRanking = SCOPE_CONFIG.silabas.groupToken;
+    } else if (columnaParam === 'PAISES') {
+      columnaRanking = SCOPE_CONFIG.paises.groupToken;
+    } else if (columnaParam === 'GENTILICIOS') {
+      columnaRanking = SCOPE_CONFIG.gentilicios.groupToken;
+    } else if (columnaParam === 'IDIOMAS') {
+      columnaRanking = SCOPE_CONFIG.idiomas.groupToken;
+    } else if (columnaParam === 'PROFESIONES1') {
+      columnaRanking = SCOPE_CONFIG.profesiones1.groupToken;
+    } else if (columnaParam === 'LUGARES') {
+      columnaRanking = SCOPE_CONFIG.lugares.groupToken;
+    } else if (columnaParam === 'FINDE1' || columnaParam === 'EL FIN DE SEMANA') {
+      columnaRanking = SCOPE_CONFIG.finde1.groupToken;
+    } else if (columnaParam === 'TEST1' || columnaParam === 'RONDA') {
+      columnaRanking = scopeCfg.testTokens[0];
+    } else if (columnaParam === 'TEST2') {
+      columnaRanking = scopeCfg.testTokens[1];
+    } else if (columnaParam === 'TEST3') {
+      columnaRanking = scopeCfg.testTokens[2];
+    } else if (columnaParam === 'TEST4') {
+      columnaRanking = scopeCfg.testTokens[3];
+    } else {
+      columnaRanking = columnaParam;
+    }
+  } else if (rankingModeToColumn[mode]) {
+    columnaRanking = rankingModeToColumn[mode];
+  }
+
+  if (columnaRanking) {
+    const sheetPortal = ss.getSheetByName('PortalB');
+    if (!sheetPortal) return jsonOut_({ ok: false, error: 'no_sheet', ranking: [] });
+
+    const data = sheetPortal.getDataRange().getValues();
+    if (!data || data.length < 1) return jsonOut_({ ok: false, error: 'no_data', ranking: [] });
+
+    const header = data[0].map(h => String(h || '').trim().toUpperCase());
+    const special = SPECIAL_TOKENS[columnaRanking] || null;
+    const colIndex = special ? -1 : header.indexOf(columnaRanking);
+
+    if (!special && colIndex === -1) {
+      return jsonOut_({
+        ok: false,
+        error: 'column_not_found',
+        columna: columnaRanking,
+        ranking: []
+      });
+    }
+
+    const ranking = [];
+    for (let i = 1; i < data.length; i++) {
+      const nombre = String(data[i][0] || '').trim();
+      const apellido = String(data[i][1] || '').trim();
+      if (!nombre && !apellido) continue;
+      if (isExcludedFromRanking_(nombre, apellido)) continue;
+
+      let puntos = 0;
+      let puntosRaw = 0;
+      let forcedUnlock = false;
+      if (special) {
+        if (special.kind === 'single') {
+          const cellValue = data[i][special.index];
+          puntos = lessonPointsToNumber_(cellValue);
+          const parsedRaw = parseLessonPoints_(cellValue);
+          puntosRaw = parsedRaw !== null ? parsedRaw : puntos;
+          forcedUnlock = isFinalUnlockPoints_(cellValue);
+        } else {
+          const start = special.start;
+          const end = special.end == null ? data[i].length - 1 : special.end;
+          for (let j = start; j <= end && j < data[i].length; j++) {
+            puntos += lessonPointsToNumber_(data[i][j]);
+          }
+          puntosRaw = puntos;
+        }
+      } else {
+        const cellValue = data[i][colIndex];
+        puntos = lessonPointsToNumber_(cellValue);
+        const parsedRaw = parseLessonPoints_(cellValue);
+        puntosRaw = parsedRaw !== null ? parsedRaw : puntos;
+        forcedUnlock = isFinalUnlockPoints_(cellValue);
+      }
+
+      ranking.push({ nombre, apellido, puntos, puntosRaw, forcedUnlock });
+    }
+
+    ranking.sort((a, b) => {
+      if (b.puntos !== a.puntos) return b.puntos - a.puntos;
+      return (a.nombre + ' ' + a.apellido).toLowerCase().localeCompare((b.nombre + ' ' + b.apellido).toLowerCase());
+    });
+
+    return jsonOut_({
+      ok: true,
+      columna: special ? special.label : columnaRanking,
+      ranking: ranking.map((u, idx) => ({
+        puesto: idx + 1,
+        nombre: u.nombre,
+        apellido: u.apellido,
+        puntos: u.puntos,
+        puntosRaw: u.puntosRaw,
+        forcedUnlock: u.forcedUnlock
+      }))
+    });
+  }
+
+  // --- MODO: VERIFY ---
+  if (mode === 'verify') {
+    const codeToVerify = String((e && e.parameter && e.parameter.code) || '').trim().toUpperCase();
+    const nombre = normalizeName_(e && e.parameter && e.parameter.nombre);
+    const apellido = normalizeName_(e && e.parameter && e.parameter.apellido);
+    const tokenCliente = String((e && e.parameter && e.parameter.token) || '').trim();
+
+    const sheetPortal = ss.getSheetByName('PortalB');
+    const codigoHoja = getPrimaryCodeFromCodeSheet_(ss);
+
+    if (sheetPortal && nombre && apellido) {
+      const data = sheetPortal.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (
+          normalizeName_(row[0]) === nombre &&
+          normalizeName_(row[1]) === apellido
+        ) {
+          const codigoTabla = String(row[2] || '').trim().toUpperCase();
+          const tokenGuardado = String(row[3] || '').trim();
+          const codigoEfectivo = getEffectiveLoginCode_(codigoTabla, codigoHoja);
+
+          // Mantener lógica bloc por tabla
+          if (codigoEfectivo.toLowerCase() === 'bloc') {
+            return jsonOut_({ valid: false, blocked: true });
+          }
+
+          if (!tokenCliente) {
+            if (!codigoEfectivo || codeToVerify !== codigoEfectivo) {
+              return jsonOut_({ valid: false });
+            }
+
+            if (tokenGuardado) {
+              return jsonOut_({ valid: false, reason: 'already_active' });
+            }
+
+            return jsonOut_({ valid: true });
+          }
+
+          // Con token: validar sesión y validar que no haya cambiado el código efectivo
+          if (tokenCliente !== tokenGuardado) {
+            const timestamp = Utilities.formatDate(new Date(), 'GMT+1', 'dd/MM/yyyy HH:mm:ss');
+            sheetPortal.getRange(i + 1, 5).setValue('OFF (' + timestamp + ')');
+            return jsonOut_({ valid: false, reason: 'session_mismatch' });
+          }
+
+          if (!codigoEfectivo || codeToVerify !== codigoEfectivo) {
+            const timestamp = Utilities.formatDate(new Date(), 'GMT+1', 'dd/MM/yyyy HH:mm:ss');
+            sheetPortal.getRange(i + 1, 5).setValue('OFF (' + timestamp + ')');
+            return jsonOut_({ valid: false, reason: 'code_changed' });
+          }
+
+          return jsonOut_({ valid: true });
+        }
+      }
+    }
+
+    // Usuario no encontrado en PortalB: fallback a hoja codigo/sinc
+    const validCodes = getCodeValues_(ss);
+    const isValid = validCodes.indexOf(codeToVerify) !== -1;
+    return jsonOut_({ valid: isValid });
+  }
+
+  return ContentService.createTextOutput('Invalid mode');
+}
+
+function doPost(e) {
+  const ss = SpreadsheetApp.openById('1clEwUEpPGX98EL34g4UirO98cF26VTjrM32c2JC6Ums');
+
+  let data = {};
+  try {
+    data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return ContentService.createTextOutput('Invalid JSON');
+  }
+
+  // --- CHAT: guardar mensaje en primera fila libre de la columna ---
+  const chatPostResponse = tryHandleChatPost_(ss, data);
+  if (chatPostResponse) return chatPostResponse;
+
+  // --- SINCRONIZACION INTELIGENTE (sinc.gs) ---
+  if (data.type === 'sinc_sync' && typeof tryHandleSincSync_ === 'function') {
+    try {
+      const syncResponse = tryHandleSincSync_(ss, data);
+      if (syncResponse) return syncResponse;
+    } catch (err) {
+      return jsonOut_({ success: false, message: err.message || 'Error en tryHandleSincSync_' });
+    }
+  }
+
+  // --- FALLBACK sinc_sync (si no existe tryHandleSincSync_ o devuelve null) ---
+  if (data.type === 'sinc_sync') {
+    try {
+      const sheet = ss.getSheetByName('PortalB');
+      if (!sheet) return jsonOut_({ success: false, message: 'PortalB Not Found' });
+
+      const nombre = String(data.nombre || '').trim();
+      const apellido = String(data.apellido || '').trim();
+      if (!nombre || !apellido) return jsonOut_({ success: false, message: 'Nombre/apellido requeridos' });
+
+      const expectedPassword = getSyncPassword_(ss);
+      const receivedPassword = String(data.password || '').trim().toUpperCase();
+
+      if (!receivedPassword) return jsonOut_({ success: false, message: 'Contraseña requerida' });
+      if (!expectedPassword) return jsonOut_({ success: false, message: 'No hay contraseña configurada' });
+      if (receivedPassword !== expectedPassword) return jsonOut_({ success: false, message: 'Contraseña incorrecta' });
+
+      const points = (data.points && typeof data.points === 'object' && !Array.isArray(data.points)) ? data.points : {};
+      const pointKeys = Object.keys(points);
+      if (pointKeys.length === 0) {
+        return jsonOut_({ success: true, changedCount: 0, skippedCount: 0, updatedCount: 0, fastPath: true });
+      }
+
+      const rows = sheet.getDataRange().getValues();
+      if (!rows || rows.length < 1) return jsonOut_({ success: false, message: 'No Data' });
+
+      const userKey = normalizeUser_(nombre, apellido);
+      let userRowIndex = -1;
+      for (let i = 1; i < rows.length; i++) {
+        if (normalizeUser_(rows[i][0], rows[i][1]) === userKey) {
+          userRowIndex = i;
+          break;
+        }
+      }
+      if (userRowIndex === -1) return jsonOut_({ success: false, message: 'User Not Found' });
+
+      const header = rows[0].map(h => String(h || '').trim().toUpperCase());
+      const headerMap = {};
+      for (let i = 0; i < header.length; i++) headerMap[header[i]] = i;
+
+      let changedCount = 0;
+      let skippedCount = 0;
+
+      for (let k = 0; k < pointKeys.length; k++) {
+        const rawColumn = pointKeys[k];
+        const column = String(rawColumn || '').trim().toUpperCase();
+        if (!column || headerMap[column] == null) {
+          skippedCount++;
+          continue;
+        }
+
+        const parsed = parseLessonPoints_(points[rawColumn]);
+        if (parsed === null) {
+          skippedCount++;
+          continue;
+        }
+
+        const colIndex = headerMap[column];
+        const current = rows[userRowIndex][colIndex];
+        const currentParsed = parseLessonPoints_(current);
+        const same = currentParsed !== null
+          ? String(currentParsed) === String(parsed)
+          : String(current == null ? '' : current).trim() === String(parsed);
+
+        if (same) {
+          skippedCount++;
+          continue;
+        }
+
+        sheet.getRange(userRowIndex + 1, colIndex + 1).setValue(parsed);
+        rows[userRowIndex][colIndex] = parsed;
+        changedCount++;
+      }
+
+      return jsonOut_({
+        success: true,
+        changedCount: changedCount,
+        updatedCount: changedCount,
+        skippedCount: skippedCount,
+        fastPath: changedCount === 0
+      });
+    } catch (err) {
+      return jsonOut_({ success: false, message: err.message || 'Error interno de sincronización' });
+    }
+  }
+
+  // --- ACTUALIZAR ESTADO ---
+  if (data.type === 'status' && data.nombre && data.apellido) {
+    const sheet = ss.getSheetByName('PortalB');
+    if (!sheet) return ContentService.createTextOutput('PortalB Not Found');
+
+    const rows = sheet.getDataRange().getValues();
+    const usuario = normalizeUser_(data.nombre, data.apellido);
+
+    for (let i = 1; i < rows.length; i++) {
+      if (normalizeUser_(rows[i][0], rows[i][1]) === usuario) {
+        let finalStatus = 'En linea';
+        if (String(data.estado || '').toUpperCase() === 'OFF') {
+          const timestamp = Utilities.formatDate(new Date(), 'GMT+1', 'dd/MM/yyyy HH:mm:ss');
+          finalStatus = 'OFF (' + timestamp + ')';
+        }
+        sheet.getRange(i + 1, 5).setValue(finalStatus);
+        return ContentService.createTextOutput('Status Updated');
+      }
+    }
+    return ContentService.createTextOutput('User Not Found');
+  }
+
+  // --- GUARDAR PUNTOS DE LECCION ---
+  if (data.type === 'lesson_points' && data.nombre && data.apellido) {
+    const sheet = ss.getSheetByName('PortalB');
+    if (!sheet) return ContentService.createTextOutput('PortalB Not Found');
+
+    const rows = sheet.getDataRange().getValues();
+    if (!rows || rows.length < 1) return ContentService.createTextOutput('No Data');
+
+    const usuario = normalizeUser_(data.nombre, data.apellido);
+    const columnaObjetivo = String(data.columna || 'U1L1E1').trim().toUpperCase();
+    const header = rows[0].map(h => String(h || '').trim().toUpperCase());
+    const colIndex = header.indexOf(columnaObjetivo);
+    if (colIndex === -1) return ContentService.createTextOutput('Column Not Found');
+
+    const puntos = parseLessonPoints_(data.puntos);
+    if (puntos === null) return ContentService.createTextOutput('Invalid Points');
+
+    for (let i = 1; i < rows.length; i++) {
+      if (normalizeUser_(rows[i][0], rows[i][1]) === usuario) {
+        sheet.getRange(i + 1, colIndex + 1).setValue(puntos);
+        return ContentService.createTextOutput('Lesson Points Saved');
+      }
+    }
+    return ContentService.createTextOutput('User Not Found');
+  }
+
+  // --- LOGIN ---
+  if (data.type === 'portalB' && data.nombre) {
+    const sheet = ss.getSheetByName('PortalB');
+    if (!sheet) return ContentService.createTextOutput('PortalB Not Found');
+
+    const rows = sheet.getDataRange().getValues();
+    const nombre = String(data.nombre || '').trim();
+    const apellido = String(data.apellido || '').trim();
+    const usuario = normalizeUser_(nombre, apellido);
+
+    for (let i = 1; i < rows.length; i++) {
+      if (normalizeUser_(rows[i][0], rows[i][1]) === usuario) {
+        sheet.getRange(i + 1, 3).setValue(data.codigo || '');
+        sheet.getRange(i + 1, 4).setValue(data.token || '');
+        sheet.getRange(i + 1, 5).setValue('En linea');
+        return ContentService.createTextOutput('Login Registered');
+      }
+    }
+
+    sheet.appendRow([nombre, apellido, data.codigo || '', data.token || '', 'En linea']);
+    return ContentService.createTextOutput('User Created');
+  }
+
+  return ContentService.createTextOutput('OK');
+}

@@ -12354,7 +12354,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
         setTimeout(() => {
             const idx = flashcards.indexOf(card);
-            playCardAudioThen(idx, () => showCountdown(card));
+            playCardAudioThen(idx, () => showCountdown(card), card);
         }, 1000);
 
         // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -12483,7 +12483,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
 
                 // Reproduce el audio si existe y después muestra countdown
                 const audioIndex = flashcards.indexOf(card);
-                playCardAudioThen(audioIndex, () => showCountdown(card));
+                playCardAudioThen(audioIndex, () => showCountdown(card), card);
             }, 2000);
 
             // Programar la aparición/actualización/ocultación del cuadro de stats
@@ -14586,18 +14586,18 @@ function getAudioSrcForCountryName(textoBack) {
     const key = normalizeAudioKey(textoBack);
     if (!key) return null;
     const mapping = {
-        'me encanta': 'encanta-1.wav',
-        'te encanta': 'encanta-2.wav',
-        'le encanta': 'encanta-3.wav',
-        'nos encanta': 'encanta-4.wav',
-        'os encanta': 'encanta-5.wav',
-        'les encanta': 'encanta-6.wav',
-        'me encantan': 'encantan-1.wav',
-        'te encantan': 'encantan-2.wav',
-        'le encantan': 'encantan-3.wav',
-        'nos encantan': 'encantan-4.wav',
-        'os encantan': 'encantan-5.wav',
-        'les encantan': 'encantan-6.wav'
+        'meencanta': 'encanta-1.wav',
+        'teencanta': 'encanta-2.wav',
+        'leencanta': 'encanta-3.wav',
+        'nosencanta': 'encanta-4.wav',
+        'osencanta': 'encanta-5.wav',
+        'lesencanta': 'encanta-6.wav',
+        'meencantan': 'encantan-1.wav',
+        'teencantan': 'encantan-2.wav',
+        'leencantan': 'encantan-3.wav',
+        'nosencantan': 'encantan-4.wav',
+        'osencantan': 'encantan-5.wav',
+        'lesencantan': 'encantan-6.wav'
     };
     const file = mapping[key] || audioFilenameByKey[key];
     return file ? baseUrl + file : null;
@@ -14616,13 +14616,24 @@ function hasValidAudio(index) {
 }
 
 // Reproduce audio y garantiza avanzar aunque el evento 'ended' no llegue.
-function playCardAudioThen(index, onDone) {
+function playCardAudioThen(index, onDone, card) {
     let finished = false;
     const finish = () => {
         if (finished) return;
         finished = true;
         try { onDone && onDone(); } catch (e) {}
     };
+
+    if (!hasValidAudio(index) && card && audios[index]) {
+        const answer = card.dataset.answer || getCountryText(card.querySelector('.back'));
+        const src = getAudioSrcForCountryName(answer);
+        if (src) {
+            try { audios[index].pause(); } catch {}
+            audios[index].currentTime = 0;
+            audios[index].preload = 'auto';
+            audios[index].src = src;
+        }
+    }
 
     if (!hasValidAudio(index)) {
         finish();
@@ -14871,7 +14882,7 @@ function attachFlashcardHandlers() {
                     
                     // Reproducir audio si existe y después mostrar countdown
                     const audioIndex = flashcards.indexOf(card);
-                        playCardAudioThen(audioIndex, () => showCountdown(card));
+                        playCardAudioThen(audioIndex, () => showCountdown(card), card);
                 }
                 // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
                 updateSkipButtonState();

@@ -432,6 +432,14 @@
         .flashcard.flipped {
             transform: rotateY(180deg); /* Al hacer clic, se voltea la tarjeta */
         }
+
+        .flashcard.flipped .front {
+            pointer-events: none !important;
+        }
+
+        .flashcard.flipped .back {
+            pointer-events: auto !important;
+        }
     
 /* Contenedor de botones */
 .button-container {
@@ -33479,17 +33487,25 @@ function showMultipleChoice(backElement, correctAnswer) {
         optionButton.dataset.answer = option;
         optionButton.dataset.isCorrect = option === correctAnswer ? 'true' : 'false';
         
+        const selectOption = (event) => {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+            if (optionButton.classList.contains('disabled') || optionButton.dataset.selectionHandled === 'true') return;
+            optionButton.dataset.selectionHandled = 'true';
+            handleMultipleChoiceSelection(optionButton, correctAnswer, backElement);
+        };
+
         // Vibración al presionar la opción (feedback inmediato)
-        optionButton.addEventListener('pointerdown', () => {
+        optionButton.addEventListener('pointerdown', (event) => {
+            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
             if (!optionButton.classList.contains('disabled')) {
                 try { vibrar(100); } catch(e) {}
             }
-        }, { passive: true });
-
-        // Event listener para manejo de clics
-        optionButton.addEventListener('click', () => {
-            handleMultipleChoiceSelection(optionButton, correctAnswer, backElement);
         });
+
+        // Usar pointerup evita que el click de la tarjeta bloquee alguna opción en móvil/Chrome.
+        optionButton.addEventListener('pointerup', selectOption);
+        optionButton.addEventListener('click', selectOption);
         
         optionsContainer.appendChild(optionButton);
     });

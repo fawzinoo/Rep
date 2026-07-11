@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta charset="UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -14508,13 +14509,40 @@ function showIncorrectWords() {
 let correctWords = [];
 let incorrectWords = [];
 const cardOptionsCache = new Map();
+const INDEFINITE_ARTICLE_SET = new Set(['un', 'una', 'unos', 'unas']);
+const INDEFINITE_ARTICLE_LETTERS = ['u', 'n', 'o', 'a', 's'];
+
+function getIndefiniteArticleExercise(answer) {
+    const match = normalizeAnswerText(answer).match(/^(un|una|unos|unas)\s+(.+)$/i);
+    if (!match) return null;
+    return {
+        article: match[1].toLowerCase(),
+        noun: match[2].trim(),
+        fullAnswer: normalizeAnswerText(answer)
+    };
+}
+
+function isExerciseMinorWord(word) {
+    const normalized = normalizeAnswerText(word).toLowerCase();
+    return isMinorWord(normalized) && !INDEFINITE_ARTICLE_SET.has(normalized);
+}
 
 function generateLettersForWord(correctAnswer) {
     const cleanAnswer = normalizeAnswerText(correctAnswer);
+    const articleOnly = cleanAnswer.toLowerCase();
+    if (INDEFINITE_ARTICLE_SET.has(articleOnly)) {
+        return {
+            answerKey: articleOnly,
+            wordLetters: [INDEFINITE_ARTICLE_LETTERS],
+            letters: INDEFINITE_ARTICLE_LETTERS,
+            correctWord: cleanAnswer,
+            originalAnswer: correctAnswer
+        };
+    }
     const words = splitAnswerIntoWords(cleanAnswer);
     
     const wordLetters = words.map(word => {
-        if (isMinorWord(word)) return null; // Saltar palabras menores
+        if (isExerciseMinorWord(word)) return null; // Saltar palabras menores
         const originalWord = word.toLowerCase();
         let letters = originalWord.split('');
         
@@ -14596,6 +14624,8 @@ function showLetterCombination(backElement, correctAnswer) {
     const cards = Array.from(document.querySelectorAll('.flashcard'));
     const cardIndex = cards.indexOf(cardEl);
     let keyIndex = cardIndex;
+    const articleExercise = getIndefiniteArticleExercise(correctAnswer);
+    const exerciseAnswer = articleExercise ? articleExercise.article : correctAnswer;
     
     // Si ya tenemos estado para esta tarjeta, restaurarlo en lugar de resetear
     if (restoreCardState(cardIndex)) {
@@ -14616,7 +14646,7 @@ function showLetterCombination(backElement, correctAnswer) {
     const container = document.createElement('div');
     container.className = 'letter-combination-container';
     
-    const cleanAnswer = normalizeAnswerText(correctAnswer);
+    const cleanAnswer = normalizeAnswerText(exerciseAnswer);
     const words = splitAnswerIntoWords(cleanAnswer);
     currentPhraseWords = words; // Guardar en global
     targetWordLengths = words.map(w => w.length);
@@ -14628,7 +14658,7 @@ function showLetterCombination(backElement, correctAnswer) {
     let displayRows = [];
     let currentMinorGroup = [];
     words.forEach((word, idx) => {
-        if (isMinorWord(word)) {
+        if (isExerciseMinorWord(word)) {
             currentMinorGroup.push({word, idx});
         } else {
             displayRows.push({ 
@@ -14675,6 +14705,7 @@ function showLetterCombination(backElement, correctAnswer) {
     }).join('');
     
     wordAreaDiv.innerHTML = `
+        ${articleExercise ? `<div class="article-context-noun" style="font-family: 'Poppins', sans-serif; font-size: clamp(1.35rem, 4.2vw, 2.2rem); font-weight: 900; color: #ffffff; line-height: 1; margin: 0 auto 14px; text-align: center; text-transform: lowercase; text-shadow: 0 5px 18px rgba(0,0,0,0.35);">${articleExercise.noun}</div>` : ''}
         <div class="formation-rows-wrapper" style="display: inline-flex; flex-direction: column; align-items: flex-start; width: fit-content; margin: 0 auto;">
             ${displayContainersHtml}
         </div>
@@ -14697,6 +14728,9 @@ function showLetterCombination(backElement, correctAnswer) {
         letterData = { letterData: generateLettersForWord(cleanAnswer) };
         cardOptionsCache.set(keyIndex, letterData);
     }
+    if (articleExercise && letterData && letterData.letterData) {
+        letterData.letterData.originalAnswer = articleExercise.fullAnswer;
+    }
     
     currentCorrectWordLength = letterData.letterData.correctWord.replace(/\s+/g, '').length;
 
@@ -14708,7 +14742,7 @@ function showLetterCombination(backElement, correctAnswer) {
         selectedButtons = new Array(currentCorrectWordLength).fill(null);
         
         words.forEach((word, idx) => {
-            if (isMinorWord(word)) {
+            if (isExerciseMinorWord(word)) {
                 const letters = word.toLowerCase().split('');
                 let start = 0;
                 for (let i = 0; i < idx; i++) start += targetWordLengths[i];
@@ -14728,7 +14762,7 @@ function showLetterCombination(backElement, correctAnswer) {
     letterData.letterData.wordLetters.forEach((wordArr, wordIdx) => {
         if (wordArr === null) return;
         const originalWord = currentPhraseWords[wordIdx];
-        if (originalWord && isMinorWord(originalWord)) return;
+        if (originalWord && isExerciseMinorWord(originalWord)) return;
         
         // Función interna para crear una fila de botones
         const createRow = (letters) => {
@@ -14838,7 +14872,7 @@ function setActiveWord(index) {
 
     // Mostrar/ocultar X del botón de esta ventana según si tiene letras
     const clearBtn = document.getElementById(`clear-word-btn-${index}`);
-    if (clearBtn && !isMinorWord(currentPhraseWords[index])) {
+    if (clearBtn && !isExerciseMinorWord(currentPhraseWords[index])) {
         const hasLetters = formedWord.slice(offset, offset + targetWordLengths[index]).some(l => l && l !== '');
         clearBtn.style.visibility = hasLetters ? 'visible' : 'hidden';
     }
@@ -14869,7 +14903,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement) {
     } else {
         if (activeWordIndex === -1) {
             // Si el usuario presiona una letra sin elegir ventana, elegimos la primera disponible
-            activeWordIndex = currentPhraseWords.findIndex(w => !isMinorWord(w));
+            activeWordIndex = currentPhraseWords.findIndex(w => !isExerciseMinorWord(w));
             if (activeWordIndex === -1) activeWordIndex = 0;
             let nextStart = 0;
             for (let i = 0; i < activeWordIndex; i++) nextStart += targetWordLengths[i];
@@ -14881,7 +14915,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement) {
         
         if (getLettersForWord(activeWordIndex).length >= targetWordLengths[activeWordIndex]) {
             let nextIndex = activeWordIndex + 1;
-            while (nextIndex < currentWordCount && (isMinorWord(currentPhraseWords[nextIndex]) || getLettersForWord(nextIndex).length >= targetWordLengths[nextIndex])) {
+            while (nextIndex < currentWordCount && (isExerciseMinorWord(currentPhraseWords[nextIndex]) || getLettersForWord(nextIndex).length >= targetWordLengths[nextIndex])) {
                 nextIndex++;
             }
             if (nextIndex < currentWordCount) {
@@ -14906,7 +14940,7 @@ function handleLetterSelection(selectedLetter, letterData, backElement) {
             
             if (insertPos === start + targetWordLengths[activeWordIndex] - 1 && activeWordIndex < currentWordCount - 1) {
                 let nextIndex = activeWordIndex + 1;
-                while (nextIndex < currentWordCount && isMinorWord(currentPhraseWords[nextIndex])) {
+                while (nextIndex < currentWordCount && isExerciseMinorWord(currentPhraseWords[nextIndex])) {
                     nextIndex++;
                 }
                 if (nextIndex < currentWordCount) {
@@ -14939,8 +14973,8 @@ function updateFormedWordDisplayWithCursor() {
                 let start = 0;
                 for (let i = 0; i < wIdx; i++) start += targetWordLengths[i];
                 const hasLetters = formedWord.slice(start, start + targetWordLengths[wIdx]).some(l => l && l !== '');
-                clearBtn.style.setProperty('display', hasLetters && !isMinorWord(currentPhraseWords[wIdx]) ? 'flex' : 'none', 'important');
-                clearBtn.style.visibility = hasLetters && !isMinorWord(currentPhraseWords[wIdx]) ? 'visible' : 'hidden';
+                clearBtn.style.setProperty('display', hasLetters && !isExerciseMinorWord(currentPhraseWords[wIdx]) ? 'flex' : 'none', 'important');
+                clearBtn.style.visibility = hasLetters && !isExerciseMinorWord(currentPhraseWords[wIdx]) ? 'visible' : 'hidden';
             }
         }
     }
@@ -14949,7 +14983,7 @@ function updateFormedWordDisplayWithCursor() {
         if (!wordDisplay) continue;
         
         const wordText = currentPhraseWords[wIdx];
-        const isMinor = isMinorWord(wordText);
+        const isMinor = isExerciseMinorWord(wordText);
 
         const container = wordDisplay.closest('.word-display-container');
         if (container) container.classList.toggle('active', wIdx === activeWordIndex);
@@ -15010,7 +15044,7 @@ function clearFormedWordManual(event, wordIdx) {
         
         // Pre-rellenar palabras menores de nuevo
         currentPhraseWords.forEach((word, idx) => {
-            if (isMinorWord(word)) {
+            if (isExerciseMinorWord(word)) {
                 const letters = word.toLowerCase().split('');
                 let start = 0;
                 for (let i = 0; i < idx; i++) start += targetWordLengths[i];

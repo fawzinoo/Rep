@@ -9516,6 +9516,21 @@ body.chat-typing .chat-footer {
     text-align: center;
     /* Evita espacio extra entre líneas de elementos inline (botones) */
     line-height: 0;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+}
+
+/* En una tarjeta 3D, solo la cara visible puede capturar pulsaciones. */
+.flashcard:not(.flipped) .back,
+.flashcard:not(.flipped) .back * {
+    pointer-events: none !important;
+}
+.flashcard.flipped .front,
+.flashcard.flipped .front * {
+    pointer-events: none !important;
+}
+.flashcard.flipped .back {
+    pointer-events: auto !important;
 }
 
 /* Restablecer line-height en bloques internos para no afectar su texto */
@@ -9853,11 +9868,18 @@ body.chat-typing .chat-footer {
     width: 100%;
     display: flex;
     align-items: center;
+    z-index: 1001;
+    pointer-events: auto !important;
+    touch-action: manipulation;
 }
 
 .type-input-container .type-input {
     width: 100%;
     padding-right: 45px; /* Espacio para el botón clear */
+    position: relative;
+    z-index: 1;
+    pointer-events: auto !important;
+    touch-action: manipulation;
 }
 
 .clear-button-inside {
@@ -9880,6 +9902,27 @@ body.chat-typing .chat-footer {
     height: 30px;
     z-index: 10;
     box-shadow: 0 2px 8px rgba(30, 58, 138, 0.3);
+    pointer-events: auto !important;
+    touch-action: manipulation;
+}
+
+.check-button-row,
+.check-button {
+    position: relative;
+    z-index: 1001;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+}
+
+@media (max-width: 768px) {
+    .type-input {
+        min-height: 52px;
+        font-size: 16px;
+    }
+    .check-button {
+        width: min(100%, 280px);
+        min-height: 50px;
+    }
 }
 
 .clear-button-inside:hover {
@@ -11915,6 +11958,24 @@ body.chat-typing .chat-footer {
 
     <script>
 
+        function isWritingControlEvent(event, card = null) {
+            const target = event && event.target;
+            if (target && target.closest && target.closest('.type-dialog-container')) return true;
+
+            const activeCard = card || document.querySelector('.flashcard.is-visible');
+            const dialog = activeCard && activeCard.querySelector('.type-dialog-container');
+            if (!dialog || !event) return false;
+
+            const point = (event.touches && event.touches[0])
+                || (event.changedTouches && event.changedTouches[0])
+                || event;
+            if (!Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) return false;
+
+            const rect = dialog.getBoundingClientRect();
+            return point.clientX >= rect.left && point.clientX <= rect.right
+                && point.clientY >= rect.top && point.clientY <= rect.bottom;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const flashcardContainer = document.getElementById('flashcard-container');
             if (flashcardContainer) {
@@ -11938,15 +11999,14 @@ body.chat-typing .chat-footer {
                     }
 
                     // 2. Lógica para evitar el volteo al hacer clic en el área de escritura
-                    const typeDialog = event.target.closest('.type-dialog-container');
-                    if (typeDialog) {
+                    const currentCard = document.querySelector('.flashcard.is-visible');
+                    if (isWritingControlEvent(event, currentCard)) {
                         // Si el clic fue dentro del área de escritura, no hagas nada.
                         // No es necesario stopPropagation porque la lógica de volteo está más abajo.
                         return;
                     }
                     
                     // 3. Lógica para voltear la tarjeta (si ninguna de las condiciones anteriores se cumplió)
-                    const currentCard = document.querySelector('.flashcard.is-visible');
                     if (currentCard && !currentCard.classList.contains('flipped')) {
                         // Solo voltea si la tarjeta es visible y está en el anverso.
                         flipCard(currentCard);
@@ -14578,7 +14638,7 @@ function attachFlashcardHandlers() {
         card.addEventListener('click', (event) => {
             // No voltear si el clic ocurre dentro del cuadro de escritura
             try {
-                if (event && event.target && event.target.closest('.type-dialog-container')) {
+                if (isWritingControlEvent(event, card)) {
                     return;
                 }
             } catch (e) {}
@@ -14636,7 +14696,7 @@ function attachFlashcardHandlers() {
                         <div class="type-message" id="type-message" style="display:none;"></div>
                         <div class="type-input-row">
                             <div class="type-input-container">
-                                <input id="type-input" class="type-input" type="text" autocomplete="off" placeholder="Escribe aquí..." inputmode="none" />
+                                <input id="type-input" class="type-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe aquí..." inputmode="text" />
                                 <button id="clear-button" class="clear-button-inside" title="Limpiar texto"><i class="fas fa-backspace"></i></button>
                             </div>
                         </div>
@@ -14672,17 +14732,10 @@ function attachFlashcardHandlers() {
                 const checkBtn = backElement.querySelector('#check-button');
                 const clearBtn = backElement.querySelector('#clear-button');
 
-                // Función para evitar teclado del sistema en móviles
+                // Mantener disponible el teclado nativo en móviles y escritorio.
                 const preventSystemKeyboard = () => {
-                    if (window.innerWidth <= 768) { // Solo en móviles
-                        // No usar readonly para no bloquear el caret; bloquear solo el teclado nativo
-                        inputEl.removeAttribute('readonly');
-                        inputEl.setAttribute('inputmode', 'none');
-                    } else {
-                        // En PC, permitir input normal
-                        inputEl.removeAttribute('readonly');
-                        inputEl.setAttribute('inputmode', 'text');
-                    }
+                    inputEl.removeAttribute('readonly');
+                    inputEl.setAttribute('inputmode', 'text');
                 };
                 
                 // Aplicar prevención de teclado al inicio
@@ -14741,6 +14794,10 @@ function attachFlashcardHandlers() {
                 // Función para mostrar el teclado virtual de forma segura
                 const showVirtualKeyboard = () => {
                     console.log('showVirtualKeyboard: invoked');
+                    if (window.innerWidth <= 768) {
+                        try { inputEl.focus({ preventScroll: true }); } catch (e) { inputEl.focus(); }
+                        return;
+                    }
                     // No mostrar el teclado virtual en dispositivos de escritorio/PC
                     if (isDesktopDevice()) {
                         console.log('showVirtualKeyboard: dispositivo de escritorio detectado, usando teclado físico');
@@ -14760,6 +14817,7 @@ function attachFlashcardHandlers() {
                     });
                 };
                 const ensureVirtualKeyboardOpen = () => {
+                    if (window.innerWidth <= 768) return;
                     // No intentar abrir el teclado virtual en dispositivos de escritorio
                     if (isDesktopDevice()) {
                         console.log('ensureVirtualKeyboardOpen: dispositivo de escritorio, omitiendo teclado virtual');
@@ -14938,6 +14996,7 @@ function attachFlashcardHandlers() {
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor
                 const focusFromContainer = (e) => {
                     if (e && e.target === inputEl) return; // ya lo maneja el input
+                    if (e && e.target && e.target.closest && e.target.closest('button')) return;
                     try {
                         e && e.preventDefault && e.preventDefault();
                         inputEl.focus({ preventScroll: true });
@@ -14952,6 +15011,7 @@ function attachFlashcardHandlers() {
                     } catch {}
                 };
                 if (inputContainer) {
+                    inputContainer.addEventListener('pointerdown', focusFromContainer);
                     inputContainer.addEventListener('click', focusFromContainer);
                 }
                 
@@ -15561,7 +15621,7 @@ function attachFlashcardHandlers() {
 
                 // Evitar que el click dentro del diálogo voltee la tarjeta por burbujeo
                 const stopFlip = (e) => { e.stopPropagation(); };
-                ['click','mousedown','touchstart'].forEach(evt => {
+                ['pointerdown','pointerup','click','mousedown','touchstart','touchend'].forEach(evt => {
                     dialogContainer.addEventListener(evt, stopFlip);
                     inputEl.addEventListener(evt, stopFlip);
                     checkBtn.addEventListener(evt, stopFlip);

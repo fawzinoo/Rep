@@ -15082,7 +15082,7 @@ function attachFlashcardHandlers() {
                         <div class="type-message" id="type-message" style="display:none;"></div>
                         <div class="type-input-row">
                             <div class="type-input-container">
-                                <textarea id="type-input" class="type-input" rows="1" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe aquí..." inputmode="text"></textarea>
+                                <textarea id="type-input" class="type-input" rows="1" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe aquí..." inputmode="none" virtualkeyboardpolicy="manual"></textarea>
                                 <button id="clear-button" class="clear-button-inside" title="Limpiar texto"><i class="fas fa-backspace"></i></button>
                             </div>
                         </div>
@@ -15121,10 +15121,16 @@ function attachFlashcardHandlers() {
                 const checkBtn = backElement.querySelector('#check-button');
                 const clearBtn = backElement.querySelector('#clear-button');
 
-                // Mantener disponible el teclado nativo en móviles y escritorio.
+                // En móvil, impedir que Gboard/Android aparezca antes del teclado propio.
                 const preventSystemKeyboard = () => {
-                    inputEl.removeAttribute('readonly');
-                    inputEl.setAttribute('inputmode', 'text');
+                    const usesCustomKeyboard = window.innerWidth <= 768;
+                    inputEl.setAttribute('inputmode', usesCustomKeyboard ? 'none' : 'text');
+                    inputEl.setAttribute('virtualkeyboardpolicy', 'manual');
+                    if (usesCustomKeyboard) {
+                        inputEl.setAttribute('readonly', '');
+                    } else {
+                        inputEl.removeAttribute('readonly');
+                    }
                 };
 
                 // Aplicar prevención de teclado al inicio
@@ -15136,6 +15142,8 @@ function attachFlashcardHandlers() {
                 const titleEl = backElement.querySelector('#type-word-title');
                 const revealQuestionAnswer = (question, moodClass) => {
                     if (!titleEl) return;
+                    // La respuesta debe aparecer con toda la zona de escritura ya despejada.
+                    hideWritingKeyboardImmediately();
                     const text = String(question || '').trim();
                     const leadMatch = text.match(/^(¿(?:Qué|Cuál|Cuáles)\s+(?:es|son))/i);
                     titleEl.textContent = '';
@@ -15164,6 +15172,22 @@ function attachFlashcardHandlers() {
                 const isVKShown = () => {
                     const { vk } = getVK();
                     return !!(vk && vk.classList.contains('show'));
+                };
+                const hideWritingKeyboardImmediately = () => {
+                    inputEl.setAttribute('inputmode', 'none');
+                    try { inputEl.blur(); } catch {}
+                    const { vk, vkOverlay } = getVK();
+                    if (vk) vk.classList.remove('show');
+                    if (vkOverlay) vkOverlay.style.display = 'none';
+                    document.body.classList.add('keyboard-hidden');
+                    document.documentElement.classList.add('keyboard-hidden');
+                    document.body.classList.remove('keyboard-visible');
+                    document.documentElement.classList.remove('keyboard-visible');
+                    document.documentElement.style.removeProperty('--dialog-keyboard-offset');
+                    try {
+                        const mobileNoButton = backElement.querySelector('#no-duplicate-button');
+                        if (mobileNoButton) mobileNoButton.classList.remove('show-on-focus');
+                    } catch {}
                 };
                 // El texto largo ocupa una segunda línea sin desplazar los controles inferiores.
                 // Como el diálogo está anclado por abajo, el crecimiento se produce hacia arriba.
@@ -15224,9 +15248,13 @@ function attachFlashcardHandlers() {
                         try { inputEl.focus(); } catch (e) {}
                         return;
                     }
+                    // Preparar el campo antes de enfocarlo para que Android no abra Gboard.
+                    inputEl.setAttribute('inputmode', 'none');
+                    inputEl.setAttribute('virtualkeyboardpolicy', 'manual');
                     const { vk, vkOverlay } = getVK();
                     if (!(vkOverlay && vk)) { console.log('showVirtualKeyboard: vk/vkOverlay not found'); return; }
                     vkOverlay.style.display = 'flex';
+                    inputEl.removeAttribute('readonly');
                     // Usar rAF para asegurar layout antes de la transición
                     requestAnimationFrame(() => {
                         vk.classList.add('show');
@@ -15253,24 +15281,11 @@ function attachFlashcardHandlers() {
 
                         setTimeout(() => alignDialogWithKeyboard(), 300);
                     });
-                    // Bloquear teclado nativo manteniendo foco solo con inputmode y focus (sin readOnly)
-                    inputEl.setAttribute('inputmode','none');
+                    // Mantener el foco exclusivamente para el teclado propio.
                     requestAnimationFrame(() => {
                         try { inputEl.focus({ preventScroll: true }); } catch (e) {}
                     });
                 };
-                const ensureVirtualKeyboardOpen = () => {
-                    // No intentar abrir el teclado virtual en dispositivos de escritorio
-                    if (isDesktopDevice()) {
-                        console.log('ensureVirtualKeyboardOpen: dispositivo de escritorio, omitiendo teclado virtual');
-                        return;
-                    }
-                    // Intenta abrir varias veces por si el DOM no está listo o hay animaciones en curso
-                    [80, 200].forEach(delay => {
-                        setTimeout(() => { if (!isVKShown()) { showVirtualKeyboard(); } }, delay);
-                    });
-                };
-
                 // Mostrar/ocultar con focus/blur
                 const originalPlaceholder = (inputEl.getAttribute('placeholder') || '');
                 const hidePlaceholder = () => { try { inputEl.setAttribute('placeholder', ''); } catch {} };
@@ -15297,7 +15312,7 @@ function attachFlashcardHandlers() {
                         const { vkOverlay } = getVK();
                         const isVKOverlayVisible = vkOverlay && vkOverlay.style.display === 'flex';
                         if (!isVKShown() && !isVKOverlayVisible) {
-                            ensureVirtualKeyboardOpen();
+                            showVirtualKeyboard();
                         }
                     } else {
                         console.log('FOCUS - Tablet: comportamiento estándar');
@@ -15318,6 +15333,10 @@ function attachFlashcardHandlers() {
                 const blurHandler = (e) => {
                     console.log('BLUR - Ocultar botón móvil "No sé" y teclado virtual');
                     restorePlaceholder();
+                    if (window.innerWidth <= 768) {
+                        inputEl.setAttribute('inputmode', 'none');
+                        inputEl.setAttribute('readonly', '');
+                    }
                     // Volver a estado oculto del caret cuando se pierde el foco
                     document.body.classList.remove('keyboard-visible');
                     document.documentElement.classList.remove('keyboard-visible');
@@ -15432,7 +15451,7 @@ function attachFlashcardHandlers() {
                     }
 
 
-                    if (!isVKShown()) { ensureVirtualKeyboardOpen(); }
+                    if (!isVKShown()) { showVirtualKeyboard(); }
                 };
                 inputEl.addEventListener('click', ensureVKVisibleOnTap, { passive: true });
                 // Permitir click en el área del contenedor para enfocar el input y mostrar el cursor

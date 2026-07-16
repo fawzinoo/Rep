@@ -13094,6 +13094,8 @@ function goToNextCard() {
     document.getElementById('shuffleSound').play().catch(() => {});
 
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
+    // El intento escrito de la tarjeta terminada no debe restaurarse después.
+    try { delete flashcards[currentCardIndex].dataset.userInput; } catch {}
     completedCards.add(currentCardIndex);
     updateCardCounter();
 
@@ -14913,6 +14915,13 @@ function shuffleCards() {
     stopAllAudios();
 document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indicator').forEach(el => el.remove());
 
+    // La escritura es temporal y pertenece solo al intento actual.
+    // Nunca debe viajar a otra tarjeta cuando se reordena el mazo.
+    flashcards.forEach(card => {
+        try { delete card.dataset.userInput; } catch {}
+        const staleInput = card.querySelector('.type-input');
+        if (staleInput) staleInput.value = '';
+    });
 
     // 1. Obtener los datos de todas las tarjetas.
 const allCardData = flashcards.map((card, index) => ({
@@ -15142,6 +15151,9 @@ function attachFlashcardHandlers() {
                 const titleEl = backElement.querySelector('#type-word-title');
                 const revealQuestionAnswer = (question, moodClass) => {
                     if (!titleEl) return;
+                    // La tarjeta ya está resuelta: descartar la escritura temporal.
+                    try { delete card.dataset.userInput; } catch {}
+                    inputEl.value = '';
                     // La respuesta debe aparecer con toda la zona de escritura ya despejada.
                     hideWritingKeyboardImmediately();
                     const text = String(question || '').trim();

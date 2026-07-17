@@ -12904,6 +12904,8 @@ body.chat-typing .chat-footer {
                         frontCard.querySelector('.article-options-column').innerHTML = options
                             .map(option => `<span class="article-option">${option}</span>`).join('');
                         frontCard.querySelector('.article-noun-column').textContent = displayClue;
+                        const back = card.querySelector('.back');
+                        back.dataset.originalText = question;
                         const answer = card.querySelector('.back-verb-main');
                         answer.innerHTML = `<span class="back-reflexive">¿${form.charAt(0).toUpperCase()}${form.slice(1)}</span><span class="location-reference">${displayClue}?</span>`;
                     });
@@ -13158,7 +13160,7 @@ body.chat-typing .chat-footer {
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
 
-        <button class="button chat" id="chat-button" title="Chat U3G6T2" aria-label="Chat U3G6T2">
+        <button class="button chat" id="chat-button" title="Chat U3G7T2" aria-label="Chat U3G7T2">
             <i class="fas fa-comments" aria-hidden="true"></i>
         </button>
 <button class="button" id="reset-button" title="Reiniciar" aria-label="Reiniciar">
@@ -13195,9 +13197,22 @@ const MINOR_WORDS_LIST = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
         }
 
         function normalizeAnswerText(text) {
-            return String(text || '')
+            let normalized = String(text || '')
                 .replace(/<br\s*\/?>/gi, ' ')
                 .replace(/[\u200B-\u200D\uFEFF]/g, ' ')
+                .replace(/[\s\u00A0]+/g, ' ')
+                .trim();
+
+            // La maquetación de la tarjeta usa varios spans y textContent puede
+            // producir «estáMadrid» o «estánlas». Restituir siempre los dos
+            // límites de la fórmula antes de preparar el ejercicio.
+            normalized = normalized.replace(
+                /^(¿?\s*d[oó]nde)\s*(est[aá]n|est[aá])\s*/i,
+                (_, donde, verbo) => `${donde} ${verbo} `
+            );
+
+            return normalized
+                .replace(/\s+\?/g, '?')
                 .replace(/[\s\u00A0]+/g, ' ')
                 .trim();
         }
@@ -15032,7 +15047,9 @@ function getIndefiniteArticleExercise(answer) {
     const fullAnswer = normalizeAnswerText(answer);
     const clean = fullAnswer.replace(/^¿/, '').replace(/\?$/, '').replace(/\s+/g, ' ').trim();
     const lower = clean.toLowerCase();
-    const article = [...INDEFINITE_ARTICLE_SET].find(form => lower.startsWith(`${form} `));
+    const article = [...INDEFINITE_ARTICLE_SET]
+        .sort((a, b) => b.length - a.length)
+        .find(form => lower === form || lower.startsWith(`${form} `));
     if (!article) return null;
     return {
         article,
@@ -15170,13 +15187,9 @@ function showLetterCombination(backElement, correctAnswer) {
     const cleanAnswer = normalizeAnswerText(exerciseAnswer);
     const words = splitAnswerIntoWords(cleanAnswer);
     currentPhraseWords = words; // Guardar en global
-    // Capacidades fijas: seis letras para qué/cuál/cuáles y tres para es/son.
-    // Así el tamaño de los cuadros no revela la respuesta correcta.
-    targetWordLengths = words.map((word, index) => {
-        if (index === 0) return 6;
-        if (index === 1) return 3;
-        return word.length;
-    });
+    // En com-donde solo se evalúan dos cuadros: «dónde» y «está/están».
+    // El nombre o grupo nominal se muestra aparte como texto fijo.
+    targetWordLengths = words.map(word => word.length);
     currentWordCount = words.length;
 
     const wordAreaDiv = document.createElement('div');
@@ -15263,7 +15276,6 @@ function showLetterCombination(backElement, correctAnswer) {
         `;
     }
     container.appendChild(wordAreaDiv);
-    wordAreaDiv.addEventListener('click', (e) => { e.stopPropagation(); }, false);
 
     // Separador visual entre ventanas y botones
     const separator = document.createElement('div');
@@ -16913,8 +16925,10 @@ function attachFlashcardHandlers() {
         card.addEventListener('click', (e) => {
             console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
 
-            // Si el clic fue en una ventana de formación de palabras, no voltear
-            const clickedWordDisplay = e.target.closest('.word-display, .word-formation-area, .word-display-container, .minor-word-label, .word-group-row, .word-input-wrapper');
+            // Solo los cuadros y sus controles son interactivos. El contenedor
+            // superior ocupa mucho espacio, pero su zona vacía debe permitir
+            // volver a la cara frontal de la tarjeta.
+            const clickedWordDisplay = e.target.closest('.word-display, .word-display-container, .minor-word-label, .word-input-wrapper, .clear-word-btn, .confirm-word-btn, .letter-option');
             if (clickedWordDisplay) {
                 e.stopPropagation();
                 return;
@@ -18214,7 +18228,7 @@ function goToNextCardWithDebug() {
   let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 
   const PORTALB_SCRIPT_URL_FALLBACKS = [];
-  const LESSON_COLUMN_KEY = 'U3G6T2';
+  const LESSON_COLUMN_KEY = 'U3G7T2';
   const TEST_UNLOCK_STATE_KEY = 'donde-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test2';
@@ -18222,7 +18236,7 @@ function goToNextCardWithDebug() {
   const RANKING_GENERAL_MODE = 'ranking_general';
   const RANKING_SCOPE = 'donde';
 const CHAT_MODE = 'chat_messages';
-const CHAT_COLUMN_KEY = 'U3G6T2';
+const CHAT_COLUMN_KEY = 'U3G7T2';
 const CHAT_FETCH_LIMIT = 80;
 const CHAT_REFRESH_INTERVAL_MS = 1200;
 const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
@@ -37642,7 +37656,7 @@ function installChatButtonHandler() {
 
   const TEST_ICON_HTML = '<i class="fas fa-cube" aria-hidden="true"></i> Test2';
   const INDETERMINANTES_LABEL = 'Dónde está · Dónde están';
-  const RANKING_TITLE = 'Ranking U3G6T2';
+  const RANKING_TITLE = 'Ranking U3G7T2';
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
@@ -38278,7 +38292,7 @@ function installChatButtonHandler() {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
     if (modeKey === 'donde') {
-      return fetchAggregatedRankingByColumns(['U3G6T1', 'U3G6T2', 'U3G6T3', 'U3G6T4']);
+      return fetchAggregatedRankingByColumns(['U3G7T1', 'U3G7T2', 'U3G7T3', 'U3G7T4']);
     }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;

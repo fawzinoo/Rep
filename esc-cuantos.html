@@ -11569,7 +11569,11 @@ body.chat-typing .chat-footer {
   line-height: 0.95 !important;
   text-align: center !important;
 }
-.stacked-answer .answer-line { display: block; white-space: nowrap; }
+.stacked-answer .answer-line {
+  display: block;
+  white-space: nowrap;
+  color: #1a1a2e !important;
+}
 .stacked-answer .back-reflexive {
   margin-bottom: 0.2em;
   display: inline-flex;
@@ -11584,6 +11588,21 @@ body.chat-typing .chat-footer {
   margin-top: 0.22em;
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.22), #111111, rgba(0, 0, 0, 0.22));
+}
+.article-answer-card .back-reflexive {
+  color: #2563eb !important;
+  text-shadow: 2px 2px 0 #ffffff, 0 6px 16px rgba(37, 99, 235, 0.15) !important;
+}
+.cuantos-revealed-answer {
+  width: 100% !important;
+  margin: 0 !important;
+  animation: respuestaGlow 1.5s infinite;
+}
+@media (min-width: 621px) {
+  .back.showing-cuantos-answer .countdown-inline {
+    margin-top: 32px;
+    z-index: 10;
+  }
 }
 </style>
 
@@ -14077,6 +14096,32 @@ let correctWords = [];
 let incorrectWords = [];
 
 // ============ SISTEMA DE PERSISTENCIA DE PROGRESO ============
+function syncCuantosFrontWithAnswer(card, answerText) {
+    if (!card) return;
+    const normalized = String(answerText || '').replace(/\s+/g, ' ').trim();
+    const match = normalized.match(/^¿?(cuánto|cuántos|cuántas)\s+(.+?)\??$/i);
+    if (!match) return;
+
+    const form = match[1].toLowerCase();
+    const clue = match[2].replace(/\?$/, '').trim();
+    const frontCard = card.querySelector('.article-front-card');
+    const noun = frontCard?.querySelector('.article-noun-column');
+    const optionsContainer = frontCard?.querySelector('.article-options-column');
+    const frontTag = card.querySelector('.front-verb-tag');
+    if (noun) noun.textContent = clue;
+    if (optionsContainer) {
+        optionsContainer.innerHTML = ['cuánto', 'cuántos', 'cuántas']
+            .map(option => `<span class="article-option">${option}</span>`)
+            .join('');
+    }
+    if (frontCard) frontCard.classList.remove('target-after');
+    if (frontTag) frontTag.textContent = 'Preguntas breves';
+    card.dataset.answer = normalized;
+    card.dataset.clue = clue;
+    card.dataset.targetForm = form;
+    card.dataset.targetPosition = 'before';
+}
+
 // Función para guardar el progreso actual en localStorage
 function saveGameProgress() {
     const gameState = {
@@ -14091,6 +14136,7 @@ function saveGameProgress() {
         cardOrder: flashcards.map(card => ({
             frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
             frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
+            frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
             backText: card.dataset.answer
         }))
     };
@@ -14318,6 +14364,11 @@ function restoreGameState(gameState) {
                         back.innerHTML = cardData.backText;
                     }
                     card.dataset.answer = cardData.backText;
+                    // Los progresos antiguos no guardaban el frente reordenado.
+                    // Sincronizarlo con la respuesta evita pistas y soluciones distintas.
+                    if (!cardData.frontHTML) {
+                        syncCuantosFrontWithAnswer(card, cardData.backText);
+                    }
                 }
             });
         }
@@ -15175,31 +15226,41 @@ function attachFlashcardHandlers() {
                 const inputContainer = backElement.querySelector('.type-input-container');
                 const titleEl = backElement.querySelector('#type-word-title');
                 const revealQuestionAnswer = (question, moodClass) => {
-                    if (!titleEl) return;
                     // La tarjeta ya está resuelta: descartar la escritura temporal.
                     try { delete card.dataset.userInput; } catch {}
                     inputEl.value = '';
                     // La respuesta debe aparecer con toda la zona de escritura ya despejada.
                     hideWritingKeyboardImmediately();
                     const text = String(question || '').trim();
-                    const leadMatch = text.match(/^(¿(?:Qué|Cuál|Cuáles)\s+(?:es|son))/i);
-                    titleEl.textContent = '';
+                    if (!text) return;
+
+                    backElement.innerHTML = '';
+                    backElement.dataset.originalText = text;
+                    backElement.classList.add('showing-cuantos-answer');
+
+                    const answerCard = document.createElement('div');
+                    answerCard.className = 'back-conjugation article-answer-card cuantos-revealed-answer';
+                    if (moodClass) answerCard.classList.add(moodClass);
+
+                    const answer = document.createElement('span');
+                    answer.className = 'back-verb-main stacked-answer';
+                    const leadMatch = text.match(/^(¿(?:Cuántos|Cuántas|Cuánto))/i);
                     if (leadMatch) {
                         const lead = document.createElement('span');
-                        lead.className = 'cuantos-question-lead';
+                        lead.className = 'back-reflexive';
                         lead.textContent = leadMatch[1];
-                        titleEl.appendChild(lead);
-                        titleEl.appendChild(document.createTextNode(text.slice(leadMatch[1].length)));
+                        const clue = document.createElement('span');
+                        clue.className = 'answer-line';
+                        clue.textContent = text.slice(leadMatch[1].length).trim();
+                        answer.appendChild(lead);
+                        answer.appendChild(clue);
                     } else {
-                        titleEl.textContent = text;
+                        answer.textContent = text;
                     }
-                    backElement.classList.add('showing-cuantos-answer');
-                    titleEl.style.display = 'inline-block';
-                    titleEl.style.top = '';
-                    titleEl.classList.remove('success', 'sad-correct', 'error-response', 'cuantos-answer');
-                    titleEl.classList.add('cuantos-answer');
-                    if (moodClass) titleEl.classList.add(moodClass);
-                    void titleEl.offsetWidth;
+
+                    answerCard.appendChild(answer);
+                    backElement.appendChild(answerCard);
+                    void answerCard.offsetWidth;
                 };
                 // Helper para obtener los elementos del teclado virtual en el momento de uso
                 const getVK = () => ({

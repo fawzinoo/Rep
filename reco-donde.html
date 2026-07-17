@@ -8289,6 +8289,47 @@ body.chat-typing .chat-footer {
     visibility: visible !important; /* Forzar visibilidad */
 }
 
+.speech-formula-instruction {
+    width: max-content;
+    max-width: min(84vw, 520px);
+    margin: 0 auto 24px;
+    padding: 9px 18px;
+    border: 2px solid rgba(255, 235, 59, 0.76);
+    border-radius: 999px;
+    background: rgba(9, 35, 83, 0.72);
+    color: #fff !important;
+    -webkit-text-fill-color: #fff !important;
+    font-family: 'Poppins', sans-serif;
+    font-size: clamp(0.86rem, 1.65vw, 1.08rem);
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-shadow: 0 2px 7px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 7px 20px rgba(0, 0, 0, 0.24);
+    white-space: normal;
+}
+
+.speech-formula-instruction strong {
+    color: #ffeb3b !important;
+    -webkit-text-fill-color: #ffeb3b !important;
+}
+
+.back.hidden-text .speech-formula-instruction,
+.back.hidden-text .speech-formula-instruction strong {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+@media (max-width: 620px) {
+    .speech-formula-instruction {
+        max-width: min(88vw, 340px);
+        margin-bottom: 18px;
+        padding: 8px 13px;
+        font-size: clamp(0.76rem, 3.5vw, 0.92rem);
+    }
+}
+
 .super-pulse-container {
     position: relative;
     width: 140px;   /* más espacio para una órbita segura */
@@ -10956,6 +10997,17 @@ body.chat-typing .chat-footer {
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.22), #111111, rgba(0, 0, 0, 0.22));
 }
+/* El subrayado pertenece a la respuesta, no a la pantalla de grabación. */
+.back:has(.listening-indicator) .stacked-answer .back-reflexive::after,
+.back.hidden-text .stacked-answer .back-reflexive::after {
+  display: none !important;
+}
+@media (min-width: 1024px) {
+  .article-answer-card .back-verb-main.stacked-answer {
+    font-size: clamp(1.65rem, 2.5vw, 2.15rem) !important;
+    line-height: 1 !important;
+  }
+}
 </style>
 
 <style id="donde-layout-overrides">
@@ -11751,7 +11803,7 @@ body.chat-typing .chat-footer {
 
     <div class="button-container">
 
-        <button class="button chat" id="chat-button" title="Chat U3G6T4" aria-label="Chat U3G6T4">
+        <button class="button chat" id="chat-button" title="Chat U3G7T4" aria-label="Chat U3G7T4">
             <i class="fas fa-comments" aria-hidden="true"></i>
         </button>
 <button class="button" id="reset-button" title="Reiniciar" aria-label="Reiniciar">
@@ -12071,6 +12123,58 @@ function normalizeText(text) {
     return text.trim();
 }
 
+function extractRecognizedDondeVerb(text, requireFollowingWord = false) {
+    const normalized = String(text || '')
+        .trim()
+        .toLocaleLowerCase('es')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡]/g, '')
+        .replace(/\s+/g, ' ');
+    const words = normalized.split(' ').filter(Boolean);
+    const dondeIndex = words.indexOf('donde');
+
+    if (dondeIndex >= 0) {
+        const candidate = words[dondeIndex + 1];
+        const hasFollowingWord = words.length > dondeIndex + 2;
+        if ((!requireFollowingWord || hasFollowingWord) && (candidate === 'estan' || candidate === 'esta')) {
+            return candidate;
+        }
+    }
+
+    if (!requireFollowingWord) {
+        const firstWord = words[0] || '';
+        if (firstWord.startsWith('dondeestan')) return 'estan';
+        if (firstWord.startsWith('dondeesta')) return 'esta';
+    }
+    return null;
+}
+
+function extractIsolatedDondeVerb(text) {
+    const normalized = String(text || '')
+        .trim()
+        .toLocaleLowerCase('es')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡]/g, '')
+        .replace(/\s+/g, ' ');
+    const words = normalized.split(' ').filter(Boolean);
+    if (words.length !== 2 || words[0] !== 'donde') return null;
+    return words[1] === 'esta' || words[1] === 'estan' ? words[1] : null;
+}
+
+function hasWordsAfterDondeFormula(text) {
+    const normalized = String(text || '')
+        .trim()
+        .toLocaleLowerCase('es')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡]/g, '')
+        .replace(/\s+/g, ' ');
+    const words = normalized.split(' ').filter(Boolean);
+    return words.length > 2 && words[0] === 'donde';
+}
+
 // === SISTEMA DE PERMISOS DE MICRÓFONO ===
 let microphonePermissionGranted = null; // null = no preguntado, true = permitido, false = denegado
 let microphonePermissionAsked = false;
@@ -12334,11 +12438,20 @@ function startSpeechRecognition(targetWord, backElement) {
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-ES';
     recognition.interimResults = true;
+    recognition.continuous = false;
     recognition.maxAlternatives = 1;
+
+    const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+    if (SpeechGrammarList) {
+        const grammarList = new SpeechGrammarList();
+        grammarList.addFromString('#JSGF V1.0; grammar donde; public <formula> = dónde está | dónde están ;', 1);
+        recognition.grammars = grammarList;
+    }
 
     let hasMatchedInterim = false;
     let silenceTimer = null;
     let accumulatedTranscript = '';
+    let observedDondeVerb = null;
 
     // El indicador se muestra solamente al voltear a back, no aquí
 
@@ -12351,7 +12464,7 @@ function startSpeechRecognition(targetWord, backElement) {
         }
     }, 5000); // 5 segundos para pruebas
 
-    const processFinalResult = (transcript) => {
+    const processFinalResult = (transcript, continuedAfterFormula = false) => {
         clearTimeout(autoFlipTimer);
         clearTimeout(silenceTimer);
         const card = backElement.closest('.flashcard');
@@ -12360,7 +12473,7 @@ function startSpeechRecognition(targetWord, backElement) {
         }
         hasMatchedInterim = true;
         recognition.abort(); // Detener inmediatamente
-        handleVoiceResult(transcript.trim(), targetWord, backElement);
+        handleVoiceResult(transcript.trim(), targetWord, backElement, observedDondeVerb, continuedAfterFormula);
     };
 
     recognition.onresult = function(event) {
@@ -12382,8 +12495,22 @@ function startSpeechRecognition(targetWord, backElement) {
             }
         }
 
+        const latestTranscript = finalTranscript.trim() || interimTranscript.trim();
+        if (observedDondeVerb && hasWordsAfterDondeFormula(latestTranscript)) {
+            processFinalResult(latestTranscript, true);
+            return;
+        }
+
         if (interimTranscript.trim().length > 0) {
             accumulatedTranscript = interimTranscript;
+            const interimVerb = extractIsolatedDondeVerb(interimTranscript);
+            if (interimVerb) {
+                // Solo aceptar la fórmula aislada, antes de que aparezca el
+                // nombre. No se puntúa todavía: se espera al resultado final
+                // para saber si el usuario continuó hablando.
+                observedDondeVerb = interimVerb;
+                return;
+            }
         }
 
         // Si hay un resultado final disponible, procesarlo directamente
@@ -12443,7 +12570,7 @@ function startSpeechRecognition(targetWord, backElement) {
     recognition.start();
 }
 
-function handleVoiceResult(spokenWord, targetWord, backElement) {
+function handleVoiceResult(spokenWord, targetWord, backElement, observedDondeVerb = null, continuedAfterFormula = false) {
     // Bloquear procesamiento si la tarjeta NO está volteada (no se puede contestar en front)
     const cardElement = backElement.closest('.flashcard');
     if (!cardElement || !cardElement.classList.contains('flipped')) {
@@ -12482,7 +12609,16 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
         return;
     }
 
-    if (palabrasSimilares(normalizedSpoken, normalizedTarget)) {
+    const targetDondeVerb = extractRecognizedDondeVerb(normalizedTarget);
+    const finalSpokenDondeVerb = extractIsolatedDondeVerb(normalizedSpoken);
+    const spokenDondeVerb = observedDondeVerb || finalSpokenDondeVerb;
+    const hasCorrectDondeVerb = targetDondeVerb
+        ? spokenDondeVerb === targetDondeVerb
+        : palabrasSimilares(normalizedSpoken, normalizedTarget);
+
+    // Para este tema solo se examina «Dónde está / Dónde están»; el nombre
+    // que venga después no interviene en la calificación.
+    if (!continuedAfterFormula && hasCorrectDondeVerb) {
         correctCount++;
         betweenAttempts = false;
         lockedAfterCorrect = true;
@@ -12698,7 +12834,7 @@ function palabrasSimilares(a, b) {
             .toLowerCase()
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '') // quitar acentos
-            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ''); // quitar puntuación
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡]/g, ''); // quitar puntuación
     };
 
     const levenshteinDistance = (s1, s2) => {
@@ -12754,6 +12890,15 @@ function palabrasSimilares(a, b) {
 
     const normA = normalize(a);
     const normB = normalize(b);
+
+    // En estas preguntas la concordancia singular/plural es obligatoria.
+    // La tolerancia Levenshtein de la frase completa no debe convertir
+    // «está» y «están» en respuestas equivalentes.
+    const targetDondeVerb = extractRecognizedDondeVerb(normB);
+    if (targetDondeVerb) {
+        const spokenDondeVerb = extractRecognizedDondeVerb(normA);
+        if (spokenDondeVerb !== targetDondeVerb) return false;
+    }
 
     // 1. Comparación directa (sin espacios)
     if (normA.replace(/\s+/g, '') === normB.replace(/\s+/g, '')) {
@@ -12922,6 +13067,9 @@ function showListeningIndicator(backElement, text = 'Habla ahora') {
     }
 
    indicator.innerHTML = `
+    <div class="speech-formula-instruction" role="note">
+        Di solo: <strong>«Dónde está»</strong> o <strong>«Dónde están»</strong>
+    </div>
     <div class="super-pulse-container">
         <div class="pulse-ring pulse-ring-1"></div>
         <div class="pulse-ring pulse-ring-2"></div>
@@ -14088,7 +14236,7 @@ function saveGameProgress() {
             frontImg: card.querySelector('.front img') ? card.querySelector('.front img').src : '',
             frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
             frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
-            backText: card.dataset.answer,
+            backText: normalizeDondeAnswerText(card.dataset.answer || getCountryText(card.querySelector('.back'))),
             backHTML: card.dataset.backHtml || (card.querySelector('.back') ? card.querySelector('.back').innerHTML : '')
         }))
     };
@@ -14307,8 +14455,9 @@ function restoreGameState(gameState) {
                     } else if (back) {
                         back.innerHTML = cardData.backText;
                     }
-                    card.dataset.answer = cardData.backText;
-                    card.dataset.backHtml = cardData.backHTML || (back ? back.innerHTML : cardData.backText);
+                    card.dataset.answer = normalizeDondeAnswerText(cardData.backText);
+                    rebuildDondeAnswerLayout(card, card.dataset.answer);
+                    card.dataset.backHtml = back ? back.innerHTML : card.dataset.answer;
                 }
             });
         }
@@ -14949,7 +15098,7 @@ const allCardData = flashcards.map((card, index) => ({
     frontAlt: card.querySelector('.front img') ? card.querySelector('.front img') ? card.querySelector('.front img').alt : '' : '',
     frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
     // CORRECTO: usar el texto del reverso real
-    backText: getCountryText(card.querySelector('.back')),
+    backText: normalizeDondeAnswerText(card.dataset.answer || getCountryText(card.querySelector('.back'))),
     backHTML: card.querySelector('.back') ? card.querySelector('.back').innerHTML : ''
 }));
 
@@ -14997,8 +15146,9 @@ if (data.backHTML) {
         back.innerHTML = data.backText;
     }
     // --- ACTUALIZA EL data-answer TAMBIÉN ---
-    card.dataset.answer = data.backText;
-    card.dataset.backHtml = data.backHTML || back.innerHTML;
+    card.dataset.answer = normalizeDondeAnswerText(data.backText);
+    rebuildDondeAnswerLayout(card, card.dataset.answer);
+    card.dataset.backHtml = back.innerHTML;
         // Reasignar el audio CORRECTO según el nombre del país
         const src = getAudioSrcForCountryName(data.backText);
         if (src) {
@@ -15037,6 +15187,51 @@ if (data.backHTML) {
 canFlipBack = true;
 }
 
+function normalizeDondeAnswerText(value) {
+    const clean = String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    const match = clean.match(/^¿?\s*dónde\s*(están|está)\s*(.+)$/i);
+    if (!match) return clean;
+    let verb = match[1].toLocaleLowerCase('es');
+    let rest = match[2].trim();
+    // Reparar partidas guardadas durante la versión que separaba «están»
+    // como «está n».
+    if (verb === 'está' && /^n\s+(?:los|las)\b/i.test(rest)) {
+        verb = 'están';
+        rest = rest.replace(/^n\s+/i, '');
+    }
+    return `¿Dónde ${verb} ${rest}`;
+}
+
+function rebuildDondeAnswerLayout(card, answerText) {
+    if (!card) return false;
+    const back = card.querySelector('.back');
+    const answer = back && back.querySelector('.back-verb-main');
+    if (!back || !answer) return false;
+
+    const raw = normalizeDondeAnswerText(answerText || card.dataset.answer || back.dataset.originalText || answer.textContent);
+    const match = raw.match(/^(¿Dónde)\s+(están|está)\s+(.+)$/i);
+    if (!match) return false;
+
+    back.dataset.originalText = raw;
+    card.dataset.answer = raw;
+    answer.classList.add('stacked-answer');
+    answer.innerHTML = '';
+
+    const questionWord = document.createElement('span');
+    questionWord.className = 'back-reflexive';
+    questionWord.textContent = match[1];
+
+    const verbLine = document.createElement('span');
+    verbLine.className = 'answer-line';
+    verbLine.textContent = match[2];
+
+    const clueLine = document.createElement('span');
+    clueLine.className = 'answer-line';
+    clueLine.textContent = match[3];
+    answer.append(questionWord, verbLine, clueLine);
+    return true;
+}
+
 function getCountryText(backElement) {
     if (!backElement) return '';
     if (backElement.dataset && backElement.dataset.originalText) {
@@ -15050,7 +15245,11 @@ function getCountryText(backElement) {
         attemptsDiv.remove();
     }
     // Devolvemos el texto limpio
-    return clone.textContent.trim();
+    const answer = clone.querySelector('.back-verb-main');
+    const text = answer
+        ? Array.from(answer.children).map(child => child.textContent).join(' ')
+        : clone.textContent;
+    return normalizeDondeAnswerText(text);
 }
 
 function attachFlashcardHandlers() {
@@ -16262,7 +16461,7 @@ function goToNextCardWithDebug() {
   let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 
   const PORTALB_SCRIPT_URL_FALLBACKS = [];
-  const LESSON_COLUMN_KEY = 'U3G6T4';
+  const LESSON_COLUMN_KEY = 'U3G7T4';
   const TEST_UNLOCK_STATE_KEY = 'donde-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
   const U1L7T4_UNLOCK_OVERLAY_ID = 'unlock-fin-semana1-overlay';
@@ -16272,7 +16471,7 @@ function goToNextCardWithDebug() {
   const RANKING_GENERAL_MODE = 'ranking_general';
   const RANKING_SCOPE = 'donde';
 const CHAT_MODE = 'chat_messages';
-const CHAT_COLUMN_KEY = 'U3G6T4';
+const CHAT_COLUMN_KEY = 'U3G7T4';
 const CHAT_FETCH_LIMIT = 80;
 const CHAT_REFRESH_INTERVAL_MS = 1200;
 const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
@@ -35621,7 +35820,7 @@ function installChatButtonHandler() {
 
       const TEST_ICON_HTML = '<i class="fas fa-microphone" aria-hidden="true"></i> Test4';
   const INDETERMINANTES_LABEL = 'Dónde está · Dónde están';
-  const RANKING_TITLE = 'Ranking U3G6T4';
+  const RANKING_TITLE = 'Ranking U3G7T4';
   const SEND_THROTTLE_MS = 1500;
 
   const lessonUnlockStateMemory = { scores: {}, unlocksByColumn: {} };
@@ -36575,7 +36774,7 @@ function installChatButtonHandler() {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
     if (modeKey === 'donde') {
-      return fetchAggregatedRankingByColumns(['U3G6T1', 'U3G6T2', 'U3G6T3', 'U3G6T4']);
+      return fetchAggregatedRankingByColumns(['U3G7T1', 'U3G7T2', 'U3G7T3', 'U3G7T4']);
     }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;
@@ -36772,35 +36971,8 @@ function installChatButtonHandler() {
 <script id="donde-answer-layout">
 (function () {
   function stackLongAnswers() {
-    document.querySelectorAll('#flashcard-container .back-verb-main').forEach((answer) => {
-      const back = answer.closest('.back');
-      const raw = String(back?.dataset.originalText || answer.textContent || '').replace(/\s+/g, ' ').trim();
-      const words = raw.split(/\s+/).filter(Boolean);
-      if (words.length <= 2) return;
-
-      if (back) back.dataset.originalText = raw;
-
-      answer.classList.add('stacked-answer');
-      answer.innerHTML = '';
-
-      const connector = document.createElement('span');
-      connector.className = 'back-reflexive';
-      connector.textContent = words[0];
-
-      const nextLine = document.createElement('span');
-      nextLine.className = 'answer-line';
-      const determiners = new Set(['el','la','los','las','un','una','unos','unas']);
-      if (determiners.has(words[1].toLowerCase())) {
-        nextLine.textContent = words.slice(1).join(' ');
-        answer.append(connector, nextLine);
-        return;
-      }
-
-      nextLine.textContent = words[1];
-      const finalLine = document.createElement('span');
-      finalLine.className = 'answer-line';
-      finalLine.textContent = words.slice(2).join(' ');
-      answer.append(connector, nextLine, finalLine);
+    document.querySelectorAll('#flashcard-container .flashcard').forEach((card) => {
+      rebuildDondeAnswerLayout(card, card.dataset.answer);
     });
   }
   if (document.readyState === 'loading') {

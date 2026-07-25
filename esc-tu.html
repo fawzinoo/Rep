@@ -10812,6 +10812,38 @@ body.chat-typing .chat-footer {
     z-index: 2;
 }
 
+.continue-modal-icon img {
+    display: block;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto;
+    object-fit: contain;
+    border-radius: 18px;
+    filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
+}
+
+.continue-modal-icon.continue-modal-logo {
+    animation: none;
+}
+
+.continue-modal-icon.continue-modal-logo img {
+    animation: continueLogoLight 2.4s ease-in-out infinite;
+}
+
+@keyframes continueLogoLight {
+    0%, 100% {
+        filter:
+            drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28))
+            drop-shadow(0 0 5px rgba(255, 255, 255, 0.28));
+    }
+    50% {
+        filter:
+            drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28))
+            drop-shadow(0 0 16px rgba(255, 255, 255, 0.78))
+            drop-shadow(0 0 26px rgba(103, 232, 249, 0.42));
+    }
+}
+
 .continue-modal-title {
     font-size: 1.8rem;
     font-weight: 700;
@@ -10848,6 +10880,28 @@ body.chat-typing .chat-footer {
     font-weight: 600;
     color: #374151;
     margin-bottom: 15px;
+}
+
+.continue-start-tips {
+    display: grid;
+    gap: 10px;
+    text-align: left;
+}
+
+.continue-start-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #4b5563;
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+.continue-start-tip span {
+    flex: 0 0 auto;
 }
 
 .continue-progress-stats {
@@ -15887,16 +15941,14 @@ function hasProgressSaved() {
     return hasProgress;
 }
 
-// Función para mostrar el modal de continuación
-function showContinueGameModal() {
-    const savedState = loadGameProgress();
-    if (!savedState) return;
-
+// Mostrar el modal tanto para continuar como para empezar una sesión nueva
+function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
+    const savedState = hasSavedProgress ? loadGameProgress() : null;
     const totalCards = flashcards.length;
-    const completedCount = savedState.completedCards ? savedState.completedCards.length : 0;
+    const completedCount = savedState && savedState.completedCards ? savedState.completedCards.length : 0;
     const remaining = totalCards - completedCount;
-    const correctCount = savedState.correctCount || 0;
-    const incorrectCount = savedState.incorrectCount || 0;
+    const correctCount = savedState ? (savedState.correctCount || 0) : 0;
+    const incorrectCount = savedState ? (savedState.incorrectCount || 0) : 0;
 
     const overlay = document.createElement('div');
     overlay.className = 'continue-game-overlay';
@@ -15905,39 +15957,55 @@ function showContinueGameModal() {
     overlay.innerHTML = `
         <div class="continue-game-modal">
             <div class="continue-modal-header">
-                <span class="continue-modal-icon">🎯</span>
-                <h2 class="continue-modal-title">¡Progreso Detectado!</h2>
-                <p class="continue-modal-subtitle">Tienes un juego en progreso</p>
+                <span class="continue-modal-icon${hasSavedProgress ? '' : ' continue-modal-logo'}">${hasSavedProgress ? '🎯' : '<img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" draggable="false">'}</span>
+                <h2 class="continue-modal-title">${hasSavedProgress ? '¡Progreso Detectado!' : '¡Prepárate para el test!'}</h2>
+                <p class="continue-modal-subtitle">${hasSavedProgress ? 'Tienes un test en progreso' : `Este test tiene ${totalCards} tarjetas`}</p>
             </div>
 
             <div class="continue-modal-content">
                 <div class="continue-progress-info">
-                    <div class="continue-progress-title">Tu progreso actual:</div>
-                    <div class="continue-progress-stats">
-                        <div class="continue-stat-item">
-                            <div class="continue-stat-number correct">${correctCount}</div>
-                            <div class="continue-stat-label">Correctas</div>
+                    ${hasSavedProgress ? `
+                        <div class="continue-progress-title">Tu progreso actual:</div>
+                        <div class="continue-progress-stats">
+                            <div class="continue-stat-item">
+                                <div class="continue-stat-number correct">${correctCount}</div>
+                                <div class="continue-stat-label">Correctas</div>
+                            </div>
+                            <div class="continue-stat-item">
+                                <div class="continue-stat-number incorrect">${incorrectCount}</div>
+                                <div class="continue-stat-label">Incorrectas</div>
+                            </div>
+                            <div class="continue-stat-item">
+                                <div class="continue-stat-number remaining">${remaining}</div>
+                                <div class="continue-stat-label">Restantes</div>
+                            </div>
                         </div>
-                        <div class="continue-stat-item">
-                            <div class="continue-stat-number incorrect">${incorrectCount}</div>
-                            <div class="continue-stat-label">Incorrectas</div>
+                    ` : `
+                        <div class="continue-progress-title">${totalCards} tarjetas en total · Antes de empezar:</div>
+                        <div class="continue-start-tips">
+                            <div class="continue-start-tip"><span>🌿</span> Respira hondo y empieza con calma.</div>
+                            <div class="continue-start-tip"><span>⌨️</span> Lee bien y escribe tu respuesta sin precipitarte.</div>
+                            <div class="continue-start-tip"><span>💛</span> Equivocarte también forma parte del aprendizaje.</div>
                         </div>
-                        <div class="continue-stat-item">
-                            <div class="continue-stat-number remaining">${remaining}</div>
-                            <div class="continue-stat-label">Restantes</div>
-                        </div>
-                    </div>
+                    `}
                 </div>
 
                 <div class="continue-modal-buttons">
-                    <button class="continue-btn continue-btn-primary" id="continue-game-btn">
-                        <i class="fas fa-play"></i>
-                        Continuar
-                    </button>
-                    <button class="continue-btn continue-btn-secondary" id="start-fresh-btn">
-                        <i class="fas fa-sync-alt"></i>
-                        Empezar de Cero
-                    </button>
+                    ${hasSavedProgress ? `
+                        <button class="continue-btn continue-btn-primary" id="continue-game-btn">
+                            <i class="fas fa-play"></i>
+                            Continuar
+                        </button>
+                        <button class="continue-btn continue-btn-secondary" id="start-fresh-btn">
+                            <i class="fas fa-sync-alt"></i>
+                            Empezar de Cero
+                        </button>
+                    ` : `
+                        <button class="continue-btn continue-btn-primary" id="start-game-btn">
+                            <i class="fas fa-play"></i>
+                            Comenzar
+                        </button>
+                    `}
                 </div>
             </div>
         </div>
@@ -15948,10 +16016,10 @@ function showContinueGameModal() {
     // Event listeners para los botones
     const continueBtn = overlay.querySelector('#continue-game-btn');
     const startFreshBtn = overlay.querySelector('#start-fresh-btn');
+    const startGameBtn = overlay.querySelector('#start-game-btn');
 
-    continueBtn.addEventListener('click', function() {
+    if (continueBtn) continueBtn.addEventListener('click', function() {
         vibrar(60);
-        playButtonSound();
         hasPlayedEscribeAudio = false;
 
         // Restaurar el estado del juego
@@ -15964,28 +16032,39 @@ function showContinueGameModal() {
             overlay.remove();
             initializeNewGame();
         }
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
     });
 
-    startFreshBtn.addEventListener('click', function() {
+    if (startFreshBtn) startFreshBtn.addEventListener('click', function() {
         vibrar(60);
-        playButtonSound();
         hasPlayedEscribeAudio = false;
 
         // Limpiar progreso actual pero mantener avance anterior
         clearCurrentProgress();
         overlay.remove();
         initializeNewGame();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
         console.log('Nuevo juego iniciado');
+    });
+
+    if (startGameBtn) startGameBtn.addEventListener('click', function() {
+        vibrar(60);
+        hasPlayedEscribeAudio = false;
+        overlay.remove();
+        initializePage();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+        console.log('Primera sesión iniciada');
     });
 
     // Cerrar modal al hacer clic en el fondo (por defecto continúa)
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
+        if (e.target === overlay && savedState) {
             vibrar(40);
             // Por defecto continuar el juego
             if (restoreGameState(savedState)) {
                 overlay.remove();
             }
+            if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
         }
     });
 }
@@ -17465,6 +17544,10 @@ function attachFlashcardHandlers() {
                             // pequeño retardo para transición y evitar rebotes al tocar el input
                             setTimeout(() => { vkOverlay.style.display = 'none'; }, 220);
                         }
+                        document.body.classList.remove('keyboard-visible');
+                        document.documentElement.classList.remove('keyboard-visible');
+                        document.body.classList.add('keyboard-hidden');
+                        document.documentElement.classList.add('keyboard-hidden');
 
                         return;
                     }
@@ -18072,19 +18155,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
 
-    // VERIFICAR SI HAY PROGRESO GUARDADO ANTES DE INICIALIZAR
-    if (hasProgressSaved()) {
+    // Mostrar siempre el modal inicial; su botón aporta el gesto necesario para el audio
+    const hasSavedProgress = hasProgressSaved();
+    if (hasSavedProgress) {
         // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
         updateLastGamePillFromStorage();
-        // Mostrar modal de continuación si hay progreso
-        setTimeout(() => {
-            showContinueGameModal();
-        }, 500); // Pequeño delay para que la página termine de cargar
-        return; // No ejecutar el resto de la inicialización
     }
 
-    // Si no hay progreso guardado, continuar con la inicialización normal
-    initializePage();
+    setTimeout(() => {
+        showContinueGameModal(hasSavedProgress);
+    }, 500);
+    return;
 });
 
 // Función para inicializar la página cuando no hay progreso guardado
@@ -18260,10 +18341,17 @@ function saveLastGamePercentage() {
 
 let introAudio = null;
 let introPlayed = false;
-window.playIntroAudio = function() {
-    if (introPlayed) return;
+window.playIntroAudio = function(restart = false) {
+    if (introPlayed && !restart) return;
     if (!introAudio) {
         introAudio = new Audio('https://fawzinoo.github.io/audios/comosedice.wav');
+    }
+    if (restart) {
+        try {
+            introAudio.pause();
+            introAudio.currentTime = 0;
+        } catch (e) {}
+        introPlayed = false;
     }
     introAudio.play()
         .then(() => {
@@ -18285,21 +18373,6 @@ window.playIntroAudio = function() {
             document.addEventListener('touchend', playOnInteraction, { once: true });
         });
 };
-
-window.addEventListener('load', () => {
-    // Si no hay progreso guardado, reproducimos el audio de introducción
-    if (typeof hasProgressSaved === 'function' && !hasProgressSaved()) {
-        window.playIntroAudio();
-    }
-    try {
-        const s = document.getElementById('soundResetButton');
-        if (s && !areButtonSoundsMuted()) {
-            s.currentTime = 0;
-            s.volume = 0.8;
-            s.play().catch(e => console.log(e));
-        }
-    } catch (e) { console.log(e); }
-});
 
 // (Eliminado) stopAllAudios anterior basado en array global de audios
 

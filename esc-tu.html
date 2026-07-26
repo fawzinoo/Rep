@@ -11008,30 +11008,94 @@ body.chat-typing .chat-footer {
 }
 
 @media (max-width: 480px) {
+    .continue-game-overlay {
+        height: 100dvh;
+        padding: 8px;
+        box-sizing: border-box;
+        overflow-y: auto;
+    }
+
     .continue-game-modal {
-        width: 95%;
-        margin: 20px;
+        width: 100%;
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
+        margin: 0;
+        overflow-y: auto;
+        border-radius: 20px;
     }
 
     .continue-modal-header {
-        padding: 25px 20px 20px;
+        padding: 16px 16px 14px;
     }
 
     .continue-modal-content {
-        padding: 20px;
+        padding: 14px 16px 16px;
+    }
+
+    .continue-modal-icon {
+        font-size: 2.5rem;
+        margin-bottom: 6px;
+    }
+
+    .continue-modal-icon img {
+        width: 54px;
+        height: 54px;
+        border-radius: 14px;
+    }
+
+    .continue-modal-title {
+        margin-bottom: 4px;
+        font-size: 1.35rem;
+        line-height: 1.15;
+    }
+
+    .continue-modal-subtitle {
+        font-size: 0.92rem;
+    }
+
+    .continue-progress-info {
+        padding: 13px;
+        margin-bottom: 12px;
+    }
+
+    .continue-progress-title {
+        margin-bottom: 9px;
+        font-size: 0.96rem;
+        line-height: 1.25;
+    }
+
+    .continue-start-tips {
+        gap: 7px;
+    }
+
+    .continue-start-tip {
+        gap: 7px;
+        padding: 8px 9px;
+        font-size: 0.82rem;
+        line-height: 1.25;
+    }
+
+    .continue-progress-stats {
+        gap: 8px;
+    }
+
+    .continue-stat-number {
+        font-size: 1.45rem;
+    }
+
+    .continue-stat-label {
+        font-size: 0.75rem;
     }
 
     .continue-modal-buttons {
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
+        margin-top: 0;
     }
 
-    .continue-modal-title {
-        font-size: 1.5rem;
-    }
-
-    .continue-modal-icon {
-        font-size: 3rem;
+    .continue-btn {
+        padding: 11px 14px;
+        font-size: 0.96rem;
     }
 }
 
@@ -16020,7 +16084,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 
     if (continueBtn) continueBtn.addEventListener('click', function() {
         vibrar(60);
-        hasPlayedEscribeAudio = false;
+        resetEscribeAudioSession();
 
         // Restaurar el estado del juego
         if (restoreGameState(savedState)) {
@@ -16037,7 +16101,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 
     if (startFreshBtn) startFreshBtn.addEventListener('click', function() {
         vibrar(60);
-        hasPlayedEscribeAudio = false;
+        resetEscribeAudioSession();
 
         // Limpiar progreso actual pero mantener avance anterior
         clearCurrentProgress();
@@ -16049,7 +16113,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 
     if (startGameBtn) startGameBtn.addEventListener('click', function() {
         vibrar(60);
-        hasPlayedEscribeAudio = false;
+        resetEscribeAudioSession();
         overlay.remove();
         initializePage();
         if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
@@ -16060,6 +16124,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay && savedState) {
             vibrar(40);
+            resetEscribeAudioSession();
             // Por defecto continuar el juego
             if (restoreGameState(savedState)) {
                 overlay.remove();
@@ -16072,7 +16137,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 // Función para inicializar un nuevo juego
 function initializeNewGame() {
     // Resetear todas las variables
-    hasPlayedEscribeAudio = false;
+    resetEscribeAudioSession();
     currentCardIndex = 0;
     voiceAttempts = 0;
     completedCards.clear();
@@ -16545,6 +16610,33 @@ let escribeAudioTimer = null;
 let escribeAudio = null;
 let hasPlayedEscribeAudio = false;
 
+function resetEscribeAudioSession() {
+    if (escribeAudioTimer) {
+        clearTimeout(escribeAudioTimer);
+        escribeAudioTimer = null;
+    }
+    if (escribeAudio) {
+        try {
+            escribeAudio.pause();
+            escribeAudio.currentTime = 0;
+        } catch (e) {}
+    }
+    hasPlayedEscribeAudio = false;
+}
+
+function playEscribeAudioOnce() {
+    if (hasPlayedEscribeAudio) return;
+    if (!escribeAudio) {
+        escribeAudio = new Audio('https://fawzinoo.github.io/audios/escribe.wav');
+    }
+    hasPlayedEscribeAudio = true;
+    escribeAudio.currentTime = 0;
+    escribeAudio.play().catch(e => {
+        hasPlayedEscribeAudio = false;
+        console.log('Error al reproducir escribe.wav:', e);
+    });
+}
+
 // Detener audios por tarjeta
 function stopAllAudios() {
     if (introAudio) {
@@ -16822,21 +16914,9 @@ function attachFlashcardHandlers() {
                 stopAllAudios();
                 card.classList.add('flipped');
 
-                // Reproducir el audio escribe.wav a 10 ms SOLO en la primera tarjeta y solo 1 vez por sesión/reinicio
-                const cardIndex = flashcards.indexOf(card);
-                if (cardIndex === 0 && !hasPlayedEscribeAudio) {
-                    if (escribeAudioTimer) clearTimeout(escribeAudioTimer);
-                    escribeAudioTimer = setTimeout(() => {
-                        if (card.classList.contains('flipped') && !hasPlayedEscribeAudio) {
-                            if (!escribeAudio) {
-                                escribeAudio = new Audio('https://fawzinoo.github.io/audios/escribe.wav');
-                            }
-                            hasPlayedEscribeAudio = true;
-                            escribeAudio.currentTime = 0;
-                            escribeAudio.play().catch(e => console.log('Error al reproducir escribe.wav:', e));
-                        }
-                    }, 10);
-                }
+                // Reproducir escribe.wav en el primer volteo de cada sesión,
+                // también cuando se continúa desde una tarjeta distinta de la primera.
+                playEscribeAudioOnce();
 
 
 
@@ -18449,7 +18529,7 @@ function resetGame() {
     if (percentageUpdateTimeoutId) { clearTimeout(percentageUpdateTimeoutId); percentageUpdateTimeoutId = null; }
 
     // Resetear todas las variables del juego
-    hasPlayedEscribeAudio = false;
+    resetEscribeAudioSession();
     currentCardIndex = 0;
     voiceAttempts = 0;
     completedCards.clear();

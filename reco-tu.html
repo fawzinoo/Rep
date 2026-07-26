@@ -24423,14 +24423,28 @@ body.chat-typing .chat-footer {
                     const container = document.getElementById('flashcard-container');
                     container.querySelectorAll(':scope > .flashcard').forEach(card => card.remove());
                     
+                    const getLanguageItemForCard = (card) => {
+                        const cardIdMatch = String(card.dataset.cardId || '').match(/^u1-tu-(\d+)$/);
+                        let contentIndex = cardIdMatch ? Number(cardIdMatch[1]) - 1 : Number(card.dataset.contentIndex);
+
+                        if (!Number.isInteger(contentIndex) || !cardData[contentIndex]) {
+                            const answer = clean(card.dataset.answer);
+                            contentIndex = cardData.findIndex(item => clean(item.es) === answer);
+                        }
+
+                        if (contentIndex < 0 || !cardData[contentIndex]) return null;
+                        card.dataset.contentIndex = String(contentIndex);
+                        return cardData[contentIndex];
+                    };
+
                     const applyLanguage = (language) => {
                         if (!supportedLanguages.includes(language)) return;
                         currentLanguage = language;
                         localStorage.setItem(languageKey, language);
-                        container.querySelectorAll('.flashcard[data-content-index]').forEach(card => {
-                            const item = cardData[Number(card.dataset.contentIndex)];
+                        container.querySelectorAll('.flashcard').forEach(card => {
+                            const item = getLanguageItemForCard(card);
                             const text = card.querySelector('.origin-text');
-                            if (text) {
+                            if (text && item) {
                                 text.textContent = clean(item[language]);
                                 text.lang = language;
                                 text.dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -24572,6 +24586,7 @@ body.chat-typing .chat-footer {
     });
     window.MAS_CANONICAL_CARDS = cards.map(card => ({
         cardId: String(card.dataset.cardId || ''),
+        contentIndex: String(card.dataset.contentIndex || ''),
         answer: String(card.dataset.answer || ''),
         targetForm: String(card.dataset.targetForm || ''),
         targetPosition: String(card.dataset.targetPosition || ''),
@@ -27528,6 +27543,7 @@ function saveGameProgress() {
             const canonical = getMasCanonicalCardData(card) || {};
             return {
                 cardId: canonical.cardId || card.dataset.cardId || '',
+                contentIndex: canonical.contentIndex ?? card.dataset.contentIndex ?? '',
                 targetForm: canonical.targetForm || card.dataset.targetForm || '',
                 targetPosition: canonical.targetPosition || card.dataset.targetPosition || '',
                 frontHTML: canonical.frontHTML || (card.querySelector('.front') ? card.querySelector('.front').innerHTML : ''),
@@ -27750,6 +27766,7 @@ function restoreGameState(gameState) {
                     card.dataset.answer = canonical.answer || cardData.backText;
                     card.dataset.backHtml = canonical.backHTML || cardData.backHTML || '';
                     card.dataset.cardId = canonical.cardId || cardData.cardId || '';
+                    card.dataset.contentIndex = canonical.contentIndex ?? cardData.contentIndex ?? '';
                     card.dataset.targetForm = canonical.targetForm || cardData.targetForm || '';
                     card.dataset.targetPosition = canonical.targetPosition || cardData.targetPosition || '';
                 }
@@ -28435,6 +28452,7 @@ const allCardData = flashcards.map((card, index) => {
     const canonical = getMasCanonicalCardData(card) || {};
     return {
         cardId: canonical.cardId || card.dataset.cardId || '',
+        contentIndex: canonical.contentIndex ?? card.dataset.contentIndex ?? '',
         targetForm: canonical.targetForm || card.dataset.targetForm || '',
         targetPosition: canonical.targetPosition || card.dataset.targetPosition || '',
         frontHTML: canonical.frontHTML || (card.querySelector('.front') ? card.querySelector('.front').innerHTML : ''),
@@ -28468,6 +28486,7 @@ flashcards.forEach((card, index) => {
     const data = newCardOrder[index];
     card.classList.remove('is-visible', 'flipped');
     card.dataset.cardId = data.cardId || '';
+    card.dataset.contentIndex = data.contentIndex ?? '';
     card.dataset.targetForm = data.targetForm || '';
     card.dataset.targetPosition = data.targetPosition || '';
     const frontEl = card.querySelector('.front');

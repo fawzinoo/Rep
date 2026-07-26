@@ -25464,6 +25464,21 @@ function initializeMicrophonePermissions() {
     console.log('🎤 Sistema de permisos de micrófono inicializado');
 }
 
+function getSpeechBrowserInfo() {
+    const userAgent = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(userAgent);
+    const isChromeAndroid = isAndroid
+        && /Chrome\/\d+/i.test(userAgent)
+        && !/EdgA|OPR|SamsungBrowser/i.test(userAgent);
+    const isMobile = Boolean(
+        navigator.userAgentData?.mobile
+        || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    );
+
+    return { isMobile, isChromeAndroid };
+}
+
 
 function startVoiceRecognition(targetWord, backElement) {
     // Verificar que la tarjeta esté volteada (en back) antes de permitir reconocimiento
@@ -25491,15 +25506,26 @@ function startVoiceRecognition(targetWord, backElement) {
             return;
         }
         
-        // Continuar con el reconocimiento de voz
-        startSpeechRecognition(targetWord, backElement);
+        // Chrome Android puede conservar el micrófono ocupado durante unos
+        // instantes después de getUserMedia(). Esperar evita audio-capture y
+        // abortos silenciosos al iniciar webkitSpeechRecognition.
+        const { isChromeAndroid } = getSpeechBrowserInfo();
+        const initialStartDelay = isChromeAndroid ? 450 : 0;
+        setTimeout(() => {
+            const currentCard = backElement.closest('.flashcard');
+            if (currentCard
+                && currentCard.classList.contains('flipped')
+                && currentCard.classList.contains('is-visible')) {
+                startSpeechRecognition(targetWord, backElement);
+            }
+        }, initialStartDelay);
     }).catch(error => {
         console.error("Error al verificar permisos de micrófono:", error);
     });
 }
 
 // Función separada para el reconocimiento de voz real
-function startSpeechRecognition(targetWord, backElement) {
+function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     // Web Speech API (reconocimiento de voz del navegador)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -25518,21 +25544,25 @@ function startSpeechRecognition(targetWord, backElement) {
     const recognition = new SpeechRecognition();
     const recognitionGeneration = ++speechRecognitionGeneration;
     activeSpeechRecognition = recognition;
+    const { isMobile: isMobileSpeechBrowser, isChromeAndroid } = getSpeechBrowserInfo();
     recognition.lang = 'es-ES';
-    // Mantener abierta la sesión durante las pausas. Si el navegador impone su
-    // propio límite, onend inicia una sesión nueva mientras siga esta tarjeta.
-    recognition.continuous = true;
+    // continuous=true es inestable en Android y no está bien soportado por
+    // Safari/iOS. En móvil usamos sesiones normales y las encadenamos desde
+    // onend; para el alumno la escucha sigue siendo continua.
+    recognition.continuous = !isMobileSpeechBrowser;
     recognition.interimResults = true;
     // Chrome suele colocar la frase correcta como segunda alternativa cuando
     // hay ruido, acento o palabras cortas muy parecidas.
-    recognition.maxAlternatives = 5;
+    recognition.maxAlternatives = isChromeAndroid ? 3 : 5;
 
     let hasMatchedInterim = false;
     let silenceTimer = null;
     let accumulatedTranscript = '';
     const INTERIM_STABILITY_MS = 3000;
     const FINAL_SETTLE_MS = 2500;
-    const RESTART_DELAY_MS = 250;
+    // Los motores móviles necesitan un pequeño margen para liberar el
+    // micrófono antes de aceptar recognition.start() de la sesión siguiente.
+    const RESTART_DELAY_MS = isChromeAndroid ? 900 : (isMobileSpeechBrowser ? 650 : 250);
 
     const isCurrentSession = () =>
         activeSpeechRecognition === recognition
@@ -25746,6 +25776,19 @@ function startSpeechRecognition(targetWord, backElement) {
         isRecording = false;
         clearTimeout(silenceTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
+
+        // En Chrome Android start() puede lanzar InvalidStateError mientras la
+        // sesión anterior termina de liberar el servicio. Reintentar de forma
+        // limitada mantiene la escucha sin crear un bucle infinito.
+        if (isChromeAndroid && startRetryCount < 2 && shouldContinueListening()) {
+            setTimeout(() => {
+                if (!activeSpeechRecognition && shouldContinueListening()) {
+                    startSpeechRecognition(targetWord, backElement, startRetryCount + 1);
+                }
+            }, RESTART_DELAY_MS * (startRetryCount + 1));
+            return;
+        }
+
         showRecognitionNotice('No se pudo iniciar el micrófono. Toca para intentarlo');
     }
 }

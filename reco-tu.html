@@ -25482,17 +25482,23 @@ function startSpeechRecognition(targetWord, backElement) {
     
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-ES';
-    // Las frases de loslunes pueden llegar divididas en varios fragmentos.
-    recognition.continuous = true;
+    // Cada tarjeta espera una sola respuesta. El modo no continuo hace que el
+    // navegador cierre la toma y entregue su resultado final al terminar la voz,
+    // en lugar de dejar una sesión abierta que puede finalizar a mitad de frase.
+    recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    // Chrome suele colocar la frase correcta como segunda alternativa cuando
+    // hay ruido, acento o palabras cortas muy parecidas.
+    recognition.maxAlternatives = 5;
 
     let hasMatchedInterim = false;
     let silenceTimer = null;
     let speechEndTimer = null;
     let accumulatedTranscript = '';
-    const RESULT_SILENCE_MS = 650;
-    const SPEECH_END_GRACE_MS = 120;
+    let stopRequested = false;
+    const INTERIM_STABILITY_MS = 1100;
+    const FINAL_SETTLE_MS = 180;
+    const SPEECH_END_STOP_MS = 260;
 
     // El indicador se muestra solamente al voltear a back, no aquí
 
@@ -25533,7 +25539,9 @@ function startSpeechRecognition(targetWord, backElement) {
             return;
         }
         hasMatchedInterim = true;
-        recognition.abort(); // Detener inmediatamente
+        // Si se llega aquí desde onend, la sesión ya puede estar cerrada y
+        // abort() lanzaría InvalidStateError antes de procesar la respuesta.
+        try { recognition.abort(); } catch (e) {}
         handleVoiceResult(transcript.trim(), targetWord, backElement);
     };
 
@@ -25544,19 +25552,36 @@ function startSpeechRecognition(targetWord, backElement) {
         }
 
         let interimTranscript = '';
-        let finalTranscript = '';
         let completeTranscript = '';
+        let hasFinalResult = false;
+        let transcriptCandidates = [''];
 
         // Una frase larga puede llegar dividida en varios resultados. Se
         // reconstruyen todos para no evaluar únicamente el último fragmento.
+        // También se combinan unas pocas alternativas: con ruido, la respuesta
+        // correcta no siempre ocupa el primer puesto del reconocimiento.
         for (let i = 0; i < event.results.length; ++i) {
-            const transcript = event.results[i][0].transcript;
+            const result = event.results[i];
+            const transcript = result[0].transcript;
             completeTranscript += `${transcript} `;
-            if (event.results[i].isFinal) {
-                finalTranscript = transcript;
+            if (result.isFinal) {
+                hasFinalResult = true;
             } else {
                 interimTranscript += `${transcript} `;
             }
+
+            const alternatives = [];
+            for (let alternativeIndex = 0;
+                alternativeIndex < Math.min(result.length, recognition.maxAlternatives);
+                alternativeIndex++) {
+                const alternative = String(result[alternativeIndex].transcript || '').trim();
+                if (alternative && !alternatives.includes(alternative)) {
+                    alternatives.push(alternative);
+                }
+            }
+            transcriptCandidates = transcriptCandidates
+                .flatMap(prefix => alternatives.map(alternative => `${prefix} ${alternative}`.trim()))
+                .slice(0, 40);
         }
         completeTranscript = completeTranscript.trim();
 
@@ -25564,47 +25589,36 @@ function startSpeechRecognition(targetWord, backElement) {
             accumulatedTranscript = completeTranscript;
         }
 
-        // Los aciertos se aceptan en cuanto la frase completa coincide. Si el
-        // resultado final todavía no coincide, el margen breve de estabilización
-        // inferior permite recibir un posible fragmento adicional.
-        if (finalTranscript.trim().length > 0) {
-            const finalCandidate = completeTranscript || finalTranscript;
-            if (palabrasSimilares(finalCandidate, targetWord, card)) {
-                processFinalResult(finalCandidate);
-                return;
-            }
+        const matchingCandidate = transcriptCandidates.find(candidate =>
+            palabrasSimilares(candidate, targetWord, card)
+        );
+        if (matchingCandidate) {
+            processFinalResult(matchingCandidate);
+            return;
         }
 
-        // Si es un resultado provisional (interim), verificar si ya es correcto
-        // para dar una respuesta instantánea y no tener que esperar al silencio final.
-        if (interimTranscript.trim().length > 0) {
-            if (palabrasSimilares(completeTranscript || interimTranscript, targetWord, card)) {
-                processFinalResult(completeTranscript || interimTranscript);
-                return;
-            }
-        }
-
-        // Para resultados provisionales esperamos solo un margen breve de
-        // estabilización. Cada nuevo fragmento reinicia el temporizador.
+        // Un acierto se procesa arriba inmediatamente. Una frase que aún no
+        // coincide necesita margen para que el motor complete o corrija su
+        // hipótesis; evaluarla a los 120 ms producía falsos "Incorrecto".
         clearTimeout(silenceTimer);
         silenceTimer = setTimeout(() => {
             if (accumulatedTranscript.trim().length > 0) {
-                console.log("⏱️ Detectado silencio tras una frase acumulada. Evaluando...");
                 processFinalResult(accumulatedTranscript);
             }
-        }, RESULT_SILENCE_MS);
+        }, hasFinalResult ? FINAL_SETTLE_MS : INTERIM_STABILITY_MS);
     };
 
-    // Algunos navegadores tardan en convertir el último resultado provisional
-    // en final. Al detectar que la persona dejó de hablar, usar la transcripción
-    // disponible casi de inmediato.
+    // onspeechend puede llegar antes que el último onresult. Pedimos un cierre
+    // limpio para que el navegador convierta el provisional en final; abortar o
+    // evaluar aquí directamente pierde con frecuencia la última palabra.
     recognition.onspeechend = function() {
         clearTimeout(speechEndTimer);
         speechEndTimer = setTimeout(() => {
-            if (!hasMatchedInterim && accumulatedTranscript.trim().length > 0) {
-                processFinalResult(accumulatedTranscript);
+            if (!hasMatchedInterim && !stopRequested) {
+                stopRequested = true;
+                try { recognition.stop(); } catch (e) {}
             }
-        }, SPEECH_END_GRACE_MS);
+        }, SPEECH_END_STOP_MS);
     };
 
     recognition.onerror = function(event) {
@@ -25648,6 +25662,15 @@ function startSpeechRecognition(targetWord, backElement) {
         // El alert() se ha eliminado para no interrumpir al usuario.
     };
 
+    recognition.onnomatch = function() {
+        if (hasMatchedInterim) return;
+        hasMatchedInterim = true;
+        clearTimeout(autoFlipTimer);
+        clearTimeout(silenceTimer);
+        clearTimeout(speechEndTimer);
+        showRecognitionNotice('No se ha entendido. Toca para intentarlo');
+    };
+
     recognition.onstart = function() {
         isRecording = true;
     };
@@ -25658,9 +25681,13 @@ function startSpeechRecognition(targetWord, backElement) {
         clearTimeout(silenceTimer);
         clearTimeout(speechEndTimer);
         // Algunos navegadores terminan sin marcar el último resultado como
-        // final. En ese caso también se evalúa la frase completa acumulada.
+        // final. onend ocurre después de entregar los resultados pendientes, así
+        // que este es un punto seguro para evaluar la frase completa acumulada.
         if (!hasMatchedInterim && accumulatedTranscript.trim().length > 0) {
-            setTimeout(() => processFinalResult(accumulatedTranscript), 0);
+            setTimeout(() => processFinalResult(accumulatedTranscript), 60);
+        } else if (!hasMatchedInterim) {
+            hasMatchedInterim = true;
+            showRecognitionNotice('No se ha oído. Toca para intentarlo');
         }
     };
 

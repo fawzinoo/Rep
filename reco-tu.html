@@ -25094,6 +25094,18 @@ function goBack() {
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
+let activeSpeechRecognition = null;
+let speechRecognitionGeneration = 0;
+
+function stopActiveSpeechRecognition() {
+    speechRecognitionGeneration += 1;
+    const recognition = activeSpeechRecognition;
+    activeSpeechRecognition = null;
+    isRecording = false;
+    if (recognition) {
+        try { recognition.abort(); } catch (error) {}
+    }
+}
 
 // Sistema de tarjetas completadas
 let completedCards = new Set();
@@ -25494,13 +25506,22 @@ function startSpeechRecognition(targetWord, backElement) {
         alert("Tu navegador no soporta reconocimiento de voz.");
         return;
     }
+
+    const card = backElement.closest('.flashcard');
+    if (!card || !card.classList.contains('flipped') || !card.classList.contains('is-visible')) {
+        return;
+    }
+
+    // Nunca mantener dos sesiones abiertas al mismo tiempo.
+    stopActiveSpeechRecognition();
     
     const recognition = new SpeechRecognition();
+    const recognitionGeneration = ++speechRecognitionGeneration;
+    activeSpeechRecognition = recognition;
     recognition.lang = 'es-ES';
-    // Cada tarjeta espera una sola respuesta. El modo no continuo hace que el
-    // navegador cierre la toma y entregue su resultado final al terminar la voz,
-    // en lugar de dejar una sesión abierta que puede finalizar a mitad de frase.
-    recognition.continuous = false;
+    // Mantener abierta la sesión durante las pausas. Si el navegador impone su
+    // propio límite, onend inicia una sesión nueva mientras siga esta tarjeta.
+    recognition.continuous = true;
     recognition.interimResults = true;
     // Chrome suele colocar la frase correcta como segunda alternativa cuando
     // hay ruido, acento o palabras cortas muy parecidas.
@@ -25508,12 +25529,26 @@ function startSpeechRecognition(targetWord, backElement) {
 
     let hasMatchedInterim = false;
     let silenceTimer = null;
-    let speechEndTimer = null;
     let accumulatedTranscript = '';
-    let stopRequested = false;
-    const INTERIM_STABILITY_MS = 1100;
-    const FINAL_SETTLE_MS = 180;
-    const SPEECH_END_STOP_MS = 260;
+    const INTERIM_STABILITY_MS = 3000;
+    const FINAL_SETTLE_MS = 2500;
+    const RESTART_DELAY_MS = 250;
+
+    const isCurrentSession = () =>
+        activeSpeechRecognition === recognition
+        && speechRecognitionGeneration === recognitionGeneration;
+
+    const shouldContinueListening = () => {
+        const currentCard = backElement.closest('.flashcard');
+        return Boolean(
+            currentCard
+            && currentCard.classList.contains('is-visible')
+            && currentCard.classList.contains('flipped')
+            && voiceAttempts < 2
+            && !lockedAfterCorrect
+            && !lockedAfterSecondIncorrect
+        );
+    };
 
     // El indicador se muestra solamente al voltear a back, no aquí
 
@@ -25533,27 +25568,18 @@ function startSpeechRecognition(targetWord, backElement) {
         updateSkipButtonState();
     };
 
-    // Las frases de esta actividad son compuestas y necesitan más tiempo.
-    const autoFlipTimer = setTimeout(() => {
-        const card = backElement.closest('.flashcard');
-        if (accumulatedTranscript.trim().length > 0) {
-            processFinalResult(accumulatedTranscript);
-        } else if (card && card.classList.contains('flipped')) {
-            hasMatchedInterim = true;
-            try { recognition.abort(); } catch (e) {}
-            showRecognitionNotice('No se ha oído. Toca para intentarlo');
-        }
-    }, 12000);
-
     const processFinalResult = (transcript) => {
-        clearTimeout(autoFlipTimer);
         clearTimeout(silenceTimer);
-        clearTimeout(speechEndTimer);
         const card = backElement.closest('.flashcard');
-        if (!card || !card.classList.contains('flipped') || hasMatchedInterim) {
+        if (!isCurrentSession()
+            || !card
+            || !card.classList.contains('flipped')
+            || hasMatchedInterim) {
             return;
         }
         hasMatchedInterim = true;
+        activeSpeechRecognition = null;
+        isRecording = false;
         // Si se llega aquí desde onend, la sesión ya puede estar cerrada y
         // abort() lanzaría InvalidStateError antes de procesar la respuesta.
         try { recognition.abort(); } catch (e) {}
@@ -25562,7 +25588,10 @@ function startSpeechRecognition(targetWord, backElement) {
 
     recognition.onresult = function(event) {
         const card = backElement.closest('.flashcard');
-        if (!card || !card.classList.contains('flipped') || hasMatchedInterim) {
+        if (!isCurrentSession()
+            || !card
+            || !card.classList.contains('flipped')
+            || hasMatchedInterim) {
             return;
         }
 
@@ -25613,8 +25642,8 @@ function startSpeechRecognition(targetWord, backElement) {
         }
 
         // Un acierto se procesa arriba inmediatamente. Una frase que aún no
-        // coincide necesita margen para que el motor complete o corrija su
-        // hipótesis; evaluarla a los 120 ms producía falsos "Incorrecto".
+        // coincide conserva varios segundos para que el alumno continúe y el
+        // motor complete o corrija su hipótesis.
         clearTimeout(silenceTimer);
         silenceTimer = setTimeout(() => {
             if (accumulatedTranscript.trim().length > 0) {
@@ -25623,38 +25652,31 @@ function startSpeechRecognition(targetWord, backElement) {
         }, hasFinalResult ? FINAL_SETTLE_MS : INTERIM_STABILITY_MS);
     };
 
-    // onspeechend puede llegar antes que el último onresult. Pedimos un cierre
-    // limpio para que el navegador convierta el provisional en final; abortar o
-    // evaluar aquí directamente pierde con frecuencia la última palabra.
-    recognition.onspeechend = function() {
-        clearTimeout(speechEndTimer);
-        speechEndTimer = setTimeout(() => {
-            if (!hasMatchedInterim && !stopRequested) {
-                stopRequested = true;
-                try { recognition.stop(); } catch (e) {}
-            }
-        }, SPEECH_END_STOP_MS);
+    recognition.onspeechstart = function() {
+        if (!isCurrentSession()) return;
+        clearTimeout(silenceTimer);
     };
 
     recognition.onerror = function(event) {
+        if (!isCurrentSession()) return;
         console.error("Error de reconocimiento:", event.error); // Muestra el error en la consola para depuración
         isRecording = false;
         if (event.error === 'aborted') {
             return; // Ignorar si fue cancelado a propósito
         }
         // NO eliminar el indicador automáticamente, que persista
-        clearTimeout(autoFlipTimer); // Limpiar timer
         clearTimeout(silenceTimer);
-        clearTimeout(speechEndTimer);
-        const card = backElement.closest('.flashcard');
 
         // Los fallos técnicos no cuentan como respuesta incorrecta y nunca
         // deben voltear la tarjeta sin explicar qué ha ocurrido.
-        if (event.error === "no-speech" || event.error === "network") {
+        if (event.error === 'no-speech') {
+            // Es normal en una escucha prolongada. onend reabrirá la sesión.
+            return;
+        }
+
+        if (event.error === "network") {
             hasMatchedInterim = true;
-            showRecognitionNotice(event.error === 'network'
-                ? 'No se ha podido escuchar. Toca para intentarlo'
-                : 'No se ha oído. Toca para intentarlo');
+            showRecognitionNotice('No se ha podido escuchar. Toca para intentarlo');
             return;
         }
 
@@ -25678,39 +25700,50 @@ function startSpeechRecognition(targetWord, backElement) {
     };
 
     recognition.onnomatch = function() {
-        if (hasMatchedInterim) return;
-        hasMatchedInterim = true;
-        clearTimeout(autoFlipTimer);
-        clearTimeout(silenceTimer);
-        clearTimeout(speechEndTimer);
-        showRecognitionNotice('No se ha entendido. Toca para intentarlo');
+        // No cerrar la escucha por una hipótesis incompleta del navegador.
     };
 
     recognition.onstart = function() {
+        if (!isCurrentSession()) {
+            try { recognition.abort(); } catch (error) {}
+            return;
+        }
         isRecording = true;
     };
 
     recognition.onend = function() {
+        if (!isCurrentSession()) return;
+        activeSpeechRecognition = null;
         isRecording = false;
-        clearTimeout(autoFlipTimer); // Limpiar timer
         clearTimeout(silenceTimer);
-        clearTimeout(speechEndTimer);
+        if (hasMatchedInterim) return;
+
         // Algunos navegadores terminan sin marcar el último resultado como
         // final. onend ocurre después de entregar los resultados pendientes, así
         // que este es un punto seguro para evaluar la frase completa acumulada.
-        if (!hasMatchedInterim && accumulatedTranscript.trim().length > 0) {
-            setTimeout(() => processFinalResult(accumulatedTranscript), 60);
-        } else if (!hasMatchedInterim) {
+        if (accumulatedTranscript.trim().length > 0 && shouldContinueListening()) {
             hasMatchedInterim = true;
-            showRecognitionNotice('No se ha oído. Toca para intentarlo');
+            handleVoiceResult(accumulatedTranscript.trim(), targetWord, backElement);
+            return;
+        }
+
+        // El navegador puede finalizar una sesión aun con continuous=true.
+        // Se abre otra sin mostrar error mientras la tarjeta continúe en back.
+        if (shouldContinueListening()) {
+            setTimeout(() => {
+                if (!activeSpeechRecognition && shouldContinueListening()) {
+                    startSpeechRecognition(targetWord, backElement);
+                }
+            }, RESTART_DELAY_MS);
         }
     };
 
     try {
         recognition.start();
     } catch (error) {
+        if (!isCurrentSession()) return;
+        activeSpeechRecognition = null;
         isRecording = false;
-        clearTimeout(autoFlipTimer);
         clearTimeout(silenceTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
         showRecognitionNotice('No se pudo iniciar el micrófono. Toca para intentarlo');
@@ -26135,7 +26168,16 @@ function palabrasSimilares(a, b, cardContext = null, skipFrequencyPositions = fa
             ['cuantos años tienes', 'que edad tienes'],
             ['como estas', 'que tal estas'],
             ['que haces', 'a que te dedicas', 'en que trabajas'],
-            ['que idiomas hablas', 'que lenguas hablas']
+            ['que idiomas hablas', 'que lenguas hablas'],
+            // Web Speech puede omitir la «s» final y suele transcribir el
+            // cardinal hablado como «20». Se aceptan ambas salidas solo en
+            // esta respuesta y se conserva la ñ.
+            [
+                'tengo veinte años',
+                'tengo veinte año',
+                'tengo 20 años',
+                'tengo 20 año'
+            ]
         ];
 
         if (completeExpressionGroups.some(group =>
@@ -26220,10 +26262,10 @@ function palabrasSimilares(a, b, cardContext = null, skipFrequencyPositions = fa
 
     // En esta actividad se evalúan frases personales completas. No debemos
     // aplicar la tolerancia Levenshtein a toda la oración concatenada: así,
-    // por ejemplo, «Tengo veinte ano» quedaba a una sola letra de
-    // «Tengo veinte años» y se aceptaba. Para respuestas de varias palabras
-    // exigimos la misma cantidad, el mismo orden y cada palabra completa.
-    // La normalización anterior sigue permitiendo diferencias irrelevantes
+    // por ejemplo, «Tengo veinte ano» (sin ñ) quedaba a una sola letra de
+    // «Tengo veinte años» y se aceptaba. Salvo las equivalencias explícitas
+    // anteriores, exigimos la misma cantidad, el mismo orden y cada palabra
+    // completa. La normalización sigue permitiendo diferencias irrelevantes
     // de mayúsculas, tildes vocálicas y puntuación.
     if (wordsB.length > 1) {
         return wordsA.length === wordsB.length
@@ -26632,6 +26674,7 @@ function scheduleAutoResetAfterCompletion(delayMs = 3000) {
 }
 
 function showCard(index) {
+    stopActiveSpeechRecognition();
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 flashcards.forEach(card => {
     card.classList.remove('is-visible', 'flipped');
@@ -28592,6 +28635,7 @@ function attachFlashcardHandlers() {
             vibrar(80); 
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
+                stopActiveSpeechRecognition();
                 card.classList.remove('flipped');
                 stopAllAudios();
                 // Limpia cualquier contador de intentos al volver a front
@@ -28599,7 +28643,6 @@ function attachFlashcardHandlers() {
                 // Eliminar indicador de escucha al volver al frente
                 removeListeningIndicator(backElement);
                 setBackAttempts(backElement, 2 - voiceAttempts);
-                // NO detengas ni reinicies el reconocimiento de voz aquí
                 betweenAttempts = false;
                 updateSkipButtonState();
             } else {
@@ -28987,6 +29030,7 @@ function showPillHints() {
 }
 
 function resetGame() {
+    stopActiveSpeechRecognition();
     // Si el tablero fue reemplazado por una pantalla final, restaurarlo
         // Cancelar cualquier auto-reset pendiente
         try { if (autoResetTimeoutId) { clearTimeout(autoResetTimeoutId); autoResetTimeoutId = null; } } catch {}
@@ -29014,11 +29058,6 @@ function resetGame() {
     incorrectWords.length = 0;
     correctCount = 0;
     incorrectCount = 0;
-    
-    // Limpiar timeouts activos
-    if (typeof autoFlipTimer !== 'undefined') {
-        clearTimeout(autoFlipTimer);
-    }
     
     // Resetear todas las tarjetas al estado inicial
     const allCards = document.querySelectorAll('.flashcard');

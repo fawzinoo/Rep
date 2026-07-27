@@ -24924,7 +24924,7 @@ body.chat-typing .chat-footer {
 </style>
 
     <!-- Cuadro unificado para ambos porcentajes (misma talla de pills, separados por línea) -->
-    <div id="stats-box" style="
+    <div id="stats-box" class="hidden" style="
         position: absolute;
         bottom: 6px;
         right: 8px;
@@ -25018,14 +25018,20 @@ body.chat-typing .chat-footer {
 
         const DEFAULT_HAPTIC_MS = 50;
         let __lastVibrateAt = 0;
+        let __vibrateUntil = 0;
         function vibrar(ms = DEFAULT_HAPTIC_MS, opts = {}) {
             const now = Date.now();
             const { minGap = 80, force = false } = opts || {};
+            if (!force && now < __vibrateUntil) return;
             if (!force && now - __lastVibrateAt < minGap) return;
-            if (window.navigator && window.navigator.vibrate) {
-                const duration = typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS;
-                window.navigator.vibrate(duration);
-                __lastVibrateAt = now;
+            if (window.navigator && typeof window.navigator.vibrate === 'function') {
+                try {
+                    const val = Array.isArray(ms) ? ms : (typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS);
+                    const calcDuration = Array.isArray(val) ? val.reduce((a, b) => a + b, 0) : val;
+                    window.navigator.vibrate(val);
+                    __lastVibrateAt = now;
+                    __vibrateUntil = now + calcDuration;
+                } catch (e) {}
             }
         }
 
@@ -25564,16 +25570,16 @@ function initializeMicrophonePermissions() {
 function getSpeechBrowserInfo() {
     const userAgent = navigator.userAgent || '';
     const isAndroid = /Android/i.test(userAgent);
+    const isIOS = /iPhone|iPad|iPod/i.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isChromeAndroid = isAndroid
         && /Chrome\/\d+/i.test(userAgent)
         && !/EdgA|OPR|SamsungBrowser/i.test(userAgent);
     const isMobile = Boolean(
         navigator.userAgentData?.mobile
-        || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)
-        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+        || isAndroid || isIOS
     );
 
-    return { isMobile, isChromeAndroid };
+    return { isMobile, isChromeAndroid, isIOS };
 }
 
 
@@ -25603,11 +25609,11 @@ function startVoiceRecognition(targetWord, backElement) {
             return;
         }
         
-        // Chrome Android puede conservar el micrófono ocupado durante unos
-        // instantes después de getUserMedia(). Esperar evita audio-capture y
+        // Chrome Android e iOS Safari pueden conservar el micrófono ocupado durante unos
+        // instantes después de getUserMedia() o rotación 3D. Esperar evita audio-capture y
         // abortos silenciosos al iniciar webkitSpeechRecognition.
-        const { isChromeAndroid } = getSpeechBrowserInfo();
-        const initialStartDelay = isChromeAndroid ? 450 : 0;
+        const { isChromeAndroid, isIOS } = getSpeechBrowserInfo();
+        const initialStartDelay = isChromeAndroid ? 450 : (isIOS ? 350 : 0);
         setTimeout(() => {
             const currentCard = backElement.closest('.flashcard');
             if (currentCard
@@ -25641,16 +25647,16 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     const recognition = new SpeechRecognition();
     const recognitionGeneration = ++speechRecognitionGeneration;
     activeSpeechRecognition = recognition;
-    const { isMobile: isMobileSpeechBrowser, isChromeAndroid } = getSpeechBrowserInfo();
+    const { isMobile: isMobileSpeechBrowser, isChromeAndroid, isIOS } = getSpeechBrowserInfo();
     recognition.lang = 'es-ES';
     // continuous=true es inestable en Android y no está bien soportado por
     // Safari/iOS. En móvil usamos sesiones normales y las encadenamos desde
     // onend; para el alumno la escucha sigue siendo continua.
     recognition.continuous = !isMobileSpeechBrowser;
-    recognition.interimResults = true;
+    recognition.interimResults = !isIOS;
     // Chrome suele colocar la frase correcta como segunda alternativa cuando
     // hay ruido, acento o palabras cortas muy parecidas.
-    recognition.maxAlternatives = isChromeAndroid ? 3 : 5;
+    recognition.maxAlternatives = isChromeAndroid ? 3 : (isIOS ? 2 : 5);
 
     let hasMatchedInterim = false;
     let silenceTimer = null;
@@ -25659,7 +25665,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     const FINAL_SETTLE_MS = 600;
     // Los motores móviles necesitan un pequeño margen para liberar el
     // micrófono antes de aceptar recognition.start() de la sesión siguiente.
-    const RESTART_DELAY_MS = isChromeAndroid ? 900 : (isMobileSpeechBrowser ? 650 : 250);
+    const RESTART_DELAY_MS = isChromeAndroid ? 900 : (isIOS ? 600 : (isMobileSpeechBrowser ? 650 : 250));
 
     const isCurrentSession = () =>
         activeSpeechRecognition === recognition
@@ -26004,7 +26010,8 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
     
     const card = cardElement;
 
-    if (!spokenWord || spokenWord.trim() === "") {
+    const cleanSpoken = spokenWord.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
+    if (!spokenWord || spokenWord.trim() === "" || cleanSpoken === "") {
         // NO eliminar el indicador, mantenerlo visible
         setBackAttempts(backElement, 2 - voiceAttempts);
         backElement.classList.remove('hidden-text');
@@ -26016,7 +26023,7 @@ function handleVoiceResult(spokenWord, targetWord, backElement) {
                     startVoiceRecognition(targetWord, backElement);
                 }, 100);
             }
-        }, 2000);
+        }, 1500);
         return;
     }
     const normalizedSpoken = spokenWord.trim();
@@ -49414,7 +49421,7 @@ async function openChatModal() {
 function installChatButtonHandler() {
     if (!window.__chatHapticsInstalled) {
         window.__chatHapticsInstalled = true;
-        document.addEventListener('pointerdown', (e) => {
+        const triggerHaptics = (e) => {
             const btn = e.target.closest(
                 '.button-container button, ' +
                 '.chat-overlay button, ' +
@@ -49436,9 +49443,14 @@ function installChatButtonHandler() {
                 '#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn'
             );
             if (btn) {
-                try { vibrar(50); } catch (err) {}
+                const isToolbarBtn = btn.closest('.button-container') || btn.matches('#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn');
+                try {
+                    vibrar(isToolbarBtn ? [120, 40, 120] : 50, { force: isToolbarBtn });
+                } catch (err) {}
             }
-        }, { capture: true, passive: true });
+        };
+        document.addEventListener('touchstart', triggerHaptics, { capture: true });
+        document.addEventListener('pointerdown', triggerHaptics, { capture: true });
     }
     const chatBtn = document.getElementById('chat-button');
     if (!chatBtn || chatBtn.dataset.chatHandlerInstalled === '1') return;
@@ -49446,7 +49458,7 @@ function installChatButtonHandler() {
     chatBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        vibrar(60);
+        vibrar([120, 40, 120], { force: true });
         playButtonSound();
         void openChatModal();
     });

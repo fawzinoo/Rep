@@ -4064,14 +4064,6 @@
     transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease;
 }
 
-.chat-image-viewer-docx-loading-dot:nth-child(1) {
-}
-
-.chat-image-viewer-docx-loading-dot:nth-child(2) {
-}
-
-.chat-image-viewer-docx-loading-dot:nth-child(3) {
-}
 
 .chat-image-viewer-pdf-page-indicator {
     position: absolute;
@@ -10926,7 +10918,6 @@ body.chat-typing .chat-footer {
         gap: 6px !important;
         padding: 10px !important;
     }
-
     .article-options-column {
         width: min(100%, 310px) !important;
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -10941,6 +10932,7 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.78rem, 3.45vw, 0.94rem) !important;
         border-radius: 9px !important;
     }
+
 }
 
 @media (max-width: 360px) {
@@ -23943,7 +23935,6 @@ body.chat-typing .chat-footer {
         font-size: clamp(.68rem, 2.75vw, .82rem) !important;
         letter-spacing: clamp(.5px, .35vw, 1.4px) !important;
     }
-
     .article-options-column {
         width: min(100%, 310px) !important;
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -23958,6 +23949,7 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.78rem, 3.45vw, 0.94rem) !important;
         border-radius: 9px !important;
     }
+
 }
 
 @media (max-width: 360px) {
@@ -25024,11 +25016,18 @@ body.chat-typing .chat-footer {
 
         
 
-        function vibrar(ms = 80) {
-    if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(ms);
-    }
-}
+        const DEFAULT_HAPTIC_MS = 50;
+        let __lastVibrateAt = 0;
+        function vibrar(ms = DEFAULT_HAPTIC_MS, opts = {}) {
+            const now = Date.now();
+            const { minGap = 80, force = false } = opts || {};
+            if (!force && now - __lastVibrateAt < minGap) return;
+            if (window.navigator && window.navigator.vibrate) {
+                const duration = typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS;
+                window.navigator.vibrate(duration);
+                __lastVibrateAt = now;
+            }
+        }
 
         function playErrorSound() {
     const errorAudio = new Audio('https://fawzinoo.github.io/audios/error.mp3');
@@ -49413,6 +49412,34 @@ async function openChatModal() {
 }
 
 function installChatButtonHandler() {
+    if (!window.__chatHapticsInstalled) {
+        window.__chatHapticsInstalled = true;
+        document.addEventListener('pointerdown', (e) => {
+            const btn = e.target.closest(
+                '.button-container button, ' +
+                '.chat-overlay button, ' +
+                '.chat-modal button, ' +
+                '.chat-header-filter-btn, ' +
+                '.chat-teacher-thread-btn, ' +
+                '.chat-teacher-thread-item, ' +
+                '.chat-emoji-menu-btn, ' +
+                '.chat-attach-option-btn, ' +
+                '.chat-own-message-choice-btn, ' +
+                '.chat-reaction-chip, ' +
+                '.chat-unread-indicator, ' +
+                '.chat-jump-bottom-btn, ' +
+                '.chat-image-viewer-btn, ' +
+                '.chat-video-viewer-btn, ' +
+                '.chat-video-viewer-control-btn, ' +
+                '.chat-file-viewer-close-btn, ' +
+                '.chat-notice-modal-btn, ' +
+                '#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn'
+            );
+            if (btn) {
+                try { vibrar(50); } catch (err) {}
+            }
+        }, { capture: true, passive: true });
+    }
     const chatBtn = document.getElementById('chat-button');
     if (!chatBtn || chatBtn.dataset.chatHandlerInstalled === '1') return;
     chatBtn.dataset.chatHandlerInstalled = '1';

@@ -14018,19 +14018,22 @@ const MINOR_WORDS_LIST = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
         }
 
         // Haptics centralizados con protección contra ráfagas
-        const DEFAULT_HAPTIC_MS = 50; // patrón único unificado
+        const DEFAULT_HAPTIC_MS = 50;
         let __lastVibrateAt = 0;
+        let __vibrateUntil = 0;
         function vibrar(ms = DEFAULT_HAPTIC_MS, opts = {}) {
             const now = Date.now();
             const { minGap = 80, force = false } = opts || {};
-            // Evitar vibraciones duplicadas en muy poco tiempo (pointerdown + click)
-            if (!force && now - __lastVibrateAt < minGap) {
-                return;
-            }
-            if (window.navigator && window.navigator.vibrate) {
-                const duration = typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS;
-                window.navigator.vibrate(duration);
-                __lastVibrateAt = now;
+            if (!force && now < __vibrateUntil) return;
+            if (!force && now - __lastVibrateAt < minGap) return;
+            if (window.navigator && typeof window.navigator.vibrate === 'function') {
+                try {
+                    const val = Array.isArray(ms) ? ms : (typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS);
+                    const calcDuration = Array.isArray(val) ? val.reduce((a, b) => a + b, 0) : val;
+                    window.navigator.vibrate(val);
+                    __lastVibrateAt = now;
+                    __vibrateUntil = now + calcDuration;
+                } catch (e) {}
             }
         }
 
@@ -17126,7 +17129,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
                         <div class="continue-progress-title">${totalCards} tarjetas en total · Antes de empezar:</div>
                         <div class="continue-start-tips">
                             <div class="continue-start-tip"><span>🌿</span> Respira hondo y empieza con calma.</div>
-                            <div class="continue-start-tip"><span>👂</span> Escucha la consigna completa antes de elegir.</div>
+                            <div class="continue-start-tip"><span>💡</span> Entiende el mensaje y elige los segmentos con atención.</div>
                             <div class="continue-start-tip"><span>💛</span> Equivocarte también forma parte del aprendizaje.</div>
                         </div>
                     `}
@@ -38691,7 +38694,7 @@ async function openChatModal() {
 function installChatButtonHandler() {
     if (!window.__chatHapticsInstalled) {
         window.__chatHapticsInstalled = true;
-        document.addEventListener('pointerdown', (e) => {
+        const triggerHaptics = (e) => {
             const btn = e.target.closest(
                 '.button-container button, ' +
                 '.chat-overlay button, ' +
@@ -38713,9 +38716,14 @@ function installChatButtonHandler() {
                 '#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn'
             );
             if (btn) {
-                try { vibrar(50); } catch (err) {}
+                const isToolbarBtn = btn.closest('.button-container') || btn.matches('#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn');
+                try {
+                    vibrar(isToolbarBtn ? [120, 40, 120] : 50, { force: isToolbarBtn });
+                } catch (err) {}
             }
-        }, { capture: true, passive: true });
+        };
+        document.addEventListener('touchstart', triggerHaptics, { capture: true });
+        document.addEventListener('pointerdown', triggerHaptics, { capture: true });
     }
     const chatBtn = document.getElementById('chat-button');
     if (!chatBtn || chatBtn.dataset.chatHandlerInstalled === '1') return;
@@ -38723,7 +38731,7 @@ function installChatButtonHandler() {
     chatBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        vibrar(60);
+        vibrar([120, 40, 120], { force: true });
         playButtonSound();
         void openChatModal();
     });

@@ -11835,6 +11835,7 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.66rem, 2.9vw, 0.78rem) !important;
         border-radius: 9px !important;
     }
+
 }
 @media (max-width: 360px) {
     .article-options-column {
@@ -11905,14 +11906,16 @@ body.chat-typing .chat-footer {
 
 <style id="demostrativos-layout-overrides">
 .top-title .demostrativos-title-text { font-size: clamp(.82rem, 1.45vw, 1.16rem) !important; }
-.article-front-card { width: min(86%, 560px) !important; }
-.article-options-column { width: min(100%, 510px) !important; grid-template-columns: repeat(5, minmax(0,1fr)) !important; }
+.article-front-card { width: min(86%, 560px) !important;
+    }
+    .article-options-column { width: min(100%, 510px) !important; grid-template-columns: repeat(5, minmax(0,1fr)) !important; }
 .article-front-card.target-after .article-noun-column { order: 1 !important; }
 .article-front-card.target-after .article-options-column { order: 2 !important; }
 @media (max-width:620px){
   .article-front-card { width:min(88%,330px) !important; }
   .article-options-column { width:min(100%,310px) !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
   .article-option { min-height:34px !important; padding:6px 7px !important; font-size:clamp(.78rem,3.45vw,.94rem) !important; }
+
 }
 @media (max-width:360px){ .article-options-column { width:min(100%,250px) !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; } }
 </style>
@@ -14072,11 +14075,18 @@ body.chat-typing .chat-footer {
 
 
 
-        function vibrar(ms = 80) {
-    if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(ms);
-    }
-}
+        const DEFAULT_HAPTIC_MS = 50;
+        let __lastVibrateAt = 0;
+        function vibrar(ms = DEFAULT_HAPTIC_MS, opts = {}) {
+            const now = Date.now();
+            const { minGap = 80, force = false } = opts || {};
+            if (!force && now - __lastVibrateAt < minGap) return;
+            if (window.navigator && window.navigator.vibrate) {
+                const duration = typeof ms === 'number' ? ms : DEFAULT_HAPTIC_MS;
+                window.navigator.vibrate(duration);
+                __lastVibrateAt = now;
+            }
+        }
 
         function playErrorSound() {
     const errorAudio = new Audio('https://fawzinoo.github.io/audios/error.mp3');
@@ -39157,6 +39167,34 @@ async function openChatModal() {
 }
 
 function installChatButtonHandler() {
+    if (!window.__chatHapticsInstalled) {
+        window.__chatHapticsInstalled = true;
+        document.addEventListener('pointerdown', (e) => {
+            const btn = e.target.closest(
+                '.button-container button, ' +
+                '.chat-overlay button, ' +
+                '.chat-modal button, ' +
+                '.chat-header-filter-btn, ' +
+                '.chat-teacher-thread-btn, ' +
+                '.chat-teacher-thread-item, ' +
+                '.chat-emoji-menu-btn, ' +
+                '.chat-attach-option-btn, ' +
+                '.chat-own-message-choice-btn, ' +
+                '.chat-reaction-chip, ' +
+                '.chat-unread-indicator, ' +
+                '.chat-jump-bottom-btn, ' +
+                '.chat-image-viewer-btn, ' +
+                '.chat-video-viewer-btn, ' +
+                '.chat-video-viewer-control-btn, ' +
+                '.chat-file-viewer-close-btn, ' +
+                '.chat-notice-modal-btn, ' +
+                '#chat-button, #ranking-button, #reset-button, #skip-button, #shuffle-button, #sound-toggle-btn'
+            );
+            if (btn) {
+                try { vibrar(50); } catch (err) {}
+            }
+        }, { capture: true, passive: true });
+    }
     const chatBtn = document.getElementById('chat-button');
     if (!chatBtn || chatBtn.dataset.chatHandlerInstalled === '1') return;
     chatBtn.dataset.chatHandlerInstalled = '1';

@@ -24811,11 +24811,19 @@ body.chat-typing .chat-footer {
         #stats-box {
             transition: opacity 320ms ease, transform 320ms ease, filter 320ms ease;
         }
+        @media (max-width: 620px) {
+            #stats-box {
+                bottom: 4px !important;
+                right: 4px !important;
+                transform-origin: bottom right !important;
+                zoom: 0.72;
+            }
+        }
         #stats-box.hidden {
-            opacity: 0;
-            transform: scale(0.75);
-            filter: blur(2px);
-            pointer-events: none;
+            opacity: 0 !important;
+            transform: scale(0.75) !important;
+            filter: blur(2px) !important;
+            pointer-events: none !important;
         }
         /* Hints: texto limpio sin brillos/luces, en amarillo sólido */
         .pill-hint {
@@ -25774,15 +25782,17 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
 
-        // Un acierto se procesa arriba inmediatamente. Una frase que aún no
-        // coincide conserva varios segundos para que el alumno continúe y el
-        // motor complete o corrija su hipótesis.
+        // Un acierto se procesa arriba inmediatamente. Si el resultado es final y no coincidió,
+        // esperamos a que el alumno termine de hablar para evaluar la frase completa.
         clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-            if (accumulatedTranscript.trim().length > 0) {
-                processFinalResult(accumulatedTranscript);
-            }
-        }, hasFinalResult ? FINAL_SETTLE_MS : INTERIM_STABILITY_MS);
+        const cleanAcc = accumulatedTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
+        if (hasFinalResult && cleanAcc.length >= 2) {
+            silenceTimer = setTimeout(() => {
+                if (shouldContinueListening() && !hasMatchedInterim) {
+                    processFinalResult(accumulatedTranscript);
+                }
+            }, FINAL_SETTLE_MS + 400);
+        }
     };
 
     recognition.onspeechstart = function() {
@@ -25851,14 +25861,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         clearTimeout(silenceTimer);
         if (hasMatchedInterim) return;
 
-        // Algunos navegadores terminan sin marcar el último resultado como
-        // final. onend ocurre después de entregar los resultados pendientes, así
-        // que este es un punto seguro para evaluar la frase completa acumulada.
-        if (accumulatedTranscript.trim().length > 0 && shouldContinueListening()) {
-            hasMatchedInterim = true;
-            handleVoiceResult(accumulatedTranscript.trim(), targetWord, backElement);
-            return;
-        }
+        // NUNCA evaluar el transcript acumulado como respuesta fallida en onend.
+        // En Safari/iOS las pausas de micro o concesión de permisos provocan onend
+        // constante, lo que causaba un bucle de "Incorrecto" sin que el usuario hablara.
+        accumulatedTranscript = '';
 
         // El navegador puede finalizar una sesión aun con continuous=true.
         // Se abre otra sin mostrar error mientras la tarjeta continúe en back.
@@ -50664,6 +50670,7 @@ function installChatButtonHandler() {
 }
 #flashcard-container > .flashcard > .front,
 #flashcard-container > .flashcard > .back {
+    position: relative !important;
     inset: 0 !important;
     margin: 0 !important;
 }

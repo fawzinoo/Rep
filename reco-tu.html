@@ -25542,13 +25542,60 @@ function showMicrophonePermissionModal() {
 
 // Función principal para manejar permisos de micrófono
 async function handleMicrophonePermission() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    // Primero verificar si el navegador ya tiene permisos concedidos
+    let permissionState = 'unknown';
+    try {
+        // Intentar verificar el estado actual de permisos sin mostrar modal
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        permissionState = permissionStatus.state;
+        
+        if (permissionStatus.state === 'granted') {
+            console.log('✅ El micrófono ya está activado en el sistema');
+            microphonePermissionGranted = true;
+            microphonePermissionAsked = true;
+            localStorage.setItem('microphonePermissionGranted', 'true');
+            return true;
+        }
+        
+        if (permissionStatus.state === 'denied') {
+            console.log('❌ El micrófono está bloqueado en el sistema');
+            microphonePermissionGranted = false;
+            microphonePermissionAsked = true;
+            localStorage.setItem('microphonePermissionGranted', 'false');
+            return false;
+        }
+
+        // Un valor antiguo de localStorage no debe bloquear una nueva solicitud
+        // cuando el navegador indica que todavía puede volver a preguntar.
+        if (permissionStatus.state === 'prompt') {
+            microphonePermissionGranted = false;
+            microphonePermissionAsked = false;
+            localStorage.removeItem('microphonePermissionGranted');
+        }
+    } catch (error) {
+        console.log('⚠️ No se pudo verificar estado de permisos:', error.message);
+        // Continuar con el flujo normal si no se puede verificar
+    }
+    
+    // Si la Permissions API no está disponible, solo reutilizamos una
+    // concesión previa. Una denegación guardada se puede volver a solicitar.
+    if (permissionState === 'unknown'
+        && microphonePermissionAsked
+        && microphonePermissionGranted) {
+        console.log('✅ Permisos de micrófono previamente concedidos');
+        return true;
+    }
+    
+    // Primera vez: mostrar modal personalizado
+    console.log('🆕 Primera solicitud de permisos de micrófono');
+    const result = await showMicrophonePermissionModal();
+    
+    if (!result) {
+        console.log('❌ Permisos denegados');
         return false;
     }
-    microphonePermissionGranted = true;
-    microphonePermissionAsked = true;
-    localStorage.setItem('microphonePermissionGranted', 'true');
+    
+    console.log('🎉 ¡Permisos de micrófono completamente concedidos!');
     return true;
 }
 
@@ -28886,7 +28933,7 @@ function attachFlashcardHandlers() {
                         const correctWord = card.dataset.answer;
                         backElement.classList.add('hidden-text');
                         if (!isRecording) {
-                            startSpeechRecognition(correctWord, backElement);
+                            startVoiceRecognition(correctWord, backElement);
                         }
                     } else {
                         // No quedan intentos - mostrar respuesta directamente

@@ -25731,7 +25731,17 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         backElement.classList.remove('hidden-text');
         const notice = document.createElement('div');
         notice.className = 'mensaje-error';
+        notice.style.cursor = 'pointer';
+        notice.style.pointerEvents = 'auto';
         notice.innerHTML = `<i class="fas fa-microphone-slash"></i><div>${message}</div>`;
+        notice.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            vibrar(80);
+            backElement.querySelectorAll('.mensaje-error').forEach(el => el.remove());
+            showListeningIndicator(backElement);
+            startSpeechRecognition(targetWord, backElement);
+        });
         backElement.appendChild(notice);
         canFlip = true;
         canFlipBack = true;
@@ -28163,8 +28173,19 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
     const startFreshBtn = overlay.querySelector('#start-fresh-btn');
     const startGameBtn = overlay.querySelector('#start-game-btn');
     
+    function primeMicrophoneAccess() {
+        try {
+            if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                    stream.getTracks().forEach(track => track.stop());
+                }).catch(() => {});
+            }
+        } catch (e) {}
+    }
+
     if (continueBtn) continueBtn.addEventListener('click', function() {
         vibrar(60);
+        primeMicrophoneAccess();
         
         // Restaurar el estado del juego
         if (restoreGameState(savedState)) {
@@ -28181,6 +28202,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
     
     if (startFreshBtn) startFreshBtn.addEventListener('click', function() {
         vibrar(60);
+        primeMicrophoneAccess();
         
         // Limpiar progreso actual pero mantener avance anterior
         clearCurrentProgress();
@@ -28192,6 +28214,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 
     if (startGameBtn) startGameBtn.addEventListener('click', function() {
         vibrar(60);
+        primeMicrophoneAccess();
         closeModal();
         initializePage();
         if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
@@ -28954,9 +28977,16 @@ function attachFlashcardHandlers() {
                     updateSkipButtonState();
                 };
 
-                // Reproducir habla2.wav en el primer volteo de cada sesión,
-                // e iniciar el reconocimiento de voz únicamente cuando el audio finalice.
-                playHablaAudioThen(startRecOrDirectAnswer);
+                // En iOS/Safari, recognition.start() DEBE ejecutarse sincrónicamente
+                // dentro del evento de toque del usuario para evitar que WebKit deniegue
+                // la captura con error 'audio-capture' o 'not-allowed'.
+                const speechBrowserInfo = getSpeechBrowserInfo();
+                if (speechBrowserInfo.isIOS) {
+                    startRecOrDirectAnswer();
+                    playHablaAudioThen();
+                } else {
+                    playHablaAudioThen(startRecOrDirectAnswer);
+                }
             }
         });
     });

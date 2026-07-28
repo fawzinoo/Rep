@@ -199,8 +199,11 @@
             width: 100%;
             height: 100%;
             position: absolute;
+            -webkit-transform-style: preserve-3d;
             transform-style: preserve-3d;
-            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+            -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform;
             border-radius: 22px;
             cursor: pointer;
             display: none;
@@ -224,7 +227,10 @@
             position: absolute;
             width: 100%;
             height: 100%;
+            -webkit-backface-visibility: hidden;
             backface-visibility: hidden; /* Oculta la cara trasera al girar */
+            -webkit-transform-style: preserve-3d;
+            transform-style: preserve-3d;
             border-radius: 22px;
             display: flex;
             justify-content: center;
@@ -260,6 +266,7 @@
     width: 100%;
     background: linear-gradient(to bottom, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9)); /* Fondo azul oscuro */
     color: #ffffff; /* Color del texto */
+    -webkit-transform: rotateY(180deg);
     transform: rotateY(180deg); /* Rotación para el efecto */
     padding: 20px; /* Margen interno */
     text-align: center; /* Centrado horizontal */
@@ -28906,89 +28913,88 @@ function attachFlashcardHandlers() {
             canFlip = false;
             setTimeout(() => { canFlip = true; }, 350);
 
-            vibrar(80); 
+            try { vibrar(80); } catch(e) {}
             const backElement = card.querySelector('.back');
+
             if (card.classList.contains('flipped')) {
-                stopActiveSpeechRecognition();
+                // Gira inmediatamente para activar la animación de GPU en Safari sin retardo
                 card.classList.remove('flipped');
+                stopActiveSpeechRecognition();
                 stopAllAudios();
-                // Limpia cualquier contador de intentos al volver a front
-                backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-                // Eliminar indicador de escucha al volver al frente
-                removeListeningIndicator(backElement);
-                setBackAttempts(backElement, 2 - voiceAttempts);
-                betweenAttempts = false;
-                canFlip = true;
-                updateSkipButtonState();
+
+                requestAnimationFrame(() => {
+                    // Limpia cualquier contador de intentos al volver a front
+                    backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                    // Eliminar indicador de escucha al volver al frente
+                    removeListeningIndicator(backElement);
+                    setBackAttempts(backElement, 2 - voiceAttempts);
+                    betweenAttempts = false;
+                    canFlip = true;
+                    updateSkipButtonState();
+                });
             } else {
-                // Volteo de front a back: SIEMPRE permitir voltear para mostrar indicador
+                // Volteo de front a back: Girar INMEDIATAMENTE
                 console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
                 stopAllAudios();
                 card.classList.add('flipped');
-                backElement.classList.remove('showing-mas-answer');
-                
-                // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
-                if (card.dataset.backHtml) {
-                    backElement.innerHTML = card.dataset.backHtml;
-                } else if (card.dataset.answer) {
-                    backElement.innerHTML = card.dataset.answer;
-                }
-                backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
-                backElement.classList.remove('hidden-text');
-                setBackAttempts(backElement, 2 - voiceAttempts);
 
-                // Ocultar la respuesta antes de pintar el indicador para evitar
-                // que aparezca durante los 150 ms previos al reconocimiento.
-                if (voiceAttempts < 2) {
-                    backElement.classList.add('hidden-text');
-                }
-                
-                // Mostrar SIEMPRE el indicador al voltear a back
-                console.log(`Mostrando indicador para voiceAttempts: ${voiceAttempts}`);
-                showListeningIndicator(backElement);
-                
-                const startRecOrDirectAnswer = () => {
-                    if (voiceAttempts < 2) {
-                        const correctWord = card.dataset.answer;
-                        backElement.classList.add('hidden-text');
-                        if (!isRecording) {
-                            startVoiceRecognition(correctWord, backElement);
-                        }
-                    } else {
-                        // No quedan intentos - mostrar respuesta directamente
-                        console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
-                        // Eliminar indicador cuando aparece la respuesta directa
-                        removeListeningIndicator(backElement);
-
-                        // ANTI-TRUCO (refuerzo): marcar como completada al mostrar respuesta directa
-                        if (!completedCards.has(currentCardIndex)) {
-                            completedCards.add(currentCardIndex);
-                            updateCardCounter();
-                            saveGameProgress();
-                        }
-                        
-                        // Mostrar la respuesta correcta con efecto de brillo
-                        clearBackContent(backElement);
-                        showMasMenosRevealedAnswer(backElement, card.dataset.answer);
-                        
-                        // Reproducir audio si existe y después mostrar countdown
-                        const audioIndex = flashcards.indexOf(card);
-                        playCardAudioThen(audioIndex, () => showCountdown(card));
+                const prepBackAndStart = () => {
+                    backElement.classList.remove('showing-mas-answer');
+                    
+                    // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
+                    if (card.dataset.backHtml) {
+                        backElement.innerHTML = card.dataset.backHtml;
+                    } else if (card.dataset.answer) {
+                        backElement.innerHTML = card.dataset.answer;
                     }
-                    // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
-                    updateSkipButtonState();
+                    backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
+                    backElement.classList.remove('hidden-text');
+                    setBackAttempts(backElement, 2 - voiceAttempts);
+
+                    if (voiceAttempts < 2) {
+                        backElement.classList.add('hidden-text');
+                    }
+                    
+                    // Mostrar SIEMPRE el indicador al voltear a back
+                    showListeningIndicator(backElement);
+                    
+                    const startRecOrDirectAnswer = () => {
+                        if (voiceAttempts < 2) {
+                            const correctWord = card.dataset.answer;
+                            backElement.classList.add('hidden-text');
+                            if (!isRecording) {
+                                startVoiceRecognition(correctWord, backElement);
+                            }
+                        } else {
+                            // No quedan intentos - mostrar respuesta directamente
+                            console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
+                            removeListeningIndicator(backElement);
+
+                            if (!completedCards.has(currentCardIndex)) {
+                                completedCards.add(currentCardIndex);
+                                updateCardCounter();
+                                saveGameProgress();
+                            }
+                            
+                            clearBackContent(backElement);
+                            showMasMenosRevealedAnswer(backElement, card.dataset.answer);
+                            
+                            const audioIndex = flashcards.indexOf(card);
+                            playCardAudioThen(audioIndex, () => showCountdown(card));
+                        }
+                        updateSkipButtonState();
+                    };
+
+                    const speechBrowserInfo = getSpeechBrowserInfo();
+                    if (speechBrowserInfo.isIOS) {
+                        startRecOrDirectAnswer();
+                        playHablaAudioThen();
+                    } else {
+                        playHablaAudioThen(startRecOrDirectAnswer);
+                    }
                 };
 
-                // En iOS/Safari, recognition.start() DEBE ejecutarse sincrónicamente
-                // dentro del evento de toque del usuario para evitar que WebKit deniegue
-                // la captura con error 'audio-capture' o 'not-allowed'.
-                const speechBrowserInfo = getSpeechBrowserInfo();
-                if (speechBrowserInfo.isIOS) {
-                    startRecOrDirectAnswer();
-                    playHablaAudioThen();
-                } else {
-                    playHablaAudioThen(startRecOrDirectAnswer);
-                }
+                requestAnimationFrame(prepBackAndStart);
             }
         });
     });

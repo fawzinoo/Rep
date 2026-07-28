@@ -353,60 +353,16 @@
             z-index: 10;
         }
 
-        /* Alternativa sencilla cuando iOS no ofrece reconocimiento de voz.
-           No pide configurar Siri: el alumno comprueba la respuesta y se
-           autoevalúa con dos botones grandes. */
-        .speech-manual-fallback {
-            position: absolute;
-            left: 50%;
-            bottom: 22px;
-            transform: translateX(-50%);
-            z-index: 10020;
-            width: min(88%, 430px);
+        /* Aviso permanente: nunca concede aciertos si la voz no fue evaluada. */
+        .mensaje-error.speech-unavailable-notice {
+            width: min(82%, 430px);
             box-sizing: border-box;
-            padding: 12px;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.96);
-            border: 1px solid rgba(255, 255, 255, 0.72);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
-            color: #172033;
-            text-shadow: none;
-            font-family: Arial, sans-serif;
+            padding: 20px 18px;
+            font-size: clamp(1.1rem, 5vw, 1.55rem);
+            line-height: 1.3;
             animation: none !important;
-        }
-
-        .speech-manual-fallback-title {
-            margin-bottom: 9px;
-            font-size: clamp(0.9rem, 3.7vw, 1.05rem);
-            line-height: 1.25;
-            font-weight: 800;
-        }
-
-        .speech-manual-fallback-actions {
-            display: flex;
-            justify-content: center;
-            gap: 9px;
-        }
-
-        .speech-manual-fallback-btn {
-            flex: 1 1 0;
-            min-height: 44px;
-            padding: 8px 10px;
-            border: none;
-            border-radius: 13px;
-            color: #fff;
-            font-size: clamp(0.84rem, 3.5vw, 1rem);
-            font-weight: 800;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-
-        .speech-manual-fallback-btn.is-known {
-            background: linear-gradient(135deg, #22a447 0%, #18833a 100%);
-        }
-
-        .speech-manual-fallback-btn.is-unknown {
-            background: linear-gradient(135deg, #e44855 0%, #bd2837 100%);
+            cursor: default !important;
+            pointer-events: none !important;
         }
 
         @keyframes pulse {
@@ -25300,7 +25256,6 @@ let audioChunks = [];
 let isRecording = false;
 let activeSpeechRecognition = null;
 let speechRecognitionGeneration = 0;
-let speechManualFallbackActive = false;
 
 function stopActiveSpeechRecognition() {
     speechRecognitionGeneration += 1;
@@ -25695,11 +25650,6 @@ function startVoiceRecognition(targetWord, backElement) {
 
     const { isIOS, isChromeAndroid } = getSpeechBrowserInfo();
 
-    if (isIOS && speechManualFallbackActive) {
-        showManualSpeechFallback(backElement, targetWord);
-        return;
-    }
-
     // Safari/iOS administra el permiso de Web Speech por separado del permiso
     // de captura de getUserMedia. Usar getUserMedia como comprobación previa y
     // esperar después rompe el gesto del usuario y puede producir not-allowed
@@ -25743,7 +25693,7 @@ function startVoiceRecognition(targetWord, backElement) {
     });
 }
 
-function showManualSpeechFallback(backElement, targetWord) {
+function showSpeechUnavailableNotice(backElement, message = 'No se puede evaluar la voz en este iPhone') {
     const card = backElement && backElement.closest('.flashcard');
     if (!card || !card.classList.contains('flipped') || !card.classList.contains('is-visible')) {
         return;
@@ -25754,49 +25704,12 @@ function showManualSpeechFallback(backElement, targetWord) {
     clearBackContent(backElement);
     removeListeningIndicator(backElement);
     backElement.classList.remove('hidden-text');
-    showMasMenosRevealedAnswer(backElement, targetWord);
 
-    const panel = document.createElement('div');
-    panel.className = 'speech-manual-fallback';
-    panel.innerHTML = `
-        <div class="speech-manual-fallback-title">¿La habías dicho correctamente?</div>
-        <div class="speech-manual-fallback-actions">
-            <button type="button" class="speech-manual-fallback-btn is-known">Sí, la sabía</button>
-            <button type="button" class="speech-manual-fallback-btn is-unknown">No la sabía</button>
-        </div>
-    `;
+    const notice = document.createElement('div');
+    notice.className = 'mensaje-error speech-unavailable-notice';
+    notice.innerHTML = `<i class="fas fa-microphone-slash"></i><div>${message}</div>`;
+    backElement.appendChild(notice);
 
-    const finishManualAnswer = (wasKnown, event) => {
-        event.stopPropagation();
-        event.preventDefault();
-        if (!panel.isConnected) return;
-        panel.remove();
-        betweenAttempts = false;
-        showingErrorMessage = false;
-        try { vibrar(60); } catch (error) {}
-
-        if (wasKnown) {
-            voiceAttempts = 0;
-            handleVoiceResult(targetWord, targetWord, backElement);
-        } else {
-            // Simula el último intento para conservar exactamente el mismo
-            // marcador, respuesta y avance que el flujo de voz.
-            voiceAttempts = 1;
-            handleVoiceResult('__respuesta_manual_incorrecta__', targetWord, backElement);
-        }
-    };
-
-    panel.querySelector('.is-known').addEventListener('click', event => {
-        finishManualAnswer(true, event);
-    });
-    panel.querySelector('.is-unknown').addEventListener('click', event => {
-        finishManualAnswer(false, event);
-    });
-    panel.addEventListener('click', event => {
-        event.stopPropagation();
-    });
-
-    backElement.appendChild(panel);
     betweenAttempts = true;
     canFlip = true;
     canFlipBack = true;
@@ -25808,8 +25721,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     // Web Speech API (reconocimiento de voz del navegador)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        speechManualFallbackActive = true;
-        showManualSpeechFallback(backElement, targetWord);
+        showSpeechUnavailableNotice(backElement, 'Este navegador no puede evaluar la voz');
         return;
     }
 
@@ -26040,11 +25952,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         if (event.error === 'service-not-allowed') {
             hasMatchedInterim = true;
             if (isIOS) {
-                // WebKit depende de Siri para SpeechRecognition. Si ese
-                // servicio no está disponible, no enviamos al alumno a Ajustes:
-                // cambiamos automáticamente a una autoevaluación sencilla.
-                speechManualFallbackActive = true;
-                showManualSpeechFallback(backElement, targetWord);
+                showSpeechUnavailableNotice(
+                    backElement,
+                    'No se puede evaluar la voz en este iPhone'
+                );
             } else {
                 showRecognitionNotice('El servicio de reconocimiento de voz está bloqueado');
             }
@@ -26128,8 +26039,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
                 activeSpeechRecognition = null;
                 isRecording = false;
                 try { recognition.abort(); } catch (error) {}
-                speechManualFallbackActive = true;
-                showManualSpeechFallback(backElement, targetWord);
+                showSpeechUnavailableNotice(
+                    backElement,
+                    'No se puede evaluar la voz en este iPhone'
+                );
             }, 5000);
         }
     } catch (error) {
@@ -29153,7 +29066,6 @@ function attachFlashcardHandlers() {
                 const speechBrowserInfo = getSpeechBrowserInfo();
                 const iosRecognitionStartedFromGesture = Boolean(
                     speechBrowserInfo.isIOS
-                    && !speechManualFallbackActive
                     && voiceAttempts < 2
                     && !isRecording
                 );

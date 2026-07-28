@@ -25635,6 +25635,17 @@ function startVoiceRecognition(targetWord, backElement) {
         console.log("No se puede iniciar reconocimiento: la tarjeta no está volteada");
         return;
     }
+
+    const { isIOS, isChromeAndroid } = getSpeechBrowserInfo();
+
+    // Safari/iOS administra el permiso de Web Speech por separado del permiso
+    // de captura de getUserMedia. Usar getUserMedia como comprobación previa y
+    // esperar después rompe el gesto del usuario y puede producir not-allowed
+    // aunque el micrófono del sitio ya esté autorizado.
+    if (isIOS) {
+        startSpeechRecognition(targetWord, backElement);
+        return;
+    }
     
     // Verificar permisos de micrófono antes de continuar
     handleMicrophonePermission().then(hasPermission => {
@@ -25654,11 +25665,9 @@ function startVoiceRecognition(targetWord, backElement) {
             return;
         }
         
-        // Chrome Android e iOS Safari pueden conservar el micrófono ocupado durante unos
-        // instantes después de getUserMedia() o rotación 3D. Esperar evita audio-capture y
-        // abortos silenciosos al iniciar webkitSpeechRecognition.
-        const { isChromeAndroid, isIOS } = getSpeechBrowserInfo();
-        const initialStartDelay = isChromeAndroid ? 450 : (isIOS ? 350 : 0);
+        // Chrome Android puede conservar el micrófono ocupado durante unos
+        // instantes después de getUserMedia(). Esperar evita audio-capture.
+        const initialStartDelay = isChromeAndroid ? 450 : 0;
         setTimeout(() => {
             const currentCard = backElement.closest('.flashcard');
             if (currentCard
@@ -25870,9 +25879,21 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
 
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        if (event.error === 'service-not-allowed') {
             hasMatchedInterim = true;
-            showRecognitionNotice('Toca la tarjeta para permitir el micrófono');
+            const serviceMessage = isIOS
+                ? 'Activa Siri y abre esta página directamente en Safari'
+                : 'El servicio de reconocimiento de voz está bloqueado';
+            showRecognitionNotice(serviceMessage);
+            return;
+        }
+
+        if (event.error === 'not-allowed') {
+            hasMatchedInterim = true;
+            const permissionMessage = isIOS
+                ? 'Safari no permitió reconocer la voz. Toca para intentarlo'
+                : 'Toca la tarjeta para permitir el micrófono';
+            showRecognitionNotice(permissionMessage);
             return;
         }
 
@@ -28941,6 +28962,21 @@ function attachFlashcardHandlers() {
                 stopAllAudios();
                 card.classList.add('flipped');
 
+                const speechBrowserInfo = getSpeechBrowserInfo();
+                const iosRecognitionStartedFromGesture = Boolean(
+                    speechBrowserInfo.isIOS
+                    && voiceAttempts < 2
+                    && !isRecording
+                );
+
+                // En Safari la primera llamada debe permanecer dentro del
+                // evento click. No colocar await, Promise ni setTimeout antes
+                // de recognition.start(), porque iOS pierde la activación.
+                if (iosRecognitionStartedFromGesture) {
+                    backElement.classList.add('hidden-text');
+                    startSpeechRecognition(card.dataset.answer, backElement);
+                }
+
                 setTimeout(() => {
                     backElement.classList.remove('showing-mas-answer');
                     
@@ -28988,10 +29024,13 @@ function attachFlashcardHandlers() {
                         updateSkipButtonState();
                     };
 
-                    const speechBrowserInfo = getSpeechBrowserInfo();
                     if (speechBrowserInfo.isIOS) {
-                        startRecOrDirectAnswer();
-                        playHablaAudioThen();
+                        // La sesión ya se inició desde el click. El audio
+                        // "habla" no se reproduce después porque Safari podría
+                        // transcribir el propio aviso mientras escucha.
+                        if (!iosRecognitionStartedFromGesture) {
+                            startRecOrDirectAnswer();
+                        }
                     } else {
                         playHablaAudioThen(startRecOrDirectAnswer);
                     }

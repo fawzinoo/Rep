@@ -25542,46 +25542,13 @@ function showMicrophonePermissionModal() {
 
 // Función principal para manejar permisos de micrófono
 async function handleMicrophonePermission() {
-    // Si el usuario ya aceptó los permisos anteriormente (guardado en localStorage), reutilizar directamente
-    if (localStorage.getItem('microphonePermissionGranted') === 'true' || microphonePermissionGranted === true) {
-        microphonePermissionGranted = true;
-        microphonePermissionAsked = true;
-        return true;
-    }
-
-    // Intentar verificar el estado a través de Permissions API si el navegador lo soporta
-    try {
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        if (permissionStatus.state === 'granted') {
-            microphonePermissionGranted = true;
-            microphonePermissionAsked = true;
-            localStorage.setItem('microphonePermissionGranted', 'true');
-            return true;
-        }
-        if (permissionStatus.state === 'denied') {
-            microphonePermissionGranted = false;
-            microphonePermissionAsked = true;
-            localStorage.setItem('microphonePermissionGranted', 'false');
-            return false;
-        }
-    } catch (error) {
-        console.log('⚠️ Permissions API query not supported:', error.message);
-    }
-    
-    if (localStorage.getItem('microphonePermissionGranted') === 'true') {
-        return true;
-    }
-    
-    // Solo solicitar por primera vez si no se ha concedido
-    console.log('🆕 Primera solicitud de permisos de micrófono');
-    const result = await showMicrophonePermissionModal();
-    
-    if (!result) {
-        console.log('❌ Permisos denegados');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
         return false;
     }
-    
-    console.log('🎉 ¡Permisos de micrófono completamente concedidos!');
+    microphonePermissionGranted = true;
+    microphonePermissionAsked = true;
+    localStorage.setItem('microphonePermissionGranted', 'true');
     return true;
 }
 
@@ -28158,19 +28125,8 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
     const startFreshBtn = overlay.querySelector('#start-fresh-btn');
     const startGameBtn = overlay.querySelector('#start-game-btn');
     
-    function primeMicrophoneAccess() {
-        try {
-            if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                    stream.getTracks().forEach(track => track.stop());
-                }).catch(() => {});
-            }
-        } catch (e) {}
-    }
-
     if (continueBtn) continueBtn.addEventListener('click', function() {
         vibrar(60);
-        primeMicrophoneAccess();
         
         // Restaurar el estado del juego
         if (restoreGameState(savedState)) {
@@ -28187,7 +28143,6 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
     
     if (startFreshBtn) startFreshBtn.addEventListener('click', function() {
         vibrar(60);
-        primeMicrophoneAccess();
         
         // Limpiar progreso actual pero mantener avance anterior
         clearCurrentProgress();
@@ -28199,7 +28154,6 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
 
     if (startGameBtn) startGameBtn.addEventListener('click', function() {
         vibrar(60);
-        primeMicrophoneAccess();
         closeModal();
         initializePage();
         if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);

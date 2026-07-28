@@ -25542,51 +25542,37 @@ function showMicrophonePermissionModal() {
 
 // Función principal para manejar permisos de micrófono
 async function handleMicrophonePermission() {
-    // Primero verificar si el navegador ya tiene permisos concedidos
-    let permissionState = 'unknown';
+    // Si el usuario ya aceptó los permisos anteriormente (guardado en localStorage), reutilizar directamente
+    if (localStorage.getItem('microphonePermissionGranted') === 'true' || microphonePermissionGranted === true) {
+        microphonePermissionGranted = true;
+        microphonePermissionAsked = true;
+        return true;
+    }
+
+    // Intentar verificar el estado a través de Permissions API si el navegador lo soporta
     try {
-        // Intentar verificar el estado actual de permisos sin mostrar modal
         const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        permissionState = permissionStatus.state;
-        
         if (permissionStatus.state === 'granted') {
-            console.log('✅ El micrófono ya está activado en el sistema');
             microphonePermissionGranted = true;
             microphonePermissionAsked = true;
             localStorage.setItem('microphonePermissionGranted', 'true');
             return true;
         }
-        
         if (permissionStatus.state === 'denied') {
-            console.log('❌ El micrófono está bloqueado en el sistema');
             microphonePermissionGranted = false;
             microphonePermissionAsked = true;
             localStorage.setItem('microphonePermissionGranted', 'false');
             return false;
         }
-
-        // Un valor antiguo de localStorage no debe bloquear una nueva solicitud
-        // cuando el navegador indica que todavía puede volver a preguntar.
-        if (permissionStatus.state === 'prompt') {
-            microphonePermissionGranted = false;
-            microphonePermissionAsked = false;
-            localStorage.removeItem('microphonePermissionGranted');
-        }
     } catch (error) {
-        console.log('⚠️ No se pudo verificar estado de permisos:', error.message);
-        // Continuar con el flujo normal si no se puede verificar
+        console.log('⚠️ Permissions API query not supported:', error.message);
     }
     
-    // Si la Permissions API no está disponible, solo reutilizamos una
-    // concesión previa. Una denegación guardada se puede volver a solicitar.
-    if (permissionState === 'unknown'
-        && microphonePermissionAsked
-        && microphonePermissionGranted) {
-        console.log('✅ Permisos de micrófono previamente concedidos');
+    if (localStorage.getItem('microphonePermissionGranted') === 'true') {
         return true;
     }
     
-    // Primera vez: mostrar modal personalizado
+    // Solo solicitar por primera vez si no se ha concedido
     console.log('🆕 Primera solicitud de permisos de micrófono');
     const result = await showMicrophonePermissionModal();
     
@@ -25865,10 +25851,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             hasMatchedInterim = true;
-            microphonePermissionGranted = false;
-            microphonePermissionAsked = false;
-            localStorage.removeItem('microphonePermissionGranted');
-            showRecognitionNotice('Activa el micrófono y toca para intentarlo');
+            showRecognitionNotice('Toca la tarjeta para permitir el micrófono');
             return;
         }
 
@@ -25879,7 +25862,6 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         }
         
         // Para otros errores, no hacemos nada drástico, solo paramos.
-        // El alert() se ha eliminado para no interrumpir al usuario.
     };
 
     recognition.onnomatch = function() {
@@ -25892,6 +25874,9 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
         isRecording = true;
+        microphonePermissionGranted = true;
+        microphonePermissionAsked = true;
+        localStorage.setItem('microphonePermissionGranted', 'true');
     };
 
     recognition.onend = function() {

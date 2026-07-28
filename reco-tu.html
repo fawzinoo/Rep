@@ -25715,6 +25715,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 	    let hasMatchedInterim = false;
 	    let silenceTimer = null;
 	    let speechEndTimer = null;
+	    let audioStartTimer = null;
 	    let accumulatedTranscript = '';
     const INTERIM_STABILITY_MS = 1000;
     const FINAL_SETTLE_MS = 600;
@@ -25769,6 +25770,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 	    const processFinalResult = (transcript) => {
 	        clearTimeout(silenceTimer);
 	        clearTimeout(speechEndTimer);
+	        clearTimeout(audioStartTimer);
 	        const card = backElement.closest('.flashcard');
         if (!isCurrentSession()
             || !card
@@ -25793,6 +25795,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             || hasMatchedInterim) {
             return;
         }
+        clearTimeout(audioStartTimer);
 
         let interimTranscript = '';
         let completeTranscript = '';
@@ -25862,6 +25865,12 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 	        if (!isCurrentSession()) return;
 	        clearTimeout(silenceTimer);
 	        clearTimeout(speechEndTimer);
+	        clearTimeout(audioStartTimer);
+	    };
+
+	    recognition.onaudiostart = function() {
+	        if (!isCurrentSession()) return;
+	        clearTimeout(audioStartTimer);
 	    };
 
 	    recognition.onspeechend = function() {
@@ -25883,9 +25892,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         if (event.error === 'aborted') {
             return; // Ignorar si fue cancelado a propósito
         }
-	        // NO eliminar el indicador automáticamente, que persista
-	        clearTimeout(silenceTimer);
+        // NO eliminar el indicador automáticamente, que persista
+        clearTimeout(silenceTimer);
 	        clearTimeout(speechEndTimer);
+	        clearTimeout(audioStartTimer);
 
         // Los fallos técnicos no cuentan como respuesta incorrecta y nunca
         // deben voltear la tarjeta sin explicar qué ha ocurrido.
@@ -25949,6 +25959,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 	    recognition.onend = function() {
 	        if (!isCurrentSession()) return;
 	        clearTimeout(speechEndTimer);
+	        clearTimeout(audioStartTimer);
 
 	        // Respaldo para Safari: si terminó justo después de onresult, todavía
 	        // se evalúa la transcripción antes de limpiar la sesión.
@@ -25980,12 +25991,25 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 
     try {
         recognition.start();
+        if (isIOS) {
+            // No confundir la animación con una captura real. Safari debe
+            // confirmar audiostart, speechstart o result en pocos segundos.
+            audioStartTimer = setTimeout(() => {
+                if (!isCurrentSession() || hasMatchedInterim) return;
+                hasMatchedInterim = true;
+                activeSpeechRecognition = null;
+                isRecording = false;
+                try { recognition.abort(); } catch (error) {}
+                showRecognitionNotice('Safari no activó el micrófono. Toca para intentarlo');
+            }, 5000);
+        }
     } catch (error) {
         if (!isCurrentSession()) return;
 	        activeSpeechRecognition = null;
-	        isRecording = false;
-	        clearTimeout(silenceTimer);
+        isRecording = false;
+        clearTimeout(silenceTimer);
 	        clearTimeout(speechEndTimer);
+	        clearTimeout(audioStartTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
 
         // En Chrome Android start() puede lanzar InvalidStateError mientras la
@@ -29004,18 +29028,8 @@ function attachFlashcardHandlers() {
                     && !isRecording
                 );
 
-                // En Safari la primera llamada debe permanecer dentro del
-                // evento click. No colocar await, Promise ni setTimeout antes
-                // de recognition.start(), porque iOS pierde la activación.
-                if (iosRecognitionStartedFromGesture) {
-                    backElement.classList.add('hidden-text');
-                    startSpeechRecognition(card.dataset.answer, backElement);
-                }
-
-                setTimeout(() => {
+                const prepareBackForListening = () => {
                     backElement.classList.remove('showing-mas-answer');
-                    
-                    // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
                     if (card.dataset.backHtml) {
                         backElement.innerHTML = card.dataset.backHtml;
                     } else if (card.dataset.answer) {
@@ -29024,13 +29038,26 @@ function attachFlashcardHandlers() {
                     backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
                     backElement.classList.remove('hidden-text');
                     setBackAttempts(backElement, 2 - voiceAttempts);
-
                     if (voiceAttempts < 2) {
                         backElement.classList.add('hidden-text');
                     }
-                    
-                    // Mostrar SIEMPRE el indicador al voltear a back
                     showListeningIndicator(backElement);
+                };
+
+                // En Safari la primera llamada debe permanecer dentro del
+                // evento click. No colocar await, Promise ni setTimeout antes
+                // de recognition.start(), porque iOS pierde la activación.
+                if (iosRecognitionStartedFromGesture) {
+                    // Preparar la interfaz antes de iniciar. Así un error
+                    // inmediato de iOS no será borrado 50 ms más tarde.
+                    prepareBackForListening();
+                    startSpeechRecognition(card.dataset.answer, backElement);
+                }
+
+                setTimeout(() => {
+                    if (!iosRecognitionStartedFromGesture) {
+                        prepareBackForListening();
+                    }
                     
                     const startRecOrDirectAnswer = () => {
                         if (voiceAttempts < 2) {

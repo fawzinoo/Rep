@@ -25635,17 +25635,6 @@ function startVoiceRecognition(targetWord, backElement) {
         console.log("No se puede iniciar reconocimiento: la tarjeta no está volteada");
         return;
     }
-
-    const { isIOS, isChromeAndroid } = getSpeechBrowserInfo();
-
-    // Safari/iOS administra el permiso de Web Speech por separado del permiso
-    // de captura de getUserMedia. Usar getUserMedia como comprobación previa y
-    // esperar después rompe el gesto del usuario y puede producir not-allowed
-    // aunque el micrófono del sitio ya esté autorizado.
-    if (isIOS) {
-        startSpeechRecognition(targetWord, backElement);
-        return;
-    }
     
     // Verificar permisos de micrófono antes de continuar
     handleMicrophonePermission().then(hasPermission => {
@@ -25665,9 +25654,11 @@ function startVoiceRecognition(targetWord, backElement) {
             return;
         }
         
-        // Chrome Android puede conservar el micrófono ocupado durante unos
-        // instantes después de getUserMedia(). Esperar evita audio-capture.
-        const initialStartDelay = isChromeAndroid ? 450 : 0;
+        // Chrome Android e iOS Safari pueden conservar el micrófono ocupado durante unos
+        // instantes después de getUserMedia() o rotación 3D. Esperar evita audio-capture y
+        // abortos silenciosos al iniciar webkitSpeechRecognition.
+        const { isChromeAndroid, isIOS } = getSpeechBrowserInfo();
+        const initialStartDelay = isChromeAndroid ? 450 : (isIOS ? 350 : 0);
         setTimeout(() => {
             const currentCard = backElement.closest('.flashcard');
             if (currentCard
@@ -25686,17 +25677,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     // Web Speech API (reconocimiento de voz del navegador)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        removeListeningIndicator(backElement);
-        clearBackContent(backElement);
-        backElement.classList.remove('hidden-text');
-        const notice = document.createElement('div');
-        notice.className = 'mensaje-error';
-        notice.innerHTML = '<i class="fas fa-microphone-slash"></i><div>El reconocimiento de voz no está disponible</div>';
-        backElement.appendChild(notice);
-        canFlip = true;
-        canFlipBack = true;
-        betweenAttempts = true;
-        updateSkipButtonState();
+        alert("Tu navegador no soporta reconocimiento de voz.");
         return;
     }
 
@@ -25722,11 +25703,9 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     // hay ruido, acento o palabras cortas muy parecidas.
     recognition.maxAlternatives = isChromeAndroid ? 3 : (isIOS ? 2 : 5);
 
-	    let hasMatchedInterim = false;
-	    let silenceTimer = null;
-	    let speechEndTimer = null;
-	    let audioStartTimer = null;
-	    let accumulatedTranscript = '';
+    let hasMatchedInterim = false;
+    let silenceTimer = null;
+    let accumulatedTranscript = '';
     const INTERIM_STABILITY_MS = 1000;
     const FINAL_SETTLE_MS = 600;
     // Los motores móviles necesitan un pequeño margen para liberar el
@@ -25777,11 +25756,9 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         updateSkipButtonState();
     };
 
-	    const processFinalResult = (transcript) => {
-	        clearTimeout(silenceTimer);
-	        clearTimeout(speechEndTimer);
-	        clearTimeout(audioStartTimer);
-	        const card = backElement.closest('.flashcard');
+    const processFinalResult = (transcript) => {
+        clearTimeout(silenceTimer);
+        const card = backElement.closest('.flashcard');
         if (!isCurrentSession()
             || !card
             || !card.classList.contains('flipped')
@@ -25805,7 +25782,6 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             || hasMatchedInterim) {
             return;
         }
-        clearTimeout(audioStartTimer);
 
         let interimTranscript = '';
         let completeTranscript = '';
@@ -25853,47 +25829,23 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
 
-	        // Safari/iOS cierra la sesión casi inmediatamente después de entregar
-	        // el resultado final. Evaluarlo aquí evita que onend cancele el timer
-	        // antes de decidir si la respuesta es correcta o incorrecta.
-	        clearTimeout(silenceTimer);
-	        const cleanAcc = accumulatedTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
-	        if (hasFinalResult && cleanAcc.length >= 2) {
-	            if (isIOS) {
-	                processFinalResult(accumulatedTranscript);
-	                return;
-	            }
-	            silenceTimer = setTimeout(() => {
-	                if (shouldContinueListening() && !hasMatchedInterim) {
-	                    processFinalResult(accumulatedTranscript);
+        // Un acierto se procesa arriba inmediatamente. Si el resultado es final y no coincidió,
+        // esperamos a que el alumno termine de hablar para evaluar la frase completa.
+        clearTimeout(silenceTimer);
+        const cleanAcc = accumulatedTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
+        if (hasFinalResult && cleanAcc.length >= 2) {
+            silenceTimer = setTimeout(() => {
+                if (shouldContinueListening() && !hasMatchedInterim) {
+                    processFinalResult(accumulatedTranscript);
                 }
             }, FINAL_SETTLE_MS + 400);
         }
     };
 
-	    recognition.onspeechstart = function() {
-	        if (!isCurrentSession()) return;
-	        clearTimeout(silenceTimer);
-	        clearTimeout(speechEndTimer);
-	        clearTimeout(audioStartTimer);
-	    };
-
-	    recognition.onaudiostart = function() {
-	        if (!isCurrentSession()) return;
-	        clearTimeout(audioStartTimer);
-	    };
-
-	    recognition.onspeechend = function() {
-	        if (!isCurrentSession() || hasMatchedInterim || !isIOS) return;
-	        // En Safari stop() solicita el resultado final de lo ya escuchado.
-	        // Sin esto algunas versiones de iOS dejan la sesión abierta y el
-	        // indicador del micrófono permanece indefinidamente.
-	        clearTimeout(speechEndTimer);
-	        speechEndTimer = setTimeout(() => {
-	            if (!isCurrentSession() || hasMatchedInterim) return;
-	            try { recognition.stop(); } catch (error) {}
-	        }, 220);
-	    };
+    recognition.onspeechstart = function() {
+        if (!isCurrentSession()) return;
+        clearTimeout(silenceTimer);
+    };
 
     recognition.onerror = function(event) {
         if (!isCurrentSession()) return;
@@ -25904,19 +25856,13 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         }
         // NO eliminar el indicador automáticamente, que persista
         clearTimeout(silenceTimer);
-	        clearTimeout(speechEndTimer);
-	        clearTimeout(audioStartTimer);
 
         // Los fallos técnicos no cuentan como respuesta incorrecta y nunca
         // deben voltear la tarjeta sin explicar qué ha ocurrido.
-	        if (event.error === 'no-speech') {
-	            if (isIOS) {
-	                hasMatchedInterim = true;
-	                showRecognitionNotice('No se oyó ninguna voz. Toca para intentarlo');
-	            }
-	            // En otros navegadores onend reabrirá la sesión.
-	            return;
-	        }
+        if (event.error === 'no-speech') {
+            // Es normal en una escucha prolongada. onend reabrirá la sesión.
+            return;
+        }
 
         if (event.error === "network") {
             hasMatchedInterim = true;
@@ -25924,15 +25870,9 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
 
-        if (event.error === 'service-not-allowed') {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             hasMatchedInterim = true;
-            showRecognitionNotice('No se ha podido escuchar. Toca para intentarlo');
-            return;
-        }
-
-        if (event.error === 'not-allowed') {
-            hasMatchedInterim = true;
-            showRecognitionNotice('No se pudo activar el micrófono. Toca para intentarlo');
+            showRecognitionNotice('Toca la tarjeta para permitir el micrófono');
             return;
         }
 
@@ -25960,21 +25900,11 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         localStorage.setItem('microphonePermissionGranted', 'true');
     };
 
-	    recognition.onend = function() {
-	        if (!isCurrentSession()) return;
-	        clearTimeout(speechEndTimer);
-	        clearTimeout(audioStartTimer);
-
-	        // Respaldo para Safari: si terminó justo después de onresult, todavía
-	        // se evalúa la transcripción antes de limpiar la sesión.
-	        if (isIOS && !hasMatchedInterim && accumulatedTranscript.trim().length >= 2) {
-	            processFinalResult(accumulatedTranscript);
-	            return;
-	        }
-
-	        activeSpeechRecognition = null;
-	        isRecording = false;
-	        clearTimeout(silenceTimer);
+    recognition.onend = function() {
+        if (!isCurrentSession()) return;
+        activeSpeechRecognition = null;
+        isRecording = false;
+        clearTimeout(silenceTimer);
         if (hasMatchedInterim) return;
 
         // NUNCA evaluar el transcript acumulado como respuesta fallida en onend.
@@ -25997,11 +25927,9 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         recognition.start();
     } catch (error) {
         if (!isCurrentSession()) return;
-	        activeSpeechRecognition = null;
+        activeSpeechRecognition = null;
         isRecording = false;
         clearTimeout(silenceTimer);
-	        clearTimeout(speechEndTimer);
-	        clearTimeout(audioStartTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
 
         // En Chrome Android start() puede lanzar InvalidStateError mientras la
@@ -29013,15 +28941,10 @@ function attachFlashcardHandlers() {
                 stopAllAudios();
                 card.classList.add('flipped');
 
-                const speechBrowserInfo = getSpeechBrowserInfo();
-                const iosRecognitionStartedFromGesture = Boolean(
-                    speechBrowserInfo.isIOS
-                    && voiceAttempts < 2
-                    && !isRecording
-                );
-
-                const prepareBackForListening = () => {
+                setTimeout(() => {
                     backElement.classList.remove('showing-mas-answer');
+                    
+                    // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
                     if (card.dataset.backHtml) {
                         backElement.innerHTML = card.dataset.backHtml;
                     } else if (card.dataset.answer) {
@@ -29030,26 +28953,13 @@ function attachFlashcardHandlers() {
                     backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
                     backElement.classList.remove('hidden-text');
                     setBackAttempts(backElement, 2 - voiceAttempts);
+
                     if (voiceAttempts < 2) {
                         backElement.classList.add('hidden-text');
                     }
+                    
+                    // Mostrar SIEMPRE el indicador al voltear a back
                     showListeningIndicator(backElement);
-                };
-
-                // En Safari la primera llamada debe permanecer dentro del
-                // evento click. No colocar await, Promise ni setTimeout antes
-                // de recognition.start(), porque iOS pierde la activación.
-                if (iosRecognitionStartedFromGesture) {
-                    // Preparar la interfaz antes de iniciar. Así un error
-                    // inmediato de iOS no será borrado 50 ms más tarde.
-                    prepareBackForListening();
-                    startSpeechRecognition(card.dataset.answer, backElement);
-                }
-
-                setTimeout(() => {
-                    if (!iosRecognitionStartedFromGesture) {
-                        prepareBackForListening();
-                    }
                     
                     const startRecOrDirectAnswer = () => {
                         if (voiceAttempts < 2) {
@@ -29078,13 +28988,10 @@ function attachFlashcardHandlers() {
                         updateSkipButtonState();
                     };
 
+                    const speechBrowserInfo = getSpeechBrowserInfo();
                     if (speechBrowserInfo.isIOS) {
-                        // La sesión ya se inició desde el click. El audio
-                        // "habla" no se reproduce después porque Safari podría
-                        // transcribir el propio aviso mientras escucha.
-                        if (!iosRecognitionStartedFromGesture) {
-                            startRecOrDirectAnswer();
-                        }
+                        startRecOrDirectAnswer();
+                        playHablaAudioThen();
                     } else {
                         playHablaAudioThen(startRecOrDirectAnswer);
                     }

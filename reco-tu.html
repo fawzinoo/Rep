@@ -25712,9 +25712,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
     // hay ruido, acento o palabras cortas muy parecidas.
     recognition.maxAlternatives = isChromeAndroid ? 3 : (isIOS ? 2 : 5);
 
-    let hasMatchedInterim = false;
-    let silenceTimer = null;
-    let accumulatedTranscript = '';
+	    let hasMatchedInterim = false;
+	    let silenceTimer = null;
+	    let speechEndTimer = null;
+	    let accumulatedTranscript = '';
     const INTERIM_STABILITY_MS = 1000;
     const FINAL_SETTLE_MS = 600;
     // Los motores móviles necesitan un pequeño margen para liberar el
@@ -25765,9 +25766,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         updateSkipButtonState();
     };
 
-    const processFinalResult = (transcript) => {
-        clearTimeout(silenceTimer);
-        const card = backElement.closest('.flashcard');
+	    const processFinalResult = (transcript) => {
+	        clearTimeout(silenceTimer);
+	        clearTimeout(speechEndTimer);
+	        const card = backElement.closest('.flashcard');
         if (!isCurrentSession()
             || !card
             || !card.classList.contains('flipped')
@@ -25838,23 +25840,41 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
 
-        // Un acierto se procesa arriba inmediatamente. Si el resultado es final y no coincidió,
-        // esperamos a que el alumno termine de hablar para evaluar la frase completa.
-        clearTimeout(silenceTimer);
-        const cleanAcc = accumulatedTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
-        if (hasFinalResult && cleanAcc.length >= 2) {
-            silenceTimer = setTimeout(() => {
-                if (shouldContinueListening() && !hasMatchedInterim) {
-                    processFinalResult(accumulatedTranscript);
+	        // Safari/iOS cierra la sesión casi inmediatamente después de entregar
+	        // el resultado final. Evaluarlo aquí evita que onend cancele el timer
+	        // antes de decidir si la respuesta es correcta o incorrecta.
+	        clearTimeout(silenceTimer);
+	        const cleanAcc = accumulatedTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()¿?]/g, "").trim();
+	        if (hasFinalResult && cleanAcc.length >= 2) {
+	            if (isIOS) {
+	                processFinalResult(accumulatedTranscript);
+	                return;
+	            }
+	            silenceTimer = setTimeout(() => {
+	                if (shouldContinueListening() && !hasMatchedInterim) {
+	                    processFinalResult(accumulatedTranscript);
                 }
             }, FINAL_SETTLE_MS + 400);
         }
     };
 
-    recognition.onspeechstart = function() {
-        if (!isCurrentSession()) return;
-        clearTimeout(silenceTimer);
-    };
+	    recognition.onspeechstart = function() {
+	        if (!isCurrentSession()) return;
+	        clearTimeout(silenceTimer);
+	        clearTimeout(speechEndTimer);
+	    };
+
+	    recognition.onspeechend = function() {
+	        if (!isCurrentSession() || hasMatchedInterim || !isIOS) return;
+	        // En Safari stop() solicita el resultado final de lo ya escuchado.
+	        // Sin esto algunas versiones de iOS dejan la sesión abierta y el
+	        // indicador del micrófono permanece indefinidamente.
+	        clearTimeout(speechEndTimer);
+	        speechEndTimer = setTimeout(() => {
+	            if (!isCurrentSession() || hasMatchedInterim) return;
+	            try { recognition.stop(); } catch (error) {}
+	        }, 220);
+	    };
 
     recognition.onerror = function(event) {
         if (!isCurrentSession()) return;
@@ -25863,15 +25883,20 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         if (event.error === 'aborted') {
             return; // Ignorar si fue cancelado a propósito
         }
-        // NO eliminar el indicador automáticamente, que persista
-        clearTimeout(silenceTimer);
+	        // NO eliminar el indicador automáticamente, que persista
+	        clearTimeout(silenceTimer);
+	        clearTimeout(speechEndTimer);
 
         // Los fallos técnicos no cuentan como respuesta incorrecta y nunca
         // deben voltear la tarjeta sin explicar qué ha ocurrido.
-        if (event.error === 'no-speech') {
-            // Es normal en una escucha prolongada. onend reabrirá la sesión.
-            return;
-        }
+	        if (event.error === 'no-speech') {
+	            if (isIOS) {
+	                hasMatchedInterim = true;
+	                showRecognitionNotice('No se oyó ninguna voz. Toca para intentarlo');
+	            }
+	            // En otros navegadores onend reabrirá la sesión.
+	            return;
+	        }
 
         if (event.error === "network") {
             hasMatchedInterim = true;
@@ -25921,11 +25946,20 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         localStorage.setItem('microphonePermissionGranted', 'true');
     };
 
-    recognition.onend = function() {
-        if (!isCurrentSession()) return;
-        activeSpeechRecognition = null;
-        isRecording = false;
-        clearTimeout(silenceTimer);
+	    recognition.onend = function() {
+	        if (!isCurrentSession()) return;
+	        clearTimeout(speechEndTimer);
+
+	        // Respaldo para Safari: si terminó justo después de onresult, todavía
+	        // se evalúa la transcripción antes de limpiar la sesión.
+	        if (isIOS && !hasMatchedInterim && accumulatedTranscript.trim().length >= 2) {
+	            processFinalResult(accumulatedTranscript);
+	            return;
+	        }
+
+	        activeSpeechRecognition = null;
+	        isRecording = false;
+	        clearTimeout(silenceTimer);
         if (hasMatchedInterim) return;
 
         // NUNCA evaluar el transcript acumulado como respuesta fallida en onend.
@@ -25948,9 +25982,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         recognition.start();
     } catch (error) {
         if (!isCurrentSession()) return;
-        activeSpeechRecognition = null;
-        isRecording = false;
-        clearTimeout(silenceTimer);
+	        activeSpeechRecognition = null;
+	        isRecording = false;
+	        clearTimeout(silenceTimer);
+	        clearTimeout(speechEndTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
 
         // En Chrome Android start() puede lanzar InvalidStateError mientras la

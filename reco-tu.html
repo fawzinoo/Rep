@@ -28919,10 +28919,10 @@ function attachFlashcardHandlers() {
             if (card.classList.contains('flipped')) {
                 // Gira inmediatamente para activar la animación de GPU en Safari sin retardo
                 card.classList.remove('flipped');
-                stopActiveSpeechRecognition();
                 stopAllAudios();
 
-                requestAnimationFrame(() => {
+                setTimeout(() => {
+                    stopActiveSpeechRecognition();
                     // Limpia cualquier contador de intentos al volver a front
                     backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
                     // Eliminar indicador de escucha al volver al frente
@@ -28931,14 +28931,14 @@ function attachFlashcardHandlers() {
                     betweenAttempts = false;
                     canFlip = true;
                     updateSkipButtonState();
-                });
+                }, 50);
             } else {
                 // Volteo de front a back: Girar INMEDIATAMENTE
                 console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
                 stopAllAudios();
                 card.classList.add('flipped');
 
-                const prepBackAndStart = () => {
+                setTimeout(() => {
                     backElement.classList.remove('showing-mas-answer');
                     
                     // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
@@ -28992,9 +28992,7 @@ function attachFlashcardHandlers() {
                     } else {
                         playHablaAudioThen(startRecOrDirectAnswer);
                     }
-                };
-
-                requestAnimationFrame(prepBackAndStart);
+                }, 50);
             }
         });
     });
@@ -29303,7 +29301,7 @@ function playHablaAudioThen(callback) {
 }
 
 function stopAllAudios() {
-    if (introAudio) {
+    if (introAudio && !introAudio.paused) {
         try {
             introAudio.pause();
             introAudio.currentTime = 0;
@@ -29313,15 +29311,19 @@ function stopAllAudios() {
         clearTimeout(hablaAudioTimer);
         hablaAudioTimer = null;
     }
-    if (hablaAudio) {
+    if (hablaAudio && !hablaAudio.paused) {
         try {
             hablaAudio.pause();
             hablaAudio.currentTime = 0;
         } catch (e) {}
     }
     audios.forEach(audio => {
-        audio.pause();
-        audio.currentTime = 0;
+        if (audio && !audio.paused) {
+            try {
+                audio.pause();
+                audio.currentTime = 0;
+            } catch (e) {}
+        }
     });
 }
 

@@ -25237,13 +25237,34 @@ let audioChunks = [];
 let isRecording = false;
 let activeSpeechRecognition = null;
 let speechRecognitionGeneration = 0;
+let speechRecognitionStartTimeoutId = null;
+let speechRecognitionReleaseAt = 0;
+
+function getSpeechRecognitionReleaseDelay() {
+    const { isChromeAndroid, isIOS, isMobile } = getSpeechBrowserInfo();
+    if (isIOS) return 1200;
+    if (isChromeAndroid) return 900;
+    return isMobile ? 650 : 250;
+}
+
+function markSpeechRecognitionReleasing() {
+    speechRecognitionReleaseAt = Math.max(
+        speechRecognitionReleaseAt,
+        Date.now() + getSpeechRecognitionReleaseDelay()
+    );
+}
 
 function stopActiveSpeechRecognition() {
+    if (speechRecognitionStartTimeoutId) {
+        clearTimeout(speechRecognitionStartTimeoutId);
+        speechRecognitionStartTimeoutId = null;
+    }
     speechRecognitionGeneration += 1;
     const recognition = activeSpeechRecognition;
     activeSpeechRecognition = null;
     isRecording = false;
     if (recognition) {
+        markSpeechRecognitionReleasing();
         try { recognition.abort(); } catch (error) {}
     }
 }
@@ -25620,6 +25641,24 @@ function getSpeechBrowserInfo() {
     return { isMobile, isChromeAndroid, isIOS };
 }
 
+function scheduleSpeechRecognitionStart(targetWord, backElement, requestedDelay = 0, startRetryCount = 0) {
+    if (speechRecognitionStartTimeoutId) {
+        clearTimeout(speechRecognitionStartTimeoutId);
+    }
+
+    const releaseDelay = Math.max(0, speechRecognitionReleaseAt - Date.now());
+    const delay = Math.max(requestedDelay, releaseDelay);
+    speechRecognitionStartTimeoutId = setTimeout(() => {
+        speechRecognitionStartTimeoutId = null;
+        const currentCard = backElement.closest('.flashcard');
+        if (currentCard
+            && currentCard.classList.contains('flipped')
+            && currentCard.classList.contains('is-visible')) {
+            startSpeechRecognition(targetWord, backElement, startRetryCount);
+        }
+    }, delay);
+}
+
 
 function startVoiceRecognition(targetWord, backElement) {
     // Verificar que la tarjeta esté volteada (en back) antes de permitir reconocimiento
@@ -25652,14 +25691,7 @@ function startVoiceRecognition(targetWord, backElement) {
         // abortos silenciosos al iniciar webkitSpeechRecognition.
         const { isChromeAndroid, isIOS } = getSpeechBrowserInfo();
         const initialStartDelay = isChromeAndroid ? 450 : (isIOS ? 350 : 0);
-        setTimeout(() => {
-            const currentCard = backElement.closest('.flashcard');
-            if (currentCard
-                && currentCard.classList.contains('flipped')
-                && currentCard.classList.contains('is-visible')) {
-                startSpeechRecognition(targetWord, backElement);
-            }
-        }, initialStartDelay);
+        scheduleSpeechRecognitionStart(targetWord, backElement, initialStartDelay);
     }).catch(error => {
         console.error("Error al verificar permisos de micrófono:", error);
     });
@@ -25679,8 +25711,19 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         return;
     }
 
-    // Nunca mantener dos sesiones abiertas al mismo tiempo.
-    stopActiveSpeechRecognition();
+    // En iPhone el motor de WebKit puede seguir ocupado después de onresult.
+    // Si la sesión anterior aún no ha terminado, se cancela y la nueva se
+    // programa cuando el servicio nativo ya se haya liberado.
+    if (activeSpeechRecognition) {
+        stopActiveSpeechRecognition();
+        scheduleSpeechRecognitionStart(
+            targetWord,
+            backElement,
+            getSpeechRecognitionReleaseDelay(),
+            startRetryCount
+        );
+        return;
+    }
     
     const recognition = new SpeechRecognition();
     const recognitionGeneration = ++speechRecognitionGeneration;
@@ -25749,11 +25792,12 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
         hasMatchedInterim = true;
-        activeSpeechRecognition = null;
         isRecording = false;
-        // Si se llega aquí desde onend, la sesión ya puede estar cerrada y
-        // abort() lanzaría InvalidStateError antes de procesar la respuesta.
-        try { recognition.abort(); } catch (e) {}
+        markSpeechRecognitionReleasing();
+        // stop() permite que WebKit cierre limpiamente la sesión. abort()
+        // después de un resultado válido puede dejar bloqueada la siguiente
+        // instancia de reconocimiento en Chrome/Safari de iPhone.
+        try { recognition.stop(); } catch (e) {}
         handleVoiceResult(transcript.trim(), targetWord, backElement);
     };
 
@@ -25888,6 +25932,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         if (!isCurrentSession()) return;
         activeSpeechRecognition = null;
         isRecording = false;
+        markSpeechRecognitionReleasing();
         clearTimeout(silenceTimer);
         if (hasMatchedInterim) return;
 
@@ -25899,11 +25944,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         // El navegador puede finalizar una sesión aun con continuous=true.
         // Se abre otra sin mostrar error mientras la tarjeta continúe en back.
         if (shouldContinueListening()) {
-            setTimeout(() => {
-                if (!activeSpeechRecognition && shouldContinueListening()) {
-                    startSpeechRecognition(targetWord, backElement);
-                }
-            }, RESTART_DELAY_MS);
+            scheduleSpeechRecognitionStart(targetWord, backElement, RESTART_DELAY_MS);
         }
     };
 
@@ -25913,18 +25954,20 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         if (!isCurrentSession()) return;
         activeSpeechRecognition = null;
         isRecording = false;
+        markSpeechRecognitionReleasing();
         clearTimeout(silenceTimer);
         console.error('No se pudo iniciar el reconocimiento:', error);
 
-        // En Chrome Android start() puede lanzar InvalidStateError mientras la
-        // sesión anterior termina de liberar el servicio. Reintentar de forma
-        // limitada mantiene la escucha sin crear un bucle infinito.
-        if (isChromeAndroid && startRetryCount < 2 && shouldContinueListening()) {
-            setTimeout(() => {
-                if (!activeSpeechRecognition && shouldContinueListening()) {
-                    startSpeechRecognition(targetWord, backElement, startRetryCount + 1);
-                }
-            }, RESTART_DELAY_MS * (startRetryCount + 1));
+        // Android e iPhone pueden lanzar InvalidStateError mientras la sesión
+        // anterior termina de liberar el servicio. Un reintento limitado evita
+        // que la segunda tarjeta quede sin escucha.
+        if ((isChromeAndroid || isIOS) && startRetryCount < 2 && shouldContinueListening()) {
+            scheduleSpeechRecognitionStart(
+                targetWord,
+                backElement,
+                RESTART_DELAY_MS * (startRetryCount + 1),
+                startRetryCount + 1
+            );
             return;
         }
 

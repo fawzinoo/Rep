@@ -199,11 +199,8 @@
             width: 100%;
             height: 100%;
             position: absolute;
-            -webkit-transform-style: preserve-3d;
             transform-style: preserve-3d;
-            -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-            transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-            will-change: transform;
+            transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
             border-radius: 22px;
             cursor: pointer;
             display: none;
@@ -227,10 +224,7 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            -webkit-backface-visibility: hidden;
             backface-visibility: hidden; /* Oculta la cara trasera al girar */
-            -webkit-transform-style: preserve-3d;
-            transform-style: preserve-3d;
             border-radius: 22px;
             display: flex;
             justify-content: center;
@@ -266,7 +260,6 @@
     width: 100%;
     background: linear-gradient(to bottom, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9)); /* Fondo azul oscuro */
     color: #ffffff; /* Color del texto */
-    -webkit-transform: rotateY(180deg);
     transform: rotateY(180deg); /* Rotación para el efecto */
     padding: 20px; /* Margen interno */
     text-align: center; /* Centrado horizontal */
@@ -25738,17 +25731,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         backElement.classList.remove('hidden-text');
         const notice = document.createElement('div');
         notice.className = 'mensaje-error';
-        notice.style.cursor = 'pointer';
-        notice.style.pointerEvents = 'auto';
         notice.innerHTML = `<i class="fas fa-microphone-slash"></i><div>${message}</div>`;
-        notice.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            vibrar(80);
-            backElement.querySelectorAll('.mensaje-error').forEach(el => el.remove());
-            showListeningIndicator(backElement);
-            startSpeechRecognition(targetWord, backElement);
-        });
         backElement.appendChild(notice);
         canFlip = true;
         canFlipBack = true;
@@ -25872,7 +25855,10 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
 
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             hasMatchedInterim = true;
-            showRecognitionNotice('Toca la tarjeta para permitir el micrófono');
+            microphonePermissionGranted = false;
+            microphonePermissionAsked = false;
+            localStorage.removeItem('microphonePermissionGranted');
+            showRecognitionNotice('Activa el micrófono y toca para intentarlo');
             return;
         }
 
@@ -25883,6 +25869,7 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
         }
         
         // Para otros errores, no hacemos nada drástico, solo paramos.
+        // El alert() se ha eliminado para no interrumpir al usuario.
     };
 
     recognition.onnomatch = function() {
@@ -25895,9 +25882,6 @@ function startSpeechRecognition(targetWord, backElement, startRetryCount = 0) {
             return;
         }
         isRecording = true;
-        microphonePermissionGranted = true;
-        microphonePermissionAsked = true;
-        localStorage.setItem('microphonePermissionGranted', 'true');
     };
 
     recognition.onend = function() {
@@ -28672,10 +28656,8 @@ function getAudioSrcForCountryName(textoBack) {
         'soy estudiante': 'tu-24.mp3',
         'en que trabajas': 'tu-25.mp3',
         'trabajo como profesor': 'tu-26.mp3',
-        'trabajo como profesora': 'tu-26.mp3',
         'a que te dedicas': 'tu-27.mp3',
         'soy profesor': 'tu-28.mp3',
-        'soy profesora': 'tu-28.mp3',
         'que estudias': 'tu-29.mp3',
         'estudio espanol': 'tu-30.mp3',
         'donde estudias': 'tu-31.mp3',
@@ -28683,8 +28665,7 @@ function getAudioSrcForCountryName(textoBack) {
         'tienes movil': 'tu-33.mp3',
         'si es el 0618334455': 'tu-34.mp3',
         'tienes correo electronico': 'tu-35.mp3',
-        'si es carlos.santi@gmail.com': 'tu-36.mp3',
-        'si es sara.santi@gmail.com': 'tu-36.mp3'
+        'si es carlos.santi@gmail.com': 'tu-36.mp3'
     };
     const file = mapping[key] || audioFilenameByKey[key];
     return file ? baseUrl + file : null;
@@ -28704,22 +28685,6 @@ function playCardAudioThen(index, onDone) {
         finished = true;
         try { onDone && onDone(); } catch (e) {}
     };
-
-    // Garantizar que audios[index] coincida exactamente con la respuesta actual de la tarjeta
-    const targetCard = flashcards[index];
-    if (targetCard && targetCard.dataset.answer && audios[index]) {
-        const expectedSrc = getAudioSrcForCountryName(targetCard.dataset.answer);
-        if (expectedSrc) {
-            if (audios[index].src !== expectedSrc) {
-                try { audios[index].pause(); } catch {}
-                audios[index].currentTime = 0;
-                audios[index].src = expectedSrc;
-                try { audios[index].load(); } catch {}
-            } else if (audios[index].readyState === 0) {
-                try { audios[index].load(); } catch {}
-            }
-        }
-    }
 
     if (!hasValidAudio(index)) {
         finish();
@@ -28843,10 +28808,7 @@ if (data.backHTML) {
             try { audios[index].pause(); } catch {}
             audios[index].currentTime = 0;
             audios[index].preload = 'none';
-            if (audios[index].src !== src) {
-                audios[index].src = src;
-                try { audios[index].load(); } catch {}
-            }
+            audios[index].src = src;
         } else {
             // Si no hay audio mapeado, limpiar para evitar desincronización
             try { audios[index].pause(); } catch {}
@@ -28916,86 +28878,85 @@ function attachFlashcardHandlers() {
             canFlip = false;
             setTimeout(() => { canFlip = true; }, 350);
 
-            try { vibrar(80); } catch(e) {}
+            vibrar(80); 
             const backElement = card.querySelector('.back');
-
             if (card.classList.contains('flipped')) {
-                // Gira inmediatamente para activar la animación de GPU en Safari sin retardo
+                stopActiveSpeechRecognition();
                 card.classList.remove('flipped');
                 stopAllAudios();
-
-                setTimeout(() => {
-                    stopActiveSpeechRecognition();
-                    // Limpia cualquier contador de intentos al volver a front
-                    backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
-                    // Eliminar indicador de escucha al volver al frente
-                    removeListeningIndicator(backElement);
-                    setBackAttempts(backElement, 2 - voiceAttempts);
-                    betweenAttempts = false;
-                    canFlip = true;
-                    updateSkipButtonState();
-                }, 50);
+                // Limpia cualquier contador de intentos al volver a front
+                backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                // Eliminar indicador de escucha al volver al frente
+                removeListeningIndicator(backElement);
+                setBackAttempts(backElement, 2 - voiceAttempts);
+                betweenAttempts = false;
+                canFlip = true;
+                updateSkipButtonState();
             } else {
-                // Volteo de front a back: Girar INMEDIATAMENTE
+                // Volteo de front a back: SIEMPRE permitir voltear para mostrar indicador
                 console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
                 stopAllAudios();
                 card.classList.add('flipped');
+                backElement.classList.remove('showing-mas-answer');
+                
+                // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
+                if (card.dataset.backHtml) {
+                    backElement.innerHTML = card.dataset.backHtml;
+                } else if (card.dataset.answer) {
+                    backElement.innerHTML = card.dataset.answer;
+                }
+                backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
+                backElement.classList.remove('hidden-text');
+                setBackAttempts(backElement, 2 - voiceAttempts);
 
-                setTimeout(() => {
-                    backElement.classList.remove('showing-mas-answer');
-                    
-                    // Preparar back: restaurar contenido, limpiar residuos y mostrar intentos
-                    if (card.dataset.backHtml) {
-                        backElement.innerHTML = card.dataset.backHtml;
-                    } else if (card.dataset.answer) {
-                        backElement.innerHTML = card.dataset.answer;
-                    }
-                    backElement.querySelectorAll('.listening-indicator, .mensaje-error').forEach(el => el.remove());
-                    backElement.classList.remove('hidden-text');
-                    setBackAttempts(backElement, 2 - voiceAttempts);
-
+                // Ocultar la respuesta antes de pintar el indicador para evitar
+                // que aparezca durante los 150 ms previos al reconocimiento.
+                if (voiceAttempts < 2) {
+                    backElement.classList.add('hidden-text');
+                }
+                
+                // Mostrar SIEMPRE el indicador al voltear a back
+                console.log(`Mostrando indicador para voiceAttempts: ${voiceAttempts}`);
+                showListeningIndicator(backElement);
+                
+                const startRecOrDirectAnswer = () => {
                     if (voiceAttempts < 2) {
-                        backElement.classList.add('hidden-text');
-                    }
-                    
-                    // Mostrar SIEMPRE el indicador al voltear a back
-                    showListeningIndicator(backElement);
-                    
-                    const startRecOrDirectAnswer = () => {
-                        if (voiceAttempts < 2) {
-                            const correctWord = card.dataset.answer;
+                        // Pequeño delay para permitir pintar el indicador y luego ocultar el texto
+                        const correctWord = card.dataset.answer;
+                        setTimeout(() => {
                             backElement.classList.add('hidden-text');
                             if (!isRecording) {
                                 startVoiceRecognition(correctWord, backElement);
                             }
-                        } else {
-                            // No quedan intentos - mostrar respuesta directamente
-                            console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
-                            removeListeningIndicator(backElement);
-
-                            if (!completedCards.has(currentCardIndex)) {
-                                completedCards.add(currentCardIndex);
-                                updateCardCounter();
-                                saveGameProgress();
-                            }
-                            
-                            clearBackContent(backElement);
-                            showMasMenosRevealedAnswer(backElement, card.dataset.answer);
-                            
-                            const audioIndex = flashcards.indexOf(card);
-                            playCardAudioThen(audioIndex, () => showCountdown(card));
-                        }
-                        updateSkipButtonState();
-                    };
-
-                    const speechBrowserInfo = getSpeechBrowserInfo();
-                    if (speechBrowserInfo.isIOS) {
-                        startRecOrDirectAnswer();
-                        playHablaAudioThen();
+                        }, 150);
                     } else {
-                        playHablaAudioThen(startRecOrDirectAnswer);
+                        // No quedan intentos - mostrar respuesta directamente
+                        console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
+                        // Eliminar indicador cuando aparece la respuesta directa
+                        removeListeningIndicator(backElement);
+
+                        // ANTI-TRUCO (refuerzo): marcar como completada al mostrar respuesta directa
+                        if (!completedCards.has(currentCardIndex)) {
+                            completedCards.add(currentCardIndex);
+                            updateCardCounter();
+                            saveGameProgress();
+                        }
+                        
+                        // Mostrar la respuesta correcta con efecto de brillo
+                        clearBackContent(backElement);
+                        showMasMenosRevealedAnswer(backElement, card.dataset.answer);
+                        
+                        // Reproducir audio si existe y después mostrar countdown
+                        const audioIndex = flashcards.indexOf(card);
+                        playCardAudioThen(audioIndex, () => showCountdown(card));
                     }
-                }, 50);
+                    // En back, por defecto el botón No sé queda deshabilitado (salvo ventana entre intentos)
+                    updateSkipButtonState();
+                };
+
+                // Reproducir habla2.wav en el primer volteo de cada sesión,
+                // e iniciar el reconocimiento de voz únicamente cuando el audio finalice.
+                playHablaAudioThen(startRecOrDirectAnswer);
             }
         });
     });
@@ -29114,10 +29075,7 @@ function reassignAudiosToCards() {
                 try { audios[index].pause(); } catch {}
                 audios[index].currentTime = 0;
                 audios[index].preload = 'none';
-                if (audios[index].src !== src) {
-                    audios[index].src = src;
-                    try { audios[index].load(); } catch {}
-                }
+                audios[index].src = src;
             } else {
                 try { audios[index].pause(); } catch {}
                 audios[index].currentTime = 0;
@@ -29304,7 +29262,7 @@ function playHablaAudioThen(callback) {
 }
 
 function stopAllAudios() {
-    if (introAudio && !introAudio.paused) {
+    if (introAudio) {
         try {
             introAudio.pause();
             introAudio.currentTime = 0;
@@ -29314,19 +29272,15 @@ function stopAllAudios() {
         clearTimeout(hablaAudioTimer);
         hablaAudioTimer = null;
     }
-    if (hablaAudio && !hablaAudio.paused) {
+    if (hablaAudio) {
         try {
             hablaAudio.pause();
             hablaAudio.currentTime = 0;
         } catch (e) {}
     }
     audios.forEach(audio => {
-        if (audio && !audio.paused) {
-            try {
-                audio.pause();
-                audio.currentTime = 0;
-            } catch (e) {}
-        }
+        audio.pause();
+        audio.currentTime = 0;
     });
 }
 

@@ -28695,6 +28695,22 @@ function playCardAudioThen(index, onDone) {
         try { onDone && onDone(); } catch (e) {}
     };
 
+    // Garantizar que audios[index] coincida exactamente con la respuesta actual de la tarjeta
+    const targetCard = flashcards[index];
+    if (targetCard && targetCard.dataset.answer && audios[index]) {
+        const expectedSrc = getAudioSrcForCountryName(targetCard.dataset.answer);
+        if (expectedSrc) {
+            if (audios[index].src !== expectedSrc) {
+                try { audios[index].pause(); } catch {}
+                audios[index].currentTime = 0;
+                audios[index].src = expectedSrc;
+                try { audios[index].load(); } catch {}
+            } else if (audios[index].readyState === 0) {
+                try { audios[index].load(); } catch {}
+            }
+        }
+    }
+
     if (!hasValidAudio(index)) {
         finish();
         return;
@@ -28817,7 +28833,10 @@ if (data.backHTML) {
             try { audios[index].pause(); } catch {}
             audios[index].currentTime = 0;
             audios[index].preload = 'none';
-            audios[index].src = src;
+            if (audios[index].src !== src) {
+                audios[index].src = src;
+                try { audios[index].load(); } catch {}
+            }
         } else {
             // Si no hay audio mapeado, limpiar para evitar desincronización
             try { audios[index].pause(); } catch {}
@@ -29088,7 +29107,10 @@ function reassignAudiosToCards() {
                 try { audios[index].pause(); } catch {}
                 audios[index].currentTime = 0;
                 audios[index].preload = 'none';
-                audios[index].src = src;
+                if (audios[index].src !== src) {
+                    audios[index].src = src;
+                    try { audios[index].load(); } catch {}
+                }
             } else {
                 try { audios[index].pause(); } catch {}
                 audios[index].currentTime = 0;

@@ -13413,6 +13413,13 @@ const customDistractors = {
             box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
         }
 
+        /* Ocultar icono de mano en móviles / pantallas táctiles */
+        @media (max-width: 768px), (pointer: coarse) {
+            .tile-hand-btn {
+                display: none !important;
+            }
+        }
+
         /* Botón de Comprobar Premium Indigo-Viola */
         .ruleta-check-btn {
             width: 100%;
@@ -35527,6 +35534,31 @@ function showMultipleChoice(backElement, correctAnswer) {
             }, 3000);
         };
 
+        const togglePinState = () => {
+            if (backElement.dataset.choiceLocked === 'true') return;
+
+            if (rect.dataset.isPinned !== 'true') {
+                // Fijar la tarjeta: cambia su color de fondo a un azul/ciano brillante
+                rect.dataset.isPinned = 'true';
+                rect.classList.add('is-pinned');
+                if (flipTimer) {
+                    clearTimeout(flipTimer);
+                    flipTimer = null;
+                }
+                try { vibrar(60); } catch(err) {}
+                renderFlippedContent();
+                playTilePinSound(true);
+            } else {
+                // Desfijar la tarjeta: vuelve a su fondo morado original y restaura el temporizador auto-unflip
+                rect.dataset.isPinned = 'false';
+                rect.classList.remove('is-pinned');
+                try { vibrar(30); } catch(err) {}
+                renderFlippedContent();
+                startAutoUnflipTimer();
+                playTilePinSound(false);
+            }
+        };
+
         const renderFlippedContent = () => {
             rect.innerHTML = `
                 <span class="tile-text">${tileData.word}</span>
@@ -35540,36 +35572,73 @@ function showMultipleChoice(backElement, correctAnswer) {
                 handBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-
-                    if (backElement.dataset.choiceLocked === 'true') return;
-
-                    if (rect.dataset.isPinned !== 'true') {
-                        // Fijar la tarjeta: cambia su color de fondo a un azul/ciano brillante
-                        rect.dataset.isPinned = 'true';
-                        rect.classList.add('is-pinned');
-                        if (flipTimer) {
-                            clearTimeout(flipTimer);
-                            flipTimer = null;
-                        }
-                        try { vibrar(60); } catch(err) {}
-                        renderFlippedContent();
-                        playTilePinSound(true);
-                    } else {
-                        // Desfijar la tarjeta: vuelve a su fondo morado y restaura el temporizador auto-unflip
-                        rect.dataset.isPinned = 'false';
-                        rect.classList.remove('is-pinned');
-                        try { vibrar(30); } catch(err) {}
-                        renderFlippedContent();
-                        startAutoUnflipTimer();
-                        playTilePinSound(false);
-                    }
+                    togglePinState();
                 });
             }
         };
 
+        // Lógica de pulsación prolongada (Long Press) para móviles
+        let touchTimer = null;
+        let isLongPress = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        rect.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches.length === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
+            isLongPress = false;
+            if (touchTimer) clearTimeout(touchTimer);
+
+            // Permitir seleccionar/deseleccionar por mantener la presión si la ficha está desvelada
+            if (rect.dataset.isFlipped === 'true' && backElement.dataset.choiceLocked !== 'true') {
+                touchTimer = setTimeout(() => {
+                    isLongPress = true;
+                    togglePinState();
+                }, 400); // 400ms de presión continuada
+            }
+        }, { passive: true });
+
+        rect.addEventListener('touchmove', (e) => {
+            if (e.touches && e.touches.length === 1) {
+                const moveX = Math.abs(e.touches[0].clientX - touchStartX);
+                const moveY = Math.abs(e.touches[0].clientY - touchStartY);
+                if (moveX > 10 || moveY > 10) {
+                    if (touchTimer) {
+                        clearTimeout(touchTimer);
+                        touchTimer = null;
+                    }
+                }
+            }
+        }, { passive: true });
+
+        rect.addEventListener('touchend', (e) => {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+            if (isLongPress) {
+                e.preventDefault();
+            }
+        });
+
+        rect.addEventListener('touchcancel', () => {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+        });
+
         rect.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+
+            // Evita voltear/desvoltear si el clic se genera inmediatamente después de una pulsación prolongada
+            if (isLongPress) {
+                isLongPress = false;
+                return;
+            }
 
             if (backElement.dataset.choiceLocked === 'true') return;
 
@@ -35589,7 +35658,7 @@ function showMultipleChoice(backElement, correctAnswer) {
                     startAutoUnflipTimer();
                 }
             } else {
-                // Si la tarjeta está fijada con la mano (isPinned), NUNCA vuelve a voltearse al pulsarla
+                // Si la tarjeta está fijada (isPinned), NUNCA vuelve a voltearse al pulsarla libremente
                 if (pinned) {
                     return;
                 }

@@ -11843,7 +11843,7 @@ body.chat-typing .chat-footer {
             <img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" draggable="false">
         </div>
         <span class="title-direction" aria-hidden="true"><i class="fas fa-angles-left"></i></span>
-        <span class="cuesta-title-text">DATOS PERSONALES · TÚ/YO (LÚDICO)</span>
+        <span class="cuesta-title-text">DATOS PERSONALES · TÚ/YO</span>
         <span class="title-direction" aria-hidden="true"><i class="fas fa-angles-right"></i></span>
     </div>
 
@@ -12179,6 +12179,7 @@ body.chat-typing .chat-footer {
                         answer: String(card.dataset.answer || ''),
                         targetForm: String(card.dataset.targetForm || ''),
                         targetPosition: String(card.dataset.targetPosition || ''),
+                        sourceIndex: cards.indexOf(card),
                         frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
                         backHTML: card.querySelector('.back') ? card.querySelector('.back').innerHTML : ''
                     }));
@@ -13019,11 +13020,12 @@ const customDistractors = {
                         card.dataset.targetPosition = adverbMatch ? 'frequency' : 'after';
                         card.dataset.cardId = `u1-tu-${index + 1}`;
                     });
-                    window.MAS_CANONICAL_CARDS = cards.map(card => ({
+                    window.MAS_CANONICAL_CARDS = cards.map((card, index) => ({
                         cardId: String(card.dataset.cardId || ''),
                         answer: String(card.dataset.answer || ''),
                         targetForm: String(card.dataset.targetForm || ''),
                         targetPosition: String(card.dataset.targetPosition || ''),
+                        sourceIndex: index,
                         frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
                         backHTML: card.querySelector('.back') ? card.querySelector('.back').innerHTML : ''
                     }));
@@ -13282,6 +13284,21 @@ const customDistractors = {
             box-shadow: 0 0 16px rgba(244, 63, 94, 0.5);
         }
 
+        /* Copia sincronizada del temporizador visible al volver al front. */
+        .front .ruleta-front-timer {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 25;
+            margin: 0;
+            pointer-events: none;
+            font-family: 'Poppins', -apple-system, sans-serif;
+            font-size: clamp(0.72rem, 2vw, 0.84rem);
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
         /* Logo F dentro de la ficha (Tamaño reducido) */
         .ruleta-tile-logo {
             max-height: 24px;
@@ -13292,6 +13309,20 @@ const customDistractors = {
             pointer-events: none;
             opacity: 0.85;
             transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .ruleta-tile-number {
+            position: absolute;
+            left: clamp(7px, 1.5vw, 12px);
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 2;
+            color: #c7d2fe;
+            font-size: clamp(0.72rem, 2vw, 0.88rem);
+            font-weight: 900;
+            line-height: 1;
+            pointer-events: none;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.72);
         }
 
         .ruleta-rect-tile:hover .ruleta-tile-logo {
@@ -13735,7 +13766,36 @@ let completedCards = new Set();
 let correctCount = 0;
 let incorrectCount = 0; 
 let currentCardIndex = 0;
-let voiceAttempts = 0; // Contador para los intentos de voz
+let voiceAttempts = 0; // Contador para los intentos de la tarjeta actual
+let voiceAttemptsByCard = {}; // Intentos por tarjeta/palabra
+
+function getCardAttempts(cardIndex = currentCardIndex) {
+    if (!Number.isInteger(cardIndex) || cardIndex < 0) return 0;
+    return Math.max(0, Number(voiceAttemptsByCard[cardIndex]) || 0);
+}
+
+function setCardAttempts(cardIndex, attempts) {
+    if (!Number.isInteger(cardIndex) || cardIndex < 0) return 0;
+    const normalized = Math.max(0, Math.min(2, Number(attempts) || 0));
+    if (normalized === 0) {
+        delete voiceAttemptsByCard[cardIndex];
+    } else {
+        voiceAttemptsByCard[cardIndex] = normalized;
+    }
+    if (cardIndex === currentCardIndex) {
+        voiceAttempts = normalized;
+    }
+    return normalized;
+}
+
+function syncVoiceAttemptsWithCurrentCard() {
+    voiceAttempts = getCardAttempts(currentCardIndex);
+    return voiceAttempts;
+}
+
+function hasAttemptProgress() {
+    return Object.values(voiceAttemptsByCard).some(value => (Number(value) || 0) > 0);
+}
 let canFlipBack = true;
 let canFlip = true; // Controla si se puede voltear la tarjeta
 // Timer para programar la actualización del porcentaje tras re-aparecer el cuadro
@@ -33803,6 +33863,14 @@ function playSuccessSound() {
     const successAudio = new Audio('https://fawzinoo.github.io/audios/win.mp3');
     successAudio.volume = 0.7;
     successAudio.play().catch(() => {});
+
+    if (typeof confetti === 'function') {
+        confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 }
+        });
+    }
 }
 
 // ======= Control de mute para sonidos de botones =======
@@ -33840,6 +33908,8 @@ function updateSoundToggleIcon() {
 }
 
 function showCountdown(card) {
+    canFlip = false;
+    canFlipBack = false;
     // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
     document.getElementById('shuffleSound').play().catch(() => {});
     
@@ -33913,7 +33983,6 @@ function goToNextCard() {
     canFlipBack = true; // Permitir voltear en la nueva tarjeta
     canFlip = true; // Rehabilitar volteo para la nueva tarjeta
     updateCounters();
-    voiceAttempts = 0; // Reiniciar intentos para la nueva tarjeta
     // Cancelar cualquier timeout entre intentos por seguridad
     if (errorDelayTimeoutId) { clearTimeout(errorDelayTimeoutId); errorDelayTimeoutId = null; }
     if (resumeRecognitionTimeoutId) { clearTimeout(resumeRecognitionTimeoutId); resumeRecognitionTimeoutId = null; }
@@ -33967,15 +34036,26 @@ function showCard(index) {
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
 flashcards.forEach(card => {
     card.classList.remove('is-visible', 'flipped');
+    card.querySelectorAll('.ruleta-front-timer').forEach(timer => timer.remove());
     const back = card.querySelector('.back');
     // Elimina cualquier contador de intentos
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
-    if (card.dataset.answer) {
-        back.innerHTML = card.dataset.answer;
+    const canonical = typeof getLudCanonicalCardData === 'function'
+        ? getLudCanonicalCardData(card)
+        : null;
+    if (canonical) {
+        back.innerHTML = canonical.backHTML;
+        back.dataset.originalText = canonical.answer;
+        card.dataset.answer = canonical.answer;
+    } else if (card.dataset.answer) {
+        back.textContent = card.dataset.answer;
+        back.dataset.originalText = card.dataset.answer;
     }
 });
 
     if (flashcards[index]) {
+        currentCardIndex = index;
+        syncVoiceAttemptsWithCurrentCard();
         flashcards[index].classList.add('is-visible');
     }
     updateCounters();
@@ -35259,6 +35339,8 @@ function generateMultipleChoiceOptions(correctAnswer) {
 }
 
 function renderMasMenosRevealedAnswer(backElement, answerText) {
+    canFlip = false;
+    canFlipBack = false;
     const raw = String(answerText || '').replace(/\s+/g, ' ').trim();
     const degreePattern = /\b(más|menos)\b/i;
     const formMatch = raw.match(degreePattern);
@@ -35424,7 +35506,9 @@ function showMultipleChoice(backElement, correctAnswer) {
 
     const tileElements = [];
 
-    const FRONT_TILE_HTML = `<img src="f.png" onerror="this.onerror=null;this.src='https://fawzinoo.github.io/Fotos/f.png';" alt="Logo F" class="ruleta-tile-logo" />`;
+    const buildFrontTileHTML = (number) => `
+        <span class="ruleta-tile-number">${number}</span>
+        <img src="f.png" onerror="this.onerror=null;this.src='https://fawzinoo.github.io/Fotos/f.png';" alt="Logo F" class="ruleta-tile-logo" />`;
 
     let globalFlipAudioCtx = null;
     const getFlipAudioContext = () => {
@@ -35508,14 +35592,39 @@ function showMultipleChoice(backElement, correctAnswer) {
         } catch(e) {}
     };
 
+    const playTickSound = () => {
+        try {
+            if (localStorage.getItem('u1-tu_btn_sounds_muted') === 'true') return;
+            const ctx = getFlipAudioContext();
+            if (!ctx) return;
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            const freq = timeLeft <= 3 ? 1600 : 1200;
+            osc.frequency.setValueAtTime(freq, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.035);
+            gain.gain.setValueAtTime(0.45, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.035);
+        } catch(e) {}
+    };
+
     allTilesData.forEach((tileData, index) => {
         const rect = document.createElement('div');
+        const frontTileHTML = buildFrontTileHTML(index + 1);
         rect.className = 'ruleta-rect-tile';
         rect.dataset.word = tileData.word;
         rect.dataset.isTarget = tileData.isTarget ? 'true' : 'false';
         rect.dataset.isFlipped = 'false';
         rect.dataset.isPinned = 'false';
-        rect.innerHTML = FRONT_TILE_HTML;
+        rect.innerHTML = frontTileHTML;
 
         let flipTimer = null;
 
@@ -35527,7 +35636,7 @@ function showMultipleChoice(backElement, correctAnswer) {
                     rect.dataset.isFlipped = 'false';
                     rect.classList.remove('is-flipped');
                     rect.classList.remove('is-pinned');
-                    rect.innerHTML = FRONT_TILE_HTML;
+                    rect.innerHTML = frontTileHTML;
                     flipTimer = null;
                     playTileFlipSound();
                 }
@@ -35552,7 +35661,7 @@ function showMultipleChoice(backElement, correctAnswer) {
                 // Desfijar la tarjeta: vuelve a su fondo morado original y restaura el temporizador auto-unflip
                 rect.dataset.isPinned = 'false';
                 rect.classList.remove('is-pinned');
-                try { vibrar(30); } catch(err) {}
+                try { vibrar(60); } catch(err) {}
                 renderFlippedContent();
                 startAutoUnflipTimer();
                 playTilePinSound(false);
@@ -35641,6 +35750,10 @@ function showMultipleChoice(backElement, correctAnswer) {
             }
 
             if (backElement.dataset.choiceLocked === 'true') return;
+            // La cuenta de 60 segundos comienza con la primera interacción
+            // real sobre un rectángulo, no al mostrar el reverso.
+            startRuletaTimer();
+            try { vibrar(60); } catch(err) {}
 
             const flipped = rect.dataset.isFlipped === 'true';
             const pinned = rect.dataset.isPinned === 'true';
@@ -35651,7 +35764,6 @@ function showMultipleChoice(backElement, correctAnswer) {
                 rect.classList.add('is-flipped');
                 renderFlippedContent();
                 playTileFlipSound();
-                try { vibrar(40); } catch(err) {}
 
                 // Iniciar temporizador de 3 segundos para volver a su estado si no está fijada
                 if (!pinned) {
@@ -35671,9 +35783,8 @@ function showMultipleChoice(backElement, correctAnswer) {
                 rect.dataset.isFlipped = 'false';
                 rect.classList.remove('is-flipped');
                 rect.classList.remove('is-pinned');
-                rect.innerHTML = FRONT_TILE_HTML;
+                rect.innerHTML = frontTileHTML;
                 playTileFlipSound();
-                try { vibrar(20); } catch(err) {}
             }
         });
 
@@ -35691,17 +35802,43 @@ function showMultipleChoice(backElement, correctAnswer) {
     checkBtn.innerHTML = `<i class="fas fa-check-circle"></i> COMPROBAR`;
     container.appendChild(checkBtn);
 
-    let ruletaAttempts = 0;
+    let ruletaAttempts = getCardAttempts(currentCardIndex);
+    const frontElement = card ? card.querySelector('.front') : null;
+    let frontTimerBox = null;
+    let frontTimerDisplay = null;
+
+    const ensureFrontTimer = () => {
+        if (!frontElement) return;
+        frontTimerBox = frontElement.querySelector('.ruleta-front-timer');
+        if (!frontTimerBox) {
+            frontTimerBox = document.createElement('div');
+            frontTimerBox.className = 'ruleta-timer-box ruleta-front-timer';
+            frontTimerBox.innerHTML = `<i class="fas fa-clock"></i> <span>${timeLeft}s</span>`;
+            frontElement.appendChild(frontTimerBox);
+        }
+        frontTimerDisplay = frontTimerBox.querySelector('span');
+    };
+
+    const removeFrontTimer = () => {
+        if (frontTimerBox) frontTimerBox.remove();
+        frontTimerBox = null;
+        frontTimerDisplay = null;
+    };
+
+    const renderTimerValue = () => {
+        if (timerDisplay) timerDisplay.textContent = `${timeLeft}s`;
+        if (frontTimerDisplay) frontTimerDisplay.textContent = `${timeLeft}s`;
+    };
 
     // Función de Verificación Final
     const executeCheck = (isTimerExpiry = false) => {
         if (backElement.dataset.choiceLocked === 'true') return;
 
-        // Recoger todas las fichas actualmente desveladas (flipped)
-        const flippedTiles = tileElements.filter(el => el.dataset.isFlipped === 'true');
+        // Recoger únicamente las fichas seleccionadas/fijadas por el usuario (isPinned === 'true')
+        const selectedTiles = tileElements.filter(el => el.dataset.isPinned === 'true');
 
-        // Si el usuario no ha destapado ninguna casilla al pulsar Comprobar (y no ha expirado el tiempo)
-        if (flippedTiles.length === 0 && !isTimerExpiry) {
+        // Si el usuario no ha fijado ninguna casilla al pulsar Comprobar (y no ha expirado el tiempo)
+        if (selectedTiles.length === 0 && !isTimerExpiry) {
             try { vibrar(100); } catch(err) {}
             backElement.querySelectorAll('.mensaje-error').forEach(el => el.remove());
 
@@ -35710,7 +35847,7 @@ function showMultipleChoice(backElement, correctAnswer) {
             warningMessage.style.borderColor = 'rgba(245, 158, 11, 0.5)';
             warningMessage.style.color = '#fbbf24';
             warningMessage.style.background = 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.08) 100%)';
-            warningMessage.innerHTML = `<i class="fas fa-exclamation-triangle"></i><div>¡Ojo: debes destapar las casillas!</div>`;
+            warningMessage.innerHTML = `<i class="fas fa-exclamation-triangle"></i><div>¡Ojo: debes seleccionar las casillas!</div>`;
             backElement.appendChild(warningMessage);
 
             setTimeout(() => {
@@ -35722,30 +35859,33 @@ function showMultipleChoice(backElement, correctAnswer) {
 
         const totalTargetTiles = tileElements.filter(el => el.dataset.isTarget === 'true');
 
-        // Verificar si las palabras volteadas coinciden exactamente con todas las objetivo sin distractores
-        const isMatch = (flippedTiles.length === totalTargetTiles.length) &&
-            flippedTiles.every(el => el.dataset.isTarget === 'true');
+        // Verificar si las palabras seleccionadas (fijadas) coinciden exactamente con todas las objetivo sin distractores
+        const isMatch = (selectedTiles.length === totalTargetTiles.length) &&
+            selectedTiles.every(el => el.dataset.isTarget === 'true');
 
         if (isMatch) {
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
+            removeFrontTimer();
+            // Cerrar el volteo antes de iniciar sonido, vibración o confeti.
+            // Así ninguna pulsación posterior al anuncio puede volver a front.
+            canFlip = false;
+            canFlipBack = false;
+            lockedAfterCorrect = true;
             backElement.dataset.choiceLocked = 'true';
-            flippedTiles.forEach(el => el.classList.add('tile-correct'));
+            selectedTiles.forEach(el => el.classList.add('tile-correct'));
             try { vibrar(120); } catch(err) {}
             playSuccessSound();
 
             correctCount++;
             updateCounters();
             betweenAttempts = false;
-            lockedAfterCorrect = true;
             updateSkipButtonState();
             correctWords.push(correctAnswer);
             if (card) correctWordDetails.push({ front: frontText, back: correctAnswer });
-            canFlipBack = true;
-            voiceAttempts = 0;
-            canFlip = false;
+            setCardAttempts(currentCardIndex, 0);
 
             if (!completedCards.has(currentCardIndex)) {
                 completedCards.add(currentCardIndex);
@@ -35776,15 +35916,49 @@ function showMultipleChoice(backElement, correctAnswer) {
 
             scheduleStatsBoxUpdate();
         } else {
-            ruletaAttempts++;
+            // Igual que en com-tu: el primer fallo solo consume un intento.
+            // Si se agota el tiempo, la tarjeta queda definitivamente fallada.
+            const timedOutWithoutSelection = isTimerExpiry && selectedTiles.length === 0;
+            ruletaAttempts = isTimerExpiry ? 2 : ruletaAttempts + 1;
+            setCardAttempts(currentCardIndex, ruletaAttempts);
+            const isFinalFailure = isTimerExpiry || ruletaAttempts >= 2;
+
+            // Bloquear desde el primer instante en que se anuncia "Incorrecto".
+            // Si es solo el primer fallo, se habilitará otra vez al desaparecer
+            // el aviso para permitir el segundo intento.
+            canFlip = false;
+            canFlipBack = false;
+            showingErrorMessage = true;
+            if (isFinalFailure) {
+                lockedAfterSecondIncorrect = true;
+                backElement.dataset.choiceLocked = 'true';
+            }
+            updateSkipButtonState();
+
             try { vibrar(180); } catch(err) {}
             playErrorSound();
             container.classList.add('wrong-shake');
 
-            // Registrar en marcador de incorrectas
-            incorrectCount++;
-            updateCounters();
-            scheduleStatsBoxUpdate();
+            // Solo el segundo fallo (o el tiempo agotado) suma una incorrecta.
+            if (isFinalFailure) {
+                incorrectCount++;
+                incorrectWords.push(correctAnswer);
+                if (card) {
+                    incorrectWordDetails.push({ front: frontText, back: correctAnswer });
+                }
+
+                // Marcarla ahora, no después del mensaje, para que una recarga no
+                // permita volver a consumir los intentos de esta tarjeta.
+                if (!completedCards.has(currentCardIndex)) {
+                    completedCards.add(currentCardIndex);
+                    updateCardCounter();
+                }
+
+                updateCounters();
+                scheduleStatsBoxUpdate();
+            }
+
+            // En el primer fallo se persiste únicamente el intento consumido.
             saveGameProgress();
 
             // Mensaje de Incorrecto con el CSS y animación (.mensaje-error) idénticos a sel-tu / com-tu
@@ -35792,25 +35966,38 @@ function showMultipleChoice(backElement, correctAnswer) {
 
             const errorMessage = document.createElement('div');
             errorMessage.className = 'mensaje-error';
-            errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><div>Incorrecto</div>`;
+            if (timedOutWithoutSelection) {
+                errorMessage.innerHTML = `<i class="fas fa-hourglass-end"></i><div>¡Tiempo agotado!</div>`;
+            } else if (isTimerExpiry) {
+                errorMessage.innerHTML = `<i class="fas fa-hourglass-end"></i><div>¡Tiempo agotado! Incorrecto</div>`;
+            } else {
+                errorMessage.innerHTML = `<i class="fas fa-exclamation-circle"></i><div>Incorrecto</div>`;
+            }
             backElement.appendChild(errorMessage);
+
+            const errorDisplayTime = isTimerExpiry ? 3500 : 2000;
 
             setTimeout(() => {
                 errorMessage.remove();
-            }, 2000);
+                if (!isFinalFailure) {
+                    showingErrorMessage = false;
+                    canFlip = true;
+                    canFlipBack = true;
+                    updateSkipButtonState();
+                }
+            }, errorDisplayTime);
 
             setTimeout(() => {
                 container.classList.remove('wrong-shake');
             }, 500);
 
             // Si es el 2º intento O expiró el temporizador, bloquear y pasar a la siguiente tarjeta
-            if (ruletaAttempts >= 2 || isTimerExpiry) {
+            if (isFinalFailure) {
                 if (timerInterval) {
                     clearInterval(timerInterval);
                     timerInterval = null;
                 }
-                backElement.dataset.choiceLocked = 'true';
-
+                removeFrontTimer();
                 setTimeout(() => {
                     betweenAttempts = false;
                     canFlip = false;
@@ -35830,7 +36017,7 @@ function showMultipleChoice(backElement, correctAnswer) {
                     } else {
                         proceed();
                     }
-                }, 2000);
+                }, errorDisplayTime);
             }
             // En el 1er intento sin expiración de tiempo, NO se pausa el temporizador
         }
@@ -35839,27 +36026,54 @@ function showMultipleChoice(backElement, correctAnswer) {
     checkBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        try { vibrar(60, { force: true }); } catch(err) {}
         executeCheck(false);
     });
 
-    // Iniciar Temporizador de 60 Segundos
+    // El temporizador permanece en 60s hasta pulsar el primer rectángulo.
     const timerDisplay = header.querySelector('#ruleta-timer-display span');
     const timerBox = header.querySelector('#ruleta-timer-display');
+    let timerStarted = false;
 
-    timerInterval = setInterval(() => {
-        timeLeft--;
-        if (timerDisplay) timerDisplay.textContent = `${timeLeft}s`;
-
-        if (timeLeft <= 10 && timerBox) {
-            timerBox.classList.add('timer-warning');
+    const ensureBackVisibleForTimeout = () => {
+        if (card && !card.classList.contains('flipped')) {
+            card.classList.add('flipped');
+            try { vibrar(60); } catch(err) {}
         }
+        // Durante los tres segundos finales el anuncio debe permanecer visible.
+        canFlip = false;
+        canFlipBack = false;
+    };
 
-        if (timeLeft <= 0) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            executeCheck(true);
-        }
-    }, 1000);
+    const startRuletaTimer = () => {
+        if (timerStarted || timerInterval || backElement.dataset.choiceLocked === 'true') return;
+        timerStarted = true;
+        ensureFrontTimer();
+        renderTimerValue();
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            renderTimerValue();
+
+            if (timeLeft <= 10 && timerBox) {
+                timerBox.classList.add('timer-warning');
+                if (frontTimerBox) frontTimerBox.classList.add('timer-warning');
+                playTickSound();
+            }
+
+            // Dar tiempo a completar el giro 3D antes de mostrar el resultado.
+            if (timeLeft <= 3) {
+                ensureBackVisibleForTimeout();
+            }
+
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                // Refuerzo por si otra interacción intentó volver a front.
+                ensureBackVisibleForTimeout();
+                executeCheck(true);
+            }
+        }, 1000);
+    };
 
     backElement.appendChild(container);
 }
@@ -35891,6 +36105,8 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
     
     if (isCorrect) {
         // Respuesta correcta
+        canFlip = false;
+        canFlipBack = false;
         correctCount++;
         betweenAttempts = false;
         lockedAfterCorrect = true;
@@ -35900,7 +36116,6 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         correctWords.push(correctAnswer);
         if (card) correctWordDetails.push({ front: getFrontTextFromCard(card), back: correctAnswer });
         
-        canFlipBack = true;
         playSuccessSound();
         
         // Marcar visualmente la opción correcta
@@ -35915,7 +36130,6 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         // attemptsDiv.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
         
         voiceAttempts = 0; // Reiniciar para la siguiente tarjeta
-        canFlip = false; // Deshabilitar volteo antes de mostrar la respuesta
         
         // Marcar la tarjeta como completada inmediatamente
         if (!completedCards.has(currentCardIndex)) {
@@ -35955,6 +36169,8 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         
     } else {
         // Respuesta incorrecta
+        canFlip = false;
+        canFlipBack = false;
         voiceAttempts++;
         saveGameProgress();
         
@@ -35970,9 +36186,6 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         if (card) incorrectWordDetails.push({ front: getFrontTextFromCard(card), back: correctAnswer });
         
         voiceAttempts = 0;
-        canFlipBack = false;
-        canFlip = false;
-        
         // Marcar la tarjeta como completada inmediatamente
         if (!completedCards.has(currentCardIndex)) {
             completedCards.add(currentCardIndex);
@@ -36035,10 +36248,44 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
 }
 
 // ============ SISTEMA DE PERSISTENCIA DE PROGRESO ============
+const LUD_PROGRESS_STORAGE_KEY = 'lud-tu_gameProgress';
+const LUD_GAME_STATE_VERSION = 'lud-tu-canonical-v1';
+
+// Resolver estricto: el estado visible nunca se usa como fuente de verdad.
+// Una tarjeta solo es válida si su cardId existe en el catálogo canónico.
+function getLudCanonicalCardData(value) {
+    const source = value && value.nodeType === 1 ? value : null;
+    const cardId = String(source
+        ? (source.dataset.cardId || '')
+        : (value && typeof value === 'object' ? value.cardId || '' : value || '')
+    ).trim();
+    if (!cardId || !Array.isArray(window.MAS_CANONICAL_CARDS)) return null;
+    return window.MAS_CANONICAL_CARDS.find(item => String(item.cardId || '') === cardId) || null;
+}
+
+function getValidatedLudCanonicalOrder(cardOrder) {
+    if (!Array.isArray(cardOrder) || cardOrder.length !== flashcards.length) return null;
+    const seenIds = new Set();
+    const canonicalOrder = [];
+    for (const savedCard of cardOrder) {
+        const canonical = getLudCanonicalCardData(savedCard);
+        if (!canonical || !canonical.cardId || seenIds.has(canonical.cardId)) return null;
+        seenIds.add(canonical.cardId);
+        canonicalOrder.push(canonical);
+    }
+    return canonicalOrder.length === flashcards.length ? canonicalOrder : null;
+}
+
 // Función para guardar el progreso actual en localStorage
 function saveGameProgress() {
+    const canonicalOrder = flashcards.map(card => getLudCanonicalCardData(card));
+    const canonicalIds = canonicalOrder.map(card => card && card.cardId).filter(Boolean);
+    if (canonicalOrder.some(card => !card) || new Set(canonicalIds).size !== flashcards.length) {
+        console.error('❌ No se guardó el progreso: el orden canónico de tarjetas no es válido.');
+        return false;
+    }
     const gameState = {
-        contentVersion: 'u1-tu-selection-v5',
+        contentVersion: LUD_GAME_STATE_VERSION,
         currentCardIndex: currentCardIndex,
         completedCards: Array.from(completedCards),
         correctCount: correctCount,
@@ -36048,47 +36295,42 @@ function saveGameProgress() {
         correctWordDetails: [...correctWordDetails],
         incorrectWordDetails: [...incorrectWordDetails],
         voiceAttempts: voiceAttempts,
+        voiceAttemptsByCard: { ...voiceAttemptsByCard },
         timestamp: Date.now(),
-        cardOrder: flashcards.map(card => {
-            const canonical = getMasCanonicalCardData(card) || {};
-            return {
-                cardId: canonical.cardId || card.dataset.cardId || '',
-                targetForm: canonical.targetForm || card.dataset.targetForm || '',
-                targetPosition: canonical.targetPosition || card.dataset.targetPosition || '',
-                audioFile: canonical.audioFile || card.dataset.audioFile || '',
-                contentIndex: canonical.contentIndex !== undefined ? canonical.contentIndex : (card.dataset.contentIndex !== undefined ? card.dataset.contentIndex : ''),
-                frontHTML: canonical.frontHTML || (card.querySelector('.front') ? card.querySelector('.front').innerHTML : ''),
-                backText: canonical.answer || getBackTextFromCard(card),
-                backHTML: canonical.backHTML || ''
-            };
-        })
+        cardOrder: canonicalOrder.map(canonical => ({ cardId: canonical.cardId }))
     };
     
     try {
         const stateString = JSON.stringify(gameState);
-        localStorage.setItem('u1-tu_gameProgress', stateString); // ✅ Cambiado de de0a1002_gameProgress
+        localStorage.setItem(LUD_PROGRESS_STORAGE_KEY, stateString);
         console.log(`✅ Progreso guardado automáticamente. voiceAttempts: ${voiceAttempts}`);
+        return true;
     } catch (error) {
         if (error.name === 'QuotaExceededError') {
             console.warn('⚠️ LocalStorage lleno, limpiando datos antiguos del tema actual...');
             clearOldThemeData();
             
             try {
-                localStorage.setItem('u1-tu_gameProgress', JSON.stringify(gameState)); // ✅ Cambiado
+                localStorage.setItem(LUD_PROGRESS_STORAGE_KEY, JSON.stringify(gameState));
                 console.log('✅ Progreso guardado después de limpiar datos del tema');
+                return true;
             } catch (secondError) {
                 console.error('❌ Error persistente al guardar progreso:', secondError);
                 const minimalState = {
+                    contentVersion: LUD_GAME_STATE_VERSION,
                     currentCardIndex: currentCardIndex,
                     completedCards: Array.from(completedCards),
                     correctCount: correctCount,
                     incorrectCount: incorrectCount,
                     voiceAttempts: voiceAttempts,
+                    voiceAttemptsByCard: { ...voiceAttemptsByCard },
+                    cardOrder: canonicalOrder.map(canonical => ({ cardId: canonical.cardId })),
                     timestamp: Date.now()
                 };
                 try {
-                    localStorage.setItem('u1-tu_gameProgress', JSON.stringify(minimalState)); // ✅ Cambiado
+                    localStorage.setItem(LUD_PROGRESS_STORAGE_KEY, JSON.stringify(minimalState));
                     console.log('✅ Progreso mínimo guardado exitosamente');
+                    return true;
                 } catch (finalError) {
                     console.error('💥 No se pudo guardar ningún progreso:', finalError);
                 }
@@ -36097,6 +36339,7 @@ function saveGameProgress() {
             console.error('❌ Error inesperado al guardar progreso:', error);
         }
     }
+    return false;
 }
 
 // Nueva función que SOLO limpia datos del tema actual, respeta otros temas
@@ -36105,7 +36348,7 @@ function clearOldThemeData() {
     
     // ✅ Claves estandarizadas con tener
     const currentThemeKeys = [
-        'u1-tu_gameProgress',       // progreso actual del tema
+        LUD_PROGRESS_STORAGE_KEY,   // progreso actual de lud-tu
         'u1-tu_sel',                // último resultado del tema
         'vecesDate',                // fecha del último resultado (ya correcto)
     ];
@@ -36133,7 +36376,7 @@ function clearOldThemeData() {
                     }
                 }
             } catch (e) {
-                if (key === 'u1-tu_gameProgress') { // ✅ Cambiado
+                if (key === LUD_PROGRESS_STORAGE_KEY) {
                     localStorage.removeItem(key);
                     console.log(`🔧 Eliminados datos corruptos: ${key}`);
                 }
@@ -36174,7 +36417,8 @@ function clearOldStorageData() {
     
     // Lista de claves a mantener (datos importantes) - actualizada con tener
     const keepKeys = [
-        'u1-tu_gameProgress',      // ✅ Cambiado
+        LUD_PROGRESS_STORAGE_KEY,
+        'u1-tu_gameProgress',      // progreso de sel-tu: no tocar desde lud-tu
         'lastSuccessPercentage',
         'lastUpdateDate',
         'u1-tu_sel',               // último resultado del tema
@@ -36204,18 +36448,18 @@ function clearOldStorageData() {
         
         // Eliminar datos de progreso muy antiguos (más de 7 días)
         const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        const savedProgress = localStorage.getItem('u1-tu_gameProgress'); // ✅ Cambiado
+        const savedProgress = localStorage.getItem(LUD_PROGRESS_STORAGE_KEY);
         
         if (savedProgress) {
             try {
                 const data = JSON.parse(savedProgress);
                 if (data.timestamp && data.timestamp < weekAgo) {
-                    localStorage.removeItem('u1-tu_gameProgress'); // ✅ Cambiado
+                    localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
                     console.log('🗓️ Eliminado progreso muy antiguo');
                 }
             } catch (e) {
                 // Si hay datos corruptos, eliminarlos
-                localStorage.removeItem('u1-tu_gameProgress'); // ✅ Cambiado
+                localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
                 console.log('🔧 Eliminados datos corruptos');
             }
         }
@@ -36224,25 +36468,30 @@ function clearOldStorageData() {
 
 // Función para cargar el progreso desde localStorage
 function loadGameProgress() {
-    const savedState = localStorage.getItem('u1-tu_gameProgress'); // ✅ Cambiado
+    const savedState = localStorage.getItem(LUD_PROGRESS_STORAGE_KEY);
     if (!savedState) return null;
     
     try {
         const parsedState = JSON.parse(savedState);
-        if (parsedState.contentVersion !== 'u1-tu-selection-v5') {
-            localStorage.removeItem('u1-tu_gameProgress');
+        if (parsedState.contentVersion !== LUD_GAME_STATE_VERSION) {
+            localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
+            return null;
+        }
+        if (!getValidatedLudCanonicalOrder(parsedState.cardOrder)) {
+            console.warn('⚠️ Progreso descartado: el orden guardado no coincide con el catálogo de lud-tu.');
+            localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
             return null;
         }
         const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
         if (parsedState.timestamp && parsedState.timestamp < weekAgo) {
             console.log('🗓️ Progreso guardado muy antiguo, ignorando...');
-            localStorage.removeItem('u1-tu_gameProgress'); // ✅ Cambiado
+            localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
             return null;
         }
         return parsedState;
     } catch (error) {
         console.error('❌ Error al cargar progreso guardado:', error);
-        localStorage.removeItem('u1-tu_gameProgress'); // ✅ Cambiado
+        localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
         return null;
     }
 }
@@ -36252,39 +36501,55 @@ function restoreGameState(gameState) {
     if (!gameState) return false;
     
     try {
+        const canonicalOrder = getValidatedLudCanonicalOrder(gameState.cardOrder);
+        if (!canonicalOrder) {
+            console.warn('⚠️ Progreso incompatible: se descartó un orden de tarjetas no canónico.');
+            clearCurrentProgress();
+            return false;
+        }
+
         // Restaurar variables de estado
-        currentCardIndex = gameState.currentCardIndex || 0;
-        completedCards = new Set(gameState.completedCards || []);
+        currentCardIndex = Number.isInteger(gameState.currentCardIndex) &&
+            gameState.currentCardIndex >= 0 &&
+            gameState.currentCardIndex < flashcards.length
+            ? gameState.currentCardIndex
+            : 0;
+        completedCards = new Set(
+            (gameState.completedCards || []).filter(index =>
+                Number.isInteger(index) && index >= 0 && index < flashcards.length
+            )
+        );
         correctCount = gameState.correctCount || 0;
         incorrectCount = gameState.incorrectCount || 0;
         correctWords = [...(gameState.correctWords || [])];
         incorrectWords = [...(gameState.incorrectWords || [])];
         correctWordDetails = Array.isArray(gameState.correctWordDetails) ? [...gameState.correctWordDetails] : correctWords.map(word => ({ front: '', back: word }));
         incorrectWordDetails = Array.isArray(gameState.incorrectWordDetails) ? [...gameState.incorrectWordDetails] : incorrectWords.map(word => ({ front: '', back: word }));
-        voiceAttempts = gameState.voiceAttempts || 0;
-        
-        // Restaurar orden de tarjetas si existe
-        if (gameState.cardOrder && gameState.cardOrder.length === flashcards.length) {
-            flashcards.forEach((card, index) => {
-                const cardData = gameState.cardOrder[index];
-                if (cardData) {
-                    const canonical = getMasCanonicalCardData(cardData, cardData.backText) || cardData;
-                    const frontEl = card.querySelector('.front');
-                    if (frontEl && canonical.frontHTML) frontEl.innerHTML = canonical.frontHTML;
-                    const back = card.querySelector('.back');
-                    if (back) {
-                        back.innerHTML = canonical.backHTML || cardData.backHTML || cardData.backText;
-                        back.dataset.originalText = canonical.answer || cardData.backText;
-                    }
-                    card.dataset.answer = canonical.answer || cardData.backText;
-                    card.dataset.cardId = canonical.cardId || cardData.cardId || '';
-                    card.dataset.targetForm = canonical.targetForm || cardData.targetForm || '';
-                    card.dataset.targetPosition = canonical.targetPosition || cardData.targetPosition || '';
-                    card.dataset.audioFile = canonical.audioFile || cardData.audioFile || `tu-${index + 1}.mp3`;
-                    card.dataset.contentIndex = canonical.contentIndex !== undefined ? canonical.contentIndex : (cardData.contentIndex !== undefined ? cardData.contentIndex : index);
-                }
-            });
+        voiceAttemptsByCard = { ...(gameState.voiceAttemptsByCard || {}) };
+        // Compatibilidad con partidas anteriores que solo guardaban el intento de la tarjeta activa.
+        if (!Object.keys(voiceAttemptsByCard).length && (gameState.voiceAttempts || 0) > 0) {
+            voiceAttemptsByCard[currentCardIndex] = gameState.voiceAttempts || 0;
         }
+        syncVoiceAttemptsWithCurrentCard();
+        
+        // Restaurar frente y reverso únicamente desde el catálogo canónico.
+        flashcards.forEach((card, index) => {
+            const canonical = canonicalOrder[index];
+            const frontEl = card.querySelector('.front');
+            const back = card.querySelector('.back');
+            if (frontEl) frontEl.innerHTML = canonical.frontHTML;
+            if (back) {
+                back.innerHTML = canonical.backHTML;
+                back.dataset.originalText = canonical.answer;
+            }
+            card.dataset.answer = canonical.answer;
+            card.dataset.cardId = canonical.cardId;
+            card.dataset.targetForm = canonical.targetForm || '';
+            card.dataset.targetPosition = canonical.targetPosition || '';
+            card.dataset.contentIndex = String(
+                Number.isInteger(canonical.sourceIndex) ? canonical.sourceIndex : index
+            );
+        });
         
         // Reasignar audios a cada tarjeta según su respuesta (por si el orden se cambió)
         reassignAudiosToCards();
@@ -36309,6 +36574,9 @@ function restoreGameState(gameState) {
             }
         } catch (e) {}
 
+        // El índice puede haber cambiado si la tarjeta guardada ya estaba completada.
+        syncVoiceAttemptsWithCurrentCard();
+
         // Actualizar interfaz
         updateCounters();
         updateCardCounter();
@@ -36328,7 +36596,7 @@ function restoreGameState(gameState) {
 
 // Función para limpiar solo el progreso actual (mantener avance anterior)
 function clearCurrentProgress() {
-    localStorage.removeItem('u1-tu_gameProgress');
+    localStorage.removeItem(LUD_PROGRESS_STORAGE_KEY);
     console.log('Progreso actual limpiado');
 }
 
@@ -36353,7 +36621,8 @@ function hasProgressSaved() {
     const hasProgress = (savedState.completedCards && savedState.completedCards.length > 0) ||
                        (savedState.correctCount > 0) ||
                        (savedState.incorrectCount > 0) ||
-                       (savedState.voiceAttempts > 0);
+                       (savedState.voiceAttempts > 0) ||
+                       Object.values(savedState.voiceAttemptsByCard || {}).some(value => (Number(value) || 0) > 0);
     
     return hasProgress;
 }
@@ -36495,6 +36764,7 @@ function initializeNewGame() {
     resetEligeAudioSession();
     currentCardIndex = 0;
     voiceAttempts = 0;
+    voiceAttemptsByCard = {};
     completedCards.clear();
     correctWords.length = 0;
     incorrectWords.length = 0;
@@ -37097,30 +37367,28 @@ function getBackTextFromCard(card) {
 
 function shuffleCards() {
     stopAllAudios();
-    // Limpiar caché de opciones ya que el orden/índices cambian
     try { cardOptionsCache.clear(); } catch(e) {}
     document.querySelectorAll('.countdown-overlay, .mensaje-error, .listening-indicator').forEach(el => el.remove());
 
-    // 1. Obtener los datos de todas las tarjetas.
-    const allCardData = flashcards.map((card, index) => ({
-        frontImg: getFrontImage(card)?.src || '',
-        frontAlt: getFrontImage(card)?.alt || '',
-        frontText: getFrontTextFromCard(card),
-        frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
-        backText: card.dataset.answer || getOriginalBackText(card.querySelector('.back')),
-        targetForm: card.dataset.targetForm || '',
-        targetPosition: card.dataset.targetPosition || '',
-        cardId: card.dataset.cardId || '',
-        audioFile: card.dataset.audioFile || `tu-${index + 1}.mp3`,
-        contentIndex: card.dataset.contentIndex !== undefined ? card.dataset.contentIndex : String(index),
-        numberLabel: card.querySelector('.number-display')?.textContent?.trim() || ''
-    }));
+    // Tomar cada unidad front-back desde el catálogo canónico, nunca desde el
+    // HTML temporal que puede contener ruleta, intentos o una respuesta revelada.
+    const allCardData = flashcards.map((card, index) => {
+        const canonical = getLudCanonicalCardData(card);
+        return canonical ? {
+            canonical,
+            completed: completedCards.has(index),
+            attempts: getCardAttempts(index)
+        } : null;
+    });
+    if (allCardData.some(data => !data)) {
+        console.error('❌ Mezcla cancelada: se encontró una tarjeta sin cardId canónico.');
+        return;
+    }
 
-    // 2. Separar los datos de las tarjetas en pendientes y completadas.
     const remainingCardData = [];
     const completedCardData = [];
-    allCardData.forEach((data, index) => {
-        if (completedCards.has(index)) {
+    allCardData.forEach(data => {
+        if (data.completed) {
             completedCardData.push(data);
         } else {
             remainingCardData.push(data);
@@ -37136,78 +37404,50 @@ function shuffleCards() {
     // 4. Crear el nuevo mazo: pendientes barajadas primero, luego las completadas.
     const newCardOrder = [...remainingCardData, ...completedCardData];
 
-    // 5. Actualizar el DOM y los audios según el nuevo orden.
+    // Aplicar el nuevo orden conservando cada frente, reverso e intentos como unidad.
+    const reorderedAttempts = {};
     flashcards.forEach((card, index) => {
         const data = newCardOrder[index];
+        const canonical = data.canonical;
         card.classList.remove('is-visible', 'flipped');
         const frontEl = card.querySelector('.front');
-        if (frontEl && data.frontHTML) {
-            frontEl.innerHTML = data.frontHTML;
-        } else {
-            const frontImgEl = getFrontImage(card);
-            if (frontImgEl) {
-                if (data.frontImg) frontImgEl.src = data.frontImg;
-                frontImgEl.alt = data.frontAlt || '';
-            }
-        }
-        const numberDisplay = card.querySelector('.number-display');
-        if (numberDisplay && data.numberLabel) {
-            numberDisplay.textContent = data.numberLabel;
-        }
-        setFrontText(card, data.frontText || numberDisplay?.textContent?.trim() || '');
-
+        if (frontEl) frontEl.innerHTML = canonical.frontHTML;
         const back = card.querySelector('.back');
         if (back) {
-            back.innerHTML = '';
-            delete back.dataset.originalText;
+            back.innerHTML = canonical.backHTML;
+            back.dataset.originalText = canonical.answer;
+            back.classList.remove('hidden-text');
         }
-        card.dataset.answer = data.backText;
-        if (data.targetForm) card.dataset.targetForm = data.targetForm;
-        if (data.targetPosition) card.dataset.targetPosition = data.targetPosition;
-        if (data.cardId) card.dataset.cardId = data.cardId;
-        card.dataset.audioFile = data.audioFile;
-        card.dataset.contentIndex = data.contentIndex;
-
-        // Reasignar el audio CORRECTO según el mazo barajado
-        const contentIdx = Number(data.contentIndex);
-        const indexedFile = Number.isFinite(contentIdx) && audioFiles[contentIdx] ? audioFiles[contentIdx] : `tu-${contentIdx + 1}.mp3`;
-        const file = data.audioFile || indexedFile;
-        const src = file ? `${baseUrl}${file}` : getAudioSrcForCountryName(data.backText);
-        if (src) {
-            try { audios[index].pause(); } catch {}
-            audios[index].currentTime = 0;
-            audios[index].preload = 'none';
-            audios[index].src = src;
-        } else {
-            try { audios[index].pause(); } catch {}
-            audios[index].currentTime = 0;
-            audios[index].src = '';
-        }
+        card.dataset.answer = canonical.answer;
+        card.dataset.targetForm = canonical.targetForm || '';
+        card.dataset.targetPosition = canonical.targetPosition || '';
+        card.dataset.cardId = canonical.cardId;
+        card.dataset.contentIndex = String(
+            Number.isInteger(canonical.sourceIndex) ? canonical.sourceIndex : index
+        );
+        if (data.attempts > 0) reorderedAttempts[index] = data.attempts;
     });
 
-    // 6. Actualizar el estado para reflejar el nuevo orden.
-    setTimeout(() => {
-        // Las tarjetas completadas ahora están al final del mazo.
-        // Sus nuevos índices van desde `remainingCardData.length` hasta el final.
-        const newCompletedCards = new Set();
-        for (let i = 0; i < completedCardData.length; i++) {
-            newCompletedCards.add(remainingCardData.length + i);
+    completedCards = new Set(
+        completedCardData.map((_, offset) => remainingCardData.length + offset)
+    );
+    voiceAttemptsByCard = reorderedAttempts;
+    currentCardIndex = 0;
+    for (let index = 0; index < flashcards.length; index++) {
+        if (!completedCards.has(index)) {
+            currentCardIndex = index;
+            break;
         }
-        
-        completedCards = newCompletedCards; // Reemplazar el set antiguo por el nuevo.
-        // Empezar desde la primera PENDIENTE real
-        currentCardIndex = 0;
-        for (let i = 0; i < flashcards.length; i++) {
-            if (!completedCards.has(i)) { currentCardIndex = i; break; }
-        }
-        
-        showCard(currentCardIndex);
-        updateCounters(); // Actualizar los contadores en la UI sin reiniciarlos.
-        // Persistir inmediatamente el nuevo orden canónico antes de una posible recarga.
-        saveGameProgress();
-    }, 10);
-    voiceAttempts = 0;
-canFlipBack = true;
+    }
+    syncVoiceAttemptsWithCurrentCard();
+    reassignAudiosToCards();
+    showCard(currentCardIndex);
+    updateCounters();
+    canFlipBack = true;
+    canFlip = true;
+
+    // Guardar en la misma pila de ejecución: una recarga inmediata ya ve el orden nuevo.
+    saveGameProgress();
 }
 
 function getCountryText(backElement) {
@@ -37235,7 +37475,13 @@ function attachFlashcardHandlers() {
                 return;
             }
 
-            if (!canFlip) {
+            const backElement = card.querySelector('.back');
+            const terminalBackLock = card.classList.contains('flipped') && (
+                lockedAfterCorrect ||
+                lockedAfterSecondIncorrect ||
+                backElement.dataset.choiceLocked === 'true'
+            );
+            if (terminalBackLock || !canFlip) {
                 console.log('Volteo bloqueado por canFlip');
                 // Mantener totalmente inmóvil sin feedback
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
@@ -37243,7 +37489,6 @@ function attachFlashcardHandlers() {
                 return; // No permitir voltear si canFlip es false
             }
             
-            const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
                 // Permitir volver a front al clicar fuera del área de opciones,
                 // incluso después del primer intento.
@@ -37292,8 +37537,8 @@ function attachFlashcardHandlers() {
                 card.classList.add('flipped');
                 
                 backElement.classList.remove('hidden-text');
-                
-                // Reproducir elige.wav en el primer volteo de cada sesión
+
+                // Reproducir el mensaje de instrucciones en el primer volteo de cada sesión
                 playEligeAudioOnce();
 
                 const correctWord = card.dataset.answer;
@@ -37652,13 +37897,13 @@ function resetEligeAudioSession() {
 function playEligeAudioOnce() {
     if (hasPlayedEligeAudio) return;
     if (!eligeAudio) {
-        eligeAudio = new Audio('https://fawzinoo.github.io/audios/elige.wav');
+        eligeAudio = new Audio('https://fawzinoo.github.io/audios/descubre.wav');
     }
     hasPlayedEligeAudio = true;
     eligeAudio.currentTime = 0;
     eligeAudio.play().catch(e => {
         hasPlayedEligeAudio = false;
-        console.log('Error al reproducir elige.wav:', e);
+        console.log('Error al reproducir descubre.wav:', e);
     });
 }
 
@@ -37774,6 +38019,7 @@ function resetGame() {
     resetEligeAudioSession();
     currentCardIndex = 0;
     voiceAttempts = 0;
+    voiceAttemptsByCard = {};
     completedCards.clear();
     correctWords.length = 0;
     incorrectWords.length = 0;

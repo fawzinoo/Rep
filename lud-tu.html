@@ -13299,6 +13299,17 @@ const customDistractors = {
             -webkit-backdrop-filter: blur(6px);
         }
 
+        /* En móvil deja libre la franja superior ocupada por el título. */
+        @media (max-width: 620px) {
+            .front .ruleta-front-timer {
+                top: auto;
+                right: 10px;
+                bottom: 10px;
+                padding: 4px 10px;
+                font-size: 0.76rem;
+            }
+        }
+
         /* Logo F dentro de la ficha (Tamaño reducido) */
         .ruleta-tile-logo {
             max-height: 24px;
@@ -13376,6 +13387,36 @@ const customDistractors = {
             padding: 3px 6px;
             text-align: center;
             word-break: break-word;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+            touch-action: manipulation;
+        }
+
+        /* La pulsación prolongada fija la ficha, pero nunca debe seleccionar
+           la palabra ni abrir las acciones nativas de copiar/compartir. */
+        .ruleta-rect-tile *,
+        .ruleta-rect-tile .tile-text {
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+            -webkit-user-drag: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+        }
+
+        .ruleta-rect-tile::selection,
+        .ruleta-rect-tile *::selection {
+            background: transparent !important;
+        }
+
+        .ruleta-rect-tile::-moz-selection,
+        .ruleta-rect-tile *::-moz-selection {
+            background: transparent !important;
         }
 
         .ruleta-rect-tile:hover {
@@ -13477,6 +13518,22 @@ const customDistractors = {
             border-color: #c7d2fe;
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(129, 140, 248, 0.65);
+        }
+
+        .ruleta-check-btn:active,
+        .ruleta-check-btn.is-pressed {
+            background: linear-gradient(135deg, #4338ca 0%, #3730a3 55%, #312e81 100%);
+            border-color: #818cf8;
+            transform: translateY(3px) scale(0.98) !important;
+            box-shadow:
+                inset 0 5px 10px rgba(15, 23, 42, 0.48),
+                inset 0 1px 2px rgba(255, 255, 255, 0.12),
+                0 2px 5px rgba(49, 46, 129, 0.28);
+        }
+
+        .ruleta-check-btn:active i,
+        .ruleta-check-btn.is-pressed i {
+            transform: translateY(1px);
         }
     </style>
 
@@ -35487,6 +35544,15 @@ function showMultipleChoice(backElement, correctAnswer) {
     // 1. Cabecera con Temporizador de 1 Minuto (60s)
     let timeLeft = 60;
     let timerInterval = null;
+    // En móviles, al volver del segundo plano pueden ejecutarse casi juntos
+    // el evento "ended" del audio y su timeout de seguridad. La transición
+    // de esta tarjeta debe iniciarse una sola vez aunque lleguen ambos.
+    let countdownTransitionStarted = false;
+    const proceedToCountdownOnce = () => {
+        if (countdownTransitionStarted) return;
+        countdownTransitionStarted = true;
+        showCountdown(card);
+    };
 
     const header = document.createElement('div');
     header.className = 'ruleta-header';
@@ -35691,6 +35757,14 @@ function showMultipleChoice(backElement, correctAnswer) {
         let isLongPress = false;
         let touchStartX = 0;
         let touchStartY = 0;
+
+        // Impedir selección, copia, arrastre y menú nativo dentro de las fichas.
+        ['selectstart', 'copy', 'contextmenu', 'dragstart'].forEach((eventName) => {
+            rect.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
 
         rect.addEventListener('touchstart', (e) => {
             if (e.touches && e.touches.length === 1) {
@@ -35900,7 +35974,7 @@ function showMultipleChoice(backElement, correctAnswer) {
 
                 const allCardsList = Array.from(document.querySelectorAll('.flashcard'));
                 const idx = allCardsList.indexOf(card);
-                const proceed = () => showCountdown(card);
+                const proceed = proceedToCountdownOnce;
                 if (idx !== -1 && typeof hasValidAudio === 'function' && hasValidAudio(idx)) {
                     stopAllAudios();
                     const safetyTimeout = setTimeout(proceed, 5000);
@@ -36005,7 +36079,7 @@ function showMultipleChoice(backElement, correctAnswer) {
 
                     const allCardsList = Array.from(document.querySelectorAll('.flashcard'));
                     const idx = allCardsList.indexOf(card);
-                    const proceed = () => showCountdown(card);
+                    const proceed = proceedToCountdownOnce;
                     if (idx !== -1 && typeof hasValidAudio === 'function' && hasValidAudio(idx)) {
                         stopAllAudios();
                         const safetyTimeout = setTimeout(proceed, 5000);
@@ -36026,6 +36100,10 @@ function showMultipleChoice(backElement, correctAnswer) {
     checkBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        checkBtn.classList.remove('is-pressed');
+        void checkBtn.offsetWidth;
+        checkBtn.classList.add('is-pressed');
+        window.setTimeout(() => checkBtn.classList.remove('is-pressed'), 180);
         try { vibrar(60, { force: true }); } catch(err) {}
         executeCheck(false);
     });
@@ -36670,7 +36748,7 @@ function showContinueGameModal(hasSavedProgress = hasProgressSaved()) {
                         <div class="continue-progress-title">${totalCards} tarjetas en total · Antes de empezar:</div>
                         <div class="continue-start-tips">
                             <div class="continue-start-tip"><span>🌿</span> Respira hondo y empieza con calma.</div>
-                            <div class="continue-start-tip"><span>👀</span> Lee cada opción con atención antes de responder.</div>
+                <div class="continue-start-tip"><span>👀</span> Descubre las palabras que forman la frase.</div>
                             <div class="continue-start-tip"><span>💛</span> Equivocarte también forma parte del aprendizaje.</div>
                         </div>
                     `}

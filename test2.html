@@ -1230,6 +1230,36 @@ window.prepareU3MixedSource = (doc) => {
           border-color: #bae6fd !important;
           z-index: 5;
         }
+        @media (pointer: coarse) {
+          #flashcard-container .flashcard {
+            transition: transform .32s ease-out !important;
+          }
+          #flashcard-container .ruleta-rect-tile {
+            transition: transform .17s ease-out, border-color .17s ease-out !important;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, .26) !important;
+          }
+          #flashcard-container .ruleta-rect-tile:hover {
+            transform: perspective(600px) rotateX(0deg) !important;
+          }
+          #flashcard-container .ruleta-rect-tile.is-flipped:hover {
+            transform: perspective(600px) rotateX(360deg) !important;
+          }
+          #flashcard-container .ruleta-rect-tile.tile-completed {
+            animation-duration: .32s !important;
+            box-shadow: 0 0 8px var(--lud-segment-glow, rgba(254, 202, 202, .8)) !important;
+          }
+          #flashcard-container .ruleta-rect-tile.tile-letter-correct {
+            animation-duration: .28s !important;
+          }
+          #flashcard-container .flashcard[data-source] .article-front-card,
+          #flashcard-container .flashcard[data-source] .front-verb-tag {
+            -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+          }
+          .button-container .button {
+            transition: transform .12s ease-out, opacity .12s ease-out !important;
+          }
+        }
       `;
       template.body.appendChild(ludCompletionStyle);
       let page = '<!doctype html>\n' + template.documentElement.outerHTML;
@@ -1333,8 +1363,10 @@ window.prepareU3MixedSource = (doc) => {
           + '    const playCorrectLetterSound = () => {\n'
           + '        try {\n'
           + '            if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; }\n'
-          + "            const letterAudio = new Audio('https://fawzinoo.github.io/audios/letra.mp3');\n"
+          + "            const letterAudio = window.__ludLetterFeedbackAudio || (window.__ludLetterFeedbackAudio = new Audio('https://fawzinoo.github.io/audios/letra.mp3'));\n"
+          + "            letterAudio.preload = 'auto';\n"
           + '            letterAudio.volume = 0.8;\n'
+          + '            try { letterAudio.currentTime = 0; } catch (_) {}\n'
           + '            window.__ludTransientAudio = letterAudio;\n'
           + '            letterAudio.play().catch(() => {});\n'
           + '        } catch (e) {}\n'
@@ -1342,8 +1374,10 @@ window.prepareU3MixedSource = (doc) => {
           + '    const playCompletedSegmentSound = () => {\n'
           + "        try {\n"
           + "            if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; }\n"
-          + "            const segmentAudio = new Audio('https://fawzinoo.github.io/audios/lud-completed.mp3');\n"
+          + "            const segmentAudio = window.__ludCompletedFeedbackAudio || (window.__ludCompletedFeedbackAudio = new Audio('https://fawzinoo.github.io/audios/lud-completed.mp3'));\n"
+          + "            segmentAudio.preload = 'auto';\n"
           + '            segmentAudio.volume = 0.8;\n'
+          + '            try { segmentAudio.currentTime = 0; } catch (_) {}\n'
           + '            window.__ludTransientAudio = segmentAudio;\n'
           + '            segmentAudio.play().catch(() => {});\n'
           + '        } catch (e) {}\n'
@@ -1369,7 +1403,6 @@ window.prepareU3MixedSource = (doc) => {
           + '                el.style.setProperty(\'--lud-complete-delay\', `${index * 120}ms`);\n'
           + "                el.classList.add('tile-completed');\n"
           + '            });\n'
-          + "            renderSegmentProgress();\n"
           + '            if (options.playSound !== false) playCompletedSegmentSound();\n'
           + "            const allSegmentTiles = tileElements.filter((el) => el.dataset.segmentTarget === 'true');\n"
           + "            const allSegmentsComplete = allSegmentTiles.length > 0 && allSegmentTiles.every((el) => el.dataset.isPinned === 'true');\n"
@@ -1397,8 +1430,7 @@ window.prepareU3MixedSource = (doc) => {
           + '                renderSegmentProgress();\n'
           + "                if (rect.dataset.isTarget === 'true' && rect.dataset.segmentTarget === 'true' && (/^verb-/.test(rect.dataset.targetGroup || '') || Array.from(rect.dataset.word || '').length === 1)) {\n"
           + "                    rect.classList.remove('tile-letter-correct');\n"
-          + '                    void rect.offsetWidth;\n'
-          + "                    rect.classList.add('tile-letter-correct');\n"
+          + "                    requestAnimationFrame(() => { if (rect.isConnected) rect.classList.add('tile-letter-correct'); });\n"
           + "                    const groupTiles = tileElements.filter((el) => el.dataset.targetGroup === rect.dataset.targetGroup);\n"
           + "                    if (!groupTiles.every((el) => el.dataset.isPinned === 'true')) playCorrectLetterSound();\n"
           + '                }\n'
@@ -1514,8 +1546,10 @@ window.prepareU3MixedSource = (doc) => {
       }
       page = page.replace('<span class="tile-text">${tileData.word}</span>',
         '<span class="tile-text${tileData.nominalPart || String(tileData.label || tileData.word).length >= 4 ? " tile-text-long" : ""}${String(tileData.label || tileData.word).length >= 9 ? " tile-text-very-long" : ""}">${tileData.label || tileData.word}</span>');
+      page = page.replace('}, 400); // 400ms de presión continuada', '}, 260); // pulsación prolongada en móvil');
       // Eliminar límites de la baraja original al asignar los 39 audios.
       localStorage.setItem(KEY + '-draw', JSON.stringify(draw));
+      delete window.__ludU3EmbeddedSources;
       document.open();
       document.write(page);
       document.close();

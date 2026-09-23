@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test4, unidad1</title>
+  <style>
+    body { margin:0; background:#eef7f5; color:#172554; font-family:system-ui,sans-serif; }
+    #loading { min-height:100vh; display:grid; place-items:center; text-align:center; padding:24px; }
+  </style>
+</head>
+<body>
+  <main id="loading">Preparando Test4, unidad1…</main>
+  <script>
+  (() => {
+    const KEY = 'lud-gr-u1-mixta';
+    const SOURCES = [
+      'apellidarse', 'dedicarse', 'determinados', 'estar', 'estudiar',
+      'hablar', 'hacer', 'indeterminantes', 'llamarse', 'posesivos1',
+      'ser', 'tener', 'trabajar', 'vivir'
+    ];
+    const shuffle = (items) => {
+      const result = [...items];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+    const readDocument = (file) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', file, false);
+      request.send(null);
+      if (request.status && (request.status < 200 || request.status >= 300)) {
+        throw new Error('No se pudo cargar ' + file);
+      }
+      return new DOMParser().parseFromString(request.responseText, 'text/html');
+    };
+    const scriptElement = (doc, code) => {
+      const script = doc.createElement('script');
+      script.textContent = code.replace(/<\/script/gi, '<\\/script');
+      return script;
+    };
+    // Este código se instala antes de los manejadores de la plantilla.
+    function installDeckMetadata(cards, options, verbs) {
+      window.prepareMixedTiles = (tiles) => {
+        // Conservar las letras necesarias, incluso si la raíz las repite;
+        // ninguna ficha incorrecta puede tener el mismo texto visible.
+        const key = (tile) => String(tile.label || tile.word).toLocaleLowerCase('es');
+        const targets = tiles.filter((tile) => tile.isTarget);
+        const used = new Set(targets.map(key));
+        const unique = [...targets];
+        for (const tile of tiles) {
+          if (unique.length >= 16) break;
+          if (tile.isTarget || used.has(key(tile))) continue;
+          used.add(key(tile));
+          unique.push(tile);
+        }
+        for (const word of 'abcdefghijklmnñopqrstuvwxyz') {
+          if (unique.length >= 16) break;
+          const tile = { word, label: '-' + word + '-', isTarget: false };
+          if (used.has(key(tile))) continue;
+          used.add(key(tile));
+          unique.push(tile);
+        }
+        for (let i = unique.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [unique[i], unique[j]] = [unique[j], unique[i]];
+        }
+        return unique;
+      };
+      const nounSyllables = {
+        profesor:['pro','fe','sor'], profesora:['pro','fe','so','ra'],
+        estudiantes:['es','tu','dian','tes'], escuelas:['es','cue','las'],
+        'país':['pa','ís'], oficina:['o','fi','ci','na'],
+        hospitales:['hos','pi','ta','les'], profesiones:['pro','fe','sio','nes'],
+        idioma:['i','dio','ma'], universidad:['u','ni','ver','si','dad'],
+        lugares:['lu','ga','res'], letras:['le','tras'], alumno:['a','lum','no'],
+        alumna:['a','lum','na'], compañeros:['com','pa','ñe','ros'],
+        compañeras:['com','pa','ñe','ras'], clase:['cla','se'],
+        colegio:['co','le','gio'], países:['pa','í','ses'],
+        nacionalidades:['na','cio','na','li','da','des'], lápiz:['lá','piz'],
+        bolígrafo:['bo','lí','gra','fo'], goma:['go','ma'],
+        cuaderno:['cua','der','no'], libro:['li','bro'], regla:['re','gla'],
+        estuche:['es','tu','che'], diccionario:['dic','cio','na','rio'],
+        mochila:['mo','chi','la'], pizarra:['pi','za','rra'],
+        sacapuntas:['sa','ca','pun','tas'], mesa:['me','sa'], silla:['si','lla'],
+        ordenador:['or','de','na','dor'], papel:['pa','pel'],
+        pegamento:['pe','ga','men','to'], carpeta:['car','pe','ta'],
+        calculadora:['cal','cu','la','do','ra'], rotulador:['ro','tu','la','dor'],
+        pincel:['pin','cel']
+      };
+      window.buildMixedNominalTiles = (answer, choices) => {
+        const parts = String(answer || '').trim().split(/\s+/);
+        const determiner = parts.shift() || '';
+        const noun = parts.join(' ').toLocaleLowerCase('es');
+        const syllables = nounSyllables[noun] || [noun];
+        const targetTiles = [{ word: determiner, label: determiner, isTarget: true, nominalPart: true }];
+        syllables.forEach((syllable, index) => {
+          const label = syllables.length === 1 ? syllable
+            : index === 0 ? syllable + '-'
+            : index === syllables.length - 1 ? '-' + syllable
+            : '-' + syllable + '-';
+          targetTiles.push({ word: syllable, label, isTarget: true, nominalPart: true });
+        });
+        const distractors = choices.filter((choice) => choice !== determiner)
+          .map((word) => ({ word, label: word, isTarget: false, nominalPart: true }));
+        const syllablePool = ['ma','te','lo','ri','ca','de','no','sa','mi','tu','su','la','po','re','ti','do','ne','go'];
+        syllablePool.forEach((word) => distractors.push({
+          word, label: '-' + word + '-', isTarget: false, nominalPart: true
+        }));
+        return window.prepareMixedTiles([...targetTiles, ...distractors]);
+      };
+      window.LUD_MIXED_CARDS = cards;
+      window.MAS_CANONICAL_CARDS = cards;
+      window.TU_SELECTION_OPTIONS = options;
+      window.TU_VERB_FORMS = verbs;
+      window.TU_OPTION_VERBS = verbs;
+      window.getMasCanonicalCardData = (value) => {
+        const id = value?.nodeType === 1 ? value.dataset.cardId : value?.cardId || value;
+        return cards.find((item) => item.cardId === id) || null;
+      };
+      window.getLudMixedCard = (card) => cards.find((item) => item.cardId === card.dataset.cardId);
+    }
+    function installMixedGame() {
+      // document.write puede conservar el aviso del documento de carga
+      // mientras el navegador termina de procesar la página original.
+      document.getElementById('loading')?.remove();
+      window.playIntroAudio = () => {};
+      const originalModal = window.showContinueGameModal;
+      window.showContinueGameModal = (hasSavedProgress) => {
+        const directStart = sessionStorage.getItem('lud-gr-u1-mixta-direct-start') === 'true';
+        sessionStorage.removeItem('lud-gr-u1-mixta-direct-start');
+        if (directStart && !hasSavedProgress) return initializePage();
+        return originalModal(hasSavedProgress);
+      };
+      const verbTopics = new Set([
+        'apellidarse', 'dedicarse', 'estar', 'estudiar', 'hablar', 'hacer',
+        'llamarse', 'ser', 'tener', 'trabajar', 'vivir'
+      ]);
+      const infinitiveStyle = document.createElement('style');
+      infinitiveStyle.textContent = `
+        #flashcard-container .flashcard .front-infinitive {
+          display:block; margin-top:6px; color:#facc15;
+          font-family:"Poppins",sans-serif; font-size:clamp(1.6rem,5vw,2.2rem);
+          font-weight:800; line-height:1.1; letter-spacing:.08em;
+          text-transform:lowercase; text-shadow:0 3px 10px rgba(0,0,0,.38);
+        }
+        #flashcard-container .flashcard .front-infinitive::before {
+          content:""; display:block; width:min(34%,160px); height:2px;
+          margin:0 auto 10px; border-radius:999px;
+          background:rgba(250,204,21,.72); box-shadow:0 1px 6px rgba(250,204,21,.28);
+        }
+      `;
+      document.head.appendChild(infinitiveStyle);
+      const indeterminantesCompat = document.createElement('style');
+      indeterminantesCompat.id = 'lud-gr-u1-mixta-indeterminantes-front-compat';
+      indeterminantesCompat.textContent = `
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-determinados-"] .front .article-options-column,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-posesivos1-"] .front .article-options-column,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-indeterminantes-"] .front .article-options-column {
+          margin:0!important;
+          align-items:normal!important;
+        }
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-determinados-"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-posesivos1-"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u1-mixta-indeterminantes-"] .front .article-option {
+          width:auto!important;
+          margin:0!important;
+          justify-self:stretch!important;
+          flex-wrap:nowrap!important;
+          gap:normal!important;
+          line-height:normal!important;
+        }
+      `;
+      document.head.appendChild(indeterminantesCompat);
+      const tileTextStyle = document.createElement('style');
+      tileTextStyle.textContent = `
+        #flashcard-container .ruleta-rect-tile .tile-text {
+          font-size:clamp(.82rem,1.55vw,1.2rem)!important;
+          font-weight:800!important;
+          line-height:1.1!important;
+          white-space:nowrap!important;
+          word-break:normal!important;
+          overflow-wrap:normal!important;
+        }
+        #flashcard-container .ruleta-rect-tile .tile-text.tile-text-long {
+          font-size:clamp(.82rem,1.55vw,1.2rem)!important;
+        }
+        @media (max-width:480px) {
+          #flashcard-container .ruleta-rect-tile .tile-text {
+            font-size:clamp(.7rem,2.5vw,.88rem)!important;
+          }
+          #flashcard-container .ruleta-rect-tile .tile-text.tile-text-long {
+            font-size:clamp(.7rem,2.5vw,.88rem)!important;
+          }
+        }
+      `;
+      document.head.appendChild(tileTextStyle);
+      // Resolver por identidad, incluso después de mezclar o continuar.
+      window.getAudioSrcForCountryName = (answer) => {
+        const item = window.LUD_MIXED_CARDS.find((card) => card.answer === String(answer || '').replace(/\s+/g, ' ').trim());
+        return item ? 'https://fawzinoo.github.io/audios/' + item.audioFile : null;
+      };
+      window.reassignAudiosToCards = () => {
+        flashcards.forEach((card, index) => {
+          const item = window.getLudMixedCard(card);
+          if (!item) return;
+          card.dataset.source = item.source;
+          const front = card.querySelector('.front');
+          const pronoun = front?.querySelector('.front-pronoun');
+          if (verbTopics.has(item.source) && pronoun && !front.querySelector('.front-infinitive')) {
+            const label = document.createElement('span');
+            label.className = 'front-infinitive';
+            label.textContent = item.source;
+            pronoun.insertAdjacentElement('afterend', label);
+            item.frontHTML = front.innerHTML;
+          }
+          const audio = audios[index];
+          const src = 'https://fawzinoo.github.io/audios/' + item.audioFile;
+          if (audio.src !== src) {
+            audio.pause();
+            audio.src = src;
+          }
+          audio.preload = 'auto';
+        });
+      };
+      const originalShuffle = window.shuffleCards;
+      window.shuffleCards = () => {
+        originalShuffle();
+        reassignAudiosToCards();
+      };
+      reassignAudiosToCards();
+      const startFresh = (directStart = false) => {
+        localStorage.removeItem('lud-gr-u1-mixta_gameProgress');
+        localStorage.removeItem('lud-gr-u1-mixta-draw');
+        localStorage.removeItem('lud-gr-u1-mixta_shuffleCount');
+        if (directStart === true) sessionStorage.setItem('lud-gr-u1-mixta-direct-start', 'true');
+        window.location.reload();
+      };
+      document.addEventListener('click', (event) => {
+        if (!event.target.closest('#start-fresh-btn')) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        startFresh(true);
+      }, true);
+      window.resetGame = startFresh;
+    }
+    try {
+      const template = readDocument('lud-hablar.html');
+      template.title = 'Test4, unidad1';
+      const title = template.querySelector('.cuesta-title-text');
+      if (title) title.textContent = 'TEST 4, UNIDAD 1';
+      const container = template.getElementById('flashcard-container');
+      if (!container) throw new Error('No se encontró el tablero');
+      const mixedStatsBox = template.getElementById('stats-box');
+      if (mixedStatsBox) {
+        // Misma secuencia inicial que sel-hablar: visible durante los hints y
+        // oculto después por la propia lógica del cuadro.
+        mixedStatsBox.classList.remove('hidden');
+        mixedStatsBox.remove();
+      }
+      container.querySelectorAll('style').forEach((style) => template.head.appendChild(style));
+      container.replaceChildren();
+      let savedState = null;
+      let savedDraw = null;
+      try {
+        savedState = JSON.parse(localStorage.getItem(KEY + '_gameProgress') || 'null');
+        const completed = savedState?.completedCards?.length || 0;
+        if (savedState && completed < 42 && (completed || savedState.correctCount || savedState.incorrectCount || savedState.voiceAttempts)) {
+          savedDraw = JSON.parse(localStorage.getItem(KEY + '-draw') || 'null');
+        }
+      } catch (_) {}
+      const draw = [];
+      const deck = [];
+      const metadata = [];
+      const options = {};
+      const verbs = {};
+      const tileBuilders = [];
+      for (const source of SOURCES) {
+        const isArticleTopic = ['determinados', 'indeterminantes', 'posesivos1'].includes(source);
+        const original = readDocument((isArticleTopic ? 'reco-' : 'lud-') + source + '.html');
+        // Los lud- regeneran sus tarjetas: su HTML estático todavía contiene
+        // otro verbo. Ejecutar únicamente su constructor de contenido local.
+        const topicData = {};
+        if (!isArticleTopic) {
+          const builder = original.getElementById('sel-tu-card-content');
+          if (!builder) throw new Error('Falta el constructor de ' + source);
+          new Function('document', 'window', builder.textContent)(original, topicData);
+          Object.assign(options, topicData.TU_SELECTION_OPTIONS || {});
+          Object.assign(verbs, topicData.TU_VERB_FORMS || {});
+        }
+        const originals = Array.from(original.querySelectorAll('#flashcard-container > .flashcard'));
+        if (originals.length < 3) throw new Error('Faltan tarjetas de ' + source);
+        const scripts = Array.from(original.querySelectorAll('script'), (script) => script.textContent).join('\n');
+        if (isArticleTopic) {
+          const choices = source === 'posesivos1' ? ['mi','tu','su']
+            : source === 'determinados' ? ['el','la','los','las']
+            : ['un','una','unos','unas'];
+          tileBuilders.push(JSON.stringify(source)
+            + ': function(targetSentence) { return window.buildMixedNominalTiles(targetSentence, '
+            + JSON.stringify(choices) + '); }');
+        } else {
+          const tileLogic = scripts.match(/\/\/ Override: tarjetas de conjugación[\s\S]*?(?=\/\/ Crear Contenedor Principal)/);
+          if (!tileLogic) throw new Error('Falta la lógica de rectángulos de ' + source);
+          // Los guiones solo son etiquetas visuales. La palabra y la
+          // validación originales se mantienen en cada ficha.
+          const labeledTileLogic = tileLogic[0]
+            .replace(/\.map\(word => \(\{ word, isTarget: true \}\)\)/g,
+              `.map((word, index, words) => ({ word, isTarget: true,
+                label: correctReflexive && index === 0 ? word
+                  : index === words.length - 1 ? '-' + word
+                  : index === (correctReflexive ? 1 : 0) ? word + '-'
+                  : '-' + word + '-'
+              }))`)
+            .replace(/(const wrongEndings\s*=[\s\S]*?)\.map\(word => \(\{ word, isTarget: false \}\)\)/,
+              "$1.map(word => ({ word, isTarget: false, label: '-' + word }))")
+            .replace(/(const extraLetters\s*=[\s\S]*?)\.map\(word => \(\{ word, isTarget: false \}\)\)/,
+              "$1.map(word => ({ word, isTarget: false, label: '-' + word + '-' }))");
+          // Reutilizar literalmente la separación en letras, terminaciones
+          // y reflexivos del tema; incluye sus irregularidades y distractores.
+          tileBuilders.push(JSON.stringify(source) + ': function(targetSentence, allTilesData) {\n'
+            + labeledTileLogic + '\nreturn window.prepareMixedTiles(allTilesData);\n}');
+        }
+        const audioDeclaration = scripts.match(/const\s+audioFiles\s*=\s*\[([\s\S]*?)\];/);
+        const files = audioDeclaration ? Array.from(audioDeclaration[1].matchAll(/['"]([^'"]+\.(?:wav|mp3))['"]/gi), (match) => match[1]) : [];
+        let indices = Array.isArray(savedDraw) ? savedDraw.find((entry) => entry.source === source)?.indices : null;
+        if (!Array.isArray(indices) || indices.length !== 3 || new Set(indices).size !== 3 || indices.some((i) => !Number.isInteger(i) || i < 0 || i >= originals.length)) {
+          indices = shuffle(originals.map((_, i) => i)).slice(0, 3);
+        }
+        draw.push({ source, indices });
+        for (const index of indices) {
+          const card = originals[index].cloneNode(true);
+          const answer = String(card.dataset.answer || card.querySelector('.back').textContent).replace(/\s+/g, ' ').trim();
+          let audioFile = files[index];
+          if (!audioFile) throw new Error('Falta el audio de ' + source + ': ' + (index + 1));
+          if (source === 'indeterminantes' && index > 0) audioFile = audioFile.replace(/\.+wav$/i, '..wav');
+          card.classList.remove('flipped', 'is-visible', 'completed');
+          card.dataset.cardId = KEY + '-' + source + '-' + (index + 1);
+          card.dataset.source = source;
+          card.dataset.answer = answer;
+          card.dataset.backHtml = card.querySelector('.back').innerHTML;
+          // Conservar el front original; el juego añade solo el infinitivo solicitado.
+          if (isArticleTopic) {
+            const parts = answer.split(' ');
+            const noun = parts.slice(1).join(' ');
+            const choices = source === 'posesivos1' ? ['mi', 'tu', 'su']
+              : source === 'determinados' ? ['el', 'la', 'los', 'las'] : ['un', 'una', 'unos', 'unas'];
+            options[answer] = [answer, ...choices.filter((word) => word !== parts[0]).map((word) => word + ' ' + noun)];
+          } else if (options[answer]) {
+            options[answer] = [...new Set(options[answer])];
+            const alternatives = [...new Set(originals.map((item) => String(item.dataset.answer || item.querySelector('.back').textContent).replace(/\s+/g, ' ').trim()))];
+            for (const alternative of alternatives) {
+              if (options[answer].length >= 4) break;
+              if (!options[answer].includes(alternative)) options[answer].push(alternative);
+            }
+          }
+          metadata.push({
+            cardId: card.dataset.cardId, source, index, sourceIndex: metadata.length,
+            answer, audioFile, targetForm: '', targetPosition: '',
+            frontHTML: card.querySelector('.front').innerHTML,
+            backHTML: card.querySelector('.back').innerHTML
+          });
+          deck.push(card);
+        }
+        // Leer el CSS en una hoja conectada, sin aplicarlo al documento de carga.
+        const reader = document.createElement('style');
+        reader.media = 'not all';
+        reader.textContent = Array.from(original.querySelectorAll('style'), (style) => style.textContent).join('\n');
+        document.head.appendChild(reader);
+        const root = '#flashcard-container .flashcard[data-card-id^="' + KEY + '-' + source + '-"]';
+        const scopeRules = (rules) => Array.from(rules).map((rule) => {
+          if (rule.type === 1) {
+            const selectors = rule.selectorText.split(',').map((selector) => {
+              // Importar las caras originales y sus componentes, sin cambiar
+              // la geometría de la tarjeta ni la interfaz de reconocimiento.
+              const match = selector.match(/\.(?:front|back|article)(?:\b|-)/);
+              if (!match) return '';
+              return root + ' ' + selector.slice(match.index).trim();
+            }).filter(Boolean);
+            // Hablar impone !important al pronombre. En posesivos, respetar
+            // los valores originales (azul, tamaño compacto y «de» blanco)
+            // aunque esas declaraciones no lleven !important en su origen.
+            if (source === 'posesivos1' && rule.selectorText.includes('.front-pronoun')) {
+              for (const property of Array.from(rule.style)) {
+                rule.style.setProperty(property, rule.style.getPropertyValue(property), 'important');
+              }
+            }
+            return selectors.length ? selectors.join(',') + '{' + rule.style.cssText + '}' : '';
+          }
+          if (rule.type === 7) return rule.cssText;
+          if (rule.type === 4 || rule.type === 12) {
+            return rule.cssText.slice(0, rule.cssText.indexOf('{')) + '{' + scopeRules(rule.cssRules) + '}';
+          }
+          return '';
+        }).join('\n');
+        const style = template.createElement('style');
+        style.id = KEY + '-styles-' + source;
+        style.textContent = scopeRules(reader.sheet.cssRules);
+        reader.remove();
+        template.head.appendChild(style);
+      }
+      const ordered = shuffle(deck);
+      container.append(...ordered);
+      if (mixedStatsBox) container.appendChild(mixedStatsBox);
+      container.appendChild(scriptElement(template, '(' + installDeckMetadata.toString() + ')(' + JSON.stringify(metadata) + ',' + JSON.stringify(options) + ',' + JSON.stringify(verbs) + ');'));
+      container.appendChild(scriptElement(template, 'window.LUD_TILE_BUILDERS = {' + tileBuilders.join(',\n') + '};'));
+      template.body.appendChild(scriptElement(template, '(' + installMixedGame.toString() + ')();'));
+      let page = '<!doctype html>\n' + template.documentElement.outerHTML;
+      page = page.replace(/lud-hablar/g, KEY)
+        .replace(/u1-hablar_sel/g, KEY)
+        .replace(/u1-hablar_gameProgress/g, KEY + '_legacyProgress')
+        .replace(/u1-hablar_shuffleCount/g, KEY + '_shuffleCount')
+        .replace(/u1-hablar_btn_sounds_muted/g, KEY + '_btn_sounds_muted')
+        .replace(/u1-hablar-test-unlock-state-v2/g, 'gr-u1-mixta-test-unlock-state-v2')
+        .replace(/'u1-hablar'/g, "'gr-u1-mixta'")
+        .replace(/vecesDate/g, KEY + 'Date')
+        .replace(/vecesPoints/g, KEY + 'Points')
+        .replace(/&nbsp;HABLAR&nbsp;/g, '&nbsp;TEST 4, UNIDAD 1&nbsp;');
+      page = page.replace(/const audioFiles = \[[\s\S]*?\];/, 'const audioFiles = ' + JSON.stringify(ordered.map((card) => metadata.find((item) => item.cardId === card.dataset.cardId).audioFile)) + ';');
+      // Sustituir solo el bloque de hablar del panel, no los constructores
+      // originales ya registrados dentro de la baraja.
+      const mainScript = Array.from(template.querySelectorAll('script')).find((script) => script.textContent.includes('function generateMultipleChoiceOptions('));
+      if (!mainScript) throw new Error('Falta el panel lúdico');
+      const originalTileLogic = mainScript.textContent.match(/\/\/ Override: tarjetas de conjugación[\s\S]*?(?=\/\/ Crear Contenedor Principal)/);
+      if (!originalTileLogic) throw new Error('Falta el bloque de rectángulos');
+      const panelStart = page.indexOf('function generateMultipleChoiceOptions(');
+      const tileStart = page.indexOf(originalTileLogic[0], panelStart);
+      if (tileStart < 0) throw new Error('No se pudo adaptar el panel lúdico');
+      page = page.slice(0, tileStart)
+        + 'const mixedTopic = getLudCanonicalCardData(card)?.source;\n'
+        + 'const buildTopicTiles = window.LUD_TILE_BUILDERS[mixedTopic];\n'
+        + 'if (buildTopicTiles) allTilesData = buildTopicTiles(targetSentence, allTilesData);\n\n'
+        + page.slice(tileStart + originalTileLogic[0].length);
+      page = page.replace('<span class="tile-text">${tileData.word}</span>',
+        '<span class="tile-text${tileData.nominalPart || String(tileData.label || tileData.word).length >= 4 ? " tile-text-long" : ""}">${tileData.label || tileData.word}</span>');
+      // Eliminar límites de la baraja original al asignar los 42 audios.
+      localStorage.setItem(KEY + '-draw', JSON.stringify(draw));
+      document.open();
+      document.write(page);
+      document.close();
+      document.getElementById('loading')?.remove();
+    } catch (error) {
+      console.error(error);
+      const loading = document.getElementById('loading');
+      if (loading) loading.textContent = 'No se pudo cargar el ejercicio. Recarga la página para volver a intentarlo.';
+    }
+  })();
+  </script>
+</body>
+</html>

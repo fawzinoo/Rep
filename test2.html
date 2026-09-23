@@ -1,0 +1,1519 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test4, unidad3</title>
+  <style>
+    body { margin:0; background:#eef7f5; color:#172554; font-family:system-ui,sans-serif; }
+    #loading { min-height:100vh; display:grid; place-items:center; text-align:center; padding:24px; }
+  </style>
+</head>
+<body>
+  <script src="gr-u3-mixta-source.js"></script>
+  <main id="loading">Preparando Test4, unidad3…</main>
+  <script>
+  (() => {
+    const KEY = 'lud-gr-u3-mixta';
+    const SOURCES = ["ser","estar","tener","muymucho","quecuales","cuantos","donde"];
+    const shuffle = (items) => {
+      const result = [...items];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+    const readDocument = (file) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', file, false);
+      request.send(null);
+      if (request.status && (request.status < 200 || request.status >= 300)) {
+        throw new Error('No se pudo cargar ' + file);
+      }
+      return new DOMParser().parseFromString(request.responseText, 'text/html');
+    };
+    const scriptElement = (doc, code) => {
+      const script = doc.createElement('script');
+      script.textContent = code.replace(/<\/script/gi, '<\\/script');
+      return script;
+    };
+    // Este código se instala antes de los manejadores de la plantilla.
+    function installDeckMetadata(cards, options, verbs) {
+      window.prepareMixedTiles = (tiles) => {
+        // Conservar las letras necesarias, incluso si la raíz las repite;
+        // ninguna ficha incorrecta puede tener el mismo texto visible.
+        const key = (tile) => String(tile.label || tile.word).toLocaleLowerCase('es');
+        const targets = tiles.filter((tile) => tile.isTarget);
+        // Las fichas objetivo no se pueden deduplicar por su etiqueta visual:
+        // «cuáles son» necesita dos fichas «s», aunque ambas se muestren con
+        // la misma forma de guiones. Los duplicados solo se descartan entre
+        // las fichas distractoras.
+        const used = new Set(targets.map(key));
+        const unique = [...targets];
+        for (const tile of tiles) {
+          if (unique.length >= 16) break;
+          if (tile.isTarget || used.has(key(tile))) continue;
+          used.add(key(tile));
+          unique.push(tile);
+        }
+        for (const word of 'abcdefghijklmnñopqrstuvwxyz') {
+          if (unique.length >= 16) break;
+          const tile = { word, label: '-' + word + '-', isTarget: false };
+          if (used.has(key(tile))) continue;
+          used.add(key(tile));
+          unique.push(tile);
+        }
+        for (let i = unique.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [unique[i], unique[j]] = [unique[j], unique[i]];
+        }
+        return unique;
+      };
+      const nounSyllables = {
+        profesor:['pro','fe','sor'], profesora:['pro','fe','so','ra'],
+        estudiantes:['es','tu','dian','tes'], escuelas:['es','cue','las'],
+        'país':['pa','ís'], oficina:['o','fi','ci','na'],
+        hospitales:['hos','pi','ta','les'], profesiones:['pro','fe','sio','nes'],
+        idioma:['i','dio','ma'], universidad:['u','ni','ver','si','dad'],
+        lugares:['lu','ga','res'], letras:['le','tras'], alumno:['a','lum','no'],
+        alumna:['a','lum','na'], compañeros:['com','pa','ñe','ros'],
+        compañeras:['com','pa','ñe','ras'], clase:['cla','se'],
+        colegio:['co','le','gio'], países:['pa','í','ses'],
+        nacionalidades:['na','cio','na','li','da','des'], lápiz:['lá','piz'],
+        bolígrafo:['bo','lí','gra','fo'], goma:['go','ma'],
+        cuaderno:['cua','der','no'], libro:['li','bro'], regla:['re','gla'],
+        estuche:['es','tu','che'], diccionario:['dic','cio','na','rio'],
+        mochila:['mo','chi','la'], pizarra:['pi','za','rra'],
+        sacapuntas:['sa','ca','pun','tas'], mesa:['me','sa'], silla:['si','lla'],
+        ordenador:['or','de','na','dor'], papel:['pa','pel'],
+        pegamento:['pe','ga','men','to'], carpeta:['car','pe','ta'],
+        calculadora:['cal','cu','la','do','ra'], rotulador:['ro','tu','la','dor'],
+        pincel:['pin','cel']
+        ,bachata:['ba','cha','ta'], flamenco:['fla','men','co'], paella:['pa','e','lla'],
+        cuscús:['cus','cús'], tango:['tan','go'], euro:['eu','ro'], dírham:['dír','ham'],
+        louvre:['Lou','vre'], guernica:['Guer','ni','ca'], alhambra:['Al','ham','bra'],
+        tapas:['ta','pas'], churros:['chu','rros'], fallas:['Fa','llas'], mariachis:['ma','ria','chis'],
+        castells:['cas','tells'], sevillanas:['se','vi','lla','nas'], empanadas:['em','pa','na','das'],
+        tacos:['ta','cos'], habitantes:['ha','bi','tan','tes'], idiomas:['i','dio','mas'], ríos:['rí','os'],
+        monumentos:['mo','nu','men','tos'], museos:['mu','se','os'], platos:['pla','tos'], hoteles:['ho','te','les'],
+        playas:['pla','yas'], montañas:['mon','ta','ñas'], ciudades:['ciu','da','des'], islas:['is','las'],
+        fotos:['fo','tos'], personas:['per','so','nas'], monedas:['mo','ne','das'], maletas:['ma','le','tas'],
+        madrid:['Ma','drid'], marrakech:['Ma','rra','kech'], toubkal:['Toub','kal'], bosque:['bos','que'],
+        museo:['mu','se','o'], prado:['Pra','do'], plaza:['pla','za'], mayor:['Ma','yor'], estación:['es','ta','ción'],
+        hotel:['ho','tel'], pirineos:['Pi','ri','ne','os'], atlas:['At','las'], canarias:['Ca','na','rias'],
+        jardines:['jar','di','nes'], cataratas:['ca','ta','ra','tas'], iguazú:['I','gua','zú'], bosques:['bos','ques'],
+        españa:['Es','pa','ña'], ciudad:['ciu','dad']
+      };
+      const PORPARA_SPLITS = {
+        trabajo: ["tra-", "-bajo"],
+        estudios: ["estu-", "-dios"],
+        familia: ["fami-", "-lia"],
+        viajes: ["via-", "-jes"],
+        "interés": ["inte-", "-rés"],
+        necesidad: ["nece-", "-sidad"],
+        placer: ["pla-", "-cer"],
+        trabajar: ["traba-", "-jar"],
+        viajar: ["via-", "-jar"],
+        estudiar: ["estu-", "-diar"],
+        vivir: ["vi-", "-vir"],
+        "españa": ["espa-", "-ña"],
+        hablar: ["ha-", "-blar"],
+        amigos: ["ami-", "-gos"],
+        entender: ["enten-", "-der"],
+        canciones: ["cancio-", "-nes"],
+        conocer: ["cono-", "-cer"],
+        personas: ["perso-", "-nas"],
+        viajo: ["via-", "-jo"],
+        mucho: ["mu-", "-cho"],
+        "aquí": ["a-", "-quí"],
+        estudio: ["estu-", "-dio"],
+        "español": ["espa-", "-ñol"],
+        vivo: ["vi-", "-vo"],
+        tengo: ["te-", "-go"],
+        tiempo: ["tiem-", "-po"],
+        quiero: ["quie-", "-ro"],
+        aprender: ["apren-", "-der"]
+      };
+      window.buildMixedNominalTiles = (answer, choices, topic, visibleName) => {
+        // En todos los temas no verbales se divide la forma evaluada en letras
+        // y se conserva el nombre por palabras. Solo si las fichas no caben,
+        // las palabras nominales más largas pasan a sílabas.
+        const clean = (value) => String(value || '')
+          .toLocaleLowerCase('es')
+          .replace(/[¿?!¡.,:;]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const normalizedAnswer = clean(answer);
+        const topicForms = {
+          muymucho: ['muy', 'mucho', 'mucha', 'muchos', 'muchas'],
+          quecuales: ['qué es', 'qué son', 'cuál es', 'cuáles son'],
+          cuantos: ['cuánto', 'cuántos', 'cuántas'],
+          donde: ['dónde está', 'dónde están']
+        };
+        const normalizedChoices = [...new Set((topicForms[topic] || choices).map(clean).filter(Boolean))];
+        const targetForm = normalizedChoices
+          .filter((choice) => normalizedAnswer === choice
+            || normalizedAnswer.startsWith(choice + ' ')
+            || normalizedAnswer.endsWith(' ' + choice)
+            || normalizedAnswer.includes(' ' + choice + ' '))
+          .sort((a, b) => b.length - a.length)[0]
+          || normalizedAnswer.split(' ')[0] || '';
+        const labelFor = (letter, index, list) => list.length === 1 ? letter
+          : index === 0 ? letter + '-'
+          : index === list.length - 1 ? '-' + letter
+          : '-' + letter + '-';
+        // La forma evaluada puede contener varias palabras. Los guiones
+        // delimitan cada palabra, no toda la frase: en «qué son» la última
+        // ficha de «qué» es «-é» y la primera de «son» es «s-».
+        const targetTiles = targetForm.split(/\s+/).flatMap((word, wordIndex) => {
+          const letters = word.split('');
+          return letters.map((letter, index, list) => ({
+            word: letter,
+            label: labelFor(letter, index, list),
+            isTarget: true,
+            targetGroup: 'form-' + wordIndex,
+            segmentTarget: true,
+            targetOrder: wordIndex * 100 + index,
+            nominalPart: true
+          }));
+        });
+        // El nombre se conserva por palabras: "las", "playas", "de",
+        // "Málaga" son cuatro fichas independientes.
+        const formPosition = normalizedAnswer.indexOf(targetForm);
+        // El nombre evaluable sale del front, no de la frase completa del back.
+        // Así no entran palabras de la pregunta, del contexto o de la respuesta
+        // hablada que no aparecen en la tarjeta visible.
+        const completeName = clean(visibleName) || (formPosition >= 0
+          ? (normalizedAnswer.slice(0, formPosition) + ' ' + normalizedAnswer.slice(formPosition + targetForm.length))
+              .replace(/\s+/g, ' ').trim()
+          : '');
+        const nominalWords = completeName ? completeName.split(/\s+/).filter(Boolean) : [];
+        const visibleWords = String(visibleName || '').replace(/[¿?!¡.,:;]/g, '').trim().split(/\s+/);
+        const nominalParts = nominalWords.map((word, wordIndex) => ({
+          word,
+          displayWord: visibleWords[wordIndex] || word,
+          label: word,
+          isTarget: true,
+          targetGroup: 'name-' + wordIndex,
+          segmentTarget: true,
+          targetOrder: 1000 + wordIndex * 100,
+          nominalPart: true
+        }));
+        const makeSyllables = (word) => {
+          const key = word.toLocaleLowerCase('es');
+          const wordIndex = nominalWords.indexOf(word);
+          const targetGroup = 'name-' + wordIndex;
+          const syllables = nounSyllables[key] || [word];
+          if (syllables.length === 1) return nominalParts.find((part) => part.word === word)
+            ? [nominalParts.find((part) => part.word === word)]
+            : [{ word, label: word, isTarget: true, nominalPart: true }];
+          return syllables.map((syllable, index) => ({
+            word: syllable.replace(/-/g, ''),
+            displayWord: visibleWords[wordIndex] || word,
+            label: syllables.length === 1 ? syllable
+              : index === 0 ? syllable + '-'
+              : index === syllables.length - 1 ? '-' + syllable
+              : '-' + syllable + '-',
+            isTarget: true,
+            targetGroup,
+            segmentTarget: true,
+            targetOrder: 1000 + wordIndex * 100 + index,
+            nominalPart: true
+          }));
+        };
+        let nominalTiles = [...nominalParts];
+        // La rejilla tiene 16 fichas. Dividir solo lo necesario, empezando
+        // por las palabras más largas, para no perder ningún elemento visible.
+        const maxTargetTiles = 16;
+        const longestFirst = [...nominalWords].sort((a, b) => b.length - a.length);
+        for (const word of longestFirst) {
+          if (targetTiles.length + nominalTiles.length <= maxTargetTiles) break;
+          const replacement = makeSyllables(word);
+          nominalTiles = nominalTiles.filter((part) => part.word !== word);
+          nominalTiles.push(...replacement);
+        }
+        targetTiles.push(...nominalTiles);
+        const targetLabels = new Set(targetTiles.map((tile) => tile.label));
+        const distractors = [];
+        const addDistractor = (letter) => {
+          const value = String(letter || '').toLocaleLowerCase('es');
+          if (!value || /\s/.test(value)) return;
+          const label = '-' + value + '-';
+          if (targetLabels.has(label) || distractors.some((tile) => tile.label === label)) return;
+          distractors.push({ word: value, label, isTarget: false, nominalPart: true });
+        };
+        // Las demás formas y la variante sin tilde aportan errores reales.
+        normalizedChoices.filter((choice) => choice !== targetForm).forEach((choice) => {
+          choice.replace(/\s+/g, '').split('').forEach(addDistractor);
+        });
+        targetForm.replace(/\s+/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .split('').forEach(addDistractor);
+        // Completar con vocales y consonantes para mantener la rejilla de 16.
+        'aeiouáéíóúbcdfghjklmnñpqrstvwxyz'.split('').forEach(addDistractor);
+        return window.prepareMixedTiles([...targetTiles, ...distractors]);
+      };
+      window.LUD_MIXED_CARDS = cards;
+      window.MAS_CANONICAL_CARDS = cards;
+      window.TU_SELECTION_OPTIONS = options;
+      window.TU_VERB_FORMS = verbs;
+      window.TU_OPTION_VERBS = verbs;
+      window.getMasCanonicalCardData = (value) => {
+        const id = value?.nodeType === 1 ? value.dataset.cardId : value?.cardId || value;
+        return cards.find((item) => item.cardId === id) || null;
+      };
+      window.getLudMixedCard = (card) => cards.find((item) => item.cardId === card.dataset.cardId);
+    }
+    function installMixedGame() {
+      // document.write puede conservar el aviso del documento de carga
+      // mientras el navegador termina de procesar la página original.
+      document.getElementById('loading')?.remove();
+      window.playIntroAudio = () => {};
+      const originalModal = window.showContinueGameModal;
+      window.showContinueGameModal = (hasSavedProgress) => {
+        const directStart = sessionStorage.getItem('lud-gr-u3-mixta-direct-start') === 'true';
+        sessionStorage.removeItem('lud-gr-u3-mixta-direct-start');
+        if (directStart && !hasSavedProgress) return initializePage();
+        return originalModal(hasSavedProgress);
+      };
+      const verbTopics = new Set(["ser","estar","tener"]);
+      const infinitiveStyle = document.createElement('style');
+      infinitiveStyle.textContent = "\n#flashcard-container .flashcard .front-infinitive {\n  display: block !important;\n  margin-top: 6px !important;\n  color: #facc15 !important;\n  font-family: 'Poppins', sans-serif !important;\n  font-size: clamp(1.6rem, 5vw, 2.2rem) !important;\n  font-weight: 800 !important;\n  line-height: 1.1 !important;\n  letter-spacing: .08em !important;\n  text-transform: lowercase !important;\n  text-shadow: 0 3px 10px rgba(0, 0, 0, .38) !important;\n}\n#flashcard-container .flashcard .front-infinitive::before {\n  content: '' !important;\n  display: block !important;\n  width: min(34%, 160px) !important;\n  height: 2px !important;\n  margin: 0 auto 10px !important;\n  border-radius: 999px !important;\n  background: rgba(250, 204, 21, .72) !important;\n  box-shadow: 0 1px 6px rgba(250, 204, 21, .28) !important;\n}\n#flashcard-container .flashcard[data-source=\"ir\"] .front-infinitive,\n#flashcard-container .flashcard[data-source=\"ver\"] .front-infinitive {\n  font-size: clamp(1.82rem, 5.7vw, 2.45rem) !important;\n}\n";
+      document.head.appendChild(infinitiveStyle);
+      const indeterminantesCompat = document.createElement('style');
+      indeterminantesCompat.id = 'lud-gr-u3-mixta-indeterminantes-front-compat';
+      indeterminantesCompat.textContent = `
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u3-mixta-determinados-"] .front .article-options-column,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u3-mixta-posesivos1-"] .front .article-options-column {
+          margin:0!important;
+          align-items:normal!important;
+        }
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u3-mixta-determinados-"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id^="lud-gr-u3-mixta-posesivos1-"] .front .article-option {
+          width:auto!important;
+          margin:0!important;
+          justify-self:stretch!important;
+          flex-wrap:nowrap!important;
+          gap:normal!important;
+          line-height:normal!important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .front .article-options-column,
+        #flashcard-container .flashcard[data-source="porparaporque"] .front .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-options-column {
+          order: 1 !important;
+          width: min(100%, 300px) !important;
+          display: grid !important;
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          gap: 5px !important;
+          padding: 5px !important;
+          border-radius: 15px !important;
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          align-self: center !important;
+          align-content: center !important;
+          justify-items: stretch !important;
+          margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .front .article-option,
+        #flashcard-container .flashcard[data-source="porparaporque"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-option,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-option {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          min-height: 30px !important;
+          padding: 4px 5px !important;
+          border-radius: 10px !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 800 !important;
+          font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;
+          color: #ffd54a !important;
+          background: rgba(255, 213, 74, 0.12) !important;
+          border: 1px solid rgba(255, 213, 74, 0.28) !important;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+          text-transform: lowercase !important;
+          letter-spacing: 0 !important;
+          box-shadow: none !important;
+          margin: 0 !important;
+          width: 100% !important;
+          max-width: none !important;
+          box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .front .article-options-column,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .front .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column {
+          order: 1 !important;
+          width: min(100%, 300px) !important;
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          gap: 5px !important;
+          padding: 5px !important;
+          border-radius: 15px !important;
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          align-self: center !important;
+          align-content: center !important;
+          justify-items: stretch !important;
+          margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .front .article-option,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-option,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-option {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          min-height: 30px !important;
+          padding: 4px 5px !important;
+          border-radius: 10px !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 800 !important;
+          font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;
+          color: #ffd54a !important;
+          background: rgba(255, 213, 74, 0.12) !important;
+          border: 1px solid rgba(255, 213, 74, 0.28) !important;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+          text-transform: lowercase !important;
+          letter-spacing: 0 !important;
+          box-shadow: none !important;
+          margin: 0 !important;
+          width: 100% !important;
+          max-width: none !important;
+          box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card {
+          width: min(86%, 560px) !important;
+          min-height: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: clamp(9px, 1.7vw, 13px) !important;
+          position: relative !important;
+          z-index: 2 !important;
+          padding: clamp(10px, 1.8vw, 14px) !important;
+          border-radius: 18px !important;
+          background: rgba(255, 255, 255, 0.09) !important;
+          border: 1px solid rgba(255, 255, 255, 0.16) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), 0 16px 34px rgba(0, 0, 0, 0.2) !important;
+          backdrop-filter: blur(5px) !important;
+          -webkit-backdrop-filter: blur(5px) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card.target-after .article-noun-column,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card.target-after .article-noun-column {
+          order: 1 !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card.target-after .article-options-column,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card.target-after .article-options-column {
+          order: 2 !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-noun-column {
+          order: 2 !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 900 !important;
+          font-size: clamp(1.55rem, 3.5vw, 2.45rem) !important;
+          color: #fff !important;
+          line-height: 0.95 !important;
+          text-align: center !important;
+          letter-spacing: 0 !important;
+          text-transform: none !important;
+          white-space: normal !important;
+          overflow-wrap: normal !important;
+          word-break: normal !important;
+          hyphens: none !important;
+          text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column {
+          order: 1 !important;
+          width: min(100%, 510px) !important;
+          display: grid !important;
+          grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+          gap: 5px !important;
+          padding: 5px !important;
+          border-radius: 15px !important;
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          align-self: center !important;
+          align-content: center !important;
+          justify-self: center !important;
+          justify-items: stretch !important;
+          margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .front .article-option,
+        #flashcard-container .flashcard[data-source="muymucho"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-option,
+        #flashcard-container .flashcard[data-source="muymucho"] .article-option {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          min-height: 32px !important;
+          padding: 4px 6px !important;
+          border-radius: 10px !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 800 !important;
+          font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;
+          color: #ffd54a !important;
+          background: rgba(255, 213, 74, 0.12) !important;
+          border: 1px solid rgba(255, 213, 74, 0.28) !important;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+          text-transform: lowercase !important;
+          letter-spacing: 0 !important;
+          box-shadow: none !important;
+          margin: 0 !important;
+          width: 100% !important;
+          max-width: none !important;
+          box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .front-verb-tag,
+        #flashcard-container .flashcard[data-source="muymucho"] .front-verb-tag {
+          position: absolute !important;
+          top: 18px !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 700 !important;
+          font-size: 0.95rem !important;
+          color: rgba(255, 255, 255, 0.45) !important;
+          text-transform: none !important;
+          letter-spacing: 3px !important;
+          z-index: 2 !important;
+          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+          padding: 5px 16px !important;
+          border-radius: 20px !important;
+          backdrop-filter: blur(4px) !important;
+          -webkit-backdrop-filter: blur(4px) !important;
+          white-space: nowrap !important;
+        }
+        @media (max-width: 620px) {
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,
+          #flashcard-container .flashcard[data-source="muymucho"] .article-front-card {
+            width: min(88%, 330px) !important;
+            gap: 6px !important;
+            padding: 10px !important;
+          }
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,
+          #flashcard-container .flashcard[data-source="muymucho"] .article-options-column {
+            width: min(100%, 310px) !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (max-width: 360px) {
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,
+          #flashcard-container .flashcard[data-source="muymucho"] .article-options-column {
+            width: min(100%, 250px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+          width: min(86%, 560px) !important;
+          min-height: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: clamp(9px, 1.7vw, 13px) !important;
+          position: relative !important;
+          z-index: 2 !important;
+          padding: clamp(10px, 1.8vw, 14px) !important;
+          border-radius: 18px !important;
+          background: rgba(255, 255, 255, 0.09) !important;
+          border: 1px solid rgba(255, 255, 255, 0.16) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), 0 16px 34px rgba(0, 0, 0, 0.2) !important;
+          backdrop-filter: blur(5px) !important;
+          -webkit-backdrop-filter: blur(5px) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card.target-after .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card.target-after .article-noun-column {
+          order: 1 !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card.target-after .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card.target-after .article-options-column {
+          order: 2 !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-noun-column {
+          order: 2 !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 900 !important;
+          font-size: clamp(1.55rem, 3.5vw, 2.45rem) !important;
+          color: #fff !important;
+          line-height: 0.95 !important;
+          text-align: center !important;
+          letter-spacing: 0 !important;
+          text-transform: none !important;
+          white-space: normal !important;
+          overflow-wrap: normal !important;
+          word-break: normal !important;
+          hyphens: none !important;
+          text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          order: 1 !important;
+          width: min(100%, 300px) !important;
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 6px !important;
+          padding: 5px !important;
+          border-radius: 15px !important;
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          align-self: center !important;
+          align-content: center !important;
+          justify-self: center !important;
+          justify-items: stretch !important;
+          margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .front .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .front .article-option,
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .article-option {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          min-height: 32px !important;
+          padding: 4px 6px !important;
+          border-radius: 10px !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 800 !important;
+          font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;
+          color: #ffd54a !important;
+          background: rgba(255, 213, 74, 0.12) !important;
+          border: 1px solid rgba(255, 213, 74, 0.28) !important;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+          text-transform: lowercase !important;
+          letter-spacing: 0 !important;
+          box-shadow: none !important;
+          margin: 0 !important;
+          width: 100% !important;
+          max-width: none !important;
+          box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .front-verb-tag,
+        #flashcard-container .flashcard[data-source="donde"] .front-verb-tag {
+          position: absolute !important;
+          top: 18px !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+          font-family: 'Poppins', sans-serif !important;
+          font-weight: 700 !important;
+          font-size: 0.95rem !important;
+          color: rgba(255, 255, 255, 0.45) !important;
+          text-transform: none !important;
+          letter-spacing: 3px !important;
+          z-index: 2 !important;
+          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+          padding: 5px 16px !important;
+          border-radius: 20px !important;
+          backdrop-filter: blur(4px) !important;
+          -webkit-backdrop-filter: blur(4px) !important;
+          white-space: nowrap !important;
+        }
+        @media (max-width: 620px) {
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card,
+          #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+            width: min(88%, 330px) !important;
+            gap: 6px !important;
+            padding: 10px !important;
+          }
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,
+          #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+            width: min(100%, 290px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-option,
+          #flashcard-container .flashcard[data-source="donde"] .article-option {
+            min-height: 34px !important;
+            padding: 6px 7px !important;
+            font-size: clamp(.78rem, 3.45vw, .94rem) !important;
+          }
+        }
+        @media (max-width: 360px) {
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,
+          #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+            width: min(100%, 240px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+      `;
+      document.head.appendChild(indeterminantesCompat);
+      const tileTextStyle = document.createElement('style');
+      tileTextStyle.textContent = `
+        #flashcard-container .ruleta-rect-tile .tile-text {
+          font-size:clamp(.82rem,1.55vw,1.2rem)!important;
+          font-weight:800!important;
+          line-height:1.1!important;
+          white-space:nowrap!important;
+          word-break:normal!important;
+          overflow-wrap:normal!important;
+        }
+        #flashcard-container .ruleta-rect-tile .tile-text.tile-text-long {
+          display:block!important;
+          max-width:calc(100% - 16px)!important;
+          font-size:clamp(.72rem,1.25vw,1rem)!important;
+          white-space:nowrap!important;
+          overflow:hidden!important;
+          text-overflow:clip!important;
+        }
+        #flashcard-container .ruleta-rect-tile .tile-text.tile-text-very-long {
+          font-size:clamp(.58rem,1vw,.82rem)!important;
+          letter-spacing:-.02em!important;
+        }
+        @media (max-width:480px) {
+          #flashcard-container .ruleta-rect-tile .tile-text {
+            font-size:clamp(.7rem,2.5vw,.88rem)!important;
+          }
+          #flashcard-container .ruleta-rect-tile .tile-text.tile-text-long {
+            font-size:clamp(.62rem,2.1vw,.82rem)!important;
+          }
+          #flashcard-container .ruleta-rect-tile .tile-text.tile-text-very-long {
+            font-size:clamp(.52rem,1.8vw,.72rem)!important;
+          }
+        }
+      `;
+      document.head.appendChild(tileTextStyle);
+      const answerWrapStyle = document.createElement('style');
+      answerWrapStyle.textContent = `
+        #flashcard-container .flashcard .back .back-conjugation {
+          width: 100% !important;
+          max-width: 100% !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          text-align: center !important;
+          box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard .back .back-verb-main {
+          display: block !important;
+          width: 100% !important;
+          max-width: 94% !important;
+          margin: 0 auto !important;
+          text-align: center !important;
+          white-space: normal !important;
+          overflow-wrap: break-word !important;
+          word-break: normal !important;
+          text-wrap: balance !important;
+          font-size: clamp(1.45rem, 3.8vw, 2.4rem) !important;
+          line-height: 1.16 !important;
+        }
+        #flashcard-container .flashcard .back .back-verb-main .answer-line {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          white-space: normal !important;
+          overflow-wrap: break-word !important;
+          word-break: normal !important;
+          text-align: center !important;
+        }
+      `;
+      document.head.appendChild(answerWrapStyle);
+      // Resolver por identidad, incluso después de mezclar o continuar.
+      window.getAudioSrcForCountryName = (answer) => {
+        const item = window.LUD_MIXED_CARDS.find((card) => card.answer === String(answer || '').replace(/\s+/g, ' ').trim());
+        return item ? 'https://fawzinoo.github.io/audios/' + item.audioFile : null;
+      };
+      window.reassignAudiosToCards = () => {
+        flashcards.forEach((card, index) => {
+          const item = window.getLudMixedCard(card);
+          if (!item) return;
+          card.dataset.source = item.source;
+          const front = card.querySelector('.front');
+          const pronoun = front?.querySelector('.front-pronoun');
+          if (verbTopics.has(item.source) && pronoun && !front.querySelector('.front-infinitive')) {
+            const label = document.createElement('span');
+            label.className = 'front-infinitive';
+            label.textContent = item.source;
+            pronoun.insertAdjacentElement('afterend', label);
+            item.frontHTML = front.innerHTML;
+          }
+          const audio = audios[index];
+          const src = 'https://fawzinoo.github.io/audios/' + item.audioFile;
+          if (audio.src !== src) {
+            audio.pause();
+            audio.src = src;
+          }
+          audio.preload = 'auto';
+        });
+      };
+      const originalShuffle = window.shuffleCards;
+      window.shuffleCards = () => {
+        originalShuffle();
+        reassignAudiosToCards();
+      };
+      reassignAudiosToCards();
+      const startFresh = (directStart = false) => {
+        localStorage.removeItem('lud-gr-u3-mixta_gameProgress');
+        localStorage.removeItem('lud-gr-u3-mixta-draw');
+        localStorage.removeItem('lud-gr-u3-mixta_shuffleCount');
+        if (directStart === true) sessionStorage.setItem('lud-gr-u3-mixta-direct-start', 'true');
+        window.location.reload();
+      };
+      document.addEventListener('click', (event) => {
+        if (!event.target.closest('#start-fresh-btn')) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        startFresh(true);
+      }, true);
+      window.resetGame = startFresh;
+    }
+    try {
+      const template = readDocument('lud-hablar.html');
+      template.title = 'Test4, unidad3';
+      const title = template.querySelector('.cuesta-title-text');
+      if (title) title.textContent = 'TEST 4, UNIDAD 3';
+      const container = template.getElementById('flashcard-container');
+      if (!container) throw new Error('No se encontró el tablero');
+      const mixedStatsBox = template.getElementById('stats-box');
+      if (mixedStatsBox) {
+        // Misma secuencia inicial que sel-hablar: visible durante los hints y
+        // oculto después por la propia lógica del cuadro.
+        mixedStatsBox.classList.remove('hidden');
+        mixedStatsBox.remove();
+      }
+      container.querySelectorAll('style').forEach((style) => template.head.appendChild(style));
+      const baseFixStyle = template.createElement('style');
+      baseFixStyle.id = KEY + '-base-fixes';
+      baseFixStyle.textContent = '#flashcard-container .flashcard .back-reflexive::after{display:none!important;content:none!important;}.back.hidden-text .back-conjugation{opacity:0!important;visibility:hidden!important;}.back.hidden-text .super-pulse-indicator{opacity:1!important;visibility:visible!important;}#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .front .article-options-column,#flashcard-container .flashcard[data-source="porparaporque"] .front .article-options-column,#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,#flashcard-container .flashcard[data-source="porparaporque"] .article-options-column{order:1!important;width:min(100%,300px)!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .front .article-option,#flashcard-container .flashcard[data-source="porparaporque"] .front .article-option,#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-option,#flashcard-container .flashcard[data-source="porparaporque"] .article-option{display:flex!important;align-items:center!important;justify-content:center!important;min-height:30px!important;padding:4px 5px!important;border-radius:10px!important;font-family:\'Poppins\',sans-serif!important;font-weight:800!important;font-size:clamp(0.72rem,1.35vw,0.84rem)!important;color:#ffd54a!important;background:rgba(255,213,74,0.12)!important;border:1px solid rgba(255,213,74,0.28)!important;text-shadow:0 2px 8px rgba(0,0,0,0.26)!important;text-transform:lowercase!important;letter-spacing:0!important;box-shadow:none!important;margin:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;}#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .front .article-options-column,#flashcard-container .flashcard[data-source="indeterminantes"] .front .article-options-column,#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,#flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column{order:1!important;width:min(100%,300px)!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:5px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .front .article-option,#flashcard-container .flashcard[data-source="indeterminantes"] .front .article-option,#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-option,#flashcard-container .flashcard[data-source="indeterminantes"] .article-option{display:flex!important;align-items:center!important;justify-content:center!important;min-height:30px!important;padding:4px 5px!important;border-radius:10px!important;font-family:\'Poppins\',sans-serif!important;font-weight:800!important;font-size:clamp(0.72rem,1.35vw,0.84rem)!important;color:#ffd54a!important;background:rgba(255,213,74,0.12)!important;border:1px solid rgba(255,213,74,0.28)!important;text-shadow:0 2px 8px rgba(0,0,0,0.26)!important;text-transform:lowercase!important;letter-spacing:0!important;box-shadow:none!important;margin:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,#flashcard-container .flashcard[data-source="muymucho"] .article-front-card{width:min(86%,560px)!important;min-height:auto!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:clamp(9px,1.7vw,13px)!important;position:relative!important;z-index:2!important;padding:clamp(10px,1.8vw,14px)!important;border-radius:18px!important;background:rgba(255,255,255,0.09)!important;border:1px solid rgba(255,255,255,0.16)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.13),0 16px 34px rgba(0,0,0,0.2)!important;backdrop-filter:blur(5px)!important;-webkit-backdrop-filter:blur(5px)!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card.target-after .article-noun-column,#flashcard-container .flashcard[data-source="muymucho"] .article-front-card.target-after .article-noun-column{order:1!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card.target-after .article-options-column,#flashcard-container .flashcard[data-source="muymucho"] .article-front-card.target-after .article-options-column{order:2!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-noun-column,#flashcard-container .flashcard[data-source="muymucho"] .article-noun-column{order:2!important;max-width:100%!important;min-width:0!important;font-family:\'Poppins\',sans-serif!important;font-weight:900!important;font-size:clamp(1.55rem,3.5vw,2.45rem)!important;color:#fff!important;line-height:0.95!important;text-align:center!important;letter-spacing:0!important;text-transform:none!important;white-space:normal!important;overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;text-shadow:0 0 42px rgba(34,211,238,0.36),0 10px 28px rgba(0,0,0,0.46)!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,#flashcard-container .flashcard[data-source="muymucho"] .article-options-column{order:1!important;width:min(100%,510px)!important;display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-self:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .front .article-option,#flashcard-container .flashcard[data-source="muymucho"] .front .article-option,#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-option,#flashcard-container .flashcard[data-source="muymucho"] .article-option{display:flex!important;align-items:center!important;justify-content:center!important;min-height:32px!important;padding:4px 6px!important;border-radius:10px!important;font-family:\'Poppins\',sans-serif!important;font-weight:800!important;font-size:clamp(0.72rem,1.35vw,0.84rem)!important;color:#ffd54a!important;background:rgba(255,213,74,0.12)!important;border:1px solid rgba(255,213,74,0.28)!important;text-shadow:0 2px 8px rgba(0,0,0,0.26)!important;text-transform:lowercase!important;letter-spacing:0!important;box-shadow:none!important;margin:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .front-verb-tag,#flashcard-container .flashcard[data-source="muymucho"] .front-verb-tag{position:absolute!important;top:18px!important;left:50%!important;transform:translateX(-50%)!important;font-family:\'Poppins\',sans-serif!important;font-weight:700!important;font-size:0.95rem!important;color:rgba(255,255,255,0.45)!important;text-transform:none!important;letter-spacing:3px!important;z-index:2!important;border:1px solid rgba(255,255,255,0.15)!important;padding:5px 16px!important;border-radius:20px!important;backdrop-filter:blur(4px)!important;-webkit-backdrop-filter:blur(4px)!important;white-space:nowrap!important;}@media(max-width:620px){#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,#flashcard-container .flashcard[data-source="muymucho"] .article-front-card{width:min(88%,330px)!important;gap:6px!important;padding:10px!important;}#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,#flashcard-container .flashcard[data-source="muymucho"] .article-options-column{width:min(100%,310px)!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;}}@media(max-width:360px){#flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,#flashcard-container .flashcard[data-source="muymucho"] .article-options-column{width:min(100%,250px)!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card,#flashcard-container .flashcard[data-source="donde"] .article-front-card{width:min(86%,560px)!important;min-height:auto!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:clamp(9px,1.7vw,13px)!important;position:relative!important;z-index:2!important;padding:clamp(10px,1.8vw,14px)!important;border-radius:18px!important;background:rgba(255,255,255,0.09)!important;border:1px solid rgba(255,255,255,0.16)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.13),0 16px 34px rgba(0,0,0,0.2)!important;backdrop-filter:blur(5px)!important;-webkit-backdrop-filter:blur(5px)!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card.target-after .article-noun-column,#flashcard-container .flashcard[data-source="donde"] .article-front-card.target-after .article-noun-column{order:1!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card.target-after .article-options-column,#flashcard-container .flashcard[data-source="donde"] .article-front-card.target-after .article-options-column{order:2!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-noun-column,#flashcard-container .flashcard[data-source="donde"] .article-noun-column{order:2!important;max-width:100%!important;min-width:0!important;font-family:\'Poppins\',sans-serif!important;font-weight:900!important;font-size:clamp(1.55rem,3.5vw,2.45rem)!important;color:#fff!important;line-height:0.95!important;text-align:center!important;letter-spacing:0!important;text-transform:none!important;white-space:normal!important;overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;text-shadow:0 0 42px rgba(34,211,238,0.36),0 10px 28px rgba(0,0,0,0.46)!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,#flashcard-container .flashcard[data-source="donde"] .article-options-column{order:1!important;width:min(100%,300px)!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-self:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .front .article-option,#flashcard-container .flashcard[data-source="donde"] .front .article-option,#flashcard-container .flashcard[data-card-id*="-donde-"] .article-option,#flashcard-container .flashcard[data-source="donde"] .article-option{display:flex!important;align-items:center!important;justify-content:center!important;min-height:32px!important;padding:4px 6px!important;border-radius:10px!important;font-family:\'Poppins\',sans-serif!important;font-weight:800!important;font-size:clamp(0.72rem,1.35vw,0.84rem)!important;color:#ffd54a!important;background:rgba(255,213,74,0.12)!important;border:1px solid rgba(255,213,74,0.28)!important;text-shadow:0 2px 8px rgba(0,0,0,0.26)!important;text-transform:lowercase!important;letter-spacing:0!important;box-shadow:none!important;margin:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .front-verb-tag,#flashcard-container .flashcard[data-source="donde"] .front-verb-tag{position:absolute!important;top:18px!important;left:50%!important;transform:translateX(-50%)!important;font-family:\'Poppins\',sans-serif!important;font-weight:700!important;font-size:0.95rem!important;color:rgba(255,255,255,0.45)!important;text-transform:none!important;letter-spacing:3px!important;z-index:2!important;border:1px solid rgba(255,255,255,0.15)!important;padding:5px 16px!important;border-radius:20px!important;backdrop-filter:blur(4px)!important;-webkit-backdrop-filter:blur(4px)!important;white-space:nowrap!important;}@media(max-width:620px){#flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card,#flashcard-container .flashcard[data-source="donde"] .article-front-card{width:min(88%,330px)!important;gap:6px!important;padding:10px!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,#flashcard-container .flashcard[data-source="donde"] .article-options-column{width:min(100%,290px)!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}#flashcard-container .flashcard[data-card-id*="-donde-"] .article-option,#flashcard-container .flashcard[data-source="donde"] .article-option{min-height:34px!important;padding:6px 7px!important;font-size:clamp(.78rem,3.45vw,.94rem)!important;}}@media(max-width:360px){#flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column,#flashcard-container .flashcard[data-source="donde"] .article-options-column{width:min(100%,240px)!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}}';
+      template.head.appendChild(baseFixStyle);
+      // En la mezcla, el CSS de lud-hablar puede reducir el ancho de las
+      // tarjetas nominales y dejar las opciones desproporcionadas. Igualar
+      // la geometría comprobada de esc-/com-/sel-: panel centrado, opciones
+      // ocupando su línea disponible y columnas según el número de opciones.
+      const u3NominalLayout = template.createElement('style');
+      u3NominalLayout.id = KEY + '-u3-nominal-layout';
+      u3NominalLayout.textContent = `
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+          width: min(92%, 760px) !important;
+          max-width: 760px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          order: 1 !important;
+          display: grid !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          justify-content: center !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-noun-column { order: 2 !important; text-align: center !important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-option,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-option,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .article-option {
+          width: 100% !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+          white-space: nowrap !important;
+        }
+        @media (max-width: 700px) {
+          #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+          #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+          #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+          #flashcard-container .flashcard[data-source="donde"] .article-front-card { width: min(94%, 420px) !important; }
+          #flashcard-container .flashcard[data-source="muymucho"] .article-options-column { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+          #flashcard-container .flashcard[data-source="quecuales"] .article-options-column { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+      `;
+      template.head.appendChild(u3NominalLayout);
+      container.replaceChildren();
+      let savedState = null;
+      let savedDraw = null;
+      try {
+        savedState = JSON.parse(localStorage.getItem(KEY + '_gameProgress') || 'null');
+        const completed = savedState?.completedCards?.length || 0;
+        if (savedState && completed < 35 && (completed || savedState.correctCount || savedState.incorrectCount || savedState.voiceAttempts)) {
+          savedDraw = JSON.parse(localStorage.getItem(KEY + '-draw') || 'null');
+        }
+      } catch (_) {}
+      const draw = [];
+      const deck = [];
+      const metadata = [];
+      const options = {};
+      const verbs = {};
+      const tileBuilders = [];
+      for (const source of SOURCES) {
+        const isArticleTopic = ['muymucho','quecuales','cuantos','donde'].includes(source);
+        const original = window.prepareU3MixedSource(readDocument((isArticleTopic ? 'gr-u3-' : 'lud-') + source + '.html'));
+        // Los lud- regeneran sus tarjetas: su HTML estático todavía contiene
+        // otro verbo. Ejecutar únicamente su constructor de contenido local.
+        const topicData = {};
+        if (!isArticleTopic) {
+          const builder = original.getElementById('sel-tu-card-content');
+          if (!builder) throw new Error('Falta el constructor de ' + source);
+          new Function('document', 'window', builder.textContent)(original, topicData);
+          Object.assign(options, topicData.TU_SELECTION_OPTIONS || {});
+          Object.assign(verbs, topicData.TU_VERB_FORMS || {});
+        }
+        const originals = Array.from(original.querySelectorAll('#flashcard-container > .flashcard'));
+        if (originals.length < 5) throw new Error('Faltan tarjetas de ' + source);
+        const scripts = Array.from(original.querySelectorAll('script'), (script) => script.textContent).join('\n');
+        const topicChoices = isArticleTopic
+          ? [...new Set(originals.flatMap(c => Array.from(c.querySelectorAll('.article-option'), e => e.textContent.trim())))]
+          : [];
+        const getPlayableNominalAnswer = (rawAnswer, visibleName, targetAfter) => {
+          const clean = (value) => String(value || '')
+            .toLocaleLowerCase('es')
+            .replace(/[¿?!¡.,:;]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const sentence = clean(rawAnswer);
+          const formChoices = ({
+            muymucho: ['muy', 'mucho', 'mucha', 'muchos', 'muchas'],
+            quecuales: ['qué es', 'qué son', 'cuál es', 'cuáles son'],
+            cuantos: ['cuánto', 'cuántos', 'cuántas'],
+            donde: ['dónde está', 'dónde están']
+          }[source] || topicChoices).map(clean);
+          const form = [...new Set(formChoices)]
+            .filter((choice) => sentence === choice
+              || sentence.startsWith(choice + ' ')
+              || sentence.endsWith(' ' + choice)
+              || sentence.includes(' ' + choice + ' '))
+            .sort((a, b) => b.length - a.length)[0];
+          if (!form) return sentence;
+          const position = sentence.indexOf(form);
+          const completeName = clean(visibleName)
+            || (sentence.slice(0, position) + ' ' + sentence.slice(position + form.length))
+              .replace(/\s+/g, ' ').trim();
+          return targetAfter ? [completeName, form].filter(Boolean).join(' ')
+            : [form, completeName].filter(Boolean).join(' ');
+        };
+        if (isArticleTopic) {
+          tileBuilders.push(JSON.stringify(source)
+            + ': function(targetSentence, allTilesData, visibleName) { return window.buildMixedNominalTiles(targetSentence, '
+            + JSON.stringify(topicChoices) + ', ' + JSON.stringify(source) + ', visibleName); }');
+        } else {
+          const tileLogic = scripts.match(/\/\/ Override: tarjetas de conjugación[\s\S]*?(?=\/\/ Crear Contenedor Principal)/);
+          if (!tileLogic) throw new Error('Falta la lógica de rectángulos de ' + source);
+          // Los guiones solo son etiquetas visuales. La palabra y la
+          // validación originales se mantienen en cada ficha.
+          const labeledTileLogic = tileLogic[0]
+            .replace(/\.map\(word => \(\{ word, isTarget: true \}\)\)/g,
+              `.map((word, index, words) => ({ word, isTarget: true,
+                label: correctReflexive && index === 0 ? word
+                  : index === words.length - 1 ? '-' + word
+                  : index === (correctReflexive ? 1 : 0) ? word + '-'
+                  : '-' + word + '-'
+              }))`)
+            .replace(/(const wrongEndings\s*=[\s\S]*?)\.map\(word => \(\{ word, isTarget: false \}\)\)/,
+              "$1.map(word => ({ word, isTarget: false, label: '-' + word }))")
+            .replace(/(const extraLetters\s*=[\s\S]*?)\.map\(word => \(\{ word, isTarget: false \}\)\)/,
+              "$1.map(word => ({ word, isTarget: false, label: '-' + word + '-' }))");
+          const timerCleanupLogic = labeledTileLogic;
+          // Reutilizar literalmente la separación en letras, terminaciones
+          // y reflexivos del tema; incluye sus irregularidades y distractores.
+          tileBuilders.push(JSON.stringify(source) + ': function(targetSentence, allTilesData) {\n'
+            + 'if (typeof window.__ludStopActiveExercise === "function") window.__ludStopActiveExercise();\n'
+            + timerCleanupLogic + '\nreturn window.prepareMixedTiles(allTilesData);\n}');
+        }
+        const audioDeclaration = scripts.match(/const\s+audioFiles\s*=\s*\[([\s\S]*?)\];/);
+        const files = audioDeclaration ? Array.from(audioDeclaration[1].matchAll(/['"]([^'"]+\.(?:wav|mp3))['"]/gi), (match) => match[1]) : [];
+        let indices = Array.isArray(savedDraw) ? savedDraw.find((entry) => entry.source === source)?.indices : null;
+        if (!Array.isArray(indices) || indices.length !== 5 || new Set(indices).size !== 5 || indices.some((i) => !Number.isInteger(i) || i < 0 || i >= originals.length)) {
+          indices = shuffle(originals.map((_, i) => i)).slice(0, 5);
+        }
+        draw.push({ source, indices });
+        for (const index of indices) {
+          const card = originals[index].cloneNode(true);
+          const sourceAnswer = String(card.dataset.answer || card.querySelector('.back').textContent).replace(/\s+/g, ' ').trim();
+          // Conservamos la pregunta original para la respuesta visible y
+          // para el audio. La evaluación de las fichas se calcula aparte,
+          // usando la forma y el nombre que aparecen en el front.
+          const answer = sourceAnswer;
+          let audioFile = files[index];
+          if (!audioFile) throw new Error('Falta el audio de ' + source + ': ' + (index + 1));
+          if (source === 'indeterminantes' && index > 0) audioFile = audioFile.replace(/\.+wav$/i, '..wav');
+          card.classList.remove('flipped', 'is-visible', 'completed');
+          card.dataset.cardId = KEY + '-' + source + '-' + (index + 1);
+          card.dataset.source = source;
+          card.dataset.answer = answer;
+          if (isArticleTopic) {
+            const answerNode = card.querySelector('.back-verb-main');
+            if (answerNode) answerNode.textContent = sourceAnswer;
+          }
+          card.dataset.backHtml = card.querySelector('.back').innerHTML;
+          // Conservar el front original; el juego añade solo el infinitivo solicitado.
+          if (isArticleTopic) {
+            const parts = answer.split(' ');
+            const noun = parts.slice(1).join(' ');
+            const choices = topicChoices;
+            options[answer] = [answer, ...choices.filter((word) => word !== parts[0]).map((word) => word + ' ' + noun)];
+          } else if (options[answer]) {
+            options[answer] = [...new Set(options[answer])];
+            const alternatives = [...new Set(originals.map((item) => String(item.dataset.answer || item.querySelector('.back').textContent).replace(/\s+/g, ' ').trim()))];
+            for (const alternative of alternatives) {
+              if (options[answer].length >= 4) break;
+              if (!options[answer].includes(alternative)) options[answer].push(alternative);
+            }
+          }
+          metadata.push({
+            cardId: card.dataset.cardId, source, index, sourceIndex: metadata.length,
+            answer, audioFile, targetForm: '', targetPosition: '',
+            frontHTML: card.querySelector('.front').innerHTML,
+            backHTML: card.querySelector('.back').innerHTML
+          });
+          deck.push(card);
+        }
+        // Leer el CSS en una hoja conectada, sin aplicarlo al documento de carga.
+        const reader = document.createElement('style');
+        reader.media = 'not all';
+        reader.textContent = Array.from(original.querySelectorAll('style'), (style) => style.textContent).join('\n');
+        document.head.appendChild(reader);
+        const root = '#flashcard-container .flashcard[data-card-id^="' + KEY + '-' + source + '-"]';
+        const scopeRules = (rules) => Array.from(rules).map((rule) => {
+          if (rule.type === 1) {
+            const selectors = rule.selectorText.split(',').map((selector) => {
+              // Importar las caras originales y sus componentes, sin cambiar
+              // la geometría de la tarjeta ni la interfaz de reconocimiento.
+              const match = selector.match(/\.(?:front|back|article)(?:\b|-)/);
+              if (!match) return '';
+              return root + ' ' + selector.slice(match.index).trim();
+            }).filter(Boolean);
+            // Hablar impone !important al pronombre. En posesivos, respetar
+            // los valores originales (azul, tamaño compacto y «de» blanco)
+            // aunque esas declaraciones no lleven !important en su origen.
+            if (source === 'posesivos1' && rule.selectorText.includes('.front-pronoun')) {
+              for (const property of Array.from(rule.style)) {
+                rule.style.setProperty(property, rule.style.getPropertyValue(property), 'important');
+              }
+            }
+            return selectors.length ? selectors.join(',') + '{' + rule.style.cssText + '}' : '';
+          }
+          if (rule.type === 7) return rule.cssText;
+          if (rule.type === 4 || rule.type === 12) {
+            return rule.cssText.slice(0, rule.cssText.indexOf('{')) + '{' + scopeRules(rule.cssRules) + '}';
+          }
+          return '';
+        }).join('\n');
+        const style = template.createElement('style');
+        style.id = KEY + '-styles-' + source;
+        style.textContent = scopeRules(reader.sheet.cssRules);
+        reader.remove();
+        template.head.appendChild(style);
+      }
+      const ordered = shuffle(deck);
+      container.append(...ordered);
+      if (mixedStatsBox) container.appendChild(mixedStatsBox);
+      container.appendChild(scriptElement(template, '(' + installDeckMetadata.toString() + ')(' + JSON.stringify(metadata) + ',' + JSON.stringify(options) + ',' + JSON.stringify(verbs) + ');'));
+      container.appendChild(scriptElement(template, 'window.LUD_TILE_BUILDERS = {' + tileBuilders.join(',\n') + '};'));
+      template.body.appendChild(scriptElement(template, '(' + installMixedGame.toString() + ')();'));
+      // El motor lúdico inyecta reglas al arrancar; repetir este bloque
+      // después de su script garantiza que las dimensiones originales de
+      // esc-/com-/sel- sigan siendo las últimas reglas aplicadas.
+      template.body.appendChild(u3NominalLayout.cloneNode(true));
+      const u3NominalSpecific = template.createElement('style');
+      u3NominalSpecific.textContent = `
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card {
+          width: min(92%, 760px) !important;
+          max-width: 760px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          gap: 10px !important;
+        }
+        @media (max-width: 700px) {
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card { width: min(94%, 420px) !important; }
+        }
+      `;
+      template.body.appendChild(u3NominalSpecific);
+      const ludCompletionStyle = template.createElement('style');
+      ludCompletionStyle.textContent = `
+        @keyframes ludCompletedTileGlow {
+          0% { transform: perspective(600px) rotateX(0deg) scale(.96); opacity: .72; }
+          45% { transform: perspective(600px) rotateX(0deg) scale(1.06); opacity: 1; }
+          100% { transform: perspective(600px) rotateX(0deg) scale(1); opacity: 1; }
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed {
+          background: var(--lud-segment-background, linear-gradient(135deg, #b91c1c 0%, #881337 52%, #450a0a 100%)) !important;
+          border-color: var(--lud-segment-border, #fecaca) !important;
+          color: #ffffff !important;
+          box-shadow: 0 0 12px var(--lud-segment-glow, rgba(254, 202, 202, .92)),
+                      0 0 28px var(--lud-segment-shadow, rgba(153, 27, 27, .78)),
+                      inset 0 1px 0 rgba(255, 255, 255, .55) !important;
+          animation: ludCompletedTileGlow .7s cubic-bezier(.2,.8,.2,1) both;
+          animation-delay: var(--lud-complete-delay, 0ms);
+          z-index: 4;
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed-segment-1 {
+          --lud-segment-background: linear-gradient(135deg, #facc15 0%, #eab308 52%, #a16207 100%);
+          --lud-segment-border: #fef08a;
+          --lud-segment-glow: rgba(254, 240, 138, .92);
+          --lud-segment-shadow: rgba(202, 138, 4, .78);
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed-segment-2 {
+          --lud-segment-background: linear-gradient(135deg, #e8d5b5 0%, #cbb99e 52%, #8c7b66 100%);
+          --lud-segment-border: #f5e8d2;
+          --lud-segment-glow: rgba(245, 232, 210, .9);
+          --lud-segment-shadow: rgba(139, 117, 87, .76);
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed-segment-3 {
+          --lud-segment-background: linear-gradient(135deg, #9ca3af 0%, #6b7280 52%, #374151 100%);
+          --lud-segment-border: #e5e7eb;
+          --lud-segment-glow: rgba(229, 231, 235, .9);
+          --lud-segment-shadow: rgba(75, 85, 99, .78);
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed-segment-4 {
+          --lud-segment-background: linear-gradient(135deg, #fb923c 0%, #f97316 52%, #c2410c 100%);
+          --lud-segment-border: #fed7aa;
+          --lud-segment-glow: rgba(254, 215, 170, .92);
+          --lud-segment-shadow: rgba(194, 65, 12, .78);
+        }
+        #flashcard-container .ruleta-rect-tile.tile-completed-segment-5 {
+          --lud-segment-background: linear-gradient(135deg, #7dd3fc 0%, #38bdf8 52%, #0369a1 100%);
+          --lud-segment-border: #bae6fd;
+          --lud-segment-glow: rgba(186, 230, 253, .92);
+          --lud-segment-shadow: rgba(3, 105, 161, .78);
+        }
+        #flashcard-container .ruleta-segments-display {
+          cursor: default !important;
+          min-height: 52px;
+          max-width: 100%;
+          box-sizing: border-box;
+          padding: 9px 16px !important;
+          background: linear-gradient(105deg, #4f57d7, #3f46bb) !important;
+          border: 1px solid rgba(218, 224, 255, .82) !important;
+          border-radius: 14px !important;
+          box-shadow: 0 5px 16px rgba(41, 46, 126, .22), inset 0 1px 0 rgba(255, 255, 255, .2) !important;
+          transform: none !important;
+          text-transform: none !important;
+        }
+        #flashcard-container .ruleta-segments-display:hover,
+        #flashcard-container .ruleta-segments-display:active {
+          background: linear-gradient(105deg, #4f57d7, #3f46bb) !important;
+          border-color: rgba(218, 224, 255, .82) !important;
+          transform: none !important;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segments-label {
+          display: none !important;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segments {
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 3px .7em;
+          width: 100%;
+          min-height: 32px;
+          font-size: clamp(.92rem, 1.8vw, 1.18rem);
+          font-weight: 800;
+          letter-spacing: 0;
+          text-shadow: none;
+        }
+        #flashcard-container .ruleta-segments-display .formed-word {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: .1em;
+          flex: 0 1 auto;
+          max-width: 100%;
+          min-height: 1.6em;
+          padding: 0;
+          border: 0;
+          background: transparent;
+          box-sizing: border-box;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 0;
+          max-width: 100%;
+          height: 1.4em;
+          padding: 0;
+          border: 0;
+          border-bottom: 2px solid rgba(255, 255, 255, .82);
+          border-radius: 0;
+          background: transparent;
+          color: transparent;
+          box-sizing: border-box;
+          transition: color .25s ease, border-color .25s ease;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment.is-complete {
+          color: #ffffff;
+          border-bottom-color: #fde68a;
+          text-shadow: none;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segments.verb-progress {
+          gap: 3px .7em !important;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segments.letter-progress {
+          flex-wrap: wrap !important;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment.letter-slot {
+          min-width: .48em;
+          width: clamp(.48em, 1vw, .7em);
+          flex: 0 0 clamp(.48em, 1vw, .7em);
+          color: #ffffff;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment.word-slot {
+          flex: 0 1 auto;
+          min-height: 1.55em;
+          height: auto;
+          overflow-wrap: anywhere;
+          text-align: center;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment.word-slot.is-complete {
+          flex: 0 0 auto;
+          width: auto !important;
+          white-space: nowrap;
+          overflow-wrap: normal;
+        }
+        #flashcard-container .ruleta-segments-display .formed-segment.letter-slot.is-complete {
+          color: #fff;
+        }
+        @keyframes ludCorrectLetterGlow {
+          0%, 100% { filter: brightness(1); box-shadow: 0 0 0 rgba(125, 211, 252, 0); }
+          45% { filter: brightness(1.7); box-shadow: 0 0 18px rgba(125, 211, 252, .95), 0 0 34px rgba(56, 189, 248, .72); }
+        }
+        #flashcard-container .ruleta-rect-tile.tile-letter-correct {
+          animation: ludCorrectLetterGlow .72s ease-out both;
+          border-color: #bae6fd !important;
+          z-index: 5;
+        }
+      `;
+      template.body.appendChild(ludCompletionStyle);
+      let page = '<!doctype html>\n' + template.documentElement.outerHTML;
+      page = page.replace(/U1G3T([1-4])/g, 'U3G8T$1')
+        .replace(/'lastSuccessPercentage'/g, "'" + KEY + "_lastSuccessPercentage'")
+        .replace(/'lastUpdateDate'/g, "'" + KEY + "_lastUpdateDate'")
+        .replace(/lud-hablar/g, KEY)
+        .replace(/u1-hablar_sel/g, KEY)
+        .replace(/u1-hablar_gameProgress/g, KEY + '_legacyProgress')
+        .replace(/u1-hablar_shuffleCount/g, KEY + '_shuffleCount')
+        .replace(/u1-hablar_btn_sounds_muted/g, KEY + '_btn_sounds_muted')
+        .replace(/u1-hablar-test-unlock-state-v2/g, 'gr-u3-mixta-test-unlock-state-v2')
+        .replace(/'u1-hablar'/g, "'gr-u3-mixta'")
+        .replace(/vecesDate/g, KEY + 'Date')
+        .replace(/vecesPoints/g, KEY + 'Points')
+        .replace(/&nbsp;HABLAR&nbsp;/g, '&nbsp;TEST 4, UNIDAD 3&nbsp;');
+      page = page.replace(/const audioFiles = \[[\s\S]*?\];/, 'const audioFiles = ' + JSON.stringify(ordered.map((card) => metadata.find((item) => item.cardId === card.dataset.cardId).audioFile)) + ';');
+      page = page.replace(
+        'function getAudioSrcForCountryName(textoBack) {',
+        'function getAudioSrcForCountryName(textoBack) {\n    if (window.getAudioSrcForCountryName) {\n      const custom = window.getAudioSrcForCountryName(textoBack);\n      if (custom) return custom;\n    }'
+      );
+      page = page.replace(
+        'function reassignAudiosToCards() {',
+        'function reassignAudiosToCards() {\n    if (window.reassignAudiosToCards) {\n      try { window.reassignAudiosToCards(); return; } catch(e) { console.warn(e); }\n    }'
+      );
+      // Sustituir solo el bloque de hablar del panel, no los constructores
+      // originales ya registrados dentro de la baraja.
+      const mainScript = Array.from(template.querySelectorAll('script')).find((script) => script.textContent.includes('function generateMultipleChoiceOptions('));
+      if (!mainScript) throw new Error('Falta el panel lúdico');
+      const originalTileLogic = mainScript.textContent.match(/\/\/ Override: tarjetas de conjugación[\s\S]*?(?=\/\/ Crear Contenedor Principal)/);
+      if (!originalTileLogic) throw new Error('Falta el bloque de rectángulos');
+      const panelStart = page.indexOf('function generateMultipleChoiceOptions(');
+      const tileStart = page.indexOf(originalTileLogic[0], panelStart);
+      if (tileStart < 0) throw new Error('No se pudo adaptar el panel lúdico');
+      page = page.slice(0, tileStart)
+        + 'if (typeof window.__ludStopActiveExercise === "function") window.__ludStopActiveExercise();\n'
+        + 'const mixedTopic = getLudCanonicalCardData(card)?.source;\n'
+        + 'const buildTopicTiles = window.LUD_TILE_BUILDERS[mixedTopic];\n'
+        + 'if (buildTopicTiles) allTilesData = buildTopicTiles(targetSentence, allTilesData, card.querySelector(".article-front-card .article-noun-column, .article-noun-column")?.textContent || "");\n\n'
+        + "const verbalTargets = allTilesData.filter((tile) => tile.isTarget && !tile.segmentTarget);\n"
+        + "const verbalTargetText = String(targetSentence || '').toLocaleLowerCase('es').replace(/[.,!¡?¿:;()\\s]/g, '');\n"
+        + "const remainingVerbalTargets = [...verbalTargets];\n"
+        + "let verbalCursor = 0;\n"
+        + "let verbalOrder = 0;\n"
+        + "while (remainingVerbalTargets.length) {\n"
+        + "  const matchIndex = remainingVerbalTargets.findIndex((tile) => {\n"
+        + "    const value = String(tile.word || '').toLocaleLowerCase('es').replace(/\\s/g, '');\n"
+        + "    return value && verbalTargetText.startsWith(value, verbalCursor);\n"
+        + "  });\n"
+        + "  const tile = remainingVerbalTargets.splice(matchIndex >= 0 ? matchIndex : 0, 1)[0];\n"
+        + "  const value = String(tile.word || '').toLocaleLowerCase('es').replace(/\\s/g, '');\n"
+        + "  tile.segmentTarget = true;\n"
+        + "  tile.targetGroup = 'verb-0';\n"
+        + "  tile.targetOrder = verbalOrder++;\n"
+        + "  if (matchIndex >= 0) verbalCursor += value.length;\n"
+        + "}\n\n"
+        + page.slice(tileStart + originalTileLogic[0].length);
+      page = page.replace(
+        '    let timerInterval = null;\n',
+        '    let timerInterval = null;\n    const tileTimerCleanups = [];\n'
+      );
+      page = page.replace(
+        "        rect.addEventListener('touchcancel', () => {\n            if (touchTimer) {\n                clearTimeout(touchTimer);\n                touchTimer = null;\n            }\n        });",
+        "        rect.addEventListener('touchcancel', () => {\n            if (touchTimer) {\n                clearTimeout(touchTimer);\n                touchTimer = null;\n            }\n        });\n        tileTimerCleanups.push(() => {\n            if (flipTimer) { clearTimeout(flipTimer); flipTimer = null; }\n            if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }\n        });"
+      );
+      page = page.replace(
+        '    backElement.appendChild(container);',
+        '    window.__ludStopActiveExercise = () => {\n'
+          + '        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }\n'
+          + '        tileTimerCleanups.forEach((cleanup) => { try { cleanup(); } catch (e) {} });\n'
+          + '        try { removeFrontTimer(); } catch (e) {}\n'
+          + '        try { stopAllAudios(); } catch (e) {}\n'
+          + '        try { if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; window.__ludTransientAudio = null; } } catch (e) {}\n'
+          + '    };\n'
+          + '    backElement.appendChild(container);'
+      );
+      page = page.replace(
+        'function goToNextCard() {',
+        'function goToNextCard() {\n    if (typeof window.__ludStopActiveExercise === "function") window.__ludStopActiveExercise();'
+      );
+      page = page.replace(
+        'function playErrorSound() {\n    const errorAudio',
+        'function playErrorSound() {\n    try { if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; } } catch (e) {}\n    const errorAudio'
+      );
+      page = page.replace(
+        "    errorAudio.volume = 0.5;\n    errorAudio.play().catch(() => {});",
+        "    errorAudio.volume = 0.5;\n    window.__ludTransientAudio = errorAudio;\n    errorAudio.play().catch(() => {});"
+      );
+      page = page.replace(
+        'function playSuccessSound() {\n    const successAudio',
+        'function playSuccessSound() {\n    try { if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; } } catch (e) {}\n    const successAudio'
+      );
+      page = page.replace(
+        "    successAudio.volume = 0.7;\n    successAudio.play().catch(() => {});",
+        "    successAudio.volume = 0.7;\n    window.__ludTransientAudio = successAudio;\n    successAudio.play().catch(() => {});"
+      );
+      page = page.replace(
+        '    const tileElements = [];\n',
+        '    const tileElements = [];\n'
+          + '    const completedSegmentGroups = new Set();\n'
+          + '    const playCorrectLetterSound = () => {\n'
+          + '        try {\n'
+          + '            if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; }\n'
+          + "            const letterAudio = new Audio('https://fawzinoo.github.io/audios/letra.mp3');\n"
+          + '            letterAudio.volume = 0.8;\n'
+          + '            window.__ludTransientAudio = letterAudio;\n'
+          + '            letterAudio.play().catch(() => {});\n'
+          + '        } catch (e) {}\n'
+          + '    };\n'
+          + '    const playCompletedSegmentSound = () => {\n'
+          + "        try {\n"
+          + "            if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; }\n"
+          + "            const segmentAudio = new Audio('https://fawzinoo.github.io/audios/lud-completed.mp3');\n"
+          + '            segmentAudio.volume = 0.8;\n'
+          + '            window.__ludTransientAudio = segmentAudio;\n'
+          + '            segmentAudio.play().catch(() => {});\n'
+          + '        } catch (e) {}\n'
+          + '    };\n'
+      );
+      page = page.replace(
+        '        let flipTimer = null;\n',
+        '        let flipTimer = null;\n'
+          + '        const celebrateCompletedSegment = (candidate = rect, options = {}) => {\n'
+          + "            const group = candidate.dataset.targetGroup;\n"
+          + "            if (candidate.dataset.segmentTarget !== 'true' || !group || completedSegmentGroups.has(group)) return false;\n"
+          + "            const selectedTiles = tileElements.filter((el) => el.dataset.isPinned === 'true');\n"
+          + "            if (selectedTiles.some((el) => el.dataset.isTarget !== 'true')) return false;\n"
+          + "            const groupTiles = tileElements.filter((el) => el.dataset.targetGroup === group);\n"
+          + "            if (!groupTiles.length || !groupTiles.every((el) => el.dataset.isPinned === 'true')) return false;\n"
+          + '            completedSegmentGroups.add(group);\n'
+          + "            const orderedGroups = [...new Set(tileElements.filter((el) => el.dataset.segmentTarget === 'true').map((el) => el.dataset.targetGroup))].sort((a, b) => Math.min(...tileElements.filter((el) => el.dataset.targetGroup === a).map((el) => Number(el.dataset.targetOrder || 0))) - Math.min(...tileElements.filter((el) => el.dataset.targetGroup === b).map((el) => Number(el.dataset.targetOrder || 0))));\n"
+          + "            const segmentColorIndex = orderedGroups.indexOf(group);\n"
+          + '            groupTiles.sort((a, b) => Number(a.dataset.targetOrder || 0) - Number(b.dataset.targetOrder || 0));\n'
+          + '            groupTiles.forEach((el, index) => {\n'
+          + "                el.classList.remove('tile-correct');\n"
+          + "                if (segmentColorIndex > 0 && segmentColorIndex <= 5) el.classList.add('tile-completed-segment-' + segmentColorIndex);\n"
+          + '                el.style.setProperty(\'--lud-complete-delay\', `${index * 120}ms`);\n'
+          + "                el.classList.add('tile-completed');\n"
+          + '            });\n'
+          + "            renderSegmentProgress();\n"
+          + '            if (options.playSound !== false) playCompletedSegmentSound();\n'
+          + "            const allSegmentTiles = tileElements.filter((el) => el.dataset.segmentTarget === 'true');\n"
+          + "            const allSegmentsComplete = allSegmentTiles.length > 0 && allSegmentTiles.every((el) => el.dataset.isPinned === 'true');\n"
+          + "            if (allSegmentsComplete && options.scheduleCheck !== false) window.setTimeout(() => {\n"
+          + "                try {\n"
+          + "                    const currentSelection = tileElements.filter((el) => el.dataset.isPinned === 'true');\n"
+          + "                    if (currentSelection.some((el) => el.dataset.isTarget !== 'true')) return;\n"
+          + "                    executeCheck(false);\n"
+          + "                } catch (e) {}\n"
+          + "            }, 850);\n"
+          + '            return true;\n'
+          + '        };\n'
+      );
+      page = page.replace(
+        "        rect.dataset.isTarget = tileData.isTarget ? 'true' : 'false';\n",
+        "        rect.dataset.isTarget = tileData.isTarget ? 'true' : 'false';\n"
+          + "        rect.dataset.targetGroup = tileData.targetGroup || '';\n"
+          + "        rect.dataset.segmentTarget = tileData.segmentTarget ? 'true' : 'false';\n"
+          + "        rect.dataset.targetOrder = Number.isFinite(tileData.targetOrder) ? String(tileData.targetOrder) : '';\n"
+          + "        rect.dataset.displayWord = tileData.displayWord || '';\n"
+      );
+      page = page.replace(
+        '                playTilePinSound(true);\n',
+        '                playTilePinSound(true);\n'
+          + '                renderSegmentProgress();\n'
+          + "                if (rect.dataset.isTarget === 'true' && rect.dataset.segmentTarget === 'true' && (/^verb-/.test(rect.dataset.targetGroup || '') || Array.from(rect.dataset.word || '').length === 1)) {\n"
+          + "                    rect.classList.remove('tile-letter-correct');\n"
+          + '                    void rect.offsetWidth;\n'
+          + "                    rect.classList.add('tile-letter-correct');\n"
+          + "                    const groupTiles = tileElements.filter((el) => el.dataset.targetGroup === rect.dataset.targetGroup);\n"
+          + "                    if (!groupTiles.every((el) => el.dataset.isPinned === 'true')) playCorrectLetterSound();\n"
+          + '                }\n'
+          + '                celebrateCompletedSegment();\n'
+      );
+      page = page.replace(
+        '                playTilePinSound(false);\n            }\n        };',
+        '                playTilePinSound(false);\n'
+          + '                renderSegmentProgress();\n'
+          + '                const currentSelection = tileElements.filter((el) => el.dataset.isPinned === \'true\');\n'
+          + '                const allSegmentTiles = tileElements.filter((el) => el.dataset.segmentTarget === \'true\');\n'
+          + '                const cleanCompletedSelection = allSegmentTiles.length > 0 && currentSelection.length === allSegmentTiles.length && currentSelection.every((el) => el.dataset.isTarget === \'true\');\n'
+          + '                if (cleanCompletedSelection) {\n'
+          + '                    const groupsToCelebrate = [...new Set(allSegmentTiles.map((el) => el.dataset.targetGroup))].filter((group) => !completedSegmentGroups.has(group));\n'
+          + '                    let celebratedAny = false;\n'
+          + '                    groupsToCelebrate.forEach((group) => {\n'
+          + '                        const groupTile = allSegmentTiles.find((el) => el.dataset.targetGroup === group);\n'
+          + '                        if (groupTile && celebrateCompletedSegment(groupTile, { playSound: false, scheduleCheck: false })) celebratedAny = true;\n'
+          + '                    });\n'
+          + '                    if (celebratedAny) playCompletedSegmentSound();\n'
+          + '                    window.setTimeout(() => { try { executeCheck(false); } catch (e) {} }, 850);\n'
+          + '                }\n'
+          + '            }\n'
+          + '        };'
+      );
+      page = page.replace(
+        "    checkBtn.className = 'ruleta-check-btn';\n",
+        "    checkBtn.className = 'ruleta-check-btn ruleta-segments-display';\n"
+          + "    checkBtn.setAttribute('aria-live', 'polite');\n"
+          + "    checkBtn.disabled = true;\n"
+      );
+      page = page.replace(
+        "    checkBtn.innerHTML = `<i class=\"fas fa-check-circle\"></i> COMPROBAR`;\n",
+        "    checkBtn.innerHTML = '<span class=\"formed-segments\"></span>';\n"
+          + "    const renderSegmentProgress = () => {\n"
+          + "        const progress = checkBtn.querySelector('.formed-segments');\n"
+          + "        if (!progress) return;\n"
+          + "        progress.innerHTML = '';\n"
+          + "        const groups = [...new Set(tileElements.filter((el) => el.dataset.segmentTarget === 'true').map((el) => el.dataset.targetGroup))].sort((a, b) => Math.min(...tileElements.filter((el) => el.dataset.targetGroup === a).map((el) => Number(el.dataset.targetOrder || 0))) - Math.min(...tileElements.filter((el) => el.dataset.targetGroup === b).map((el) => Number(el.dataset.targetOrder || 0))));\n"
+          + "        progress.classList.toggle('verb-progress', groups.some((group) => /^verb-/.test(group)));\n"
+          + "        progress.classList.toggle('letter-progress', groups.some((group) => /^verb-/.test(group) || tileElements.filter((el) => el.dataset.targetGroup === group).every((el) => Array.from(el.dataset.word || '').length === 1)));\n"
+          + "        groups.forEach((group) => {\n"
+          + "            const groupTiles = tileElements.filter((el) => el.dataset.targetGroup === group).sort((a, b) => Number(a.dataset.targetOrder || 0) - Number(b.dataset.targetOrder || 0));\n"
+          + "            const isVerbGroup = /^verb-/.test(group);\n"
+          + "            const isLetterGroup = isVerbGroup || groupTiles.every((tile) => Array.from(tile.dataset.word || '').length === 1);\n"
+          + "            const wordGroup = document.createElement('span');\n"
+          + "            wordGroup.className = 'formed-word';\n"
+          + "            if (isLetterGroup) {\n"
+          + "                groupTiles.forEach((tile) => {\n"
+          + "                    const isPinned = tile.dataset.isPinned === 'true';\n"
+          + "                    Array.from(tile.dataset.word || '').forEach((letter) => {\n"
+          + "                        const segment = document.createElement('span');\n"
+          + "                        segment.className = 'formed-segment verb-segment letter-slot' + (isPinned ? ' is-complete' : '');\n"
+          + "                        segment.textContent = isPinned ? letter : '';\n"
+          + "                        wordGroup.appendChild(segment);\n"
+          + "                    });\n"
+          + "                });\n"
+          + "            } else {\n"
+          + "                const word = groupTiles.map((el) => el.dataset.word).join('');\n"
+          + "                const displayWord = groupTiles[0]?.dataset.displayWord || word;\n"
+          + "                const segment = document.createElement('span');\n"
+          + "                const isComplete = groupTiles.every((el) => el.dataset.isPinned === 'true');\n"
+          + "                segment.className = 'formed-segment word-slot' + (isComplete ? ' is-complete' : '');\n"
+          + "                segment.textContent = isComplete ? displayWord : '';\n"
+          + "                segment.style.width = Math.max(1.5, word.length * 0.57) + 'em';\n"
+          + "                wordGroup.appendChild(segment);\n"
+          + "            }\n"
+          + "            progress.appendChild(wordGroup);\n"
+          + "        });\n"
+          + "    };\n"
+          + "    renderSegmentProgress();\n"
+      );
+      page = page.replace(
+        "            selectedTiles.forEach(el => el.classList.add('tile-correct'));\n            try { vibrar(120); } catch(err) {}\n            playSuccessSound();",
+        "            selectedTiles.forEach((el, index) => {\n"
+          + "                el.classList.remove('tile-correct');\n"
+          + "                el.style.setProperty('--lud-complete-delay', `${index * 120}ms`);\n"
+          + "                el.classList.add('tile-completed');\n"
+          + "            });\n"
+          + "            try { vibrar(120); } catch(err) {}\n"
+          + "            // El sonido lud-completed.mp3 ya se reproduce una sola vez\n"
+          + "            // al completar el segmento, dentro de celebrateCompletedSegment."
+      );
+      // Recuperar la secuencia original después del efecto de fichas:
+      // esperar dos segundos, reproducir la victoria y mostrar la respuesta.
+      page = page.replace(
+        "            setTimeout(() => {\n                betweenAttempts = false;\n                canFlip = false;\n                renderMasMenosRevealedAnswer(backElement, correctAnswer);",
+        "            setTimeout(() => {\n                playSuccessSound();\n                betweenAttempts = false;\n                canFlip = false;\n                renderMasMenosRevealedAnswer(backElement, correctAnswer);"
+      );
+      page = page.replace(
+        "            }, 1200);\n\n            scheduleStatsBoxUpdate();",
+        "            }, 2000);\n\n            scheduleStatsBoxUpdate();"
+      );
+      // Aplicar la limpieza dentro del panel lúdico; el documento base tiene
+      // otros temporizadores que no deben interferir con esta baraja.
+      const generatedPanelStart = page.indexOf('function generateMultipleChoiceOptions(');
+      if (generatedPanelStart >= 0) {
+        let generatedPanel = page.slice(generatedPanelStart);
+        generatedPanel = generatedPanel.replace(/\n\s*const tileTimerCleanups = \[\];/g, '');
+        generatedPanel = generatedPanel.replace(
+          '    let timerInterval = null;\n',
+          '    let timerInterval = null;\n'
+            + '    const tileTimerCleanups = [];\n'
+            + '    window.__ludStopActiveExercise = () => {\n'
+            + '        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }\n'
+            + '        tileTimerCleanups.forEach((cleanup) => { try { cleanup(); } catch (e) {} });\n'
+            + '        try { if (typeof removeFrontTimer === "function") removeFrontTimer(); } catch (e) {}\n'
+            + '        try { stopAllAudios(); } catch (e) {}\n'
+            + '        try { if (window.__ludTransientAudio) { window.__ludTransientAudio.pause(); window.__ludTransientAudio.currentTime = 0; window.__ludTransientAudio = null; } } catch (e) {}\n'
+            + '    };\n'
+        );
+        page = page.slice(0, generatedPanelStart) + generatedPanel;
+      }
+      page = page.replace('<span class="tile-text">${tileData.word}</span>',
+        '<span class="tile-text${tileData.nominalPart || String(tileData.label || tileData.word).length >= 4 ? " tile-text-long" : ""}${String(tileData.label || tileData.word).length >= 9 ? " tile-text-very-long" : ""}">${tileData.label || tileData.word}</span>');
+      // Eliminar límites de la baraja original al asignar los 39 audios.
+      localStorage.setItem(KEY + '-draw', JSON.stringify(draw));
+      document.open();
+      document.write(page);
+      document.close();
+      document.getElementById('loading')?.remove();
+    } catch (error) {
+      console.error(error);
+      const loading = document.getElementById('loading');
+      if (loading) loading.textContent = 'No se pudo cargar el ejercicio. Recarga la página para volver a intentarlo.';
+    }
+  })();
+  </script>
+</body>
+</html>

@@ -15045,11 +15045,9 @@ body.chat-typing .chat-footer {
     </div>
     
 
-    <!-- Análisis de audio para verificación fonética -->
-    <script src="https://unpkg.com/meyda/dist/web/meyda.min.js"></script>
-
-    <!-- Agregar la librería de confeti -->
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <!-- El confeti es opcional y no debe retrasar el inicio del ejercicio. -->
+    <script>window.confetti = window.confetti || function () {};</script>
+    <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
 
     <script>
 const MINOR_WORDS_LIST = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'a', 'de', 'en', 'con', 'por', 'para', 'al', 'del', 'mi', 'tu', 'su', 'mis', 'tus', 'sus', 'este', 'esta', 'ese', 'esa', 'aquel', 'aquella', 'ante', 'bajo', 'desde', 'durante', 'entre', 'hacia', 'hasta', 'mediante', 'según', 'sin', 'sobre', 'tras'];
@@ -16000,22 +15998,24 @@ function goToNextCard() {
 
 function showCard(index) {
     isAdvancingToNextCard = false;
-    const flashcards = Array.from(document.querySelectorAll('.flashcard'));
-flashcards.forEach(card => {
-    card.classList.remove('is-visible', 'flipped');
-    card.dataset.countdownActive = 'false';
-    const back = card.querySelector('.back');
-    // Elimina cualquier contador de intentos
-    back.querySelectorAll('.intentos-back').forEach(el => el.remove());
-    if (card.dataset.answer) {
-        setCanonicalBackText(back, card.dataset.answer);
-    }
-});
+    // Solo la tarjeta que sale y la que entra necesitan restauración.
+    // Reescribir los 35 reversos en cada paso bloqueaba la interacción móvil.
+    const nextCard = flashcards[index];
+    const cardsToReset = new Set(document.querySelectorAll('.flashcard.is-visible, .flashcard.flipped'));
+    if (nextCard) cardsToReset.add(nextCard);
+    cardsToReset.forEach(card => {
+        card.classList.remove('is-visible', 'flipped');
+        card.dataset.countdownActive = 'false';
+        const back = card.querySelector('.back');
+        if (!back) return;
+        back.querySelectorAll('.intentos-back').forEach(el => el.remove());
+        if (card.dataset.answer) setCanonicalBackText(back, card.dataset.answer);
+    });
 
-    if (flashcards[index]) {
+    if (nextCard) {
         currentCardIndex = index;
         syncVoiceAttemptsWithCurrentCard();
-        flashcards[index].classList.add('is-visible');
+        nextCard.classList.add('is-visible');
         
         // Precargar audio de la tarjeta actual para evitar delays
         if (hasValidAudio(index) && audios[index]) {
@@ -19335,7 +19335,8 @@ function stopInstructionAudioOnInteraction(e) {
     }
 }
 document.addEventListener('pointerdown', stopInstructionAudioOnInteraction, true);
-document.addEventListener('click', stopInstructionAudioOnInteraction, true);
+// Los clics táctiles ya disparan pointerdown; reservar click para el teclado.
+document.addEventListener('click', e => { if (e.detail === 0) stopInstructionAudioOnInteraction(e); }, true);
 document.addEventListener('input', stopAllAudios, true);
 document.addEventListener('keydown', function(e) {
     if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
@@ -41544,6 +41545,30 @@ function installChatButtonHandler() {
           right: auto !important;
           top: -38px !important;
           transform: translateX(-50%) !important;
+        }
+      </style>
+      <style id="com-gr-u3-mixta-mobile-fluidity">
+        @media (pointer: coarse), (max-width: 620px) {
+          #flashcard-container .flashcard,
+          #flashcard-container .letter-option,
+          #flashcard-container .confirm-word-btn,
+          #flashcard-container .clear-word-btn,
+          .button-container .button {
+            touch-action: manipulation !important;
+            -webkit-tap-highlight-color: transparent !important;
+          }
+          #flashcard-container .flashcard {
+            transition: transform .32s ease-out !important;
+          }
+          #flashcard-container .flashcard .article-front-card,
+          #flashcard-container .flashcard .letter-combination-container {
+            -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+          }
+          #flashcard-container .letter-option,
+          .button-container .button {
+            transition-duration: .12s !important;
+          }
         }
       </style></body>
 </html>

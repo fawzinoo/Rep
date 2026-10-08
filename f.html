@@ -219,8 +219,8 @@
             -webkit-transform-style: preserve-3d;
             transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
             will-change: transform;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
+            backface-visibility: visible;
+            -webkit-backface-visibility: visible;
             border-radius: 22px;
             cursor: pointer;
             display: none;
@@ -630,8 +630,8 @@
             -webkit-transform-style: preserve-3d;
             transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
             will-change: transform;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
+            backface-visibility: visible;
+            -webkit-backface-visibility: visible;
             border-radius: 15px;
             cursor: pointer;
             display: none;
@@ -12229,6 +12229,17 @@ body.chat-typing .chat-footer {
     box-sizing: border-box !important;
 }
 
+.flashcard,
+.front,
+.back,
+.letter-combination-container,
+.sentence-display-box,
+.personal-options-row {
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent !important;
+}
+
 /* Control de pointer-events según el estado de volteo para evitar que la cara oculta intercepte clics */
 .flashcard:not(.flipped) .back {
     pointer-events: none !important;
@@ -12316,6 +12327,8 @@ body.chat-typing .chat-footer {
             font-size: clamp(0.85rem, 2.4vw, 1.05rem) !important;
             font-weight: 600 !important;
             cursor: pointer !important;
+            touch-action: manipulation !important;
+            -webkit-tap-highlight-color: transparent !important;
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
             text-align: center !important;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
@@ -12327,7 +12340,7 @@ body.chat-typing .chat-footer {
             opacity: 0;
             transform: translateY(10px);
             will-change: transform, opacity;
-            animation: mcItemEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+            animation: mcItemEnter 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
         }
         .personal-choice-btn:hover {
             transform: translateY(-2px) scale(1.01) !important;
@@ -12339,9 +12352,9 @@ body.chat-typing .chat-footer {
             transform: scale(0.98) !important;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
         }
-        .personal-choice-btn:nth-child(1) { animation-delay: 20ms !important; }
-        .personal-choice-btn:nth-child(2) { animation-delay: 60ms !important; }
-        .personal-choice-btn:nth-child(3) { animation-delay: 100ms !important; }
+        .personal-choice-btn:nth-child(1) { animation-delay: 15ms !important; }
+        .personal-choice-btn:nth-child(2) { animation-delay: 45ms !important; }
+        .personal-choice-btn:nth-child(3) { animation-delay: 75ms !important; }
 
         @keyframes mcItemEnter {
             0%   { opacity: 0; transform: translateY(10px); }
@@ -14803,7 +14816,7 @@ function playSuccessSound() {
 }
 
 function showCountdown(card) {
-    if (!card || card.dataset.countdownActive === 'true' || isAdvancingToNextCard) {
+    if (!card || !card.classList.contains('flipped') || card.dataset.countdownActive === 'true' || isAdvancingToNextCard) {
         return;
     }
     card.dataset.countdownActive = 'true';
@@ -14848,6 +14861,8 @@ function showCountdown(card) {
     const numberSpan = timerDiv.querySelector('.countdown-inline-number');
 
     function updateCounter() {
+        // Al volver al frente, cancelar esta cuenta atrás sin avanzar de tarjeta.
+        if (!card.classList.contains('flipped') || !timerDiv.isConnected) return;
         numberSpan.textContent = count;
         timerDiv.classList.remove('pulse-timer');
         void timerDiv.offsetWidth;
@@ -14989,6 +15004,8 @@ function showCard(index) {
             }
         }
     }
+    canFlip = true;
+    canFlipBack = true;
     updateCounters();
     // Al mostrar una tarjeta, estamos en front: habilitar skip
     betweenAttempts = false;
@@ -16287,6 +16304,8 @@ function showLetterCombination(backElement, correctAnswer) {
         padding: 14px; z-index: 100;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%);
         border-radius: 25px; box-sizing: border-box; overflow: hidden;
+        cursor: pointer !important;
+        touch-action: manipulation !important;
     `;
     
     // Controls Row (X and OK) above display box
@@ -16314,12 +16333,14 @@ function showLetterCombination(backElement, correctAnswer) {
         align-items: center !important;
         justify-content: center !important;
         cursor: pointer !important;
+        touch-action: manipulation !important;
         transition: all 0.2s ease !important;
         font-size: 1.1rem !important;
         font-weight: bold !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
     `;
     clearBtn.innerHTML = '<i class="fas fa-times"></i>';
+    clearBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         vibrar(40);
@@ -16344,12 +16365,14 @@ function showLetterCombination(backElement, correctAnswer) {
         align-items: center !important;
         justify-content: center !important;
         cursor: pointer !important;
+        touch-action: manipulation !important;
         transition: all 0.2s ease !important;
         font-size: 1.1rem !important;
         font-weight: bold !important;
         box-shadow: 0 3px 10px rgba(34, 197, 94, 0.38) !important;
     `;
     confirmBtn.innerHTML = '<i class="fas fa-check"></i>';
+    confirmBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     confirmBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         currentSegmentIndex = -1;
@@ -16439,6 +16462,8 @@ function showLetterCombination(backElement, correctAnswer) {
         padding: 10px 15px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.15);
         text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4); margin-bottom: 16px;
         text-wrap: balance;
+        cursor: pointer !important;
+        touch-action: manipulation !important;
     `;
     container.appendChild(wordDisplay);
     
@@ -16460,6 +16485,8 @@ function showLetterCombination(backElement, correctAnswer) {
         align-items: center !important;
         gap: 10px !important;
         width: 90% !important;
+        cursor: pointer !important;
+        touch-action: manipulation !important;
     `;
     container.appendChild(optionsContainer);
     
@@ -16501,11 +16528,17 @@ function loadSegmentOptions(wordDisplay, optionsContainer, cardEl, cleanAnswer) 
         btn.type = 'button';
         btn.className = 'personal-choice-btn';
         btn.style.cssText = `
-            animation-delay: ${idx * 30 + 10}ms !important;
+            animation-delay: ${idx * 25 + 10}ms !important;
+            touch-action: manipulation !important;
+            cursor: pointer !important;
         `;
         
         btn.textContent = `${labels[idx]}) ${optText}`;
         
+        btn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+        });
+
         const handleChoice = (e) => {
             if (e) {
                 e.preventDefault();
@@ -16533,7 +16566,7 @@ function loadSegmentOptions(wordDisplay, optionsContainer, cardEl, cleanAnswer) 
             setTimeout(() => {
                 wordDisplay.style.boxShadow = 'inset 0 2px 6px rgba(0,0,0,0.15)';
                 wordDisplay.style.borderColor = 'rgba(255, 255, 255, 0.35)';
-            }, 200);
+            }, 180);
             
             loadSegmentOptions(wordDisplay, optionsContainer, cardEl, cleanAnswer);
         };
@@ -17978,19 +18011,24 @@ function attachFlashcardHandlers() {
         card.addEventListener('click', (e) => {
             console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
             
-            // Proteger únicamente los controles reales del ejercicio. Los espacios
-            // vacíos de la zona superior del back deben seguir permitiendo el volteo.
-            const clickedExerciseControl = e.target.closest('.word-display, .word-input-wrapper, .minor-word-label, .letter-option, .clear-word-btn, .confirm-word-btn, .sentence-display-box, .personal-choice-btn, .clear-sentence-btn, .confirm-sentence-btn');
-            if (clickedExerciseControl) {
+            // Proteger únicamente los botones y elementos interactivos directos (botones de opciones, X y OK)
+            const clickedInteractiveControl = e.target.closest('.personal-choice-btn, .clear-sentence-btn, .confirm-sentence-btn, .letter-option, .clear-word-btn, .confirm-word-btn, button, a, [role="button"]');
+            if (clickedInteractiveControl) {
+                e.stopPropagation();
+                return;
+            }
+            
+            // Si el clic fue en una palabra seleccionada dentro del display box para editarla
+            const clickedSelectableSegment = e.target.closest('.sentence-display-box span');
+            if (clickedSelectableSegment) {
                 e.stopPropagation();
                 return;
             }
             
             // El bloqueo solo impide abrir el back; si ya está volteada,
-            // la zona libre superior debe poder devolverla al front.
+            // cualquier toque fuera de los botones debe devolverla al front.
             if (!canFlip && !card.classList.contains('flipped')) {
                 console.log('Volteo bloqueado por canFlip');
-                // Mantener totalmente inmóvil sin feedback
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 return; // No permitir voltear si canFlip es false
@@ -18001,60 +18039,59 @@ function attachFlashcardHandlers() {
             const cardIndex = cards.indexOf(card);
 
             if (card.classList.contains('flipped')) {
-                // Mientras se anuncia/muestra la respuesta final (canFlipBack === false),
-                // no permitir volver al front: hay que dejar la respuesta a la vista.
-                if (!canFlipBack) {
-                    console.log('Volteo a front bloqueado por canFlipBack (respuesta anunciada)');
-                    if (e && typeof e.preventDefault === 'function') e.preventDefault();
-                    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-                    return;
-                }
-                // Si el clic fue SOBRE una letra o el botón de borrar, no gestionar flip aquí
-                const clickedLetter = e.target.closest('.letter-option');
-                const clickedClearBtn = e.target.closest('.clear-word-btn');
-                if (clickedLetter || clickedClearBtn) {
-                    // Dejar que el manejador correspondiente procese el clic
-                    return;
-                }
-                // Permitir volver a front al clicar fuera del área de opciones
-                console.log('Volteando a front desde back (clic fuera de opciones)');
+                // Permitir volver a front al clicar fuera de los botones de opciones
+                console.log('Volteando a front desde back');
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 card.classList.remove('flipped');
+                card.dataset.countdownActive = 'false';
+                backElement.querySelectorAll('.countdown-inline').forEach(el => el.remove());
                 stopAllAudios();
                 
+                let cleanupDone = false;
+                const doCleanup = () => {
+                    if (cleanupDone) return;
+                    if (card.classList.contains('flipped')) return;
+                    cleanupDone = true;
+                    try {
+                        backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
+                        backElement.innerHTML = '';
+                    } catch (err) {}
+                };
+                const onFlipEnd = (ev) => {
+                    if (ev && ev.target === card && ev.propertyName === 'transform') {
+                        card.removeEventListener('transitionend', onFlipEnd);
+                        doCleanup();
+                    }
+                };
+                card.addEventListener('transitionend', onFlipEnd, { once: true });
+                setTimeout(doCleanup, 500);
+
                 showingErrorMessage = false;
                 betweenAttempts = false;
                 canFlip = true;
+                canFlipBack = true;
                 updateSkipButtonState();
             } else {
                 // Volteo de front a back
                 console.log(`Volteando a back cardIndex: ${cardIndex}`);
                 currentCardIndex = cardIndex;
                 voiceAttempts = getCardAttempts(cardIndex);
+                canFlip = true;
+                canFlipBack = (voiceAttempts < 2);
                 stopAllAudios();
                 card.classList.add('flipped');
                 
                 // Reproducir selecciona.wav en el primer volteo de cada sesión
                 playSeleccionaAudioOnce();
                 
-                const existingLetterContent = backElement.querySelector('.letter-combination-container');
-                if (!existingLetterContent) {
-                    backElement.innerHTML = '';
-                }
+                backElement.innerHTML = '';
                 backElement.classList.remove('hidden-text');
                 
                 const correctWord = card.dataset.answer;
                 
                 if (voiceAttempts < 2) {
-                    // Sincronizar estado global antes de mostrar/actualizar
-                    restoreCardState(cardIndex);
-                    
-                    if (!existingLetterContent) {
-                        showLetterCombination(backElement, correctWord);
-                    } else {
-                        updateFormedWordDisplayWithCursor();
-                    }
+                    showLetterCombination(backElement, correctWord);
                 } else {
                     // No quedan intentos - mostrar respuesta directamente
                     console.log(`Sin intentos restantes (${voiceAttempts}), mostrando respuesta directamente`);
@@ -18722,9 +18759,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             element.addEventListener('click', function(e) {
-                // Excluir botones de reiniciar y mezclar (ya tienen su propia vibración)
+                // Excluir botones de reiniciar y mezclar (ya tienen su propio audio)
                 if (this.id !== 'reset-button' && this.id !== 'shuffle-button') {
-                    vibrar(50); // Vibración leve para elementos clickeables
                     playButtonSound();
                 }
             });
@@ -39646,7 +39682,26 @@ function installChatButtonHandler() {
 #flashcard-container .front *,
 #flashcard-container .front *::before,
 #flashcard-container .front *::after { box-sizing: border-box !important; }
-#flashcard-container .flashcard { border-radius: 15px !important; -webkit-transform-style: preserve-3d !important; transform-style: preserve-3d !important; }
+#flashcard-container .flashcard {
+    border-radius: 15px !important;
+    -webkit-transform-style: preserve-3d !important;
+    transform-style: preserve-3d !important;
+    /* El contenedor giratorio sigue recibiendo clics por ambas caras. */
+    -webkit-backface-visibility: visible !important;
+    backface-visibility: visible !important;
+}
+#flashcard-container .flashcard > .front,
+#flashcard-container .flashcard > .back {
+    -webkit-backface-visibility: hidden !important;
+    backface-visibility: hidden !important;
+}
+/* Los controles de la cara oculta tampoco deben interceptar el toque. */
+#flashcard-container .flashcard.flipped > .front,
+#flashcard-container .flashcard.flipped > .front *,
+#flashcard-container .flashcard:not(.flipped) > .back,
+#flashcard-container .flashcard:not(.flipped) > .back * {
+    pointer-events: none !important;
+}
 #flashcard-container .front {
     position: absolute !important; width: 100% !important; height: 100% !important;
     -webkit-backface-visibility: hidden !important; backface-visibility: hidden !important;

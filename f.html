@@ -14998,7 +14998,7 @@ function showCard(index) {
         if (hasValidAudio(index) && audios[index]) {
             try {
                 audios[index].preload = 'auto';
-                audios[index].load();
+                if (audios[index].readyState === 0) audios[index].load();
             } catch(e) {
                 console.log('Error precargando audio:', e);
             }
@@ -16626,6 +16626,8 @@ function formatDynamicSplit(text) {
 }
 
 
+let cancelFinalAnswerPlayback = null;
+
 function showFinalAnswerView(backElement, correctWord, card) {
     canFlip = false;
     canFlipBack = false;
@@ -16738,15 +16740,23 @@ function showFinalAnswerView(backElement, correctWord, card) {
         targetAudio.currentTime = 0;
         try { targetAudio.load(); } catch(e) {}
         
-        targetAudio.play().catch(e => console.log('Audio playback prevented or failed:', e));
-        targetAudio.addEventListener('ended', () => showCountdown(card), { once: true });
-
-        // Safety fallback timeout
-        setTimeout(() => {
-            if (card && card.classList.contains('is-visible')) {
-                showCountdown(card);
-            }
-        }, 5000);
+        let fallbackTimer = null;
+        let active = true;
+        const cancel = () => {
+            active = false;
+            clearTimeout(fallbackTimer);
+            targetAudio.removeEventListener('ended', onEnded);
+        };
+        const onEnded = () => {
+            if (!active) return;
+            cancel();
+            if (cancelFinalAnswerPlayback === cancel) cancelFinalAnswerPlayback = null;
+            if (card && card.classList.contains('is-visible') && card.classList.contains('flipped')) showCountdown(card);
+        };
+        cancelFinalAnswerPlayback = cancel;
+        targetAudio.addEventListener('ended', onEnded, { once: true });
+        fallbackTimer = setTimeout(onEnded, 5000);
+        targetAudio.play().catch(onEnded);
     } else {
         showCountdown(card);
     }
@@ -18053,6 +18063,7 @@ function attachFlashcardHandlers() {
                     if (cleanupDone) return;
                     if (card.classList.contains('flipped')) return;
                     cleanupDone = true;
+                    card.removeEventListener('transitionend', onFlipEnd);
                     try {
                         backElement.querySelectorAll('.intentos-back').forEach(el => el.remove());
                         backElement.innerHTML = '';
@@ -18398,41 +18409,21 @@ function playSeleccionaAudioOnce() {
 }
 
 function stopAllAudios() {
-    if (introAudio) {
-        try {
-            introAudio.pause();
-            introAudio.currentTime = 0;
-        } catch (e) {}
+    if (cancelFinalAnswerPlayback) {
+        cancelFinalAnswerPlayback();
+        cancelFinalAnswerPlayback = null;
     }
     if (seleccionaAudioTimer) {
         clearTimeout(seleccionaAudioTimer);
         seleccionaAudioTimer = null;
     }
-    if (seleccionaAudio) {
-        try {
-            seleccionaAudio.pause();
-            seleccionaAudio.currentTime = 0;
-        } catch (e) {}
-    }
-    // Detener audios principales del array
-    audios.forEach(audio => {
-        try {
-            audio.pause();
-            audio.currentTime = 0;
-        } catch(e) {
-            console.log('Error deteniendo audio:', e);
-        }
-    });
-    
-    // Detener cualquier audio de éxito que pueda estar reproduciéndose
-    const allAudioElements = document.querySelectorAll('audio');
-    allAudioElements.forEach(audio => {
-        try {
-            audio.pause();
-            audio.currentTime = 0;
-        } catch(e) {
-            console.log('Error deteniendo audio element:', e);
-        }
+    // Un audio pausado se reposiciona justo antes de reproducirlo.
+    // Buscar a cero todos los audios ya cargados provoca trabajo de decodificación
+    // en cada toque, aunque esas tarjetas ya no estén visibles.
+    const candidates = new Set([introAudio, seleccionaAudio, ...audios, ...document.querySelectorAll('audio')]);
+    candidates.forEach(audio => {
+        if (!audio || audio.paused || audio.ended) return;
+        try { audio.pause(); } catch (e) {}
     });
 }
 
@@ -18443,7 +18434,11 @@ function stopInstructionAudioOnInteraction(e) {
     }
 }
 document.addEventListener('pointerdown', stopInstructionAudioOnInteraction, true);
-document.addEventListener('click', stopInstructionAudioOnInteraction, true);
+// Los clics táctiles/de ratón ya se atendieron en pointerdown.
+// Conservar los clics generados por teclado o por los atajos del juego.
+document.addEventListener('click', function(event) {
+    if (event.detail === 0) stopInstructionAudioOnInteraction(event);
+}, true);
 document.addEventListener('input', stopAllAudios, true);
 document.addEventListener('keydown', function(e) {
     if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
@@ -18749,69 +18744,11 @@ window.addEventListener('load', () => { installResetButtonHandler(); installRese
 
 // Función setBackAttempts eliminada - ya no se necesita para opciones múltiples
 
-// Agregar sonido a todos los elementos clickeables excepto reiniciar y mezclar
-document.addEventListener('DOMContentLoaded', function() {
-    // Función para agregar sonido a elementos clickeables
-    function addClickSound(element) {
-        if (element && !element.hasAttribute('data-sound-added')) {
-            // Excluir tarjetas de palabras del modal de resumen para evitar que suenen
-            if (element.classList.contains('correct-word') || element.classList.contains('incorrect-word')) {
-                return;
-            }
-            element.addEventListener('click', function(e) {
-                // Excluir botones de reiniciar y mezclar (ya tienen su propio audio)
-                if (this.id !== 'reset-button' && this.id !== 'shuffle-button') {
-                    playButtonSound();
-                }
-            });
-            element.setAttribute('data-sound-added', 'true');
-        }
-    }
-    
-    // Agregar sonido a elementos específicos
-    const clickableElements = [
-        // Botones de control de bandera
-        '.flag-control-btn',
-        '.flag-close-btn',
-        // Botones de modal
-        '.modal-close-btn',
-        // Pills de estadísticas clickeables
-        '.pill-correctas',
-        '.pill-incorrectas',
-        '.pill-progreso'
-    ];
-    
-    clickableElements.forEach(selector => {
-        document.querySelectorAll(selector).forEach(addClickSound);
-    });
-    
-    // Observer para elementos que se crean dinámicamente
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) { // Element node
-                    // Buscar elementos clickeables en el nodo agregado
-                    clickableElements.forEach(selector => {
-                        if (node.matches && node.matches(selector)) {
-                            addClickSound(node);
-                        }
-                        node.querySelectorAll && node.querySelectorAll(selector).forEach(addClickSound);
-                    });
-                    
-                    // Manejar elementos con onclick dinámicos
-                    if (node.onclick || node.getAttribute('onclick')) {
-                        addClickSound(node);
-                    }
-                    node.querySelectorAll && node.querySelectorAll('[onclick]').forEach(addClickSound);
-                }
-            });
-        });
-    });
-    
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+// Un solo listener de sonido, sin observar cada reconstrucción de las opciones.
+document.addEventListener('click', function(event) {
+    const element = event.target.closest('.flag-control-btn, .flag-close-btn, .modal-close-btn, .pill-correctas, .pill-incorrectas, .pill-progreso, [onclick]');
+    if (!element || element.closest('.correct-word, .incorrect-word')) return;
+    if (element.id !== 'reset-button' && element.id !== 'shuffle-button') playButtonSound();
 });
 
 // Prevenir menú contextual (clic derecho y presión larga)
@@ -39774,6 +39711,19 @@ function installChatButtonHandler() {
         font-size: clamp(1.785rem, 7.21vw, 2.66rem) !important;
     }
 }
+</style>
+
+<style id="card-interaction-performance">
+#flashcard-container .flashcard { will-change: auto; }
+#flashcard-container .flashcard.is-visible { will-change: transform; }
+#flashcard-container .back { animation: none !important; }
+#flashcard-container .personal-choice-btn {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+    will-change: auto;
+}
+#flashcard-container .personal-choice-btn:active { transform: scale(0.98) !important; }
 </style>
 </body>
 </html>

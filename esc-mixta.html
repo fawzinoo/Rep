@@ -11997,6 +11997,36 @@ body.chat-typing .chat-footer {
     }
 }
 </style>
+
+<style id="mixed-mobile-revealed-answer-wrap">
+@media (max-width: 620px) {
+    html body #flashcard-container .flashcard .back .back-conjugation,
+    html body #flashcard-container .flashcard .back .article-answer-card {
+        width: 94% !important;
+        max-width: 94% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    html body #flashcard-container .flashcard .back .back-verb-main,
+    html body #flashcard-container .flashcard .back .answer-line,
+    html body #flashcard-container .flashcard .back .personal-front-clue-wrapper {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+        text-wrap: balance;
+    }
+    html body #flashcard-container .flashcard .back .back-verb-main,
+    html body #flashcard-container .flashcard .back .back-verb-main * {
+        white-space: normal !important;
+        word-break: normal !important;
+        overflow-wrap: normal !important;
+        hyphens: none !important;
+    }
+}
+</style>
 </head>
 <body>
 
@@ -18110,7 +18140,7 @@ function playCardAudio(card, onEnded) {
         if (!card) { if (onEnded) onEnded(); return; }
         const cardAudioFile = card.dataset?.audioFile;
         const answer = (card.dataset?.answer || '').trim();
-        const src = (cardAudioFile ? baseUrl + cardAudioFile : null) || getAudioSrcForCountryName(answer);
+        const src = (cardAudioFile ? new URL(cardAudioFile, baseUrl).href : null) || getAudioSrcForCountryName(answer);
         if (!src) { if (onEnded) onEnded(); return; }
         if (!card._audioEl) {
             card._audioEl = new Audio();
@@ -18119,10 +18149,8 @@ function playCardAudio(card, onEnded) {
         const a = card._audioEl;
         try { a.pause(); } catch {}
 
-        let timeoutId = null;
         let called = false;
         const cleanUp = () => {
-            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
             a.onended = null;
             a.onerror = null;
         };
@@ -18134,24 +18162,16 @@ function playCardAudio(card, onEnded) {
             if (onEnded) onEnded();
         };
 
-        a.src = src;
+        const answerSrc = new URL(src, document.baseURI).href;
+        if (a.src !== answerSrc) {
+            a.src = answerSrc;
+            a.load();
+        }
         a.currentTime = 0;
         a.onended = handleEnded;
         a.onerror = handleEnded;
 
-        timeoutId = setTimeout(() => {
-            console.log('⏰ Safety timeout reached for card audio playback, advancing...');
-            // CRÍTICO: si en este punto el play() real todavía no ha arrancado
-            // (red lenta, audio no cacheado, decodificación tardía...), seguir
-            // adelante con la UI (nueva tarjeta) sin detener el elemento deja
-            // el play() pendiente en vuelo: cuando el navegador por fin arranca
-            // la reproducción real, segundos después, suena el audio de ESTA
-            // tarjeta mientras ya se ve otra distinta. Forzar pause() aquí
-            // cancela esa reproducción diferida y evita el desajuste audio/tarjeta.
-            try { a.pause(); a.currentTime = 0; } catch {}
-            handleEnded();
-        }, 2500);
-
+        // Wait for the complete recording; long answers must not be cut short.
         a.play().catch(() => { handleEnded(); });
     } catch (e) { if (onEnded) onEnded(); }
 }

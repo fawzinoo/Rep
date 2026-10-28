@@ -1,6 +1,43 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="startup-modal-pending">
 <head>
+<meta charset="UTF-8">
+<style id="startup-modal-before-content">
+html.startup-modal-pending body > :not(#continue-game-overlay) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+html.startup-modal-pending { overflow: hidden; }
+</style>
+<script id="startup-modal-content-guard">
+(() => {
+    let modalSeen = false;
+    const observer = new MutationObserver(() => {
+        const modal = document.getElementById('continue-game-overlay');
+        if (modal) modalSeen = true;
+        else if (modalSeen) {
+            document.documentElement.classList.remove('startup-modal-pending');
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Solo los botones del modal permiten iniciar o continuar el ejercicio.
+    for (const type of ['pointerdown', 'click']) {
+        document.addEventListener(type, event => {
+            if (event.target?.id !== 'continue-game-overlay') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && document.getElementById('continue-game-overlay')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+})();
+</script>
+
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=no">
@@ -11977,6 +12014,26 @@ body.chat-typing .chat-footer {
     }
 }
 </style>
+<style id="desktop-mouse-cursor-visible">
+@media (any-pointer: fine) {
+    html.keyboard-hidden *, html body.keyboard-hidden *,
+    html body .keyboard-hidden *,
+    html.keyboard-hidden *::before, html.keyboard-hidden *::after,
+    html body.keyboard-hidden *::before, html body.keyboard-hidden *::after {
+        cursor: auto !important;
+    }
+    html body button, html body .button, html body .pill,
+    html body .flashcard, html body a, html body [onclick] {
+        cursor: pointer !important;
+    }
+    html body input, html body textarea, html body [contenteditable="true"],
+    html body.keyboard-hidden input, html body.keyboard-hidden textarea,
+    html body.keyboard-hidden [contenteditable="true"] {
+        cursor: text !important;
+        caret-color: auto !important;
+    }
+}
+</style>
 </head>
 <body>
 
@@ -13579,6 +13636,7 @@ body.chat-typing .chat-footer {
                         'tienes correo electronico': ['¿Tienes', 'correo electrónico?'],
                         'si es sara.santi@gmail.com': ['Sí, es', 'Sara.Santi@gmail.com']
                     };
+                    const localAudioFiles = Array.from({ length: cardData.length }, (_, i) => `tu-${i + 1}.mp3`);
                     cardData.forEach((item, index) => {
                         const correct = clean(item.es);
                         const highlightedHTML = typeof renderPersonalAnswerWithSplit === 'function' ? renderPersonalAnswerWithSplit(correct, item.verb) : correct;
@@ -13587,7 +13645,7 @@ body.chat-typing .chat-footer {
                         card.dataset.answer = correct;
                         card.dataset.cardId = `u1-tu-${index + 1}`;
                         card.dataset.contentIndex = String(index);
-                        card.dataset.audioFile = `tu-${index + 1}.mp3`;
+                        card.dataset.audioFile = localAudioFiles[index];
                         
                         card.innerHTML = `
                             <div class="front">
@@ -15997,7 +16055,7 @@ function restoreGameState(gameState) {
                         card.dataset.audioFile = canonical.audioFile || cardData.audioFile;
                     } else if (contentIndex !== undefined && contentIndex !== '') {
                         // Fallback para estados antiguos que no guardaron audioFile
-                        card.dataset.audioFile = `tu-${Number(contentIndex) + 1}.mp3`;
+                        card.dataset.audioFile = audioFiles[Number(contentIndex)] || '';
                     }
                 }
             });
@@ -16594,10 +16652,8 @@ function getAudioSrcForCountryName(textoBack) {
     if (!key) return null;
     const mapping = {
         'como estas': 'tu-1.mp3',
-        'estoy bien gracias': 'tu-2.mp3',
         'estoy bien': 'tu-2.mp3',
         'que tal estas': 'tu-3.mp3',
-        'estoy muy bien gracias': 'tu-4.mp3',
         'estoy muy bien': 'tu-4.mp3',
         'como te llamas': 'tu-5.mp3',
         'me llamo sara': 'tu-6.mp3',
@@ -16610,7 +16666,6 @@ function getAudioSrcForCountryName(textoBack) {
         'cuantos anos tienes': 'tu-13.mp3',
         'tengo veinte anos': 'tu-14.mp3',
         'que edad tienes': 'tu-15.mp3',
-        'tengo 20 anos': 'tu-16.mp3',
         'donde vives': 'tu-17.mp3',
         'vivo en madrid': 'tu-18.mp3',
         'de donde eres': 'tu-19.mp3',
@@ -16628,9 +16683,8 @@ function getAudioSrcForCountryName(textoBack) {
         'donde estudias': 'tu-31.mp3',
         'estudio en la universidad': 'tu-32.mp3',
         'tienes movil': 'tu-33.mp3',
-        'si es el 0618334455': 'tu-34.mp3',
         'tienes correo electronico': 'tu-35.mp3',
-        'si es sara.santi@gmail.com': 'tu-36.mp3'
+        'si': 'tu-36.mp3'
     };
     const file = mapping[key] || audioFilenameByKey[key];
     return file ? baseUrl + file : null;
@@ -16666,7 +16720,11 @@ function playCardAudio(card, onEnded) {
             if (onEnded) onEnded();
         };
 
-        a.src = src;
+        const answerSrc = new URL(src, document.baseURI).href;
+        if (a.src !== answerSrc) {
+            a.src = answerSrc;
+            a.load();
+        }
         a.currentTime = 0;
         a.onended = handleEnded;
         a.onerror = handleEnded;

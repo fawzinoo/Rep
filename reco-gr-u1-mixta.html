@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test4, unidad1</title>
+  <style>
+    body { margin:0; background:#eef7f5; color:#172554; font-family:system-ui,sans-serif; }
+    #loading { min-height:100vh; display:grid; place-items:center; text-align:center; padding:24px; }
+  </style>
+</head>
+<body>
+  <main id="loading">Preparando Test4, unidad1…</main>
+  <script>
+  (() => {
+    const KEY = 'reco-gr-u1-mixta';
+    const SOURCES = [
+      'apellidarse', 'dedicarse', 'determinados', 'estar', 'estudiar',
+      'hablar', 'hacer', 'indeterminantes', 'llamarse', 'posesivos1',
+      'ser', 'tener', 'trabajar', 'vivir'
+    ];
+    const shuffle = (items) => {
+      const result = [...items];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+    const readDocument = (file) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', file, false);
+      request.send(null);
+      if (request.status && (request.status < 200 || request.status >= 300)) {
+        throw new Error('No se pudo cargar ' + file);
+      }
+      return new DOMParser().parseFromString(request.responseText, 'text/html');
+    };
+    const scriptElement = (doc, code) => {
+      const script = doc.createElement('script');
+      script.textContent = code.replace(/<\/script/gi, '<\\/script');
+      return script;
+    };
+    // Este código se instala antes de los manejadores de la plantilla.
+    function installDeckMetadata(cards) {
+      window.RECO_MIXED_CARDS = cards;
+      window.getRecoMixedCard = (card) => cards.find((item) => item.cardId === card.dataset.cardId);
+    }
+    function installMixedGame() {
+      // document.write puede conservar el aviso del documento de carga
+      // mientras el navegador termina de procesar la página original.
+      document.getElementById('loading')?.remove();
+      const verbTopics = new Set([
+        'apellidarse', 'dedicarse', 'estar', 'estudiar', 'hablar', 'hacer',
+        'llamarse', 'ser', 'tener', 'trabajar', 'vivir'
+      ]);
+      const infinitiveStyle = document.createElement('style');
+      infinitiveStyle.textContent = `
+        #flashcard-container .flashcard .front-infinitive {
+          display:block; margin-top:6px; color:#facc15;
+          font-family:"Poppins",sans-serif; font-size:clamp(1.6rem,5vw,2.2rem);
+          font-weight:800; line-height:1.1; letter-spacing:.08em;
+          text-transform:lowercase; text-shadow:0 3px 10px rgba(0,0,0,.38);
+        }
+        #flashcard-container .flashcard .front-infinitive::before {
+          content:""; display:block; width:min(34%,160px); height:2px;
+          margin:0 auto 10px; border-radius:999px;
+          background:rgba(250,204,21,.72); box-shadow:0 1px 6px rgba(250,204,21,.28);
+        }
+      `;
+      document.head.appendChild(infinitiveStyle);
+      // Resolver por identidad, incluso después de mezclar o continuar.
+      window.getAudioSrcForCountryName = (answer) => {
+        const item = window.RECO_MIXED_CARDS.find((card) => card.answer === String(answer || '').replace(/\s+/g, ' ').trim());
+        return item ? 'https://fawzinoo.github.io/audios/' + item.audioFile : null;
+      };
+      window.reassignAudiosToCards = () => {
+        flashcards.forEach((card, index) => {
+          const item = window.getRecoMixedCard(card);
+          if (!item) return;
+          card.dataset.source = item.source;
+          const front = card.querySelector('.front');
+          const pronoun = front?.querySelector('.front-pronoun');
+          if (verbTopics.has(item.source) && pronoun && !front.querySelector('.front-infinitive')) {
+            const label = document.createElement('span');
+            label.className = 'front-infinitive';
+            label.textContent = item.source;
+            pronoun.insertAdjacentElement('afterend', label);
+          }
+          const audio = audios[index];
+          const src = 'https://fawzinoo.github.io/audios/' + item.audioFile;
+          if (audio.src !== src) {
+            audio.pause();
+            audio.src = src;
+          }
+          audio.preload = 'auto';
+        });
+      };
+      const originalShuffle = window.shuffleCards;
+      window.shuffleCards = () => {
+        originalShuffle();
+        reassignAudiosToCards();
+      };
+      reassignAudiosToCards();
+      const startFresh = () => {
+        localStorage.removeItem('reco-gr-u1-mixta_gameProgress');
+        localStorage.removeItem('reco-gr-u1-mixta-draw');
+        localStorage.removeItem('reco-gr-u1-mixta_shuffleCount');
+        window.location.reload();
+      };
+      document.addEventListener('click', (event) => {
+        if (!event.target.closest('#start-fresh-btn')) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        startFresh();
+      }, true);
+      window.resetGame = startFresh;
+    }
+    try {
+      const template = readDocument('reco-hablar.html');
+      template.title = 'Test4, unidad1';
+      const container = template.getElementById('flashcard-container');
+      if (!container) throw new Error('No se encontró el tablero');
+      const mixedStatsBox = template.getElementById('stats-box');
+      if (mixedStatsBox) {
+        // Misma secuencia inicial que sel-hablar: visible durante los hints y
+        // oculto después por la propia lógica del cuadro.
+        mixedStatsBox.classList.remove('hidden');
+        mixedStatsBox.remove();
+      }
+      container.querySelectorAll('style').forEach((style) => template.head.appendChild(style));
+      container.replaceChildren();
+      let savedState = null;
+      let savedDraw = null;
+      try {
+        savedState = JSON.parse(localStorage.getItem(KEY + '_gameProgress') || 'null');
+        const completed = savedState?.completedCards?.length || 0;
+        if (savedState && completed < 42 && (completed || savedState.correctCount || savedState.incorrectCount || savedState.voiceAttempts)) {
+          savedDraw = JSON.parse(localStorage.getItem(KEY + '-draw') || 'null');
+        }
+      } catch (_) {}
+      const draw = [];
+      const deck = [];
+      const metadata = [];
+      for (const source of SOURCES) {
+        const original = readDocument('reco-' + source + '.html');
+        const originals = Array.from(original.querySelectorAll('#flashcard-container > .flashcard'));
+        if (originals.length < 3) throw new Error('Faltan tarjetas de ' + source);
+        const scripts = Array.from(original.querySelectorAll('script'), (script) => script.textContent).join('\n');
+        const audioDeclaration = scripts.match(/const\s+audioFiles\s*=\s*\[([\s\S]*?)\];/);
+        const files = audioDeclaration ? Array.from(audioDeclaration[1].matchAll(/['"]([^'"]+\.(?:wav|mp3))['"]/gi), (match) => match[1]) : [];
+        let indices = Array.isArray(savedDraw) ? savedDraw.find((entry) => entry.source === source)?.indices : null;
+        if (!Array.isArray(indices) || indices.length !== 3 || new Set(indices).size !== 3 || indices.some((i) => !Number.isInteger(i) || i < 0 || i >= originals.length)) {
+          indices = shuffle(originals.map((_, i) => i)).slice(0, 3);
+        }
+        draw.push({ source, indices });
+        for (const index of indices) {
+          const card = originals[index].cloneNode(true);
+          const answer = String(card.dataset.answer || card.querySelector('.back').textContent).replace(/\s+/g, ' ').trim();
+          let audioFile = files[index];
+          if (!audioFile) throw new Error('Falta el audio de ' + source + ': ' + (index + 1));
+          if (source === 'indeterminantes' && index > 0) audioFile = audioFile.replace(/\.+wav$/i, '..wav');
+          card.classList.remove('flipped', 'is-visible', 'completed');
+          card.dataset.cardId = KEY + '-' + source + '-' + (index + 1);
+          card.dataset.source = source;
+          card.dataset.answer = answer;
+          card.dataset.backHtml = card.querySelector('.back').innerHTML;
+          // Conservar el front original; el juego añade solo el infinitivo solicitado.
+          metadata.push({ cardId: card.dataset.cardId, source, index, answer, audioFile });
+          deck.push(card);
+        }
+        // Leer el CSS en una hoja conectada, sin aplicarlo al documento de carga.
+        const reader = document.createElement('style');
+        reader.media = 'not all';
+        reader.textContent = Array.from(original.querySelectorAll('style'), (style) => style.textContent).join('\n');
+        document.head.appendChild(reader);
+        const root = '#flashcard-container .flashcard[data-card-id^="' + KEY + '-' + source + '-"]';
+        const scopeRules = (rules) => Array.from(rules).map((rule) => {
+          if (rule.type === 1) {
+            const selectors = rule.selectorText.split(',').map((selector) => {
+              // Importar las caras originales y sus componentes, sin cambiar
+              // la geometría de la tarjeta ni la interfaz de reconocimiento.
+              const match = selector.match(/\.(?:front|back|article)(?:\b|-)/);
+              if (!match) return '';
+              return root + ' ' + selector.slice(match.index).trim();
+            }).filter(Boolean);
+            // Hablar impone !important al pronombre. En posesivos, respetar
+            // los valores originales (azul, tamaño compacto y «de» blanco)
+            // aunque esas declaraciones no lleven !important en su origen.
+            if (source === 'posesivos1' && rule.selectorText.includes('.front-pronoun')) {
+              for (const property of Array.from(rule.style)) {
+                rule.style.setProperty(property, rule.style.getPropertyValue(property), 'important');
+              }
+            }
+            return selectors.length ? selectors.join(',') + '{' + rule.style.cssText + '}' : '';
+          }
+          if (rule.type === 7) return rule.cssText;
+          if (rule.type === 4 || rule.type === 12) {
+            return rule.cssText.slice(0, rule.cssText.indexOf('{')) + '{' + scopeRules(rule.cssRules) + '}';
+          }
+          return '';
+        }).join('\n');
+        const style = template.createElement('style');
+        style.id = KEY + '-styles-' + source;
+        style.textContent = scopeRules(reader.sheet.cssRules);
+        reader.remove();
+        template.head.appendChild(style);
+      }
+      const ordered = shuffle(deck);
+      container.append(...ordered);
+      if (mixedStatsBox) container.appendChild(mixedStatsBox);
+      container.appendChild(scriptElement(template, '(' + installDeckMetadata.toString() + ')(' + JSON.stringify(metadata) + ');'));
+      template.body.appendChild(scriptElement(template, '(' + installMixedGame.toString() + ')();'));
+      let page = '<!doctype html>\n' + template.documentElement.outerHTML;
+      page = page.replace(/U\d+G\d+T([1-4])/g, (_, test) => 'U1G14T' + test);
+      page = page.replace(/hablar4/g, KEY)
+        .replace(/hablar_btn_sounds_muted/g, KEY + '_btn_sounds_muted')
+        .replace(/hablar-test-unlock-state-v2/g, 'gr-u1-mixta-test-unlock-state-v2')
+        .replace(/&nbsp;HABLAR&nbsp;/g, '&nbsp;TEST 4, UNIDAD 1&nbsp;');
+      // El motor reco conserva el HTML de las caras al guardar y mezclar;
+      // conservar además la identidad mantiene sus estilos y audio asociados.
+      page = page.replace(/frontHTML: card\.querySelector/g, "cardId: card.dataset.cardId,\n            frontHTML: card.querySelector");
+      page = page.replace('const cardData = gameState.cardOrder[index];', 'const cardData = gameState.cardOrder[index];\n                if (cardData) card.dataset.cardId = cardData.cardId;');
+      page = page.replace('const data = newCardOrder[index];', 'const data = newCardOrder[index];\n    card.dataset.cardId = data.cardId;');
+      page = page.replace(/const audioFiles = \[[\s\S]*?\];/, 'const audioFiles = ' + JSON.stringify(ordered.map((card) => metadata.find((item) => item.cardId === card.dataset.cardId).audioFile)) + ';');
+      // Eliminar límites de la baraja original al asignar los 42 audios.
+      localStorage.setItem(KEY + '-draw', JSON.stringify(draw));
+      document.open();
+      document.write(page);
+      document.close();
+      document.getElementById('loading')?.remove();
+    } catch (error) {
+      console.error(error);
+      const loading = document.getElementById('loading');
+      if (loading) loading.textContent = 'No se pudo cargar el ejercicio. Recarga la página para volver a intentarlo.';
+    }
+  })();
+  </script>
+</body>
+</html>

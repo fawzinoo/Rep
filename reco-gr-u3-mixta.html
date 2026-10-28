@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test4, unidad3</title>
+  <style>
+    body { margin:0; background:#eef7f5; color:#172554; font-family:system-ui,sans-serif; }
+    #loading { min-height:100vh; display:grid; place-items:center; text-align:center; padding:24px; }
+  </style>
+</head>
+<body>
+  <main id="loading">Preparando Test4, unidad3…</main>
+  <script>
+  (() => {
+    // Versión propia de la mezcla U3: evita reutilizar el progreso antiguo,
+    // que podía asociar el contenido de una tarjeta con otro tema.
+    const KEY = 'reco-gr-u3-mixta-v3';
+    const SOURCES = ["ser","estar","tener","muymucho","quecuales","cuantos","donde"];
+    const shuffle = (items) => {
+      const result = [...items];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+    const readDocument = (file) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', file, false);
+      request.send(null);
+      if (request.status && (request.status < 200 || request.status >= 300)) {
+        throw new Error('No se pudo cargar ' + file);
+      }
+      return new DOMParser().parseFromString(request.responseText, 'text/html');
+    };
+    const scriptElement = (doc, code) => {
+      const script = doc.createElement('script');
+      script.textContent = code.replace(/<\/script/gi, '<\\/script');
+      return script;
+    };
+    // Este código se instala antes de los manejadores de la plantilla.
+    function installDeckMetadata(cards) {
+      window.RECO_MIXED_CARDS = cards;
+      window.getRecoMixedCard = (card) => cards.find((item) => item.cardId === card.dataset.cardId);
+    }
+    function installMixedGame() {
+      // document.write puede conservar el aviso del documento de carga
+      // mientras el navegador termina de procesar la página original.
+      document.getElementById('loading')?.remove();
+      const verbTopics = new Set(["ser","estar","tener"]);
+      const infinitiveStyle = document.createElement('style');
+      infinitiveStyle.textContent = "\n#flashcard-container .flashcard .front-infinitive {\n  display: block !important;\n  margin-top: 6px !important;\n  color: #facc15 !important;\n  font-family: 'Poppins', sans-serif !important;\n  font-size: clamp(1.6rem, 5vw, 2.2rem) !important;\n  font-weight: 800 !important;\n  line-height: 1.1 !important;\n  letter-spacing: .08em !important;\n  text-transform: lowercase !important;\n  text-shadow: 0 3px 10px rgba(0, 0, 0, .38) !important;\n}\n#flashcard-container .flashcard .front-infinitive::before {\n  content: '' !important;\n  display: block !important;\n  width: min(34%, 160px) !important;\n  height: 2px !important;\n  margin: 0 auto 10px !important;\n  border-radius: 999px !important;\n  background: rgba(250, 204, 21, .72) !important;\n  box-shadow: 0 1px 6px rgba(250, 204, 21, .28) !important;\n}\n#flashcard-container .flashcard[data-source=\"ir\"] .front-infinitive,\n#flashcard-container .flashcard[data-source=\"ver\"] .front-infinitive {\n  font-size: clamp(1.82rem, 5.7vw, 2.45rem) !important;\n}\n#flashcard-container .flashcard .back-reflexive::after {\n  display: none !important;\n  content: none !important;\n}\n.back.hidden-text .back-conjugation {\n  opacity: 0 !important;\n  visibility: hidden !important;\n}\n.back.hidden-text .super-pulse-indicator {\n  opacity: 1 !important;\n  visibility: visible !important;\n}\n#flashcard-container .flashcard[data-card-id*=\"-porparaporque-\"] .article-options-column,\n#flashcard-container .flashcard[data-source=\"porparaporque\"] .article-options-column {\n  order: 1 !important;\n  width: min(100%, 300px) !important;\n  display: grid !important;\n  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;\n  gap: 5px !important;\n  padding: 5px !important;\n  border-radius: 15px !important;\n  background: transparent !important;\n  border: 0 !important;\n  box-shadow: none !important;\n  align-self: center !important;\n  align-content: center !important;\n  justify-items: stretch !important;\n  margin: 0 auto !important;\n}\n#flashcard-container .flashcard[data-card-id*=\"-indeterminantes-\"] .article-options-column,\n#flashcard-container .flashcard[data-source=\"indeterminantes\"] .article-options-column {\n  order: 1 !important;\n  width: min(100%, 300px) !important;\n  display: grid !important;\n  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;\n  gap: 5px !important;\n  padding: 5px !important;\n  border-radius: 15px !important;\n  background: transparent !important;\n  border: 0 !important;\n  box-shadow: none !important;\n  align-self: center !important;\n  align-content: center !important;\n  justify-items: stretch !important;\n  margin: 0 auto !important;\n}\n#flashcard-container .flashcard[data-card-id*=\"-porparaporque-\"] .article-option,\n#flashcard-container .flashcard[data-source=\"porparaporque\"] .article-option,\n#flashcard-container .flashcard[data-card-id*=\"-indeterminantes-\"] .article-option,\n#flashcard-container .flashcard[data-source=\"indeterminantes\"] .article-option {\n  display: flex !important;\n  align-items: center !important;\n  justify-content: center !important;\n  min-height: 30px !important;\n  padding: 4px 5px !important;\n  border-radius: 10px !important;\n  font-family: 'Poppins', sans-serif !important;\n  font-weight: 800 !important;\n  font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;\n  color: #ffd54a !important;\n  background: rgba(255, 213, 74, 0.12) !important;\n  border: 1px solid rgba(255, 213, 74, 0.28) !important;\n  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;\n  text-transform: lowercase !important;\n  letter-spacing: 0 !important;\n  box-shadow: none !important;\n  margin: 0 !important;\n  width: 100% !important;\n  max-width: none !important;\n  box-sizing: border-box !important;\n}\n";
+      document.head.appendChild(infinitiveStyle);
+      // Resolver por identidad, incluso después de mezclar o continuar.
+      window.getAudioSrcForCountryName = (answer) => {
+        const item = window.RECO_MIXED_CARDS.find((card) => card.answer === String(answer || '').replace(/\s+/g, ' ').trim());
+        return item ? 'https://fawzinoo.github.io/audios/' + item.audioFile : null;
+      };
+      window.reassignAudiosToCards = () => {
+        flashcards.forEach((card, index) => {
+          const item = window.getRecoMixedCard(card);
+          if (!item) return;
+          card.dataset.source = item.source;
+          const front = card.querySelector('.front');
+          const pronoun = front?.querySelector('.front-pronoun');
+          if (verbTopics.has(item.source) && pronoun && !front.querySelector('.front-infinitive')) {
+            const label = document.createElement('span');
+            label.className = 'front-infinitive';
+            label.textContent = item.source;
+            pronoun.insertAdjacentElement('afterend', label);
+          }
+          const audio = audios[index];
+          const src = 'https://fawzinoo.github.io/audios/' + item.audioFile;
+          if (audio.src !== src) {
+            audio.pause();
+            audio.src = src;
+          }
+          audio.preload = 'auto';
+        });
+      };
+      const originalShuffle = window.shuffleCards;
+      window.shuffleCards = () => {
+        originalShuffle();
+        reassignAudiosToCards();
+      };
+      reassignAudiosToCards();
+      const clearFreshProgress = () => {
+        localStorage.removeItem(KEY + '_gameProgress');
+        localStorage.removeItem(KEY + '-draw');
+        localStorage.removeItem(KEY + '_shuffleCount');
+      };
+      const startFresh = () => {
+        clearFreshProgress();
+        window.location.reload();
+      };
+      document.addEventListener('click', (event) => {
+        if (!event.target.closest('#start-fresh-btn')) return;
+        // El modal original cierra la ventana e inicializa la partida nueva.
+        // Solo limpiamos aquí las claves propias; no bloqueamos su listener.
+        clearFreshProgress();
+      }, true);
+      window.resetGame = startFresh;
+    }
+    try {
+      const template = readDocument('reco-hablar.html');
+      template.title = 'Test4, unidad3';
+      const container = template.getElementById('flashcard-container');
+      if (!container) throw new Error('No se encontró el tablero');
+      const mixedStatsBox = template.getElementById('stats-box');
+      if (mixedStatsBox) {
+        // Misma secuencia inicial que sel-hablar: visible durante los hints y
+        // oculto después por la propia lógica del cuadro.
+        mixedStatsBox.classList.remove('hidden');
+        mixedStatsBox.remove();
+      }
+      container.querySelectorAll('style').forEach((style) => template.head.appendChild(style));
+      const baseFixStyle = template.createElement('style');
+      baseFixStyle.id = KEY + '-base-fixes';
+      baseFixStyle.textContent = '#flashcard-container .flashcard .back-reflexive::after{display:none!important;content:none!important;}.back.hidden-text .back-conjugation{opacity:0!important;visibility:hidden!important;}.back.hidden-text .super-pulse-indicator{opacity:1!important;visibility:visible!important;}#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,#flashcard-container .flashcard[data-source="porparaporque"] .article-options-column{order:1!important;width:min(100%,300px)!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,#flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column{order:1!important;width:min(100%,300px)!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:5px!important;padding:5px!important;border-radius:15px!important;background:transparent!important;border:0!important;box-shadow:none!important;align-self:center!important;align-content:center!important;justify-items:stretch!important;margin:0 auto!important;}#flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-option,#flashcard-container .flashcard[data-source="porparaporque"] .article-option,#flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-option,#flashcard-container .flashcard[data-source="indeterminantes"] .article-option{display:flex!important;align-items:center!important;justify-content:center!important;min-height:30px!important;padding:4px 5px!important;border-radius:10px!important;font-family:\'Poppins\',sans-serif!important;font-weight:800!important;font-size:clamp(0.72rem,1.35vw,0.84rem)!important;color:#ffd54a!important;background:rgba(255,213,74,0.12)!important;border:1px solid rgba(255,213,74,0.28)!important;text-shadow:0 2px 8px rgba(0,0,0,0.26)!important;text-transform:lowercase!important;letter-spacing:0!important;box-shadow:none!important;margin:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;}';
+      template.head.appendChild(baseFixStyle);
+      container.replaceChildren();
+      let savedState = null;
+      let savedDraw = null;
+      try {
+        savedState = JSON.parse(localStorage.getItem(KEY + '_gameProgress') || 'null');
+        const completed = savedState?.completedCards?.length || 0;
+        if (savedState && completed < 35 && (completed || savedState.correctCount || savedState.incorrectCount || savedState.voiceAttempts)) {
+          savedDraw = JSON.parse(localStorage.getItem(KEY + '-draw') || 'null');
+        }
+      } catch (_) {}
+      const draw = [];
+      const deck = [];
+      const metadata = [];
+      for (const source of SOURCES) {
+        const original = readDocument('reco-' + source + '.html');
+        // Igual que com-gr-u3-mixta: qué/cuál, cuánto y dónde parten de
+        // una plantilla común y transforman sus tarjetas con questionCards.
+        // Hay que ejecutar ese mutador antes de clonar las tarjetas; si no,
+        // se conservan las respuestas de muy/mucho en esos tres temas.
+        const mutatorScript = Array.from(original.querySelectorAll('#flashcard-container script'))
+          .find((script) => script.textContent.includes('const items ='));
+        if (mutatorScript) {
+          try {
+            new Function('document', mutatorScript.textContent)(original);
+          } catch (error) {
+            console.warn('Mutador de tarjetas U3 (' + source + '):', error);
+          }
+        }
+        const originals = Array.from(original.querySelectorAll('#flashcard-container > .flashcard'));
+        if (originals.length < 5) throw new Error('Faltan tarjetas de ' + source);
+        const scripts = Array.from(original.querySelectorAll('script'), (script) => script.textContent).join('\n');
+        const audioDeclaration = scripts.match(/const\s+audioFiles\s*=\s*\[([\s\S]*?)\];/);
+        const files = audioDeclaration ? Array.from(audioDeclaration[1].matchAll(/['"]([^'"]+\.(?:wav|mp3))['"]/gi), (match) => match[1]) : [];
+        let indices = Array.isArray(savedDraw) ? savedDraw.find((entry) => entry.source === source)?.indices : null;
+        if (!Array.isArray(indices) || indices.length !== 5 || new Set(indices).size !== 5 || indices.some((i) => !Number.isInteger(i) || i < 0 || i >= originals.length)) {
+          indices = shuffle(originals.map((_, i) => i)).slice(0, 5);
+        }
+        draw.push({ source, indices });
+        for (const index of indices) {
+          const card = originals[index].cloneNode(true);
+          const answer = String(card.dataset.answer || card.querySelector('.back').textContent).replace(/\s+/g, ' ').trim();
+          let audioFile = files[index];
+          if (!audioFile) throw new Error('Falta el audio de ' + source + ': ' + (index + 1));
+          if (source === 'indeterminantes' && index > 0) audioFile = audioFile.replace(/\.+wav$/i, '..wav');
+          card.classList.remove('flipped', 'is-visible', 'completed');
+          card.dataset.cardId = KEY + '-' + source + '-' + (index + 1);
+          card.dataset.source = source;
+          card.dataset.answer = answer;
+          card.dataset.backHtml = card.querySelector('.back').innerHTML;
+          // Conservar el front original; el juego añade solo el infinitivo solicitado.
+          metadata.push({ cardId: card.dataset.cardId, source, index, answer, audioFile });
+          deck.push(card);
+        }
+        // Leer el CSS en una hoja conectada, sin aplicarlo al documento de carga.
+        const reader = document.createElement('style');
+        reader.media = 'not all';
+        reader.textContent = Array.from(original.querySelectorAll('style'), (style) => style.textContent).join('\n');
+        document.head.appendChild(reader);
+        const root = '#flashcard-container .flashcard[data-card-id^="' + KEY + '-' + source + '-"]';
+        const scopeRules = (rules) => Array.from(rules).map((rule) => {
+          if (rule.type === 1) {
+            if (rule.selectorText.includes('.back-reflexive::after')) return '';
+            const selectors = rule.selectorText.split(',').map((selector) => {
+              // Importar las caras originales y sus componentes, sin cambiar
+              // la geometría de la tarjeta ni la interfaz de reconocimiento.
+              const match = selector.match(/\.(?:front|back|article)(?:\b|-)/);
+              if (!match) return '';
+              return root + ' ' + selector.slice(match.index).trim();
+            }).filter(Boolean);
+            // Hablar impone !important al pronombre. En posesivos, respetar
+            // los valores originales (azul, tamaño compacto y «de» blanco)
+            // aunque esas declaraciones no lleven !important en su origen.
+            if (source === 'posesivos1' && rule.selectorText.includes('.front-pronoun')) {
+              for (const property of Array.from(rule.style)) {
+                rule.style.setProperty(property, rule.style.getPropertyValue(property), 'important');
+              }
+            }
+            return selectors.length ? selectors.join(',') + '{' + rule.style.cssText + '}' : '';
+          }
+          if (rule.type === 7) return rule.cssText;
+          if (rule.type === 4 || rule.type === 12) {
+            return rule.cssText.slice(0, rule.cssText.indexOf('{')) + '{' + scopeRules(rule.cssRules) + '}';
+          }
+          return '';
+        }).join('\n');
+        const style = template.createElement('style');
+        style.id = KEY + '-styles-' + source;
+        style.textContent = scopeRules(reader.sheet.cssRules);
+        reader.remove();
+        template.head.appendChild(style);
+      }
+      // En estos temas el CSS de origen puede usar target-after para colocar
+      // el nombre antes de las opciones. En la mixta mantenemos el orden
+      // pedagógico común: opciones arriba y nombre debajo.
+      const grammarOrderFix = template.createElement('style');
+      grammarOrderFix.id = KEY + '-grammar-order-fix';
+      grammarOrderFix.textContent = `
+        #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card,
+        #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card,
+        #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card,
+        #flashcard-container .flashcard[data-source="donde"] .front .article-front-card {
+          display: flex !important;
+          flex-direction: column !important;
+          width: min(72%, 360px) !important;
+          max-width: 360px !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .front .article-front-card .article-options-column {
+          order: 1 !important;
+          width: min(100%, 300px) !important;
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          gap: 5px !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card .article-noun-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card .article-noun-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .front .article-front-card .article-noun-column {
+          order: 2 !important;
+        }
+        @media (max-width: 620px) {
+          #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card,
+          #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card,
+          #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card,
+          #flashcard-container .flashcard[data-source="donde"] .front .article-front-card {
+            width: min(82%, 285px) !important;
+            max-width: 285px !important;
+          }
+          #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="donde"] .front .article-front-card .article-options-column {
+            width: min(100%, 250px) !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (max-width: 360px) {
+          #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card .article-options-column,
+          #flashcard-container .flashcard[data-source="donde"] .front .article-front-card .article-options-column {
+            width: min(100%, 220px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (min-width: 621px) {
+          #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card {
+            width: min(92%, 480px) !important;
+            max-width: 480px !important;
+          }
+          #flashcard-container .flashcard[data-source="muymucho"] .front .article-front-card .article-options-column {
+            width: min(100%, 480px) !important;
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+          }
+          #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card {
+            width: min(92%, 480px) !important;
+            max-width: 480px !important;
+          }
+          #flashcard-container .flashcard[data-source="quecuales"] .front .article-front-card .article-options-column {
+            width: min(100%, 480px) !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          }
+          #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card {
+            width: min(92%, 400px) !important;
+            max-width: 400px !important;
+          }
+          #flashcard-container .flashcard[data-source="cuantos"] .front .article-front-card .article-options-column {
+            width: min(100%, 400px) !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+          #flashcard-container .flashcard[data-source="donde"] .front .article-front-card {
+            width: min(92%, 310px) !important;
+            max-width: 310px !important;
+          }
+          #flashcard-container .flashcard[data-source="donde"] .front .article-front-card .article-options-column {
+            width: min(100%, 310px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+      `;
+      template.head.appendChild(grammarOrderFix);
+      // Igual que en esc-gr-u3-mixta: en escritorio el contenedor conserva
+      // el ancho de origen y la rejilla ocupa todo su interior. Así las
+      // opciones se distribuyen en una fila real (5/4/3/2 columnas), sin
+      // forzar una tarjeta estrecha pensada para móvil.
+      const desktopSourceLayout = template.createElement('style');
+      desktopSourceLayout.id = KEY + '-desktop-source-layout';
+      desktopSourceLayout.textContent = `
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+          width: min(92%, 760px) !important;
+          max-width: 760px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          order: 1 !important;
+          display: grid !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          justify-content: center !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-option,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-option,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .article-option {
+          width: 100% !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+          white-space: nowrap !important;
+        }
+      `;
+      template.head.appendChild(desktopSourceLayout);
+      const ordered = shuffle(deck);
+      container.append(...ordered);
+      // Blindaje por tarjeta: algunos CSS de los archivos reco originales
+      // llevan reglas !important para la rejilla móvil. Aplicar aquí la
+      // distribución final garantiza que todas las tarjetas de la mezcla
+      // respeten su número de opciones también en Chrome de escritorio.
+      const grammarColumns = { muymucho: 5, quecuales: 4, cuantos: 3, donde: 2 };
+      ordered.forEach((card) => {
+        const article = card.querySelector('.article-front-card');
+        const options = card.querySelector('.article-options-column');
+        const noun = card.querySelector('.article-noun-column');
+        const optionCount = options?.querySelectorAll('.article-option').length || 0;
+        const columns = optionCount >= 5 ? 5 : optionCount === 4 ? 4 : optionCount === 3 ? 3 : optionCount === 2 ? 2 : grammarColumns[card.dataset.source];
+        if (!columns || !article || !options) return;
+        article.style.setProperty('width', columns === 5 ? '760px' : columns === 4 ? '760px' : columns === 3 ? '620px' : '500px', 'important');
+        article.style.setProperty('max-width', '92%', 'important');
+        article.style.setProperty('display', 'flex', 'important');
+        article.style.setProperty('flex-direction', 'column', 'important');
+        options.style.setProperty('order', '1', 'important');
+        options.style.setProperty('display', 'grid', 'important');
+        options.style.setProperty('width', '100%', 'important');
+        options.style.setProperty('max-width', '100%', 'important');
+        options.style.setProperty('grid-template-columns', `repeat(${columns}, minmax(0, 1fr))`, 'important');
+        options.style.setProperty('gap', '10px', 'important');
+        if (noun) noun.style.setProperty('order', '2', 'important');
+        options.querySelectorAll('.article-option').forEach((option) => {
+          option.style.setProperty('width', '100%', 'important');
+          option.style.setProperty('min-width', '0', 'important');
+          option.style.setProperty('box-sizing', 'border-box', 'important');
+          option.style.setProperty('white-space', 'nowrap', 'important');
+        });
+      });
+      if (mixedStatsBox) container.appendChild(mixedStatsBox);
+      container.appendChild(scriptElement(template, '(' + installDeckMetadata.toString() + ')(' + JSON.stringify(metadata) + ');'));
+      template.body.appendChild(scriptElement(template, '(' + installMixedGame.toString() + ')();'));
+      template.body.appendChild(scriptElement(template, `(() => {
+        const applyGrammarLayout = () => {
+          document.querySelectorAll('#flashcard-container .flashcard .article-options-column').forEach((options) => {
+            const count = options.querySelectorAll('.article-option').length;
+            if (!count) return;
+            const columns = count >= 5 ? 5 : count === 4 ? 4 : count === 3 ? 3 : 2;
+            const article = options.closest('.article-front-card');
+            const noun = article?.querySelector('.article-noun-column');
+            if (article) {
+              article.style.setProperty('width', columns >= 4 ? '760px' : columns === 3 ? '620px' : '500px', 'important');
+              article.style.setProperty('max-width', '92%', 'important');
+              article.style.setProperty('display', 'flex', 'important');
+              article.style.setProperty('flex-direction', 'column', 'important');
+            }
+            options.style.setProperty('order', '1', 'important');
+            options.style.setProperty('display', 'grid', 'important');
+            options.style.setProperty('width', '100%', 'important');
+            options.style.setProperty('max-width', '100%', 'important');
+            options.style.setProperty('grid-template-columns', 'repeat(' + columns + ', minmax(0, 1fr))', 'important');
+            options.style.setProperty('gap', '10px', 'important');
+            if (noun) noun.style.setProperty('order', '2', 'important');
+            options.querySelectorAll('.article-option').forEach((option) => {
+              option.style.setProperty('width', '100%', 'important');
+              option.style.setProperty('min-width', '0', 'important');
+              option.style.setProperty('box-sizing', 'border-box', 'important');
+              option.style.setProperty('white-space', 'nowrap', 'important');
+            });
+          });
+        };
+        applyGrammarLayout();
+        new MutationObserver(applyGrammarLayout).observe(document.getElementById('flashcard-container') || document.body, { childList: true, subtree: true });
+      })();`));
+      let page = '<!doctype html>\n' + template.documentElement.outerHTML;
+      page = page.replace(/U\d+G\d+T([1-4])/g, (_, test) => 'U3G8T' + test);
+      page = page.replace(/hablar4/g, KEY)
+        .replace(/'lastSuccessPercentage'/g, "'" + KEY + "_lastSuccessPercentage'")
+        .replace(/'lastUpdateDate'/g, "'" + KEY + "_lastUpdateDate'")
+        .replace(/hablar_btn_sounds_muted/g, KEY + '_btn_sounds_muted')
+        .replace(/hablar-test-unlock-state-v2/g, 'gr-u3-mixta-test-unlock-state-v2')
+        .replace(/U1G7T([1-4])/g, 'U3G8T$1')
+        .replace(/&nbsp;HABLAR&nbsp;/g, '&nbsp;TEST 4, UNIDAD 3&nbsp;');
+      // El motor reco conserva el HTML de las caras al guardar y mezclar;
+      // conservar además la identidad mantiene sus estilos y audio asociados.
+      page = page.replace(/frontHTML: card\.querySelector/g, "cardId: card.dataset.cardId,\n            frontHTML: card.querySelector");
+      page = page.replace('const cardData = gameState.cardOrder[index];', 'const cardData = gameState.cardOrder[index];\n                if (cardData) card.dataset.cardId = cardData.cardId;');
+      page = page.replace('const data = newCardOrder[index];', 'const data = newCardOrder[index];\n    card.dataset.cardId = data.cardId;');
+      page = page.replace(/const audioFiles = \[[\s\S]*?\];/, 'const audioFiles = ' + JSON.stringify(ordered.map((card) => metadata.find((item) => item.cardId === card.dataset.cardId).audioFile)) + ';');
+      // Última capa: se inserta en el HTML definitivo, después de los CSS
+      // importados de cada tema, para que la mezcla conserve exactamente la
+      // distribución de escritorio de los originales.
+      const finalGrammarLayout = `<style id="${KEY}-final-grammar-layout">
+        @media (min-width: 701px) {
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-front-card,
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card { width:min(92%,760px)!important; max-width:760px!important; margin-left:auto!important; margin-right:auto!important; display:flex!important; flex-direction:column!important; }
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column,
+          #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-options-column,
+          #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-options-column,
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column { order:1!important; display:grid!important; width:100%!important; max-width:100%!important; margin-left:auto!important; margin-right:auto!important; gap:10px!important; }
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column { grid-template-columns:repeat(5,minmax(0,1fr))!important; }
+          #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-options-column { grid-template-columns:repeat(4,minmax(0,1fr))!important; }
+          #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-options-column { grid-template-columns:repeat(3,minmax(0,1fr))!important; }
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column { grid-template-columns:repeat(2,minmax(0,1fr))!important; }
+          #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-option,
+          #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-option,
+          #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-option,
+          #flashcard-container .flashcard[data-card-id*="-donde-"] .article-option { width:100%!important; min-width:0!important; box-sizing:border-box!important; white-space:nowrap!important; }
+        }
+      </style>`;
+      const forceDesktopGrammarLayout = `<style id="${KEY}-force-desktop-grammar-layout">
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-front-card { width:760px!important; max-width:92%!important; margin-left:auto!important; margin-right:auto!important; display:flex!important; flex-direction:column!important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-options-column { order:1!important; display:grid!important; width:100%!important; max-width:100%!important; grid-template-columns:repeat(5,minmax(0,1fr))!important; gap:10px!important; margin-left:auto!important; margin-right:auto!important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-noun-column,
+        #flashcard-container .flashcard[data-card-id*="-muymucho-"] .article-noun-column { order:2!important; }
+        #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-front-card { width:760px!important; max-width:92%!important; margin-left:auto!important; margin-right:auto!important; display:flex!important; flex-direction:column!important; }
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-quecuales-"] .article-options-column { order:1!important; display:grid!important; width:100%!important; max-width:100%!important; grid-template-columns:repeat(4,minmax(0,1fr))!important; gap:10px!important; margin-left:auto!important; margin-right:auto!important; }
+        #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-front-card { width:620px!important; max-width:92%!important; margin-left:auto!important; margin-right:auto!important; display:flex!important; flex-direction:column!important; }
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-cuantos-"] .article-options-column { order:1!important; display:grid!important; width:100%!important; max-width:100%!important; grid-template-columns:repeat(3,minmax(0,1fr))!important; gap:10px!important; margin-left:auto!important; margin-right:auto!important; }
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-front-card { width:500px!important; max-width:92%!important; margin-left:auto!important; margin-right:auto!important; display:flex!important; flex-direction:column!important; }
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column,
+        #flashcard-container .flashcard[data-card-id*="-donde-"] .article-options-column { order:1!important; display:grid!important; width:100%!important; max-width:100%!important; grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:10px!important; margin-left:auto!important; margin-right:auto!important; }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-option,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-option,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .article-option { width:100%!important; min-width:0!important; box-sizing:border-box!important; }
+      </style>`;
+      page = page.replace('</head>', finalGrammarLayout + forceDesktopGrammarLayout + '</head>');
+      // Eliminar límites de la baraja original al asignar los 35 audios.
+      localStorage.setItem(KEY + '-draw', JSON.stringify(draw));
+      document.open();
+      document.write(page);
+      document.close();
+      document.getElementById('loading')?.remove();
+    } catch (error) {
+      console.error(error);
+      const loading = document.getElementById('loading');
+      if (loading) loading.textContent = 'No se pudo cargar el ejercicio. Recarga la página para volver a intentarlo.';
+    }
+  })();
+  </script>
+</body>
+</html>

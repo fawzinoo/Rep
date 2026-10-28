@@ -1,6 +1,43 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="startup-modal-pending">
 <head>
+<meta charset="UTF-8">
+<style id="startup-modal-before-content">
+html.startup-modal-pending body > :not(#continue-game-overlay) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+html.startup-modal-pending { overflow: hidden; }
+</style>
+<script id="startup-modal-content-guard">
+(() => {
+    let modalSeen = false;
+    const observer = new MutationObserver(() => {
+        const modal = document.getElementById('continue-game-overlay');
+        if (modal) modalSeen = true;
+        else if (modalSeen) {
+            document.documentElement.classList.remove('startup-modal-pending');
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Solo los botones del modal permiten iniciar o continuar el ejercicio.
+    for (const type of ['pointerdown', 'click']) {
+        document.addEventListener(type, event => {
+            if (event.target?.id !== 'continue-game-overlay') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && document.getElementById('continue-game-overlay')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+})();
+</script>
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
@@ -4272,18 +4309,7 @@
     transform: scale(0.72);
     will-change: transform, opacity;
     transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease;
-}
-
-.chat-image-viewer-docx-loading-dot:nth-child(1) {
-}
-
-.chat-image-viewer-docx-loading-dot:nth-child(2) {
-}
-
-.chat-image-viewer-docx-loading-dot:nth-child(3) {
-}
-
-.chat-image-viewer-pdf-page-indicator {
+}.chat-image-viewer-pdf-page-indicator {
     position: absolute;
     left: 50%;
     bottom: 20px;
@@ -8948,15 +8974,22 @@ body.chat-typing .chat-footer {
 
 @keyframes respuestaGlow {
     0%, 100% { 
-        text-shadow: 0 0 10px rgba(255,255,255,0.5),
-                     0 0 20px rgba(255,255,255,0.3);
+        text-shadow: 
+            0 0 10px #ffffff,
+            0 0 20px #ffffff,
+            0 0 35px rgba(255, 255, 255, 0.95),
+            0 0 50px rgba(255, 255, 255, 0.8),
+            2px 2px 6px rgba(0, 0, 0, 0.75);
         transform: scale(1);
     }
     50% { 
-        text-shadow: 0 0 15px rgba(255,255,255,0.8),
-                     0 0 25px rgba(255,255,255,0.5),
-                     0 0 35px rgba(255,255,255,0.3);
-        transform: scale(1.05);
+        text-shadow: 
+            0 0 16px #ffffff,
+            0 0 30px #ffffff,
+            0 0 48px rgba(255, 255, 255, 1),
+            0 0 65px rgba(255, 255, 255, 0.9),
+            2px 2px 8px rgba(0, 0, 0, 0.85);
+        transform: scale(1.04);
     }
 }
 
@@ -33568,6 +33601,36 @@ function hasProgressSaved() {
 }
 
 // Función para mostrar el modal de continuación
+function showStartupWelcomeModal() {
+    if (document.getElementById('continue-game-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'continue-game-overlay';
+    overlay.className = 'continue-game-overlay';
+    overlay.innerHTML = `
+        <div class="continue-game-modal">
+            <div class="continue-modal-header">
+                <span class="continue-modal-icon continue-modal-logo"><img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" width="64" height="64" style="display:block;margin:auto;object-fit:contain"></span>
+                <h2 class="continue-modal-title">¡Prepárate para el test!</h2>
+                <p class="continue-modal-subtitle">Este test tiene ${flashcards.length} tarjetas</p>
+            </div>
+            <div class="continue-modal-content">
+                <div class="continue-progress-info">
+                    <div class="continue-progress-title">Empieza con calma. Equivocarte también forma parte del aprendizaje.</div>
+                </div>
+                <div class="continue-modal-buttons">
+                    <button class="continue-btn continue-btn-primary" id="start-game-btn"><i class="fas fa-play"></i> Comenzar</button>
+                </div>
+            </div>
+        </div>`;
+    overlay.querySelector('#start-game-btn').addEventListener('click', () => {
+        initializePage();
+        document.body.classList.remove('initial-modal-open');
+        overlay.remove();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+    });
+    document.body.appendChild(overlay);
+}
+
 function showContinueGameModal() {
     const savedState = loadGameProgress();
     if (!savedState) return;
@@ -34084,8 +34147,23 @@ function deriveFrontLabelFromText(backText) {
 }
 
 function hasValidAudio(index) {
-    const a = audios[index];
-    return !!(a && a.src && a.src.trim() !== '');
+    // Resolve by the current card, never by the pre-shuffle audio position.
+    const card = typeof flashcards !== 'undefined' ? flashcards[index] : null;
+    const audioList = typeof audios !== 'undefined' ? audios : window.audios;
+    if (!card || !audioList) return false;
+    const answer = String(card.dataset.answer || card.querySelector('.back')?.dataset.originalText || card.querySelector('.back')?.textContent || '').trim();
+    const resolved = getAudioSrcForCountryName(answer);
+    if (!resolved) return false;
+    const src = new URL(resolved, document.baseURI).href;
+    let audio = audioList[index];
+    if (!audio) { audio = new Audio(); audioList[index] = audio; }
+    if (audio.src !== src) {
+        try { audio.pause(); } catch (_) {}
+        audio.src = src;
+        audio.preload = 'auto';
+        audio.load();
+    }
+    return true;
 }
 
 let originalFlashcardsHTML = null;
@@ -34412,14 +34490,12 @@ window.addEventListener('DOMContentLoaded', () => {
         // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
         updateLastGamePillFromStorage();
         // Mostrar modal de continuación si hay progreso
-        setTimeout(() => {
-            showContinueGameModal();
-        }, 500); // Pequeño delay para que la página termine de cargar
+        showContinueGameModal(); // Pequeño delay para que la página termine de cargar
         return; // No ejecutar el resto de la inicialización
     }
     
-    // Si no hay progreso guardado, continuar con la inicialización normal
-    initializePage();
+    // El modal inicial precede siempre al contenido del ejercicio.
+    showStartupWelcomeModal();
 });
 
 // Función para inicializar la página cuando no hay progreso guardado

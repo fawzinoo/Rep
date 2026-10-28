@@ -1,6 +1,43 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="startup-modal-pending">
 <head>
+<meta charset="UTF-8">
+<style id="startup-modal-before-content">
+html.startup-modal-pending body > :not(#continue-game-overlay) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+html.startup-modal-pending { overflow: hidden; }
+</style>
+<script id="startup-modal-content-guard">
+(() => {
+    let modalSeen = false;
+    const observer = new MutationObserver(() => {
+        const modal = document.getElementById('continue-game-overlay');
+        if (modal) modalSeen = true;
+        else if (modalSeen) {
+            document.documentElement.classList.remove('startup-modal-pending');
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Solo los botones del modal permiten iniciar o continuar el ejercicio.
+    for (const type of ['pointerdown', 'click']) {
+        document.addEventListener(type, event => {
+            if (event.target?.id !== 'continue-game-overlay') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && document.getElementById('continue-game-overlay')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+})();
+</script>
+
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=no">
@@ -11536,7 +11573,7 @@ body.chat-typing .chat-footer {
     word-break: normal !important;
     hyphens: none !important;
     text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
-}
+    }
 .article-options-column {
     order: 1 !important;
     width: min(100%, 300px) !important;
@@ -11598,6 +11635,8 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.66rem, 2.9vw, 0.78rem) !important;
         border-radius: 9px !important;
     }
+
+
 }
 @media (max-width: 360px) {
     .article-options-column {
@@ -11778,6 +11817,52 @@ body.chat-typing .chat-footer {
 @keyframes sheen-bg {
     0%, 42% { background-position: 150% 0, 0 0; }
     72%, 100% { background-position: -50% 0, 0 0; }
+}
+</style>
+<style id="mobile-answer-fontsize-boost">
+@media (max-width: 620px) {
+    .back-verb-main {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 1.1 !important;
+    }
+    .back-reflexive {
+        font-size: clamp(2.4rem, 9.5vw, 3.5rem) !important;
+    }
+    .article-answer-card .back-verb-main {
+        font-size: clamp(2.6rem, 10vw, 3.8rem) !important;
+    }
+    .back-verb-main.personal-revealed-answer {
+        font-size: clamp(2.7rem, 10.5vw, 3.9rem) !important;
+    }
+    .mas-revealed-answer .back-verb-main.stacked-answer {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 0.95 !important;
+    }
+    .mas-revealed-answer .back-verb-main.temporal-revealed-lines,
+    .mas-revealed-answer .back-verb-main.frequency-revealed-lines {
+        font-size: clamp(2.2rem, 8.8vw, 3.2rem) !important;
+        line-height: 1.08 !important;
+    }
+}
+</style>
+<style id="desktop-mouse-cursor-visible">
+@media (any-pointer: fine) {
+    html.keyboard-hidden *, html body.keyboard-hidden *,
+    html body .keyboard-hidden *,
+    html.keyboard-hidden *::before, html.keyboard-hidden *::after,
+    html body.keyboard-hidden *::before, html body.keyboard-hidden *::after {
+        cursor: auto !important;
+    }
+    html body button, html body .button, html body .pill,
+    html body .flashcard, html body a, html body [onclick] {
+        cursor: pointer !important;
+    }
+    html body input, html body textarea, html body [contenteditable="true"],
+    html body.keyboard-hidden input, html body.keyboard-hidden textarea,
+    html body.keyboard-hidden [contenteditable="true"] {
+        cursor: text !important;
+        caret-color: auto !important;
+    }
 }
 </style>
 </head>
@@ -12322,6 +12407,7 @@ body.chat-typing .chat-footer {
                         card.dataset.targetForm = form;
                         card.dataset.targetPosition = 'before';
                         card.dataset.clue = clue;
+                        card.dataset.audioFile = `demostrativos-${index + 1}.wav`;
                         card.dataset.answerWord = answerWord;
                         const frontCard = card.querySelector('.article-front-card');
                         frontCard.classList.remove('target-after');
@@ -12526,7 +12612,7 @@ body.chat-typing .chat-footer {
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
 
-        <button class="button chat" id="chat-button" title="Chat U3G7T3" aria-label="Chat U3G7T3">
+        <button class="button chat" id="chat-button" title="Chat U4G5T3" aria-label="Chat U4G5T3">
             <i class="fas fa-comments" aria-hidden="true"></i>
         </button>
 <button class="button" id="reset-button" title="Reiniciar" aria-label="Reiniciar">
@@ -12762,6 +12848,9 @@ let completedCards = new Set();
 let correctCount = 0;
 let incorrectCount = 0;
 let currentCardIndex = 0;
+let hasPlayedEscribeAudio = false;
+let escribeAudioTimer = null;
+let escribeAudio = null;
 let voiceAttempts = 0; // Contador para los intentos de voz
 let canFlipBack = true;
 let canFlip = true; // Controla si se puede voltear la tarjeta
@@ -14596,6 +14685,36 @@ function hasProgressSaved() {
 }
 
 // Función para mostrar el modal de continuación
+function showStartupWelcomeModal() {
+    if (document.getElementById('continue-game-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'continue-game-overlay';
+    overlay.className = 'continue-game-overlay';
+    overlay.innerHTML = `
+        <div class="continue-game-modal">
+            <div class="continue-modal-header">
+                <span class="continue-modal-icon continue-modal-logo"><img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" width="64" height="64" style="display:block;margin:auto;object-fit:contain"></span>
+                <h2 class="continue-modal-title">¡Prepárate para el test!</h2>
+                <p class="continue-modal-subtitle">Este test tiene ${flashcards.length} tarjetas</p>
+            </div>
+            <div class="continue-modal-content">
+                <div class="continue-progress-info">
+                    <div class="continue-progress-title">Empieza con calma. Equivocarte también forma parte del aprendizaje.</div>
+                </div>
+                <div class="continue-modal-buttons">
+                    <button class="continue-btn continue-btn-primary" id="start-game-btn"><i class="fas fa-play"></i> Comenzar</button>
+                </div>
+            </div>
+        </div>`;
+    overlay.querySelector('#start-game-btn').addEventListener('click', () => {
+        initializePage();
+        document.body.classList.remove('initial-modal-open');
+        overlay.remove();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+    });
+    document.body.appendChild(overlay);
+}
+
 function showContinueGameModal() {
     const savedState = loadGameProgress();
     if (!savedState) return;
@@ -14660,6 +14779,7 @@ function showContinueGameModal() {
     continueBtn.addEventListener('click', function() {
         vibrar(60);
         playButtonSound();
+        hasPlayedEscribeAudio = false;
 
         // Restaurar el estado del juego
         if (restoreGameState(savedState)) {
@@ -15041,7 +15161,38 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [];
+const audioFiles = [
+    'demostrativos-1.wav',
+    'demostrativos-2.wav',
+    'demostrativos-3.wav',
+    'demostrativos-4.wav',
+    'demostrativos-5.wav',
+    'demostrativos-6.wav',
+    'demostrativos-7.wav',
+    'demostrativos-8.wav',
+    'demostrativos-9.wav',
+    'demostrativos-10.wav',
+    'demostrativos-11.wav',
+    'demostrativos-12.wav',
+    'demostrativos-13.wav',
+    'demostrativos-14.wav',
+    'demostrativos-15.wav',
+    'demostrativos-16.wav',
+    'demostrativos-17.wav',
+    'demostrativos-18.wav',
+    'demostrativos-19.wav',
+    'demostrativos-20.wav',
+    'demostrativos-21.wav',
+    'demostrativos-22.wav',
+    'demostrativos-23.wav',
+    'demostrativos-24.wav',
+    'demostrativos-25.wav',
+    'demostrativos-26.wav',
+    'demostrativos-27.wav',
+    'demostrativos-28.wav',
+    'demostrativos-29.wav',
+    'demostrativos-30.wav'
+];
 
 const audios = Array.from({ length: Math.max(audioFiles.length, document.querySelectorAll('.flashcard').length, 30) }, (_, index) => {
     const file = audioFiles[index] || '';
@@ -15074,10 +15225,43 @@ audioFiles.forEach(file => {
 });
 
 function getAudioSrcForCountryName(textoBack) {
-    const key = normalizeAudioKey(textoBack);
-    if (!key) return null;
-    const mapping = {};
-    const file = mapping[key] || audioFilenameByKey[key];
+    if (!textoBack) return null;
+    const clean = String(textoBack)
+        .replace(/&nbsp;/gi, " ")
+        .replace(/\u00a0/g, " ")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/[¿?]/g, "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9ñ ]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!clean) return null;
+    const mapping = {
+        "este abrigo": "demostrativos-1.wav",
+        "este vestido": "demostrativos-2.wav",
+        "este pantalon": "demostrativos-3.wav",
+        "este azul": "demostrativos-4.wav",
+        "este rojo": "demostrativos-5.wav",
+        "estos zapatos": "demostrativos-6.wav",
+        "estos guantes": "demostrativos-7.wav",
+        "estos pantalones": "demostrativos-8.wav",
+        "estos azules": "demostrativos-9.wav",
+        "estos blancos": "demostrativos-10.wav",
+        "esta camiseta": "demostrativos-11.wav",
+        "esta chaqueta": "demostrativos-12.wav",
+        "esta falda": "demostrativos-13.wav",
+        "esta roja": "demostrativos-14.wav",
+        "esta verde": "demostrativos-15.wav",
+        "estas botas": "demostrativos-16.wav",
+        "estas gafas": "demostrativos-17.wav",
+        "estas sandalias": "demostrativos-18.wav",
+        "estas rojas": "demostrativos-19.wav",
+        "estas marrones": "demostrativos-20.wav"
+    };
+    const file = mapping[clean];
     return file ? baseUrl + file : null;
 }
 
@@ -15086,7 +15270,7 @@ function playCardAudio(card, onEnded) {
     try {
         if (!card) { if (onEnded) onEnded(); return; }
         const answer = (card.dataset?.answer || getCountryText(card.querySelector('.back'))).trim();
-        const src = getAudioSrcForCountryName(answer);
+        const src = card.dataset?.audioFile ? (baseUrl + card.dataset.audioFile) : getAudioSrcForCountryName(answer);
         if (!src) { if (onEnded) onEnded(); return; }
         if (!card._audioEl) {
             card._audioEl = new Audio();
@@ -15107,7 +15291,11 @@ function playCardAudio(card, onEnded) {
             if (onEnded) onEnded();
         };
 
-        a.src = src;
+        const answerSrc = new URL(src, document.baseURI).href;
+        if (a.src !== answerSrc) {
+            a.src = answerSrc;
+            a.load();
+        }
         a.currentTime = 0;
         a.onended = handleEnded;
         a.onerror = handleEnded;
@@ -15129,7 +15317,29 @@ function stopAllAudios() {
             try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {}
         }
     });
+    if (escribeAudio) {
+        try { escribeAudio.pause(); escribeAudio.currentTime = 0; } catch {}
+    }
+    if (escribeAudioTimer) {
+        clearTimeout(escribeAudioTimer);
+        escribeAudioTimer = null;
+    }
 }
+
+// Detener audio de instrucciones inmediatamente al interactuar en el reverso (opciones, escritura, teclado)
+function stopInstructionAudioOnInteraction(e) {
+    if (e.target && (e.target.closest('.back') || e.target.closest('#vk, .vk, .vk-key') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}
+document.addEventListener('pointerdown', stopInstructionAudioOnInteraction, true);
+document.addEventListener('click', stopInstructionAudioOnInteraction, true);
+document.addEventListener('input', stopAllAudios, true);
+document.addEventListener('keydown', function(e) {
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}, true);
 
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
 let originalFlashcardsHTML = null;
@@ -15211,7 +15421,7 @@ flashcards.forEach((card, index) => {
     card.dataset.answer = normalizeDemostrativosQuestion(data.backText);
     // --- AQUÍ VA EL AUDIO ---
     // Precalcular y guardar src como atributo si quieres usarlo luego
-    const src = getAudioSrcForCountryName(data.backText);
+    const src = data.audioFile ? (baseUrl + data.audioFile) : getAudioSrcForCountryName(data.backText);
     if (src) card.dataset.audioSrc = src; else delete card.dataset.audioSrc;
 });
 
@@ -15338,7 +15548,24 @@ function attachFlashcardHandlers() {
                 betweenAttempts = false;
                 updateSkipButtonState();
             } else {
+                stopAllAudios();
                 card.classList.add('flipped');
+
+                // Reproducir el audio escribe.wav a 10 ms SOLO en la primera tarjeta y solo 1 vez por sesión/reinicio
+                const cardIndex = flashcards.indexOf(card);
+                if (cardIndex === 0 && !hasPlayedEscribeAudio) {
+                    if (escribeAudioTimer) clearTimeout(escribeAudioTimer);
+                    escribeAudioTimer = setTimeout(() => {
+                        if (card.classList.contains('flipped') && !hasPlayedEscribeAudio) {
+                            if (!escribeAudio) {
+                                escribeAudio = new Audio('https://fawzinoo.github.io/audios/escribe.wav');
+                            }
+                            hasPlayedEscribeAudio = true;
+                            escribeAudio.currentTime = 0;
+                            escribeAudio.play().catch(e => console.log('Error al reproducir escribe.wav:', e));
+                        }
+                    }, 10);
+                }
 
 
 
@@ -16571,14 +16798,12 @@ window.addEventListener('DOMContentLoaded', () => {
         // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
         updateLastGamePillFromStorage();
         // Mostrar modal de continuación si hay progreso
-        setTimeout(() => {
-            showContinueGameModal();
-        }, 500); // Pequeño delay para que la página termine de cargar
+        showContinueGameModal(); // Pequeño delay para que la página termine de cargar
         return; // No ejecutar el resto de la inicialización
     }
 
-    // Si no hay progreso guardado, continuar con la inicialización normal
-    initializePage();
+    // El modal inicial precede siempre al contenido del ejercicio.
+    showStartupWelcomeModal();
 });
 
 // Función para inicializar la página cuando no hay progreso guardado
@@ -18038,7 +18263,7 @@ function goToNextCardWithDebug() {
   let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 
   const PORTALB_SCRIPT_URL_FALLBACKS = [];
-  const LESSON_COLUMN_KEY = 'U3G7T3';
+  const LESSON_COLUMN_KEY = 'U4G5T3';
   const TEST_UNLOCK_STATE_KEY = 'demostrativos-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test3';
@@ -18046,7 +18271,7 @@ function goToNextCardWithDebug() {
   const RANKING_GENERAL_MODE = 'ranking_general';
   const RANKING_SCOPE = 'demostrativos';
 const CHAT_MODE = 'chat_messages';
-const CHAT_COLUMN_KEY = 'U3G7T3';
+const CHAT_COLUMN_KEY = 'U4G5T3';
 const CHAT_FETCH_LIMIT = 80;
 const CHAT_REFRESH_INTERVAL_MS = 1200;
 const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
@@ -37395,7 +37620,7 @@ function installChatButtonHandler() {
 
       const TEST_ICON_HTML = '<i class="fas fa-pen" aria-hidden="true"></i> Test3';
   const INDETERMINANTES_LABEL = 'Demostrativos';
-  const RANKING_TITLE = 'Ranking U3G7T3';
+  const RANKING_TITLE = 'Ranking U4G5T3';
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
@@ -37797,16 +38022,16 @@ function installChatButtonHandler() {
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
         ...current,
         test2: {
-          unlocked: Boolean(unlocksByColumn.U3G7T1 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T1')
+          unlocked: Boolean(unlocksByColumn.U4G5T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G5T1')
         },
         test3: {
-          unlocked: Boolean(unlocksByColumn.U3G7T2 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T2')
+          unlocked: Boolean(unlocksByColumn.U4G5T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G5T2')
         },
         test4: {
-          unlocked: Boolean(unlocksByColumn.U3G7T3 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T3')
+          unlocked: Boolean(unlocksByColumn.U4G5T3 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G5T3')
         },
         scores,
         unlocksByColumn
@@ -38120,7 +38345,7 @@ function installChatButtonHandler() {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
     if (modeKey === 'demostrativos') {
-      return fetchAggregatedRankingByColumns(['U3G7T1', 'U3G7T2', 'U3G7T3', 'U3G7T4']);
+      return fetchAggregatedRankingByColumns(['U4G5T1', 'U4G5T2', 'U4G5T3', 'U4G5T4']);
     }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;

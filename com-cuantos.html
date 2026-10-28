@@ -1,6 +1,43 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="startup-modal-pending">
 <head>
+<meta charset="UTF-8">
+<style id="startup-modal-before-content">
+html.startup-modal-pending body > :not(#continue-game-overlay) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+html.startup-modal-pending { overflow: hidden; }
+</style>
+<script id="startup-modal-content-guard">
+(() => {
+    let modalSeen = false;
+    const observer = new MutationObserver(() => {
+        const modal = document.getElementById('continue-game-overlay');
+        if (modal) modalSeen = true;
+        else if (modalSeen) {
+            document.documentElement.classList.remove('startup-modal-pending');
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Solo los botones del modal permiten iniciar o continuar el ejercicio.
+    for (const type of ['pointerdown', 'click']) {
+        document.addEventListener(type, event => {
+            if (event.target?.id !== 'continue-game-overlay') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && document.getElementById('continue-game-overlay')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+})();
+</script>
+
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -12151,7 +12188,7 @@ body.chat-typing .chat-footer {
     word-break: normal !important;
     hyphens: none !important;
     text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
-}
+    }
 .article-options-column {
     order: 1 !important;
     width: min(100%, 300px) !important;
@@ -12213,6 +12250,8 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.66rem, 2.9vw, 0.78rem) !important;
         border-radius: 9px !important;
     }
+
+
 }
 @media (max-width: 360px) {
     .article-options-column {
@@ -12359,6 +12398,32 @@ body.chat-typing .chat-footer {
             72%, 100% { background-position: -50% 0, 0 0; }
         }
     
+</style>
+<style id="mobile-answer-fontsize-boost">
+@media (max-width: 620px) {
+    .back-verb-main {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 1.1 !important;
+    }
+    .back-reflexive {
+        font-size: clamp(2.4rem, 9.5vw, 3.5rem) !important;
+    }
+    .article-answer-card .back-verb-main {
+        font-size: clamp(2.6rem, 10vw, 3.8rem) !important;
+    }
+    .back-verb-main.personal-revealed-answer {
+        font-size: clamp(2.7rem, 10.5vw, 3.9rem) !important;
+    }
+    .mas-revealed-answer .back-verb-main.stacked-answer {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 0.95 !important;
+    }
+    .mas-revealed-answer .back-verb-main.temporal-revealed-lines,
+    .mas-revealed-answer .back-verb-main.frequency-revealed-lines {
+        font-size: clamp(2.2rem, 8.8vw, 3.2rem) !important;
+        line-height: 1.08 !important;
+    }
+}
 </style>
 </head>
 <body>
@@ -16155,6 +16220,36 @@ function hasProgressSaved() {
 }
 
 // Función para mostrar el modal de continuación
+function showStartupWelcomeModal() {
+    if (document.getElementById('continue-game-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'continue-game-overlay';
+    overlay.className = 'continue-game-overlay';
+    overlay.innerHTML = `
+        <div class="continue-game-modal">
+            <div class="continue-modal-header">
+                <span class="continue-modal-icon continue-modal-logo"><img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" width="64" height="64" style="display:block;margin:auto;object-fit:contain"></span>
+                <h2 class="continue-modal-title">¡Prepárate para el test!</h2>
+                <p class="continue-modal-subtitle">Este test tiene ${flashcards.length} tarjetas</p>
+            </div>
+            <div class="continue-modal-content">
+                <div class="continue-progress-info">
+                    <div class="continue-progress-title">Empieza con calma. Equivocarte también forma parte del aprendizaje.</div>
+                </div>
+                <div class="continue-modal-buttons">
+                    <button class="continue-btn continue-btn-primary" id="start-game-btn"><i class="fas fa-play"></i> Comenzar</button>
+                </div>
+            </div>
+        </div>`;
+    overlay.querySelector('#start-game-btn').addEventListener('click', () => {
+        initializePage();
+        document.body.classList.remove('initial-modal-open');
+        overlay.remove();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+    });
+    document.body.appendChild(overlay);
+}
+
 function showContinueGameModal() {
     const savedState = loadGameProgress();
     if (!savedState) return;
@@ -16600,7 +16695,38 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [];
+const audioFiles = [
+    'cuantos-1.wav',
+    'cuantos-2.wav',
+    'cuantos-3.wav',
+    'cuantos-4.wav',
+    'cuantos-5.wav',
+    'cuantos-6.wav',
+    'cuantos-7.wav',
+    'cuantos-8.wav',
+    'cuantos-9.wav',
+    'cuantos-10.wav',
+    'cuantos-11.wav',
+    'cuantos-12.wav',
+    'cuantos-13.wav',
+    'cuantos-14.wav',
+    'cuantos-15.wav',
+    'cuantos-16.wav',
+    'cuantos-17.wav',
+    'cuantos-18.wav',
+    'cuantos-19.wav',
+    'cuantos-20.wav',
+    'cuantos-21.wav',
+    'cuantos-22.wav',
+    'cuantos-23.wav',
+    'cuantos-24.wav',
+    'cuantos-25.wav',
+    'cuantos-26.wav',
+    'cuantos-27.wav',
+    'cuantos-28.wav',
+    'cuantos-29.wav',
+    'cuantos-30.wav'
+];
 
 const audios = Array.from({ length: Math.max(audioFiles.length, document.querySelectorAll('.flashcard').length, 30) }, (_, index) => {
     const file = audioFiles[index] || '';
@@ -16635,7 +16761,38 @@ audioFiles.forEach(file => {
 function getAudioSrcForCountryName(textoBack) {
     const key = normalizeAudioKey(textoBack);
     if (!key) return null;
-    const mapping = {};
+    const mapping = {
+        'muy bonita': 'cuantos-1.wav',
+        'muy antigua': 'cuantos-2.wav',
+        'muy famoso': 'cuantos-3.wav',
+        'muy interesante': 'cuantos-4.wav',
+        'muy turistico': 'cuantos-5.wav',
+        'muy tranquila': 'cuantos-6.wav',
+        'viajo mucho': 'cuantos-7.wav',
+        'camino mucho': 'cuantos-8.wav',
+        'visito mucho': 'cuantos-9.wav',
+        'fotografio mucho': 'cuantos-10.wav',
+        'descanso mucho': 'cuantos-11.wav',
+        'mucho turismo': 'cuantos-12.wav',
+        'mucho sol': 'cuantos-13.wav',
+        'mucho calor': 'cuantos-14.wav',
+        'mucho trafico': 'cuantos-15.wav',
+        'mucho interes': 'cuantos-16.wav',
+        'mucha historia': 'cuantos-17.wav',
+        'mucha cultura': 'cuantos-18.wav',
+        'mucha naturaleza': 'cuantos-19.wav',
+        'mucha comida tipica': 'cuantos-20.wav',
+        'mucha gente': 'cuantos-21.wav',
+        'muchos museos': 'cuantos-22.wav',
+        'muchos monumentos': 'cuantos-23.wav',
+        'muchos hoteles': 'cuantos-24.wav',
+        'muchos lugares famosos': 'cuantos-25.wav',
+        'muchos platos tipicos': 'cuantos-26.wav',
+        'muchas playas': 'cuantos-27.wav',
+        'muchas plazas': 'cuantos-28.wav',
+        'muchas iglesias': 'cuantos-29.wav',
+        'muchas montanas': 'cuantos-30.wav'
+    };
     const file = mapping[key] || audioFilenameByKey[key];
     return file ? baseUrl + file : null;
 }
@@ -16646,8 +16803,23 @@ function deriveFrontLabelFromText(backText) {
 }
 
 function hasValidAudio(index) {
-    const a = audios[index];
-    return !!(a && a.src && a.src.trim() !== '');
+    // Resolve by the current card, never by the pre-shuffle audio position.
+    const card = typeof flashcards !== 'undefined' ? flashcards[index] : null;
+    const audioList = typeof audios !== 'undefined' ? audios : window.audios;
+    if (!card || !audioList) return false;
+    const answer = String(card.dataset.answer || card.querySelector('.back')?.dataset.originalText || card.querySelector('.back')?.textContent || '').trim();
+    const resolved = getAudioSrcForCountryName(answer);
+    if (!resolved) return false;
+    const src = new URL(resolved, document.baseURI).href;
+    let audio = audioList[index];
+    if (!audio) { audio = new Audio(); audioList[index] = audio; }
+    if (audio.src !== src) {
+        try { audio.pause(); } catch (_) {}
+        audio.src = src;
+        audio.preload = 'auto';
+        audio.load();
+    }
+    return true;
 }
 
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
@@ -16958,6 +17130,7 @@ function attachFlashcardHandlers() {
                 voiceAttempts = getCardAttempts(cardIndex);
                 vibrar(80);
                 card.classList.add('flipped');
+                
 
                 const existingLetterContent = backElement.querySelector('.letter-combination-container');
                 if (!existingLetterContent) {
@@ -17014,14 +17187,12 @@ window.addEventListener('DOMContentLoaded', () => {
         // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
         updateLastGamePillFromStorage();
         // Mostrar modal de continuación si hay progreso
-        setTimeout(() => {
-            showContinueGameModal();
-        }, 500); // Pequeño delay para que la página termine de cargar
+        showContinueGameModal(); // Pequeño delay para que la página termine de cargar
         return; // No ejecutar el resto de la inicialización
     }
 
-    // Si no hay progreso guardado, continuar con la inicialización normal
-    initializePage();
+    // El modal inicial precede siempre al contenido del ejercicio.
+    showStartupWelcomeModal();
 });
 
 // Función para inicializar la página cuando no hay progreso guardado
@@ -17252,6 +17423,21 @@ function stopAllAudios() {
         }
     });
 }
+
+// Detener audio de instrucciones inmediatamente al interactuar en el reverso (opciones, escritura, teclado)
+function stopInstructionAudioOnInteraction(e) {
+    if (e.target && (e.target.closest('.back') || e.target.closest('#vk, .vk, .vk-key') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}
+document.addEventListener('pointerdown', stopInstructionAudioOnInteraction, true);
+document.addEventListener('click', stopInstructionAudioOnInteraction, true);
+document.addEventListener('input', stopAllAudios, true);
+document.addEventListener('keydown', function(e) {
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}, true);
 
 // Muestra frases (hints) cerca de los pills al cargar la página
 function showPillHints() {

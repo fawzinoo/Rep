@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test3, unidad3</title>
+  <style>
+    body { margin: 0; background: #eef7f5; color: #172554; font-family: system-ui, sans-serif; }
+    #loading { min-height: 100vh; display: grid; place-items: center; text-align: center; padding: 24px; }
+    #loading strong { display: block; font-size: 1.2rem; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <script src="gr-u3-mixta-source.js"></script>
+  <main id="loading"><div><strong>Preparando Test3, unidad3…</strong><span>Se están seleccionando las tarjetas.</span></div></main>
+  <script>
+  (() => {
+    // La referencia visual para el reverso, la respuesta y su cuenta atrás
+    // es esc-tu. La baraja se sustituye después por las tarjetas de Gramática U3.
+    const TEMPLATE_FILE = 'esc-tu.html';
+    const PROGRESS_KEY = 'esc-gr-u3-mixta-v2_gameProgress';
+    const DRAW_KEY = 'esc-gr-u3-mixta-v2-draw';
+    const CARD_COUNT_PER_TOPIC = 5;
+    const SOURCES = ["ser","estar","tener","muymucho","quecuales","cuantos","donde"];
+
+    const escapeScript = (source) => source.replace(/<\/script/gi, '<\\/script');
+    const shuffle = (items) => {
+      const copy = [...items];
+      for (let index = copy.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+      }
+      return copy;
+    };
+
+    const readAudioFiles = (sourceDocument) => {
+      const scriptText = Array.from(sourceDocument.querySelectorAll('script'))
+        .map((script) => script.textContent || '')
+        .find((text) => /const\s+audioFiles\s*=/.test(text)) || '';
+      const declaration = scriptText.match(/const\s+audioFiles\s*=\s*\[([\s\S]*?)\];/);
+      return declaration
+        ? Array.from(declaration[1].matchAll(/['"]([^'"]+\.(?:wav|mp3))['"]/gi), (match) => match[1])
+        : [];
+    };
+
+    const createDeckScript = () => escapeScript(`
+      (() => {
+        const sources = ${JSON.stringify(SOURCES)};
+        const takePerSource = ${CARD_COUNT_PER_TOPIC};
+        const progressKey = ${JSON.stringify(PROGRESS_KEY)};
+        const drawKey = ${JSON.stringify(DRAW_KEY)};
+        const container = document.currentScript.parentElement;
+        const shuffle = ${shuffle.toString()};
+        const isResumableProgress = () => {
+          try {
+            const state = JSON.parse(localStorage.getItem(progressKey) || 'null');
+            if (!state || state.contentVersion !== 'esc-gr-u3-mixta-v2') return false;
+            const completed = Array.isArray(state.completedCards) ? state.completedCards.length : 0;
+            const total = sources.length * takePerSource;
+            return completed < total && (completed > 0 || Number(state.correctCount || 0) > 0 || Number(state.incorrectCount || 0) > 0 || Number(state.voiceAttempts || 0) > 0 || Number(state.currentCardIndex || 0) > 0);
+          } catch (_) { return false; }
+        };
+        const getSavedDraw = () => {
+          if (!isResumableProgress()) return null;
+          try {
+            const draw = JSON.parse(localStorage.getItem(drawKey) || 'null');
+            return Array.isArray(draw) && draw.length === sources.length ? draw : null;
+          } catch (_) { return null; }
+        };
+        const savedDraw = getSavedDraw();
+        const selectedBySource = new Map((savedDraw || []).map((entry) => [entry.source, entry.indices]));
+        const deck = [];
+        const sourceDocuments = new Map();
+        const infinitiveBySource = {ser:'ser',estar:'estar',tener:'tener'};
+        const scopeSourceFrontCss = (sourceDocument, source) => {
+          if (['porparaporque', 'indeterminantes'].includes(source)) return;
+          const styleId = 'esc-gr-u3-mixta-source-front-' + source;
+          if (document.getElementById(styleId)) return;
+          // Misma estrategia probada de com-gr-u3-mixta: se importan las
+          // declaraciones originales con mayor especificidad, sin copiar la
+          // geometría 3D de cada archivo de origen.
+          // cardId se guarda y se restaura con la partida. data-source no: al
+          // reanudar puede pertenecer a la posición anterior de la baraja.
+          const root = '#flashcard-container .flashcard[data-card-id*="-' + source + '-"]';
+          const scopeSelector = (selector) => {
+            const value = selector.trim();
+            // Se mantiene la geometría general de esc-tu, pero se conservan
+            // las reglas específicas del frontal y del bloque de respuesta
+            // de cada archivo esc- de origen.
+            if (value.includes('.back ') || value.includes('.back.') || value.includes('.card-back') || value.includes('.flashcard') || value.includes('.results-card') || value.includes('countdown')) return '';
+            const isFrontRule = /\\.(?:front(?:\\b|-)|article-front-card\\b|article-options-column\\b|article-option\\b|article-noun-column\\b)/.test(value);
+            const isAnswerRule = /\\.(?:article-answer-card\\b|back-verb-main\\b|back-reflexive\\b|back-ending\\b|personal-revealed-answer\\b|.*revealed-answer\\b)/.test(value);
+            if (!isFrontRule && !isAnswerRule) return '';
+            if (value.startsWith('#flashcard-container')) {
+              const suffix = value.slice('#flashcard-container'.length);
+              return (isFrontRule || isAnswerRule) ? root + suffix : '';
+            }
+            return root + ' ' + value;
+          };
+          const scopeRules = (rules) => Array.from(rules || []).map((rule) => {
+            if (rule.type === CSSRule.STYLE_RULE) {
+              const selectors = rule.selectorText.split(',').map(scopeSelector).filter(Boolean);
+              return selectors.length ? selectors.join(', ') + ' { ' + rule.style.cssText + ' }' : '';
+            }
+            // Evitar que @keyframes globales de los temas sobrescriban
+            // respuestaGlow, fadeInOut o pulse de esc-tu.
+            if (rule.type === CSSRule.KEYFRAMES_RULE) return '';
+            if (rule.cssRules && rule.cssRules.length) {
+              const header = rule.cssText.slice(0, rule.cssText.indexOf('{')).trim();
+              const nested = scopeRules(rule.cssRules);
+              return nested.trim() ? header + ' { ' + nested + ' }' : '';
+            }
+            return rule.type === CSSRule.FONT_FACE_RULE ? rule.cssText : '';
+          }).join('\\n');
+          // DOMParser no activa las hojas de estilo del documento separado.
+          // Se analizan en una hoja temporal sin aplicarlas a la página.
+          const css = Array.from(sourceDocument.querySelectorAll('style'))
+            .map((block) => {
+              const parser = document.createElement('style');
+              parser.media = 'not all';
+              parser.textContent = block.textContent;
+              document.head.appendChild(parser);
+              try { return scopeRules(parser.sheet.cssRules); }
+              finally { parser.remove(); }
+            })
+            .join('\\n');
+          if (!css.trim()) return;
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = css;
+          document.body.appendChild(style);
+        };
+        sources.forEach((source) => {
+          try {
+            const request = new XMLHttpRequest();
+            const sourceFile = {
+              ser: 'esc-ser3.html',
+              estar: 'esc-estar3.html',
+              tener: 'esc-tener3.html',
+              muymucho: 'esc-muymucho.html',
+              quecuales: 'esc-quecuales.html',
+              cuantos: 'esc-cuantos.html',
+              donde: 'esc-donde.html'
+            }[source];
+            request.open('GET', sourceFile, false);
+            request.send(null);
+            if (request.status && (request.status < 200 || request.status >= 300)) return;
+            const sourceDocument = new DOMParser().parseFromString(request.responseText, 'text/html');
+            // Estos archivos esc- comparten una baraja base y el script local
+            // de cada tema sustituye sus respuestas por las del tema real.
+            // DOMParser no ejecuta ese script, así que lo aplicamos antes de
+            // seleccionar las tarjetas y sus audios.
+            sourceDocument.querySelectorAll('#flashcard-container script').forEach((script) => {
+              const text = script.textContent || '';
+              if (!text.includes('const items =') ||
+                  (!text.includes("querySelectorAll('#flashcard-container .flashcard") &&
+                   !text.includes('querySelectorAll("#flashcard-container .flashcard'))) return;
+              new Function('document', text)(sourceDocument);
+            });
+            sourceDocuments.set(source, sourceDocument);
+            const audioFiles = (${readAudioFiles.toString()})(sourceDocument);
+            const cards = Array.from(sourceDocument.querySelectorAll('#flashcard-container > .flashcard'));
+            let indices = selectedBySource.get(source);
+            if (!Array.isArray(indices) || indices.length !== takePerSource || indices.some((index) => !Number.isInteger(index) || index < 0 || index >= cards.length)) {
+              indices = shuffle(cards.map((_, index) => index)).slice(0, takePerSource);
+            }
+            indices.forEach((sourceIndex) => {
+              const card = cards[sourceIndex].cloneNode(true);
+              card.classList.remove('flipped', 'is-visible', 'completed');
+              card.dataset.source = source;
+              card.dataset.sourceIndex = String(sourceIndex);
+              card.dataset.cardId = 'esc-gr-u3-mixta-' + source + '-' + (sourceIndex + 1);
+              let sourceAudioFile = audioFiles[sourceIndex] || card.dataset.audioFile || '';
+              // En el repositorio, indeterminantes-2 a -20 fueron publicados
+              // con doble punto antes de wav (p. ej. -13..wav).
+              if (source === 'indeterminantes' && sourceIndex > 0) {
+                sourceAudioFile = sourceAudioFile.replace(/\\.+wav$/i, '..wav');
+              }
+              card.dataset.audioFile = sourceAudioFile;
+              // Las tarjetas de origen guardan la solución en la cara trasera,
+              // no siempre en data-answer. La plantilla de escritura necesita
+              // este atributo para mostrar y validar la respuesta.
+              card.dataset.answer = String(card.dataset.answer || card.querySelector('.back')?.textContent || '')
+                .replace(/\\s+/g, ' ')
+                .trim();
+              const front = card.querySelector('.front');
+              const infinitive = infinitiveBySource[source];
+              const pronoun = front?.querySelector('.front-pronoun');
+              
+              if (infinitive && pronoun && !front.querySelector('.front-infinitive')) {
+                const infinitiveLabel = document.createElement('span');
+                infinitiveLabel.className = 'front-infinitive';
+                infinitiveLabel.textContent = infinitive;
+                pronoun.insertAdjacentElement('afterend', infinitiveLabel);
+              }
+              if (front && !front.querySelector('.esc-source-' + source)) {
+                const sourceMarker = document.createElement('div');
+                sourceMarker.className = 'esc-source-front esc-source-' + source;
+                while (front.firstChild) sourceMarker.appendChild(front.firstChild);
+                front.appendChild(sourceMarker);
+              }
+              deck.push(card);
+            });
+            selectedBySource.set(source, indices);
+          } catch (error) {
+            console.warn('No se pudieron cargar las tarjetas de esc-' + source + '.', error);
+          }
+        });
+        if (!savedDraw) {
+          try {
+            localStorage.setItem(drawKey, JSON.stringify(sources.map((source) => ({ source, indices: selectedBySource.get(source) || [] }))));
+          } catch (_) {}
+        }
+        container.replaceChildren(...shuffle(deck));
+        // La plantilla de escritura usa este catálogo para barajar y restaurar
+        // las caras sin perder el contenido original de cada tema.
+        window.MAS_CANONICAL_CARDS = deck.map((card, contentIndex) => ({
+          cardId: String(card.dataset.cardId || ''),
+          answer: String(card.dataset.answer || ''),
+          targetForm: String(card.dataset.targetForm || ''),
+          targetPosition: String(card.dataset.targetPosition || ''),
+          frontHTML: card.querySelector('.front')?.innerHTML || '',
+          backHTML: card.querySelector('.back')?.innerHTML || '',
+          contentIndex: String(contentIndex),
+          audioFile: String(card.dataset.audioFile || '')
+        }));
+        window.getMasCanonicalCardData = (value, fallbackAnswer = '') => {
+          const isNode = value && value.nodeType === 1;
+          const cardId = String(isNode ? value.dataset.cardId || '' : value?.cardId || value || '');
+          const answer = String(isNode ? value.dataset.answer || '' : value?.backText || value?.answer || fallbackAnswer || '');
+          return window.MAS_CANONICAL_CARDS.find((item) => item.cardId === cardId)
+            || window.MAS_CANONICAL_CARDS.find((item) => item.answer === answer)
+            || null;
+        };
+        // esc-tu crea este mapa dentro de su generador de tarjetas. Como aquí
+        // sustituimos ese generador por la baraja mixta, debemos reconstruirlo:
+        // renderPersonalAnswerWithSplit lo usa para aplicar exactamente
+        // .personal-verb-highlight y la animación visual de esc-tu.
+        window.TU_VERB_FORMS = {};
+        window.ESC_GR_U3_MIXTA_ANSWER_SPLITS = {};
+        const endingsByFamily = {
+          ar: ['o', 'as', 'a', 'a', 'a', 'amos', 'amos', 'áis', 'áis', 'an', 'an', 'an'],
+          er: ['o', 'es', 'e', 'e', 'e', 'emos', 'emos', 'éis', 'éis', 'en', 'en', 'en'],
+          ir: ['o', 'es', 'e', 'e', 'e', 'imos', 'imos', 'ís', 'ís', 'en', 'en', 'en']
+        };
+        const verbFamily = {ser:'er',estar:'ar',tener:'er'};
+        const specialEndings = {};
+        deck.forEach((card) => {
+          const answer = String(card.dataset.answer || '').trim();
+          if (!answer) return;
+          const source = String(card.dataset.source || '');
+          const sourceIndex = Number(card.dataset.sourceIndex || 0);
+          const isArticleOrPossessive = ['muymucho','quecuales','cuantos','donde'].includes(source);
+          const isUnhighlightedIrregular = ['ser','estar'].includes(source);
+          let highlightedPart = '';
+          if (isArticleOrPossessive) {
+            highlightedPart = answer.split(/\\s+/)[0];
+          } else if (isUnhighlightedIrregular) {
+            highlightedPart = '';
+          } else {
+            const family = verbFamily[source];
+            const expectedEnding = (specialEndings[source] || endingsByFamily[family] || [])[sourceIndex] || '';
+            highlightedPart = expectedEnding && answer.toLocaleLowerCase('es').endsWith(expectedEnding.toLocaleLowerCase('es'))
+              ? answer.slice(answer.length - expectedEnding.length)
+              : answer.slice(-1);
+          }
+          const highlightAt = highlightedPart
+            ? answer.toLocaleLowerCase('es').lastIndexOf(highlightedPart.toLocaleLowerCase('es'))
+            : -1;
+          const split = isUnhighlightedIrregular
+            ? { before: answer, highlight: '', after: '' }
+            : highlightAt >= 0
+            ? {
+                before: answer.slice(0, highlightAt),
+                highlight: answer.slice(highlightAt, highlightAt + highlightedPart.length),
+                after: answer.slice(highlightAt + highlightedPart.length)
+              }
+            : { before: '', highlight: answer, after: '' };
+          window.ESC_GR_U3_MIXTA_ANSWER_SPLITS[answer] = split;
+          window.ESC_GR_U3_MIXTA_ANSWER_SPLITS[answer.replace(/[.。]\\s*$/, '')] = split;
+          window.TU_VERB_FORMS[answer] = highlightedPart;
+          window.TU_VERB_FORMS[answer.replace(/[.。]\\s*$/, '')] = highlightedPart;
+        });
+        window.ESC_GR_U3_MIXTA_CARD_COUNT = deck.length;
+        const installOriginalFrontStyles = () => {
+          sourceDocuments.forEach((sourceDocument, source) => scopeSourceFrontCss(sourceDocument, source));
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', installOriginalFrontStyles, { once: true });
+        } else {
+          installOriginalFrontStyles();
+        }
+      })();
+    `);
+
+    try {
+      const request = new XMLHttpRequest();
+      request.open('GET', TEMPLATE_FILE, false);
+      request.send(null);
+      if (request.status && (request.status < 200 || request.status >= 300)) throw new Error('No se pudo leer la plantilla');
+
+      const sourceDocument = new DOMParser().parseFromString(request.responseText, 'text/html');
+      sourceDocument.title = 'Test3, unidad3';
+      const title = sourceDocument.querySelector('.cuesta-title-text');
+      if (title) title.textContent = 'TEST 3, UNIDAD 3';
+      // Filtrar estilos conflictivos de esc-tu que alteraban el diseño
+      // de las tarjetas de opciones (.article-options-column) con flex, 5 columnas o 2 columnas.
+      const unwantedStyleIds = new Set([
+        'demostrativos-layout-override',
+        'demostrativos-adaptations',
+        'demostrativos-layout-overrides',
+        'cuesta-card-options',
+        'mas-topic-layout',
+        'grados-gusto-card-layout',
+        'mas-card-layout'
+      ]);
+      Array.from(sourceDocument.querySelectorAll('style')).forEach((style) => {
+        if (unwantedStyleIds.has(style.id)) {
+          style.remove();
+        }
+      });
+      const templateContainer = sourceDocument.getElementById('flashcard-container');
+      if (templateContainer) {
+        Array.from(templateContainer.querySelectorAll('style')).forEach((style) => {
+          if (!unwantedStyleIds.has(style.id)) {
+            sourceDocument.head.appendChild(style);
+          } else {
+            style.remove();
+          }
+        });
+      }
+
+      // Inyectar estilos idénticos al origen para porparaporque e indeterminantes
+      const topicStyles = sourceDocument.createElement('style');
+      topicStyles.id = 'esc-gr-u3-mixta-topic-card-styles';
+      topicStyles.textContent = `
+        /* Estilos exactos de porparaporque e indeterminantes */
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-front-card,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-front-card,
+        #flashcard-container .flashcard .esc-source-porparaporque .article-front-card,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-front-card,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-front-card,
+        #flashcard-container .flashcard .esc-source-indeterminantes .article-front-card {
+            width: min(72%, 360px) !important;
+            min-height: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: clamp(9px, 1.7vw, 13px) !important;
+            position: relative !important;
+            z-index: 2 !important;
+            padding: clamp(10px, 1.8vw, 14px) !important;
+            border-radius: 18px !important;
+            background: rgba(255, 255, 255, 0.09) !important;
+            border: 1px solid rgba(255, 255, 255, 0.16) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), 0 16px 34px rgba(0, 0, 0, 0.2) !important;
+            backdrop-filter: blur(5px) !important;
+            -webkit-backdrop-filter: blur(5px) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-front-card::before,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-front-card::before,
+        #flashcard-container .flashcard .esc-source-porparaporque .article-front-card::before,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-front-card::before,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-front-card::before,
+        #flashcard-container .flashcard .esc-source-indeterminantes .article-front-card::before {
+            content: none !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-noun-column,
+        #flashcard-container .flashcard .esc-source-porparaporque .article-noun-column,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-noun-column,
+        #flashcard-container .flashcard .esc-source-indeterminantes .article-noun-column {
+            order: 2 !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            font-family: 'Poppins', sans-serif !important;
+            font-weight: 900 !important;
+            font-size: clamp(1.55rem, 3.5vw, 2.45rem) !important;
+            color: #fff !important;
+            line-height: 0.95 !important;
+            text-align: center !important;
+            letter-spacing: 0 !important;
+            text-transform: lowercase !important;
+            white-space: normal !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+            hyphens: none !important;
+            text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-options-column,
+        #flashcard-container .flashcard .esc-source-porparaporque .article-options-column {
+            order: 1 !important;
+            width: min(100%, 300px) !important;
+            display: grid !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 5px !important;
+            padding: 5px !important;
+            border-radius: 15px !important;
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            align-self: center !important;
+            align-content: center !important;
+            justify-items: stretch !important;
+            margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column,
+        #flashcard-container .flashcard .esc-source-indeterminantes .article-options-column {
+            order: 1 !important;
+            width: min(100%, 300px) !important;
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 5px !important;
+            padding: 5px !important;
+            border-radius: 15px !important;
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            align-self: center !important;
+            align-content: center !important;
+            justify-items: stretch !important;
+            margin: 0 auto !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-option,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-option,
+        #flashcard-container .flashcard .esc-source-porparaporque .article-option,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-option,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-option,
+        #flashcard-container .flashcard .esc-source-indeterminantes .article-option {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            min-height: 30px !important;
+            padding: 4px 5px !important;
+            border-radius: 10px !important;
+            font-family: 'Poppins', sans-serif !important;
+            font-weight: 800 !important;
+            font-size: clamp(0.72rem, 1.35vw, 0.84rem) !important;
+            color: #ffd54a !important;
+            background: rgba(255, 213, 74, 0.12) !important;
+            border: 1px solid rgba(255, 213, 74, 0.28) !important;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+            text-transform: lowercase !important;
+            letter-spacing: 0 !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            box-sizing: border-box !important;
+        }
+        #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-answer-card .back-verb-main,
+        #flashcard-container .flashcard[data-source="porparaporque"] .article-answer-card .back-verb-main,
+        #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-answer-card .back-verb-main,
+        #flashcard-container .flashcard[data-source="indeterminantes"] .article-answer-card .back-verb-main {
+            text-transform: lowercase !important;
+            font-size: clamp(1.65rem, 4.2vw, 3.05rem) !important;
+            line-height: 1 !important;
+            text-wrap: balance !important;
+        }
+        @media (max-width: 620px) {
+            #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-front-card,
+            #flashcard-container .flashcard[data-source="porparaporque"] .article-front-card,
+            #flashcard-container .flashcard .esc-source-porparaporque .article-front-card,
+            #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-front-card,
+            #flashcard-container .flashcard[data-source="indeterminantes"] .article-front-card,
+            #flashcard-container .flashcard .esc-source-indeterminantes .article-front-card {
+                width: min(82%, 285px) !important;
+                min-height: auto !important;
+                gap: 6px !important;
+                padding: 10px !important;
+            }
+            #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-noun-column,
+            #flashcard-container .flashcard[data-source="porparaporque"] .article-noun-column,
+            #flashcard-container .flashcard .esc-source-porparaporque .article-noun-column,
+            #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-noun-column,
+            #flashcard-container .flashcard[data-source="indeterminantes"] .article-noun-column,
+            #flashcard-container .flashcard .esc-source-indeterminantes .article-noun-column {
+                font-size: clamp(1.38rem, 6.4vw, 2rem) !important;
+            }
+            #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,
+            #flashcard-container .flashcard[data-source="porparaporque"] .article-options-column,
+            #flashcard-container .flashcard .esc-source-porparaporque .article-options-column {
+                width: min(100%, 250px) !important;
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                gap: 5px !important;
+                padding: 5px !important;
+                border-radius: 13px !important;
+            }
+            #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,
+            #flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column,
+            #flashcard-container .flashcard .esc-source-indeterminantes .article-options-column {
+                width: min(100%, 250px) !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+                gap: 5px !important;
+                padding: 5px !important;
+                border-radius: 13px !important;
+            }
+            #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-option,
+            #flashcard-container .flashcard[data-source="porparaporque"] .article-option,
+            #flashcard-container .flashcard .esc-source-porparaporque .article-option,
+            #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-option,
+            #flashcard-container .flashcard[data-source="indeterminantes"] .article-option,
+            #flashcard-container .flashcard .esc-source-indeterminantes .article-option {
+                min-height: 28px !important;
+                font-size: clamp(0.66rem, 2.9vw, 0.78rem) !important;
+                border-radius: 9px !important;
+                margin: 0 !important;
+                width: 100% !important;
+            }
+        }
+        @media (max-width: 360px) {
+            #flashcard-container .flashcard[data-card-id*="-porparaporque-"] .article-options-column,
+            #flashcard-container .flashcard[data-source="porparaporque"] .article-options-column,
+            #flashcard-container .flashcard .esc-source-porparaporque .article-options-column,
+            #flashcard-container .flashcard[data-card-id*="-indeterminantes-"] .article-options-column,
+            #flashcard-container .flashcard[data-source="indeterminantes"] .article-options-column,
+            #flashcard-container .flashcard .esc-source-indeterminantes .article-options-column {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                width: min(100%, 220px) !important;
+            }
+        }
+      `;
+      sourceDocument.head.appendChild(topicStyles);
+
+      const cardBuilder = sourceDocument.getElementById('loslunes-shared-front-content');
+      if (cardBuilder) cardBuilder.remove();
+      const container = sourceDocument.getElementById('flashcard-container');
+      if (!container) throw new Error('No se encontró el tablero de tarjetas');
+      const mixedStatsBox = sourceDocument.getElementById('stats-box');
+      if (mixedStatsBox) {
+        // sel-hablar inicia el cuadro visible para presentar primero los
+        // indicadores de avance; showPillHints se encarga de ocultarlo luego.
+        mixedStatsBox.classList.remove('hidden');
+        mixedStatsBox.remove();
+      }
+      sourceDocument.head.appendChild(Object.assign(sourceDocument.createElement('script'), {src:'gr-u3-mixta-source.js'}));
+      container.innerHTML = '<script id="esc-gr-u3-mixta-card-loader">' + createDeckScript() + '<\/script>';
+      if (mixedStatsBox) container.appendChild(mixedStatsBox);
+
+      const freshDeckScript = sourceDocument.createElement('script');
+      freshDeckScript.id = 'esc-gr-u3-mixta-fresh-deck';
+      freshDeckScript.textContent = `
+        (() => {
+          window.addEventListener('error', (event) => {
+            console.error('esc-gr-u3-mixta:', event.error || event.message);
+          });
+          // Esta baraja solo usa la instrucción oral del reverso.
+          window.playIntroAudio = () => {};
+          // Prepararla al cargar evita empezar la descarga en el primer volteo.
+          escribeAudio = new Audio('https://fawzinoo.github.io/audios/escribe.wav');
+          escribeAudio.preload = 'auto';
+          escribeAudio.load();
+          // Reproducir la instrucción completa desde el principio.
+          window.playEscribeAudioOnce = () => {
+            if (hasPlayedEscribeAudio) return;
+            hasPlayedEscribeAudio = true;
+            escribeAudio.currentTime = 0;
+            escribeAudio.play().catch((error) => {
+              hasPlayedEscribeAudio = false;
+              console.warn('No se pudo reproducir escribe.wav:', error);
+            });
+          };
+          const mixedInfinitives = {ser:'ser',estar:'estar',tener:'tener'};
+          const restoreSourceMarkers = () => {
+            document.querySelectorAll('#flashcard-container > .flashcard').forEach((card) => {
+              const front = card.querySelector(':scope > .front');
+              const existingMarker = front && front.querySelector('[class*="esc-source-"]');
+              const markerSourceClass = existingMarker
+                ? Array.from(existingMarker.classList)
+                  .find((className) => className.startsWith('esc-source-') && className !== 'esc-source-front')
+                : '';
+              const markerSource = markerSourceClass ? markerSourceClass.slice('esc-source-'.length) : '';
+              const cardIdSourceMatch = String(card.dataset.cardId || '')
+                .match(/esc-gr-u3-mixta-([a-z0-9]+)-\\d+$/);
+              // El contenido del front es la autoridad. Tras barajar o
+              // restaurar, data-source puede pertenecer a la antigua posición.
+              const source = markerSource
+                || (cardIdSourceMatch && cardIdSourceMatch[1])
+                || card.dataset.source;
+              if (!source || !front) return;
+              card.dataset.source = source;
+              const infinitive = mixedInfinitives[source];
+              if (infinitive) {
+                card.querySelectorAll('.back .writing-question-instruction')
+                  .forEach((instruction) => instruction.remove());
+              }
+              const pronoun = front.querySelector('.front-pronoun');
+              
+              if (infinitive && pronoun && !front.querySelector('.front-infinitive')) {
+                const infinitiveLabel = document.createElement('span');
+                infinitiveLabel.className = 'front-infinitive';
+                infinitiveLabel.textContent = infinitive;
+                pronoun.insertAdjacentElement('afterend', infinitiveLabel);
+              }
+              if (front.querySelector('.esc-source-' + source)) return;
+              const marker = document.createElement('div');
+              marker.className = 'esc-source-front esc-source-' + source;
+              while (front.firstChild) marker.appendChild(front.firstChild);
+              front.appendChild(marker);
+            });
+          };
+          // En una partida reanudada, la plantilla restaura front.innerHTML y
+          // no conserva data-source. Recuperamos la marca desde el cardId.
+          document.addEventListener('DOMContentLoaded', () => {
+            restoreSourceMarkers();
+            // Los estilos originales se instalan en este mismo momento;
+            // mover el ajuste al final evita que vuelvan a dividir la fila.
+            const grammarFrontLayout = document.getElementById('esc-gr-u3-mixta-grammar-front-layout');
+            if (grammarFrontLayout) document.body.appendChild(grammarFrontLayout);
+            const container = document.getElementById('flashcard-container');
+            if (container) {
+              new MutationObserver(restoreSourceMarkers)
+                .observe(container, { childList: true, subtree: true });
+            }
+          }, { once: true });
+          const markerStyle = document.createElement('style');
+          markerStyle.textContent = '.esc-source-front{display:contents!important}';
+          document.head.appendChild(markerStyle);
+          const infinitiveStyle = document.createElement('style');
+          infinitiveStyle.id = 'esc-gr-u3-mixta-front-infinitives';
+          infinitiveStyle.textContent = "\\n#flashcard-container .flashcard .front-infinitive {\\n  display: block !important;\\n  margin-top: 6px !important;\\n  color: #facc15 !important;\\n  font-family: 'Poppins', sans-serif !important;\\n  font-size: clamp(1.6rem, 5vw, 2.2rem) !important;\\n  font-weight: 800 !important;\\n  line-height: 1.1 !important;\\n  letter-spacing: .08em !important;\\n  text-transform: lowercase !important;\\n  text-shadow: 0 3px 10px rgba(0, 0, 0, .38) !important;\\n}\\n#flashcard-container .flashcard .front-infinitive::before {\\n  content: '' !important;\\n  display: block !important;\\n  width: min(34%, 160px) !important;\\n  height: 2px !important;\\n  margin: 0 auto 10px !important;\\n  border-radius: 999px !important;\\n  background: rgba(250, 204, 21, .72) !important;\\n  box-shadow: 0 1px 6px rgba(250, 204, 21, .28) !important;\\n}\\n#flashcard-container .flashcard[data-source=\\"ir\\"] .front-infinitive,\\n#flashcard-container .flashcard[data-source=\\"ver\\"] .front-infinitive {\\n  font-size: clamp(1.82rem, 5.7vw, 2.45rem) !important;\\n}\\n";
+          document.head.appendChild(infinitiveStyle);
+          // En la respuesta de la mixta se resalta solo la terminación verbal
+          // (o el artículo/posesivo examinado) y toda la forma queda en una
+          // única línea. La animación y el resto del aspecto siguen siendo los
+          // originales de esc-tu.
+          const answerSplitStyle = document.createElement('style');
+          answerSplitStyle.id = 'esc-gr-u3-mixta-answer-split';
+          // El reverso debe conservar el layout original de esc-tu. Solo se
+          // mantiene en una línea la respuesta personalizada de esta mixta;
+          // no se cambia la altura del contenedor, para no desplazar el timer.
+          answerSplitStyle.textContent = '.back .article-answer-card.personal-revealed-answer{display:flex!important;justify-content:center!important;align-items:center!important;width:100%!important;text-align:center!important;}.back .article-answer-card.personal-revealed-answer .back-verb-main{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:center!important;width:100%!important;max-width:94%!important;margin:0 auto!important;text-align:center!important;font-size:clamp(1.35rem,3vw,2.05rem)!important;line-height:1.22!important;}.back .article-answer-card.personal-revealed-answer .answer-line{display:block!important;width:auto!important;max-width:100%!important;margin:0 auto!important;text-align:center!important;white-space:nowrap!important;overflow-wrap:normal!important;word-break:keep-all!important;}.back .article-answer-card.personal-revealed-answer .answer-line + .answer-line{margin-top:.12em!important;}.flashcard[data-source="muymucho"] .back .article-answer-card .back-verb-main,.flashcard[data-source="quecuales"] .back .article-answer-card .back-verb-main,.flashcard[data-source="cuantos"] .back .article-answer-card .back-verb-main,.flashcard[data-source="donde"] .back .article-answer-card .back-verb-main{font-size:clamp(1.35rem,3vw,2.05rem)!important;line-height:1.22!important;}.personal-revealed-answer .answer-line.esc-gr-u3-mixta-one-line-answer{display:inline-block!important;width:auto!important;max-width:96%!important;margin:0 auto!important;text-align:center!important;white-space:nowrap!important;overflow-wrap:normal!important;word-break:keep-all!important;}';
+          document.head.appendChild(answerSplitStyle);
+          const basePersonalAnswerRenderer = window.renderPersonalAnswerWithSplit;
+          const escapeAnswerHTML = (value) => String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+          window.renderPersonalAnswerWithSplit = (raw, personalVerb) => {
+            const clean = String(raw || '').replace(/\\s+([?.,!؛;:])/g, '$1').trim();
+            const split = window.ESC_GR_U3_MIXTA_ANSWER_SPLITS
+              && (window.ESC_GR_U3_MIXTA_ANSWER_SPLITS[clean]
+                || window.ESC_GR_U3_MIXTA_ANSWER_SPLITS[clean.replace(/[.。]\\s*$/, '')]);
+            if (!split) {
+              return typeof basePersonalAnswerRenderer === 'function'
+                ? basePersonalAnswerRenderer(raw, personalVerb)
+                : escapeAnswerHTML(clean);
+            }
+            const words = clean.split(' ').filter(Boolean);
+            if (words.length > 3) {
+              const firstLine = words.slice(0, 2);
+              const secondLine = words.slice(2).join(' ');
+              const firstHTML = split.highlight && firstLine[0].toLocaleLowerCase('es') === split.highlight.toLocaleLowerCase('es')
+                ? '<span class="personal-verb-highlight">' + escapeAnswerHTML(firstLine[0]) + '</span>' + (firstLine[1] ? ' ' + escapeAnswerHTML(firstLine[1]) : '')
+                : escapeAnswerHTML(firstLine.join(' '));
+              return '<span class="answer-line">' + firstHTML + '</span><span class="answer-line">' + escapeAnswerHTML(secondLine) + '</span>';
+            }
+            return '<span class="answer-line esc-gr-u3-mixta-one-line-answer">'
+              + escapeAnswerHTML(split.before)
+              + (split.highlight
+                ? '<span class="personal-verb-highlight">' + escapeAnswerHTML(split.highlight) + '</span>'
+                : '')
+              + escapeAnswerHTML(split.after)
+              + '</span>';
+          };
+          // La plantilla esc-tu puede volver a declarar su renderizador en
+          // otro ámbito. Por eso el ajuste final se aplica también al nodo
+          // real que aparece después de revelar una respuesta: las frases
+          // largas quedan siempre en dos líneas centradas.
+          const applyLongMixedAnswerLayout = () => {
+            document.querySelectorAll('#flashcard-container .back .personal-revealed-answer .back-verb-main').forEach((answer) => {
+              if (answer.dataset.mixedLongLayout === '1') return;
+              const sourceText = answer.closest('.back')?.dataset.originalText || answer.innerText || answer.textContent;
+              const words = sourceText.replaceAll(String.fromCharCode(160), ' ').trim().split(' ').filter(Boolean);
+              if (words.length <= 3) return;
+              const firstLine = words.slice(0, 2).join(' ');
+              const secondLine = words.slice(2).join(' ');
+              answer.innerHTML = '<span class="answer-line">' + escapeAnswerHTML(firstLine) + '</span><span class="answer-line">' + escapeAnswerHTML(secondLine) + '</span>';
+              answer.dataset.mixedLongLayout = '1';
+            });
+          };
+          new MutationObserver(applyLongMixedAnswerLayout).observe(document.body, { childList: true, subtree: true });
+          applyLongMixedAnswerLayout();
+          // La precarga original de esc-tu resuelve audios tu-*. En esta
+          // baraja cada tarjeta procede de otro tema y ya lleva su archivo
+          // exacto en data-audio-file; se prepara al quedar visible para que
+          // la voz empiece sin esperar una nueva descarga tras responder.
+          const prepareMixedCardAudio = (card) => {
+            if (!card || !card.dataset || !card.dataset.audioFile) return;
+            const src = 'https://fawzinoo.github.io/audios/' + card.dataset.audioFile;
+            if (!card._audioEl) card._audioEl = new Audio();
+            const audio = card._audioEl;
+            audio.preload = 'auto';
+            const resolvedSrc = new URL(src, document.baseURI).href;
+            if (audio.src !== resolvedSrc) {
+              audio.src = src;
+              try { audio.load(); } catch (_) {}
+            }
+          };
+          const prepareVisibleMixedAudio = () => {
+            const visible = document.querySelector('#flashcard-container > .flashcard.is-visible')
+              || Array.from(document.querySelectorAll('#flashcard-container > .flashcard'))
+                .find((card) => getComputedStyle(card).display !== 'none');
+            prepareMixedCardAudio(visible);
+          };
+          // error.mp3 se creaba desde cero en cada fallo. Se mantiene una
+          // instancia precargada para que el aviso sonoro sea inmediato.
+          const mixedErrorAudio = new Audio('https://fawzinoo.github.io/audios/error.mp3');
+          mixedErrorAudio.preload = 'auto';
+          mixedErrorAudio.volume = 0.5;
+          try { mixedErrorAudio.load(); } catch (_) {}
+          window.playErrorSound = () => {
+            try {
+              mixedErrorAudio.pause();
+              mixedErrorAudio.currentTime = 0;
+              mixedErrorAudio.play().catch(() => {});
+            } catch (_) {}
+          };
+          document.addEventListener('DOMContentLoaded', () => {
+            prepareVisibleMixedAudio();
+            const mixedContainer = document.getElementById('flashcard-container');
+            if (mixedContainer) {
+              new MutationObserver(prepareVisibleMixedAudio).observe(mixedContainer, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['class', 'style']
+              });
+            }
+          }, { once: true });
+          document.addEventListener('pointerdown', (event) => {
+            if (event.target && event.target.closest('.check-button')) prepareVisibleMixedAudio();
+          }, true);
+          const directStartKey = 'esc-gr-u3-mixta-direct-start';
+          const showInitialModal = window.showContinueGameModal;
+          window.showContinueGameModal = (hasSavedProgress) => {
+            const directStart = sessionStorage.getItem(directStartKey) === 'true';
+            sessionStorage.removeItem(directStartKey);
+            if (directStart && !hasSavedProgress) {
+              resetEscribeAudioSession();
+              initializePage();
+              if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+              return;
+            }
+            return showInitialModal(hasSavedProgress);
+          };
+          const startFreshDeck = (directStart = false) => {
+            localStorage.removeItem('${PROGRESS_KEY}');
+            localStorage.removeItem('${DRAW_KEY}');
+            localStorage.removeItem('esc-gr-u3-mixta_shuffleCount');
+            if (directStart === true) sessionStorage.setItem(directStartKey, 'true');
+            window.location.reload();
+          };
+          // El botón del modal se intercepta antes de su listener original.
+          document.addEventListener('click', (event) => {
+            if (!event.target.closest('#start-fresh-btn')) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            startFreshDeck(true);
+          }, true);
+          // El reinicio de la barra también debe generar otro sorteo.
+          window.resetGame = startFreshDeck;
+        })();
+      `;
+      sourceDocument.body.appendChild(freshDeckScript);
+
+      // En las tarjetas de Gramática U3 las opciones deben permanecer en una
+      // sola fila cuando el frontal dispone de espacio, como en com-gr-u3.
+      const grammarFrontLayout = sourceDocument.createElement('style');
+      grammarFrontLayout.id = 'esc-gr-u3-mixta-grammar-front-layout';
+      grammarFrontLayout.textContent = `
+        #flashcard-container .back .countdown-inline {
+          margin-top: 32px !important;
+          z-index: 10 !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .back .article-answer-card,
+        #flashcard-container .flashcard[data-source="quecuales"] .back .article-answer-card,
+        #flashcard-container .flashcard[data-source="cuantos"] .back .article-answer-card,
+        #flashcard-container .flashcard[data-source="donde"] .back .article-answer-card {
+          width: 100% !important;
+          display: flex !important;
+          justify-content: center !important;
+          align-items: center !important;
+          text-align: center !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .back .article-answer-card .back-verb-main,
+        #flashcard-container .flashcard[data-source="quecuales"] .back .article-answer-card .back-verb-main,
+        #flashcard-container .flashcard[data-source="cuantos"] .back .article-answer-card .back-verb-main,
+          #flashcard-container .flashcard[data-source="donde"] .back .article-answer-card .back-verb-main {
+          display: block !important;
+          width: 100% !important;
+          max-width: 94% !important;
+          margin: 0 auto !important;
+          text-align: center !important;
+          white-space: normal !important;
+          overflow-wrap: break-word !important;
+          word-break: normal !important;
+          text-wrap: balance !important;
+          font-size: clamp(1.45rem, 3.8vw, 2.4rem) !important;
+          line-height: 1.16 !important;
+        }
+        #flashcard-container .back .article-answer-card .back-verb-main {
+          display: block !important;
+          width: 100% !important;
+          max-width: 94% !important;
+          margin: 0 auto !important;
+          text-align: center !important;
+          white-space: normal !important;
+          overflow-wrap: break-word !important;
+          word-break: normal !important;
+          text-wrap: balance !important;
+          font-size: clamp(1.45rem, 3.8vw, 2.4rem) !important;
+          line-height: 1.16 !important;
+        }
+        #flashcard-container .back .u3-revealed-answer {
+          width: 100% !important;
+          display: flex !important;
+          justify-content: center !important;
+          align-items: center !important;
+          text-align: center !important;
+        }
+        #flashcard-container .back .u3-revealed-answer .back-verb-main.stacked-answer {
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: 100% !important;
+          max-width: 94% !important;
+          margin: 0 auto !important;
+          text-align: center !important;
+          font-size: clamp(1.35rem, 3vw, 2.05rem) !important;
+          line-height: 1.25 !important;
+        }
+        #flashcard-container .back .u3-revealed-answer .answer-line {
+          display: block !important;
+          width: auto !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          white-space: nowrap !important;
+          text-align: center !important;
+        }
+        #flashcard-container .back .article-answer-card .back-verb-main .answer-line {
+          display: block !important;
+          width: min(90%, 560px) !important;
+          max-width: 560px !important;
+          margin: 0 auto !important;
+          white-space: normal !important;
+          overflow-wrap: normal !important;
+          word-break: normal !important;
+          text-align: center !important;
+          text-wrap: balance !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+        #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+          width: min(92%, 760px) !important;
+          max-width: 760px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          order: 1 !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-noun-column {
+          order: 2 !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .front .esc-source-front .article-front-card.target-after .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .front .esc-source-front .article-front-card.target-after .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .front .esc-source-front .article-front-card.target-after .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .front .esc-source-front .article-front-card.target-after .article-options-column {
+          order: 1 !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .front .esc-source-front .article-front-card.target-after .article-noun-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .front .esc-source-front .article-front-card.target-after .article-noun-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .front .esc-source-front .article-front-card.target-after .article-noun-column,
+        #flashcard-container .flashcard[data-source="donde"] .front .esc-source-front .article-front-card.target-after .article-noun-column {
+          order: 2 !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column,
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          display: grid !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          justify-content: center !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-options-column {
+          grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+        }
+        #flashcard-container .flashcard[data-source="quecuales"] .article-options-column {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        }
+        #flashcard-container .flashcard[data-source="cuantos"] .article-options-column {
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        }
+        #flashcard-container .flashcard[data-source="donde"] .article-options-column {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+        #flashcard-container .flashcard[data-source="muymucho"] .article-option,
+        #flashcard-container .flashcard[data-source="quecuales"] .article-option,
+        #flashcard-container .flashcard[data-source="cuantos"] .article-option,
+        #flashcard-container .flashcard[data-source="donde"] .article-option {
+          width: 100% !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+          white-space: nowrap !important;
+        }
+        @media (max-width: 700px) {
+          #flashcard-container .flashcard[data-source="muymucho"] .article-front-card,
+          #flashcard-container .flashcard[data-source="quecuales"] .article-front-card,
+          #flashcard-container .flashcard[data-source="cuantos"] .article-front-card,
+          #flashcard-container .flashcard[data-source="donde"] .article-front-card {
+            width: min(94%, 420px) !important;
+          }
+          #flashcard-container .flashcard[data-source="muymucho"] .article-options-column {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+          #flashcard-container .flashcard[data-source="quecuales"] .article-options-column {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+      `;
+      sourceDocument.body.appendChild(grammarFrontLayout);
+
+      let page = '<!doctype html>\n' + sourceDocument.documentElement.outerHTML;
+      page = page.replace(/U\d+G\d+T([1-4])/g, (_, test) => 'U3G8T' + test);
+      // El manejador de burbujeo de esc-tu ya realiza el volteo. Su antiguo
+      // manejador de captura llama a una función que dejó de existir.
+      page = page.replace('flipCard(currentCard);', '/* El manejador de la tarjeta realiza el volteo. */');
+      page = page.replace(/U3G[67]T([1-4])/g, 'U3G8T$1')
+        .replace(/u1-tu_esc_gameProgress/g, PROGRESS_KEY)
+        .replace(/u1-tu-esc-v1/g, 'esc-gr-u3-mixta-v2')
+        .replace(/u1-tu-esc-unlock-v1/g, 'gr-u3-mixta-test-unlock-state-v2')
+        .replace(/esc-mixta_gameProgress/g, PROGRESS_KEY)
+        .replace(/esc-mixta-draw/g, DRAW_KEY)
+        .replace(/esc-mixta-v1/g, 'esc-gr-u3-mixta-v2')
+        .replace(/u1-tu_esc_shuffleCount/g, 'esc-gr-u3-mixta_shuffleCount')
+        .replace(/u1_tu_esc_btn_sounds_muted/g, 'esc-gr-u3-mixta_btn_sounds_muted')
+        .replace(/u1-tu_escDate/g, 'esc-gr-u3-mixtaDate')
+        .replace(/u1-tu_esc/g, 'esc-gr-u3-mixta')
+        .replace(/DATOS PERSONALES/g, 'TEST 3, UNIDAD 3')
+        // playCardAudio de esc-tu reasigna siempre src y fuerza al navegador
+        // a reiniciar la carga. En la mixta se conserva el audio ya precargado.
+        .replace(
+          /a\.src = src;\s*a\.currentTime = 0;/,
+          `const resolvedCardAudioSrc = new URL(src, document.baseURI).href;
+        if (a.src !== resolvedCardAudioSrc) {
+            a.src = src;
+            try { a.load(); } catch (_) {}
+        }
+        a.currentTime = 0;`
+        )
+        // La respuesta aparece primero y su locución comienza poco después.
+        // El contador continúa esperando al final del audio.
+        .replace(
+          /stopAllAudios\(\);\s*playCardAudio\(card, \(\) => \{\s*answerAudioFinished = true;\s*maybeStartCountdown\(\);\s*\}\);/,
+          `stopAllAudios();
+                    setTimeout(() => {
+                        playCardAudio(card, () => {
+                            answerAudioFinished = true;
+                            maybeStartCountdown();
+                        });
+                    }, 350);`
+        );
+      document.open();
+      document.write(page);
+      document.close();
+      // El documento de carga pertenece al bootstrap y no a la plantilla final.
+      document.getElementById('loading')?.remove();
+    } catch (error) {
+      document.getElementById('loading').innerHTML = '<div><strong>No se pudo cargar el ejercicio.</strong><span>Recarga la página e inténtalo de nuevo.</span></div>';
+      console.error(error);
+    }
+  })();
+  </script>
+</body>
+</html>

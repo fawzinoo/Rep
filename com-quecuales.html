@@ -12360,6 +12360,21 @@ body.chat-typing .chat-footer {
         }
     
 </style>
+
+<style id="quecuales-centered-options">
+#flashcard-container .article-options-column {
+    width: min(100%, 430px) !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    margin-inline: auto !important;
+    box-sizing: border-box !important;
+}
+@media (max-width: 620px) {
+    #flashcard-container .article-options-column {
+        width: min(100%, 280px) !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+</style>
 </head>
 <body>
 
@@ -12891,6 +12906,7 @@ body.chat-typing .chat-footer {
                     document.querySelectorAll('#flashcard-container .flashcard').forEach((card, index) => {
                         const [clue, form] = items[index];
                         const question = `¿${form.charAt(0).toUpperCase()}${form.slice(1)} ${clue}?`;
+                        card.dataset.audioFile = `quecuales-${index + 1}.wav`;
                         card.dataset.answer = question;
                         card.dataset.targetForm = form;
                         card.dataset.targetPosition = 'before';
@@ -16597,7 +16613,8 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [];
+const audioFiles = Array.from(document.querySelectorAll('#flashcard-container .flashcard'),
+    card => card.dataset.audioFile || '');
 
 const audios = Array.from({ length: Math.max(audioFiles.length, document.querySelectorAll('.flashcard').length, 30) }, (_, index) => {
     const file = audioFiles[index] || '';
@@ -16629,11 +16646,17 @@ audioFiles.forEach(file => {
     audioFilenameByKey[key] = file;
 });
 
+// Resolver por la pregunta, no por la posición: las tarjetas se pueden mezclar.
+const questionAudioFilenameByKey = new Map(
+    Array.from(document.querySelectorAll('#flashcard-container .flashcard'), card => [
+        normalizeAudioKey(card.dataset.answer), card.dataset.audioFile
+    ])
+);
+
 function getAudioSrcForCountryName(textoBack) {
     const key = normalizeAudioKey(textoBack);
     if (!key) return null;
-    const mapping = {};
-    const file = mapping[key] || audioFilenameByKey[key];
+    const file = questionAudioFilenameByKey.get(key) || audioFilenameByKey[key];
     return file ? baseUrl + file : null;
 }
 

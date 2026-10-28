@@ -1,6 +1,43 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="startup-modal-pending">
 <head>
+<meta charset="UTF-8">
+<style id="startup-modal-before-content">
+html.startup-modal-pending body > :not(#continue-game-overlay) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+html.startup-modal-pending { overflow: hidden; }
+</style>
+<script id="startup-modal-content-guard">
+(() => {
+    let modalSeen = false;
+    const observer = new MutationObserver(() => {
+        const modal = document.getElementById('continue-game-overlay');
+        if (modal) modalSeen = true;
+        else if (modalSeen) {
+            document.documentElement.classList.remove('startup-modal-pending');
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Solo los botones del modal permiten iniciar o continuar el ejercicio.
+    for (const type of ['pointerdown', 'click']) {
+        document.addEventListener(type, event => {
+            if (event.target?.id !== 'continue-game-overlay') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && document.getElementById('continue-game-overlay')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+})();
+</script>
+
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Playfair+Display:wght@700;800&display=swap">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=no">
@@ -11536,7 +11573,7 @@ body.chat-typing .chat-footer {
     word-break: normal !important;
     hyphens: none !important;
     text-shadow: 0 0 42px rgba(34, 211, 238, 0.36), 0 10px 28px rgba(0, 0, 0, 0.46) !important;
-}
+    }
 .article-options-column {
     order: 1 !important;
     width: min(100%, 300px) !important;
@@ -11598,6 +11635,8 @@ body.chat-typing .chat-footer {
         font-size: clamp(0.66rem, 2.9vw, 0.78rem) !important;
         border-radius: 9px !important;
     }
+
+
 }
 @media (max-width: 360px) {
     .article-options-column {
@@ -11778,6 +11817,52 @@ body.chat-typing .chat-footer {
 @keyframes sheen-bg {
     0%, 42% { background-position: 150% 0, 0 0; }
     72%, 100% { background-position: -50% 0, 0 0; }
+}
+</style>
+<style id="mobile-answer-fontsize-boost">
+@media (max-width: 620px) {
+    .back-verb-main {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 1.1 !important;
+    }
+    .back-reflexive {
+        font-size: clamp(2.4rem, 9.5vw, 3.5rem) !important;
+    }
+    .article-answer-card .back-verb-main {
+        font-size: clamp(2.6rem, 10vw, 3.8rem) !important;
+    }
+    .back-verb-main.personal-revealed-answer {
+        font-size: clamp(2.7rem, 10.5vw, 3.9rem) !important;
+    }
+    .mas-revealed-answer .back-verb-main.stacked-answer {
+        font-size: clamp(2.8rem, 11vw, 4.2rem) !important;
+        line-height: 0.95 !important;
+    }
+    .mas-revealed-answer .back-verb-main.temporal-revealed-lines,
+    .mas-revealed-answer .back-verb-main.frequency-revealed-lines {
+        font-size: clamp(2.2rem, 8.8vw, 3.2rem) !important;
+        line-height: 1.08 !important;
+    }
+}
+</style>
+<style id="desktop-mouse-cursor-visible">
+@media (any-pointer: fine) {
+    html.keyboard-hidden *, html body.keyboard-hidden *,
+    html body .keyboard-hidden *,
+    html.keyboard-hidden *::before, html.keyboard-hidden *::after,
+    html body.keyboard-hidden *::before, html body.keyboard-hidden *::after {
+        cursor: auto !important;
+    }
+    html body button, html body .button, html body .pill,
+    html body .flashcard, html body a, html body [onclick] {
+        cursor: pointer !important;
+    }
+    html body input, html body textarea, html body [contenteditable="true"],
+    html body.keyboard-hidden input, html body.keyboard-hidden textarea,
+    html body.keyboard-hidden [contenteditable="true"] {
+        cursor: text !important;
+        caret-color: auto !important;
+    }
 }
 </style>
 </head>
@@ -12322,6 +12407,7 @@ body.chat-typing .chat-footer {
                         card.dataset.targetForm = form;
                         card.dataset.targetPosition = 'before';
                         card.dataset.clue = clue;
+                        card.dataset.audioFile = `demostrativos2-${index + 1}.wav`;
                         card.dataset.answerWord = answerWord;
                         const frontCard = card.querySelector('.article-front-card');
                         frontCard.classList.remove('target-after');
@@ -12526,7 +12612,7 @@ body.chat-typing .chat-footer {
 
     <div class="button-container" role="toolbar" aria-label="Controles de práctica">
 
-        <button class="button chat" id="chat-button" title="Chat U3G7T3" aria-label="Chat U3G7T3">
+        <button class="button chat" id="chat-button" title="Chat U4G6T3" aria-label="Chat U4G6T3">
             <i class="fas fa-comments" aria-hidden="true"></i>
         </button>
 <button class="button" id="reset-button" title="Reiniciar" aria-label="Reiniciar">
@@ -12762,6 +12848,9 @@ let completedCards = new Set();
 let correctCount = 0;
 let incorrectCount = 0;
 let currentCardIndex = 0;
+let hasPlayedEscribeAudio = false;
+let escribeAudioTimer = null;
+let escribeAudio = null;
 let voiceAttempts = 0; // Contador para los intentos de voz
 let canFlipBack = true;
 let canFlip = true; // Controla si se puede voltear la tarjeta
@@ -14270,7 +14359,8 @@ function saveGameProgress() {
             frontAlt: card.querySelector('.front img') ? card.querySelector('.front img').alt : '',
             frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
             backText: normalizeDemostrativosQuestion(card.dataset.answer || getCountryText(card.querySelector('.back'))),
-            backHTML: buildDemostrativosAnswerHTML(card.dataset.answer || getCountryText(card.querySelector('.back')))
+            backHTML: buildDemostrativosAnswerHTML(card.dataset.answer || getCountryText(card.querySelector('.back'))),
+            audioFile: card.dataset.audioFile || ''
         }))
     };
 
@@ -14515,6 +14605,7 @@ function restoreGameState(gameState) {
                     const normalizedBackText = normalizeDemostrativosQuestion(cardData.backText);
                     if (back) back.innerHTML = buildDemostrativosAnswerHTML(normalizedBackText);
                     card.dataset.answer = normalizedBackText;
+                    if (cardData.audioFile) card.dataset.audioFile = cardData.audioFile;
                 }
             });
         } else if (gameState.cardOrder) {
@@ -14596,6 +14687,36 @@ function hasProgressSaved() {
 }
 
 // Función para mostrar el modal de continuación
+function showStartupWelcomeModal() {
+    if (document.getElementById('continue-game-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'continue-game-overlay';
+    overlay.className = 'continue-game-overlay';
+    overlay.innerHTML = `
+        <div class="continue-game-modal">
+            <div class="continue-modal-header">
+                <span class="continue-modal-icon continue-modal-logo"><img src="https://fawzinoo.github.io/Fotos/f.png" alt="Logo F" width="64" height="64" style="display:block;margin:auto;object-fit:contain"></span>
+                <h2 class="continue-modal-title">¡Prepárate para el test!</h2>
+                <p class="continue-modal-subtitle">Este test tiene ${flashcards.length} tarjetas</p>
+            </div>
+            <div class="continue-modal-content">
+                <div class="continue-progress-info">
+                    <div class="continue-progress-title">Empieza con calma. Equivocarte también forma parte del aprendizaje.</div>
+                </div>
+                <div class="continue-modal-buttons">
+                    <button class="continue-btn continue-btn-primary" id="start-game-btn"><i class="fas fa-play"></i> Comenzar</button>
+                </div>
+            </div>
+        </div>`;
+    overlay.querySelector('#start-game-btn').addEventListener('click', () => {
+        initializePage();
+        document.body.classList.remove('initial-modal-open');
+        overlay.remove();
+        if (typeof window.playIntroAudio === 'function') window.playIntroAudio(true);
+    });
+    document.body.appendChild(overlay);
+}
+
 function showContinueGameModal() {
     const savedState = loadGameProgress();
     if (!savedState) return;
@@ -14660,6 +14781,7 @@ function showContinueGameModal() {
     continueBtn.addEventListener('click', function() {
         vibrar(60);
         playButtonSound();
+        hasPlayedEscribeAudio = false;
 
         // Restaurar el estado del juego
         if (restoreGameState(savedState)) {
@@ -15041,7 +15163,38 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [];
+const audioFiles = [
+    'demostrativos2-1.wav',
+    'demostrativos2-2.wav',
+    'demostrativos2-3.wav',
+    'demostrativos2-4.wav',
+    'demostrativos2-5.wav',
+    'demostrativos2-6.wav',
+    'demostrativos2-7.wav',
+    'demostrativos2-8.wav',
+    'demostrativos2-9.wav',
+    'demostrativos2-10.wav',
+    'demostrativos2-11.wav',
+    'demostrativos2-12.wav',
+    'demostrativos2-13.wav',
+    'demostrativos2-14.wav',
+    'demostrativos2-15.wav',
+    'demostrativos2-16.wav',
+    'demostrativos2-17.wav',
+    'demostrativos2-18.wav',
+    'demostrativos2-19.wav',
+    'demostrativos2-20.wav',
+    'demostrativos2-21.wav',
+    'demostrativos2-22.wav',
+    'demostrativos2-23.wav',
+    'demostrativos2-24.wav',
+    'demostrativos2-25.wav',
+    'demostrativos2-26.wav',
+    'demostrativos2-27.wav',
+    'demostrativos2-28.wav',
+    'demostrativos2-29.wav',
+    'demostrativos2-30.wav'
+];
 
 const audios = Array.from({ length: Math.max(audioFiles.length, document.querySelectorAll('.flashcard').length, 30) }, (_, index) => {
     const file = audioFiles[index] || '';
@@ -15074,10 +15227,43 @@ audioFiles.forEach(file => {
 });
 
 function getAudioSrcForCountryName(textoBack) {
-    const key = normalizeAudioKey(textoBack);
-    if (!key) return null;
-    const mapping = {};
-    const file = mapping[key] || audioFilenameByKey[key];
+    if (!textoBack) return null;
+    const clean = String(textoBack)
+        .replace(/&nbsp;/gi, " ")
+        .replace(/\u00a0/g, " ")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/[¿?]/g, "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9ñ ]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!clean) return null;
+    const mapping = {
+        "ese jersey": "demostrativos2-1.wav",
+        "ese cinturon": "demostrativos2-2.wav",
+        "ese sombrero": "demostrativos2-3.wav",
+        "ese gris": "demostrativos2-4.wav",
+        "ese de manga corta": "demostrativos2-5.wav",
+        "esa blusa": "demostrativos2-6.wav",
+        "esa sudadera": "demostrativos2-7.wav",
+        "esa gorra": "demostrativos2-8.wav",
+        "esa rosa": "demostrativos2-9.wav",
+        "esa de manga larga": "demostrativos2-10.wav",
+        "esos vaqueros": "demostrativos2-11.wav",
+        "esos banadores": "demostrativos2-12.wav",
+        "esos zapatos": "demostrativos2-13.wav",
+        "esos grises": "demostrativos2-14.wav",
+        "esos de deporte": "demostrativos2-15.wav",
+        "esas camisetas": "demostrativos2-16.wav",
+        "esas bufandas": "demostrativos2-17.wav",
+        "esas zapatillas": "demostrativos2-18.wav",
+        "esas amarillas": "demostrativos2-19.wav",
+        "esas de tirantes": "demostrativos2-20.wav"
+    };
+    const file = mapping[clean];
     return file ? baseUrl + file : null;
 }
 
@@ -15086,7 +15272,8 @@ function playCardAudio(card, onEnded) {
     try {
         if (!card) { if (onEnded) onEnded(); return; }
         const answer = (card.dataset?.answer || getCountryText(card.querySelector('.back'))).trim();
-        const src = getAudioSrcForCountryName(answer);
+        const canonicalSrc = getAudioSrcForCountryName(answer);
+        const src = canonicalSrc || (card.dataset?.audioFile ? (baseUrl + card.dataset.audioFile) : null);
         if (!src) { if (onEnded) onEnded(); return; }
         if (!card._audioEl) {
             card._audioEl = new Audio();
@@ -15107,7 +15294,11 @@ function playCardAudio(card, onEnded) {
             if (onEnded) onEnded();
         };
 
-        a.src = src;
+        const answerSrc = new URL(src, document.baseURI).href;
+        if (a.src !== answerSrc) {
+            a.src = answerSrc;
+            a.load();
+        }
         a.currentTime = 0;
         a.onended = handleEnded;
         a.onerror = handleEnded;
@@ -15129,7 +15320,29 @@ function stopAllAudios() {
             try { c._audioEl.pause(); c._audioEl.currentTime = 0; } catch {}
         }
     });
+    if (escribeAudio) {
+        try { escribeAudio.pause(); escribeAudio.currentTime = 0; } catch {}
+    }
+    if (escribeAudioTimer) {
+        clearTimeout(escribeAudioTimer);
+        escribeAudioTimer = null;
+    }
 }
+
+// Detener audio de instrucciones inmediatamente al interactuar en el reverso (opciones, escritura, teclado)
+function stopInstructionAudioOnInteraction(e) {
+    if (e.target && (e.target.closest('.back') || e.target.closest('#vk, .vk, .vk-key') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}
+document.addEventListener('pointerdown', stopInstructionAudioOnInteraction, true);
+document.addEventListener('click', stopInstructionAudioOnInteraction, true);
+document.addEventListener('input', stopAllAudios, true);
+document.addEventListener('keydown', function(e) {
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+        stopAllAudios();
+    }
+}, true);
 
 // Copia del HTML original del contenedor de tarjetas para poder restaurar tras pantallas finales
 let originalFlashcardsHTML = null;
@@ -15163,7 +15376,8 @@ const allCardData = flashcards.map((card, index) => ({
     frontHTML: card.querySelector('.front') ? card.querySelector('.front').innerHTML : '',
     // Usar siempre la frase canónica: los spans visuales no deben borrar espacios.
     backText: normalizeDemostrativosQuestion(card.dataset.answer || getCountryText(card.querySelector('.back'))),
-    backHTML: buildDemostrativosAnswerHTML(card.dataset.answer || getCountryText(card.querySelector('.back')))
+    backHTML: buildDemostrativosAnswerHTML(card.dataset.answer || getCountryText(card.querySelector('.back'))),
+    audioFile: card.dataset.audioFile || ''
 }));
 
     // 2. Separar los datos de las tarjetas en pendientes y completadas.
@@ -15209,10 +15423,19 @@ flashcards.forEach((card, index) => {
         back.innerHTML = data.backText;
     }
     card.dataset.answer = normalizeDemostrativosQuestion(data.backText);
-    // --- AQUÍ VA EL AUDIO ---
-    // Precalcular y guardar src como atributo si quieres usarlo luego
-    const src = getAudioSrcForCountryName(data.backText);
-    if (src) card.dataset.audioSrc = src; else delete card.dataset.audioSrc;
+    // Asignar el audioFile correspondiente al contenido nuevo de la tarjeta
+    const canonicalSrc = getAudioSrcForCountryName(data.backText);
+    if (canonicalSrc) {
+        const fileName = canonicalSrc.split('/').pop();
+        card.dataset.audioFile = fileName;
+        card.dataset.audioSrc = canonicalSrc;
+    } else if (data.audioFile) {
+        card.dataset.audioFile = data.audioFile;
+        card.dataset.audioSrc = baseUrl + data.audioFile;
+    } else {
+        delete card.dataset.audioFile;
+        delete card.dataset.audioSrc;
+    }
 });
 
     // 6. Actualizar el estado para reflejar el nuevo orden.
@@ -15338,7 +15561,24 @@ function attachFlashcardHandlers() {
                 betweenAttempts = false;
                 updateSkipButtonState();
             } else {
+                stopAllAudios();
                 card.classList.add('flipped');
+
+                // Reproducir el audio escribe.wav a 10 ms SOLO en la primera tarjeta y solo 1 vez por sesión/reinicio
+                const cardIndex = flashcards.indexOf(card);
+                if (cardIndex === 0 && !hasPlayedEscribeAudio) {
+                    if (escribeAudioTimer) clearTimeout(escribeAudioTimer);
+                    escribeAudioTimer = setTimeout(() => {
+                        if (card.classList.contains('flipped') && !hasPlayedEscribeAudio) {
+                            if (!escribeAudio) {
+                                escribeAudio = new Audio('https://fawzinoo.github.io/audios/escribe.wav');
+                            }
+                            hasPlayedEscribeAudio = true;
+                            escribeAudio.currentTime = 0;
+                            escribeAudio.play().catch(e => console.log('Error al reproducir escribe.wav:', e));
+                        }
+                    }, 10);
+                }
 
 
 
@@ -16571,14 +16811,12 @@ window.addEventListener('DOMContentLoaded', () => {
         // Asegurar que el "avance anterior" se pinte desde localStorage aunque mostremos el modal
         updateLastGamePillFromStorage();
         // Mostrar modal de continuación si hay progreso
-        setTimeout(() => {
-            showContinueGameModal();
-        }, 500); // Pequeño delay para que la página termine de cargar
+        showContinueGameModal(); // Pequeño delay para que la página termine de cargar
         return; // No ejecutar el resto de la inicialización
     }
 
-    // Si no hay progreso guardado, continuar con la inicialización normal
-    initializePage();
+    // El modal inicial precede siempre al contenido del ejercicio.
+    showStartupWelcomeModal();
 });
 
 // Función para inicializar la página cuando no hay progreso guardado
@@ -18038,7 +18276,7 @@ function goToNextCardWithDebug() {
   let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 
   const PORTALB_SCRIPT_URL_FALLBACKS = [];
-  const LESSON_COLUMN_KEY = 'U3G7T3';
+  const LESSON_COLUMN_KEY = 'U4G6T3';
   const TEST_UNLOCK_STATE_KEY = 'demostrativos2-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test3';
@@ -18046,7 +18284,7 @@ function goToNextCardWithDebug() {
   const RANKING_GENERAL_MODE = 'ranking_general';
   const RANKING_SCOPE = 'demostrativos2';
 const CHAT_MODE = 'chat_messages';
-const CHAT_COLUMN_KEY = 'U3G7T3';
+const CHAT_COLUMN_KEY = 'U4G6T3';
 const CHAT_FETCH_LIMIT = 80;
 const CHAT_REFRESH_INTERVAL_MS = 1200;
 const CHAT_REFRESH_BACKGROUND_INTERVAL_MS = 2500;
@@ -37395,7 +37633,7 @@ function installChatButtonHandler() {
 
       const TEST_ICON_HTML = '<i class="fas fa-pen" aria-hidden="true"></i> Test3';
   const INDETERMINANTES_LABEL = 'Demostrativos';
-  const RANKING_TITLE = 'Ranking U3G7T3';
+  const RANKING_TITLE = 'Ranking U4G6T3';
   const SEND_THROTTLE_MS = 1500;
 
   let lastSentAt = 0;
@@ -37797,16 +38035,16 @@ function installChatButtonHandler() {
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
         ...current,
         test2: {
-          unlocked: Boolean(unlocksByColumn.U3G7T1 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T1')
+          unlocked: Boolean(unlocksByColumn.U4G6T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G6T1')
         },
         test3: {
-          unlocked: Boolean(unlocksByColumn.U3G7T2 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T2')
+          unlocked: Boolean(unlocksByColumn.U4G6T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G6T2')
         },
         test4: {
-          unlocked: Boolean(unlocksByColumn.U3G7T3 === true),
-          points: parseStoredPointsForColumn(scores, 'U3G7T3')
+          unlocked: Boolean(unlocksByColumn.U4G6T3 === true),
+          points: parseStoredPointsForColumn(scores, 'U4G6T3')
         },
         scores,
         unlocksByColumn
@@ -38120,7 +38358,7 @@ function installChatButtonHandler() {
       return fetchRankingByColumn(LESSON_COLUMN_KEY);
     }
     if (modeKey === 'demostrativos2') {
-      return fetchAggregatedRankingByColumns(['U3G7T1', 'U3G7T2', 'U3G7T3', 'U3G7T4']);
+      return fetchAggregatedRankingByColumns(['U4G6T1', 'U4G6T2', 'U4G6T3', 'U4G6T4']);
     }
     let mode = RANKING_TEST_MODE;
     if (modeKey === 'global') mode = RANKING_GENERAL_MODE;

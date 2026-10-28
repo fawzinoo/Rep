@@ -34754,7 +34754,38 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [];
+const audioFiles = [
+    'muymucho-1.wav',
+    'muymucho-2.wav',
+    'muymucho-3.wav',
+    'muymucho-4.wav',
+    'muymucho-5.wav',
+    'muymucho-6.wav',
+    'muymucho-7.wav',
+    'muymucho-8.wav',
+    'muymucho-9.wav',
+    'muymucho-10.wav',
+    'muymucho-11.wav',
+    'muymucho-12.wav',
+    'muymucho-13.wav',
+    'muymucho-14.wav',
+    'muymucho-15.wav',
+    'muymucho-16.wav',
+    'muymucho-17.wav',
+    'muymucho-18.wav',
+    'muymucho-19.wav',
+    'muymucho-20.wav',
+    'muymucho-21.wav',
+    'muymucho-22.wav',
+    'muymucho-23.wav',
+    'muymucho-24.wav',
+    'muymucho-25.wav',
+    'muymucho-26.wav',
+    'muymucho-27.wav',
+    'muymucho-28.wav',
+    'muymucho-29.wav',
+    'muymucho-30.wav'
+];
 
 const audios = Array.from({ length: Math.max(audioFiles.length, document.querySelectorAll('.flashcard').length, 30) }, (_, index) => {
     const file = audioFiles[index] || '';
@@ -34787,10 +34818,50 @@ audioFiles.forEach(file => {
 });
 
 function getAudioSrcForCountryName(textoBack) {
-    const key = normalizeAudioKey(textoBack);
-    if (!key) return null;
-    const mapping = {};
-    const file = mapping[key] || audioFilenameByKey[key];
+    if (!textoBack) return null;
+    const clean = String(textoBack)
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9ñ ]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!clean) return null;
+    const mapping = {
+        "muy bonita": "muymucho-1.wav",
+        "muy antigua": "muymucho-2.wav",
+        "muy famoso": "muymucho-3.wav",
+        "muy interesante": "muymucho-4.wav",
+        "muy turistico": "muymucho-5.wav",
+        "muy tranquila": "muymucho-6.wav",
+        "viajo mucho": "muymucho-7.wav",
+        "camino mucho": "muymucho-8.wav",
+        "visito mucho": "muymucho-9.wav",
+        "fotografio mucho": "muymucho-10.wav",
+        "descanso mucho": "muymucho-11.wav",
+        "mucho turismo": "muymucho-12.wav",
+        "mucho sol": "muymucho-13.wav",
+        "mucho calor": "muymucho-14.wav",
+        "mucho trafico": "muymucho-15.wav",
+        "mucho interes": "muymucho-16.wav",
+        "mucha historia": "muymucho-17.wav",
+        "mucha cultura": "muymucho-18.wav",
+        "mucha naturaleza": "muymucho-19.wav",
+        "mucha comida tipica": "muymucho-20.wav",
+        "mucha gente": "muymucho-21.wav",
+        "muchos museos": "muymucho-22.wav",
+        "muchos monumentos": "muymucho-23.wav",
+        "muchos hoteles": "muymucho-24.wav",
+        "muchos lugares famosos": "muymucho-25.wav",
+        "muchos platos tipicos": "muymucho-26.wav",
+        "muchas playas": "muymucho-27.wav",
+        "muchas plazas": "muymucho-28.wav",
+        "muchas iglesias": "muymucho-29.wav",
+        "muchas montanas": "muymucho-30.wav"
+    };
+    const file = mapping[clean];
     return file ? baseUrl + file : null;
 }
 
@@ -34800,8 +34871,23 @@ function deriveFrontLabelFromText(backText) {
 }
 
 function hasValidAudio(index) {
-    const a = audios[index];
-    return !!(a && a.src && a.src.trim() !== '');
+    // Resolve by the current card, never by the pre-shuffle audio position.
+    const card = typeof flashcards !== 'undefined' ? flashcards[index] : null;
+    const audioList = typeof audios !== 'undefined' ? audios : window.audios;
+    if (!card || !audioList) return false;
+    const answer = String(card.dataset.answer || card.querySelector('.back')?.dataset.originalText || card.querySelector('.back')?.textContent || '').trim();
+    const resolved = getAudioSrcForCountryName(answer);
+    if (!resolved) return false;
+    const src = new URL(resolved, document.baseURI).href;
+    let audio = audioList[index];
+    if (!audio) { audio = new Audio(); audioList[index] = audio; }
+    if (audio.src !== src) {
+        try { audio.pause(); } catch (_) {}
+        audio.src = src;
+        audio.preload = 'auto';
+        audio.load();
+    }
+    return true;
 }
 
 let originalFlashcardsHTML = null;

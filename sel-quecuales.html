@@ -11633,6 +11633,33 @@ body.chat-typing .chat-footer {
     visibility: visible !important;
 }
 </style>
+<script>
+function animateCardTurn(card, flipped) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !card.animate) {
+        card.classList.toggle('flipped', flipped);
+        return;
+    }
+    card.dataset.turning = 'true';
+    // Animate a flat card to its edge; switch faces only while it is edge-on.
+    // Independent scale avoids Safari's nested 3D compositing problem.
+    const animation = card.animate([
+        { scale: '1 1', offset: 0 },
+        { scale: '0 1', offset: 0.5 },
+        { scale: '1 1', offset: 1 }
+    ], { duration: 560, easing: 'ease-in-out' });
+    const midpoint = setTimeout(() => {
+        if (card.classList.contains('is-visible')) {
+            card.classList.toggle('flipped', flipped);
+        }
+    }, 280);
+    const finish = () => {
+        clearTimeout(midpoint);
+        delete card.dataset.turning;
+    };
+    animation.finished.then(finish, finish);
+}
+
+</script>
 </head>
 <body>
 
@@ -34979,6 +35006,7 @@ function attachFlashcardHandlers() {
         }
 
         card.addEventListener('click', (e) => {
+            if (card.dataset.turning === 'true') return;
             console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
             if (!canFlip) {
                 console.log('Volteo bloqueado por canFlip');
@@ -35004,7 +35032,7 @@ function attachFlashcardHandlers() {
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 vibrar(80);
-                card.classList.remove('flipped');
+                animateCardTurn(card, false);
                 stopAllAudios();
                 // Mantener las opciones visibles durante la transición de flip
                 // y limpiar justo al finalizar el giro
@@ -35038,7 +35066,7 @@ function attachFlashcardHandlers() {
                 // Volteo de front a back: mostrar opciones múltiples
                 console.log(`Volteando a back con voiceAttempts: ${voiceAttempts}`);
                 vibrar(80);
-                card.classList.add('flipped');
+                animateCardTurn(card, true);
 
                 // Limpiar contenido previo
                 backElement.innerHTML = '';

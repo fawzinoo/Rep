@@ -11597,68 +11597,56 @@ body.chat-typing .chat-footer {
     
 </style>
 <style id="safari-card-faces-fix">
-/* Use two flat faces: Safari must never composite mirrored card content. */
+/* Keep the original 3D rotation, with explicit WebKit face isolation. */
 #flashcard-container {
-    -webkit-perspective: none !important;
-    perspective: none !important;
+    -webkit-perspective: 1000px;
+    perspective: 1000px;
 }
 .flashcard {
-    -webkit-transform-style: flat !important;
-    transform-style: flat !important;
-    transition: none !important;
-}
-.flashcard,
-.flashcard.flipped {
-    -webkit-transform: none !important;
-    transform: none !important;
+    -webkit-transform-style: preserve-3d;
+    transform-style: preserve-3d;
 }
 .flashcard > .front,
 .flashcard > .back {
     position: absolute !important;
     inset: 0;
-    -webkit-transform: none !important;
-    transform: none !important;
-    -webkit-backface-visibility: visible !important;
-    backface-visibility: visible !important;
+    -webkit-backface-visibility: hidden !important;
+    backface-visibility: hidden !important;
 }
-.flashcard:not(.flipped) > .back,
-.flashcard.flipped > .front {
-    display: none !important;
+.flashcard > .front {
+    -webkit-transform: rotateY(0deg) translateZ(1px);
+    transform: rotateY(0deg) translateZ(1px);
+}
+.flashcard > .back {
+    -webkit-transform: rotateY(180deg) translateZ(1px);
+    transform: rotateY(180deg) translateZ(1px);
+}
+.flashcard.flipped {
+    -webkit-transform: rotateY(180deg);
+    transform: rotateY(180deg);
+}
+/* Remove the inactive face from Safari's painted layers after the turn. */
+.flashcard:not(.flipped):not(.card-turning) > .back,
+.flashcard.flipped:not(.card-turning) > .front {
     visibility: hidden !important;
-    pointer-events: none !important;
-}
-.flashcard:not(.flipped) > .front,
-.flashcard.flipped > .back {
-    display: flex !important;
-    visibility: visible !important;
 }
 </style>
 <script>
 function animateCardTurn(card, flipped) {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !card.animate) {
-        card.classList.toggle('flipped', flipped);
-        return;
-    }
     card.dataset.turning = 'true';
-    // Animate a flat card to its edge; switch faces only while it is edge-on.
-    // Independent scale avoids Safari's nested 3D compositing problem.
-    const animation = card.animate([
-        { scale: '1 1', offset: 0 },
-        { scale: '0 1', offset: 0.5 },
-        { scale: '1 1', offset: 1 }
-    ], { duration: 560, easing: 'ease-in-out' });
-    const midpoint = setTimeout(() => {
-        if (card.classList.contains('is-visible')) {
-            card.classList.toggle('flipped', flipped);
-        }
-    }, 280);
-    const finish = () => {
-        clearTimeout(midpoint);
+    card.classList.add('card-turning');
+    card.classList.toggle('flipped', flipped);
+    let timer;
+    const finish = (event) => {
+        if (event && (event.target !== card || event.propertyName !== 'transform')) return;
+        clearTimeout(timer);
+        card.removeEventListener('transitionend', finish);
+        card.classList.remove('card-turning');
         delete card.dataset.turning;
     };
-    animation.finished.then(finish, finish);
+    card.addEventListener('transitionend', finish);
+    timer = setTimeout(finish, 850);
 }
-
 </script>
 </head>
 <body>

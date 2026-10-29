@@ -2942,14 +2942,14 @@ function doGet(e) {
       filter = {};
       columnsParam.split(',').forEach((c) => {
         const col = String(c || '').trim().toUpperCase();
-        if (/^U\d+L\d+(?:T|E|OT)\d+$/i.test(col)) filter[col] = true;
+        if (/^U\d+[LGC]\d+(?:T|E|OT)\d+$/i.test(col)) filter[col] = true;
       });
     }
 
     const pointsByColumn = {};
     for (let c = 0; c < header.length; c++) {
       const colName = header[c];
-      if (!/^U\d+L\d+(?:T|E|OT)\d+$/i.test(colName)) continue;
+      if (!/^U\d+[LGC]\d+(?:T|E|OT)\d+$/i.test(colName)) continue;
       if (filter && !filter[colName]) continue;
 
       const parsed = parseLessonPoints_(row[c]);

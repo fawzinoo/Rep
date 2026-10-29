@@ -9,6 +9,7 @@ html.startup-modal-pending body > :not(#continue-game-overlay) {
 }
 html.startup-modal-pending { overflow: hidden; }
 </style>
+<script src="co-u1-tu-progress-sync.js"></script>
 <script id="startup-modal-content-guard">
 (() => {
     let modalSeen = false;
@@ -19898,7 +19899,7 @@ function goToNextCardWithDebug() {
 
   const PORTALB_SCRIPT_URL_FALLBACKS = [];
   const LESSON_COLUMN_KEY = 'U1C1T3';
-  const TEST_UNLOCK_STATE_KEY = 'u1-tu-esc-unlock-v1';
+  const TEST_UNLOCK_STATE_KEY = 'co-u1-tu-test-unlock-state-v2';
   const LESSON_UNLOCK_THRESHOLD = 4;
   const RANKING_TEST_MODE = 'ranking_test3';
   const RANKING_PAISES_MODE = 'ranking_mas';
@@ -39613,22 +39614,12 @@ function installChatButtonHandler() {
   }
 
   function saveUnlockStateScore(columna, puntos) {
-    const parsedInput = parseLessonPointsValue(puntos);
-    const numericPoints = parsedInput.points;
-    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    const previousScore = lessonUnlockStateMemory.scores[columna];
-    const previousForced = parseLessonPointsValue(previousScore).forced;
-    const keepForced =
-      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
-      previousForced ||
-      parsedInput.forced ||
-      numericPoints >= LESSON_UNLOCK_THRESHOLD;
-
-    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
-    if (keepForced) {
-      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    }
-    persistUnlockStateToLocalStorage();
+      const state = window.CoU1TuProgress.saveScore(columna, puntos);
+      if (typeof lessonUnlockStateMemory !== 'undefined') {
+          lessonUnlockStateMemory.scores = { ...state.scores };
+          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
+      }
+      return state;
   }
 
   function normalizeLessonPoints(value) {
@@ -39639,17 +39630,16 @@ function installChatButtonHandler() {
   }
 
   function markColumnPermanentUnlock(columna) {
-    if (!columna) return;
-    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    persistUnlockStateToLocalStorage();
+      const state = window.CoU1TuProgress.unlock(columna);
+      if (typeof lessonUnlockStateMemory !== 'undefined') {
+          lessonUnlockStateMemory.scores = { ...state.scores };
+          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
+      }
+      return state;
   }
 
   function hasColumnPermanentUnlock(columna) {
-    if (!columna) return false;
-    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
-    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
-    if (scoreParsed.forced) return true;
-    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
+      return window.CoU1TuProgress.hasUnlock(columna);
   }
 
   function serializeLessonPointsForServer(columna, puntos) {
@@ -39718,10 +39708,10 @@ function installChatButtonHandler() {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return;
       if (parsed.scores && typeof parsed.scores === 'object') {
-        lessonUnlockStateMemory.scores = { ...parsed.scores, ...lessonUnlockStateMemory.scores };
+        lessonUnlockStateMemory.scores = { ...lessonUnlockStateMemory.scores, ...parsed.scores };
       }
       if (parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object') {
-        lessonUnlockStateMemory.unlocksByColumn = { ...parsed.unlocksByColumn, ...lessonUnlockStateMemory.unlocksByColumn };
+        lessonUnlockStateMemory.unlocksByColumn = { ...lessonUnlockStateMemory.unlocksByColumn, ...parsed.unlocksByColumn };
       }
     } catch (error) {
       console.warn('No se pudo leer el estado de desbloqueo local:', error);
@@ -39729,39 +39719,16 @@ function installChatButtonHandler() {
   }
 
   hydrateUnlockStateFromLocalStorage();
+  window.addEventListener('co-u1-tu-progress-updated', hydrateUnlockStateFromLocalStorage);
 
   async function syncForcedUnlockFromSheetOnce() {
-    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
-    forcedUnlockSyncPromise = (async () => {
-      const student = getStudentFromStorage();
-      if (!student) return;
       try {
-        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
-        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
-        const row = rankingRows.find((item) =>
-          normalizeStudentName(item?.nombre) === student.nombre &&
-          normalizeStudentName(item?.apellido) === student.apellido
-        );
-        if (!row) return;
-
-        const parsedPoints = parseLessonPointsValue({
-          puntosRaw: row?.puntosRaw,
-          puntos: row?.puntos,
-          pointsRaw: row?.pointsRaw,
-          points: row?.points,
-          forcedUnlock: row?.forcedUnlock
-        });
-
-        if (!Number.isFinite(parsedPoints.points)) return;
-        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
-        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
-          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
-        }
+          const state = await window.CoU1TuProgress.refresh({ endpoint: PORTALB_SCRIPT_URL, student: getStudentFromStorage() });
+          lessonUnlockStateMemory.scores = { ...state.scores };
+          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
       } catch (error) {
-        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
+          console.warn('No se pudo leer la hoja; se mantienen las notas locales:', error);
       }
-    })();
-    return forcedUnlockSyncPromise;
   }
 
   function pointsFromPercentage(percentageValue) {
@@ -39802,6 +39769,7 @@ function installChatButtonHandler() {
   }
 
   async function sendLessonPointsToSheet(percentage, puntos) {
+    window.CoU1TuProgress.saveScore(LESSON_COLUMN_KEY, puntos);
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
@@ -39831,6 +39799,7 @@ function installChatButtonHandler() {
     } catch (error) {
       console.warn('Error al enviar puntos a Google Sheet:', error);
     }
+      void window.CoU1TuProgress.refresh().catch(() => {});
   }
 
   function ensurePointsPill() {

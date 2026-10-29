@@ -12003,7 +12003,8 @@ body.chat-typing .chat-footer {
                     </div>
                 </div>
             </div>
-            <script id="mas-card-data">
+            <script src="co-u1-tu-progress-sync.js"></script>
+<script id="mas-card-data">
                 (() => {
                     const answers = ['Yo tengo que hacer la maleta','Tú tienes que comprar el billete','Ana tiene que llevar un sombrero','Nosotros tenemos que buscar un hotel','Ellos tienen que cambiar dinero','El guía tiene que hablar inglés','Vosotros tenéis que alquilar un coche','María y Juan tienen que comprar agua','Yo tengo que llevar el pasaporte','Tú tienes que llevar ropa cómoda','Usted tiene que pagar el taxi','Nosotros tenemos que ir al aeropuerto','Los viajeros tienen que comer algo','Mi hermano tiene que buscar la estación','Vosotras tenéis que tomar un tren','Yo tengo que comprar crema solar','Tú tienes que preguntar la dirección','El grupo tiene que esperar el autobús','Nosotras tenemos que comprar regalos','Ellos tienen que buscar las maletas','Carlos tiene que llevar una cámara','Ustedes tienen que leer la guía','Yo tengo que llevar gafas de sol','Tú tienes que tomar un taxi','Marta tiene que dormir en el hotel','Nosotros tenemos que estudiar español','Ellos tienen que comprar un mapa','Vosotros tenéis que llamar por teléfono','El turista tiene que sacar fotos','Yo tengo que escribir mensajes'];
                     const pattern = /(tengo que|tienes que|tiene que|tenemos que|tenéis que|tienen que)/i;
@@ -13510,7 +13511,7 @@ let lockedAfterCorrect = false;            // bloquea el botón tras acierto has
 let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U1C1T1';
-const TEST_UNLOCK_STATE_KEY = 'u1-tu-test-unlock-state-v2';
+const TEST_UNLOCK_STATE_KEY = 'co-u1-tu-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
 const RANKING_TEST1_MODE = 'ranking_test1';
 const RANKING_TENER_MODE = 'ranking_mas';
@@ -28978,51 +28979,25 @@ function normalizeLessonPoints(value) {
 }
 
 function saveUnlockStateScore(columna, puntos) {
-    const numericPoints = Number(puntos);
-    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    try {
-        const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-        const parsed = raw ? JSON.parse(raw) : {};
-        const current = parsed && typeof parsed === 'object' ? parsed : {};
-        const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
-        scores[columna] = numericPoints;
-        current.scores = scores;
-        localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    const state = window.CoU1TuProgress.saveScore(columna, puntos);
+    if (typeof lessonUnlockStateMemory !== 'undefined') {
+        lessonUnlockStateMemory.scores = { ...state.scores };
+        lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
+    }
+    return state;
 }
 
 function markColumnPermanentUnlock(columna) {
-    if (!columna) return;
-    try {
-        const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-        const parsed = raw ? JSON.parse(raw) : {};
-        const current = parsed && typeof parsed === 'object' ? parsed : {};
-        const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
-            ? current.unlocksByColumn
-            : {};
-        if (unlocksByColumn[columna] === true) return;
-        unlocksByColumn[columna] = true;
-        current.unlocksByColumn = unlocksByColumn;
-        localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
-    } catch (e) { }
+    const state = window.CoU1TuProgress.unlock(columna);
+    if (typeof lessonUnlockStateMemory !== 'undefined') {
+        lessonUnlockStateMemory.scores = { ...state.scores };
+        lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
+    }
+    return state;
 }
 
 function hasColumnPermanentUnlock(columna) {
-    if (!columna) return false;
-    try {
-        const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-        if (!raw) return false;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return false;
-        const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
-            ? parsed.unlocksByColumn
-            : {};
-        if (unlocksByColumn[columna] === true) return true;
-        const score = Number(parsed?.scores?.[columna]);
-        return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
-    } catch (_) {
-        return false;
-    }
+    return window.CoU1TuProgress.hasUnlock(columna);
 }
 
 function serializeLessonPointsForServer(columna, puntos) {
@@ -29054,6 +29029,7 @@ function pointsFromPercentage(percentageValue) {
 }
 
 async function sendLessonPointsToSheet(percentage, puntos) {
+    window.CoU1TuProgress.saveScore(LESSON_COLUMN_KEY, puntos);
     const student = getStudentFromStorage();
     if (!student) {
         console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
@@ -29074,6 +29050,7 @@ async function sendLessonPointsToSheet(percentage, puntos) {
     } catch (error) {
         console.warn('Error al enviar puntos a Google Sheet:', error);
     }
+    void window.CoU1TuProgress.refresh().catch(() => {});
 }
 
 function getRankingBadge(pos) {

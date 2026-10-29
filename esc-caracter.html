@@ -13356,8 +13356,8 @@ function restoreGameState(gameState) {
             flashcards.forEach((card, index) => {
                 const cardData = gameState.cardOrder[index];
                 if (cardData) {
-                    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = cardData.frontImg;
-                    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = cardData.frontAlt;
+                    if (card.querySelector('.front img')) card.querySelector('.front img').src = cardData.frontImg;
+                    if (card.querySelector('.front img')) card.querySelector('.front img').alt = cardData.frontAlt;
                     const back = card.querySelector('.back');
                     back.innerHTML = cardData.backText;
                     card.dataset.answer = cardData.backText;
@@ -14023,8 +14023,8 @@ const allCardData = flashcards.map((card, index) => ({
 flashcards.forEach((card, index) => {
     const data = newCardOrder[index];
     card.classList.remove('is-visible', 'flipped');
-    card.querySelector('.front img') ? card.querySelector('.front img').src : '' = data.frontImg;
-    card.querySelector('.front img') ? card.querySelector('.front img').alt : '' = data.frontAlt;
+    if (card.querySelector('.front img')) card.querySelector('.front img').src = data.frontImg;
+    if (card.querySelector('.front img')) card.querySelector('.front img').alt = data.frontAlt;
     // Restaurar el texto original del reverso por si había cambiado a "Incorrecto"
     const back = card.querySelector('.back');
     back.querySelectorAll('.intentos-back').forEach(el => el.remove());
@@ -36364,22 +36364,17 @@ function installChatButtonHandler() {
   }
 
   function saveUnlockStateScore(columna, puntos) {
-    const parsedInput = parseLessonPointsValue(puntos);
-    const numericPoints = parsedInput.points;
-    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    const previousScore = lessonUnlockStateMemory.scores[columna];
-    const previousForced = parseLessonPointsValue(previousScore).forced;
-    const keepForced =
-      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
-      previousForced ||
-      parsedInput.forced ||
-      numericPoints >= LESSON_UNLOCK_THRESHOLD;
-
-    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
-    if (keepForced) {
-      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    }
-    persistUnlockStateToLocalStorage();
+      const numericPoints = Number(puntos);
+      if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+          scores[columna] = numericPoints;
+          current.scores = scores;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function normalizeLessonPoints(value) {
@@ -36390,17 +36385,37 @@ function installChatButtonHandler() {
   }
 
   function markColumnPermanentUnlock(columna) {
-    if (!columna) return;
-    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    persistUnlockStateToLocalStorage();
+      if (!columna) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+              ? current.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return;
+          unlocksByColumn[columna] = true;
+          current.unlocksByColumn = unlocksByColumn;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function hasColumnPermanentUnlock(columna) {
-    if (!columna) return false;
-    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
-    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
-    if (scoreParsed.forced) return true;
-    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
+      if (!columna) return false;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return false;
+          const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+              ? parsed.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return true;
+          const score = Number(parsed?.scores?.[columna]);
+          return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+      } catch (_) {
+          return false;
+      }
   }
 
   function serializeLessonPointsForServer(columna, puntos) {
@@ -36440,12 +36455,12 @@ function installChatButtonHandler() {
       localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify({
         ...current,
         test2: {
-          unlocked: Boolean(unlocksByColumn.U4L1T1 === true),
-          points: parseStoredPointsForColumn(scores, 'U4L1T1')
+          unlocked: Boolean(unlocksByColumn.U5L3T1 === true),
+          points: parseStoredPointsForColumn(scores, 'U5L3T1')
         },
         test3: {
-          unlocked: Boolean(unlocksByColumn.U4L1T2 === true),
-          points: parseStoredPointsForColumn(scores, 'U4L1T2')
+          unlocked: Boolean(unlocksByColumn.U5L3T2 === true),
+          points: parseStoredPointsForColumn(scores, 'U5L3T2')
         },
         test4: {
           unlocked: Boolean(unlocksByColumn.U5L3T3 === true),
@@ -36482,37 +36497,7 @@ function installChatButtonHandler() {
   hydrateUnlockStateFromLocalStorage();
 
   async function syncForcedUnlockFromSheetOnce() {
-    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
-    forcedUnlockSyncPromise = (async () => {
-      const student = getStudentFromStorage();
-      if (!student) return;
-      try {
-        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
-        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
-        const row = rankingRows.find((item) =>
-          normalizeStudentName(item?.nombre) === student.nombre &&
-          normalizeStudentName(item?.apellido) === student.apellido
-        );
-        if (!row) return;
-
-        const parsedPoints = parseLessonPointsValue({
-          puntosRaw: row?.puntosRaw,
-          puntos: row?.puntos,
-          pointsRaw: row?.pointsRaw,
-          points: row?.points,
-          forcedUnlock: row?.forcedUnlock
-        });
-
-        if (!Number.isFinite(parsedPoints.points)) return;
-        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
-        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
-          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
-        }
-      } catch (error) {
-        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
-      }
-    })();
-    return forcedUnlockSyncPromise;
+      return loadLessonPointsIfMissing_1();
   }
 
   function pointsFromPercentage(percentageValue) {
@@ -36552,7 +36537,46 @@ function installChatButtonHandler() {
     return { percentage, hasCards };
   }
 
+  let lessonPointsHydrationPromise_1 = null;
+  async function loadLessonPointsIfMissing_1() {
+      const readLocalScore = () => {
+          try {
+              const stored = JSON.parse(localStorage.getItem(TEST_UNLOCK_STATE_KEY) || '{}');
+              return parseLessonPointsValue(stored?.scores?.[LESSON_COLUMN_KEY]).points;
+          } catch (_) { return null; }
+      };
+      if (Number.isFinite(readLocalScore())) return;
+      if (lessonPointsHydrationPromise_1) return lessonPointsHydrationPromise_1;
+      const student = getStudentFromStorage();
+      if (!student) return;
+      lessonPointsHydrationPromise_1 = (async () => {
+          try {
+              const ranking = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+              const row = Array.isArray(ranking) ? ranking.find(item =>
+                  normalizeStudentName(item?.nombre) === normalizeStudentName(student.nombre) &&
+                  normalizeStudentName(item?.apellido) === normalizeStudentName(student.apellido)
+              ) : null;
+              if (!row) return;
+              const result = parseLessonPointsValue(row);
+              if (!Number.isFinite(result.points)) return;
+              // A result earned while this read was pending is already local: keep it.
+              if (Number.isFinite(readLocalScore())) return;
+              saveUnlockStateScore(LESSON_COLUMN_KEY, result.points);
+              if (result.forced || result.points >= LESSON_UNLOCK_THRESHOLD) markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          } catch (error) {
+              console.warn('No se pudo leer la nota de la hoja; se conservan los datos locales:', error);
+          }
+      })().finally(() => { lessonPointsHydrationPromise_1 = null; });
+      return lessonPointsHydrationPromise_1;
+  }
+  if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { void loadLessonPointsIfMissing_1(); }, { once: true });
+  } else {
+      void loadLessonPointsIfMissing_1();
+  }
+
   async function sendLessonPointsToSheet(percentage, puntos) {
+      saveUnlockStateScore(LESSON_COLUMN_KEY, puntos);
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();

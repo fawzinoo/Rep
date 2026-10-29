@@ -25987,7 +25987,7 @@ let lockedAfterCorrect = false;            // bloquea el botón tras acierto has
 let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U5G8T4';
-const TEST_UNLOCK_STATE_KEY = 'lud-amitambien-test-unlock-state-v5';
+const TEST_UNLOCK_STATE_KEY = 'amitambien-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
 const RANKING_TEST1_MODE = 'ranking_test1';
 const RANKING_TENER_MODE = 'ranking_mas';
@@ -41530,7 +41530,46 @@ function pointsFromPercentage(percentageValue) {
     return 0;
 }
 
+let lessonPointsHydrationPromise_1 = null;
+async function loadLessonPointsIfMissing_1() {
+    const readLocalScore = () => {
+        try {
+            const stored = JSON.parse(localStorage.getItem(TEST_UNLOCK_STATE_KEY) || '{}');
+            return parseLessonPointsValue(stored?.scores?.[LESSON_COLUMN_KEY]).points;
+        } catch (_) { return null; }
+    };
+    if (Number.isFinite(readLocalScore())) return;
+    if (lessonPointsHydrationPromise_1) return lessonPointsHydrationPromise_1;
+    const student = getStudentFromStorage();
+    if (!student) return;
+    lessonPointsHydrationPromise_1 = (async () => {
+        try {
+            const ranking = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+            const row = Array.isArray(ranking) ? ranking.find(item =>
+                normalizeStudentName(item?.nombre) === normalizeStudentName(student.nombre) &&
+                normalizeStudentName(item?.apellido) === normalizeStudentName(student.apellido)
+            ) : null;
+            if (!row) return;
+            const result = parseLessonPointsValue(row);
+            if (!Number.isFinite(result.points)) return;
+            // A result earned while this read was pending is already local: keep it.
+            if (Number.isFinite(readLocalScore())) return;
+            saveUnlockStateScore(LESSON_COLUMN_KEY, result.points);
+            if (result.forced || result.points >= LESSON_UNLOCK_THRESHOLD) markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+        } catch (error) {
+            console.warn('No se pudo leer la nota de la hoja; se conservan los datos locales:', error);
+        }
+    })().finally(() => { lessonPointsHydrationPromise_1 = null; });
+    return lessonPointsHydrationPromise_1;
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { void loadLessonPointsIfMissing_1(); }, { once: true });
+} else {
+    void loadLessonPointsIfMissing_1();
+}
+
 async function sendLessonPointsToSheet(percentage, puntos) {
+    saveUnlockStateScore(LESSON_COLUMN_KEY, puntos);
     const student = getStudentFromStorage();
     if (!student) {
         console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');
@@ -71443,22 +71482,17 @@ function installChatButtonHandler() {
   }
 
   function saveUnlockStateScore(columna, puntos) {
-    const parsedInput = parseLessonPointsValue(puntos);
-    const numericPoints = parsedInput.points;
-    if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    const previousScore = lessonUnlockStateMemory.scores[columna];
-    const previousForced = parseLessonPointsValue(previousScore).forced;
-    const keepForced =
-      lessonUnlockStateMemory.unlocksByColumn[columna] === true ||
-      previousForced ||
-      parsedInput.forced ||
-      numericPoints >= LESSON_UNLOCK_THRESHOLD;
-
-    lessonUnlockStateMemory.scores[columna] = keepForced ? `${numericPoints}f` : numericPoints;
-    if (keepForced) {
-      lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    }
-    persistUnlockStateToLocalStorage();
+      const numericPoints = Number(puntos);
+      if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+          scores[columna] = numericPoints;
+          current.scores = scores;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function normalizeLessonPoints(value) {
@@ -71469,17 +71503,37 @@ function installChatButtonHandler() {
   }
 
   function markColumnPermanentUnlock(columna) {
-    if (!columna) return;
-    lessonUnlockStateMemory.unlocksByColumn[columna] = true;
-    persistUnlockStateToLocalStorage();
+      if (!columna) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+              ? current.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return;
+          unlocksByColumn[columna] = true;
+          current.unlocksByColumn = unlocksByColumn;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function hasColumnPermanentUnlock(columna) {
-    if (!columna) return false;
-    if (lessonUnlockStateMemory.unlocksByColumn[columna] === true) return true;
-    const scoreParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[columna]);
-    if (scoreParsed.forced) return true;
-    return Number.isFinite(scoreParsed.points) && scoreParsed.points >= LESSON_UNLOCK_THRESHOLD;
+      if (!columna) return false;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return false;
+          const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+              ? parsed.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return true;
+          const score = Number(parsed?.scores?.[columna]);
+          return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+      } catch (_) {
+          return false;
+      }
   }
 
   function serializeLessonPointsForServer(columna, puntos) {
@@ -71491,9 +71545,9 @@ function installChatButtonHandler() {
   function saveU1L7T4BadgeAndAnnounceUnlock(puntos) {
     const numericPoints = Number(puntos);
     if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
-    saveUnlockStateScore('U1L7T4', numericPoints);
+    saveUnlockStateScore('U5G8T4', numericPoints);
     if (numericPoints < LESSON_UNLOCK_THRESHOLD) return;
-    markColumnPermanentUnlock('U1L7T4');
+    markColumnPermanentUnlock('U5G8T4');
     pendingU1L7T4UnlockPoints = numericPoints;
   }
 
@@ -71624,50 +71678,7 @@ function installChatButtonHandler() {
   hydrateUnlockStateFromLocalStorage();
 
   async function syncForcedUnlockFromSheetOnce() {
-    if (forcedUnlockSyncPromise) return forcedUnlockSyncPromise;
-    forcedUnlockSyncPromise = (async () => {
-      const student = getStudentFromStorage();
-      if (!student) return;
-      try {
-        const rankingRows = await fetchRankingByColumn(LESSON_COLUMN_KEY);
-        if (!Array.isArray(rankingRows) || rankingRows.length === 0) return;
-        const row = rankingRows.find((item) =>
-          normalizeStudentName(item?.nombre) === student.nombre &&
-          normalizeStudentName(item?.apellido) === student.apellido
-        );
-        if (!row) return;
-
-        const parsedPoints = parseLessonPointsValue({
-          puntosRaw: row?.puntosRaw,
-          puntos: row?.puntos,
-          pointsRaw: row?.pointsRaw,
-          points: row?.points,
-          forcedUnlock: row?.forcedUnlock
-        });
-
-        if (!Number.isFinite(parsedPoints.points)) return;
-
-        const localParsed = parseLessonPointsValue(lessonUnlockStateMemory.scores[LESSON_COLUMN_KEY]);
-        const hasLocalScore = Number.isFinite(localParsed.points);
-
-        // Evita que una lectura atrasada de Sheet machaque el valor local (incluido 0).
-        if (hasLocalScore && !parsedPoints.forced) return;
-
-        if (hasLocalScore && parsedPoints.forced) {
-          saveUnlockStateScore(LESSON_COLUMN_KEY, { points: localParsed.points, forced: true });
-          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
-          return;
-        }
-
-        saveUnlockStateScore(LESSON_COLUMN_KEY, parsedPoints);
-        if (parsedPoints.forced || parsedPoints.points >= LESSON_UNLOCK_THRESHOLD) {
-          markColumnPermanentUnlock(LESSON_COLUMN_KEY);
-        }
-      } catch (error) {
-        console.warn('No se pudo sincronizar desbloqueo forzado desde Sheet:', error);
-      }
-    })();
-    return forcedUnlockSyncPromise;
+      return loadLessonPointsIfMissing_2();
   }
 
   function pointsFromPercentage(percentageValue) {
@@ -71707,7 +71718,46 @@ function installChatButtonHandler() {
     return { percentage, hasCards };
   }
 
+  let lessonPointsHydrationPromise_2 = null;
+  async function loadLessonPointsIfMissing_2() {
+      const readLocalScore = () => {
+          try {
+              const stored = JSON.parse(localStorage.getItem(TEST_UNLOCK_STATE_KEY) || '{}');
+              return parseLessonPointsValue(stored?.scores?.[LESSON_COLUMN_KEY]).points;
+          } catch (_) { return null; }
+      };
+      if (Number.isFinite(readLocalScore())) return;
+      if (lessonPointsHydrationPromise_2) return lessonPointsHydrationPromise_2;
+      const student = getStudentFromStorage();
+      if (!student) return;
+      lessonPointsHydrationPromise_2 = (async () => {
+          try {
+              const ranking = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+              const row = Array.isArray(ranking) ? ranking.find(item =>
+                  normalizeStudentName(item?.nombre) === normalizeStudentName(student.nombre) &&
+                  normalizeStudentName(item?.apellido) === normalizeStudentName(student.apellido)
+              ) : null;
+              if (!row) return;
+              const result = parseLessonPointsValue(row);
+              if (!Number.isFinite(result.points)) return;
+              // A result earned while this read was pending is already local: keep it.
+              if (Number.isFinite(readLocalScore())) return;
+              saveUnlockStateScore(LESSON_COLUMN_KEY, result.points);
+              if (result.forced || result.points >= LESSON_UNLOCK_THRESHOLD) markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          } catch (error) {
+              console.warn('No se pudo leer la nota de la hoja; se conservan los datos locales:', error);
+          }
+      })().finally(() => { lessonPointsHydrationPromise_2 = null; });
+      return lessonPointsHydrationPromise_2;
+  }
+  if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { void loadLessonPointsIfMissing_2(); }, { once: true });
+  } else {
+      void loadLessonPointsIfMissing_2();
+  }
+
   async function sendLessonPointsToSheet(percentage, puntos) {
+      saveUnlockStateScore(LESSON_COLUMN_KEY, puntos);
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();

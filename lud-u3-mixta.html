@@ -15280,7 +15280,7 @@ let lockedAfterCorrect = false;            // bloquea el botón tras acierto has
 let PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
 const PORTALB_SCRIPT_URL_FALLBACKS = [];
 const LESSON_COLUMN_KEY = 'U3C9T4';
-const TEST_UNLOCK_STATE_KEY = 'u3-mixta-test-unlock-state-v2';
+const TEST_UNLOCK_STATE_KEY = 'co-u3-mixta-test-unlock-state-v2';
 const LESSON_UNLOCK_THRESHOLD = 4;
 const RANKING_TEST1_MODE = 'ranking_test1';
 const RANKING_TENER_MODE = 'ranking_mas';
@@ -30823,7 +30823,46 @@ function pointsFromPercentage(percentageValue) {
     return 0;
 }
 
+let lessonPointsHydrationPromise_1 = null;
+async function loadLessonPointsIfMissing_1() {
+    const readLocalScore = () => {
+        try {
+            const stored = JSON.parse(localStorage.getItem(TEST_UNLOCK_STATE_KEY) || '{}');
+            return parseLessonPointsValue(stored?.scores?.[LESSON_COLUMN_KEY]).points;
+        } catch (_) { return null; }
+    };
+    if (Number.isFinite(readLocalScore())) return;
+    if (lessonPointsHydrationPromise_1) return lessonPointsHydrationPromise_1;
+    const student = getStudentFromStorage();
+    if (!student) return;
+    lessonPointsHydrationPromise_1 = (async () => {
+        try {
+            const ranking = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+            const row = Array.isArray(ranking) ? ranking.find(item =>
+                normalizeStudentName(item?.nombre) === normalizeStudentName(student.nombre) &&
+                normalizeStudentName(item?.apellido) === normalizeStudentName(student.apellido)
+            ) : null;
+            if (!row) return;
+            const result = parseLessonPointsValue(row);
+            if (!Number.isFinite(result.points)) return;
+            // A result earned while this read was pending is already local: keep it.
+            if (Number.isFinite(readLocalScore())) return;
+            saveUnlockStateScore(LESSON_COLUMN_KEY, result.points);
+            if (result.forced || result.points >= LESSON_UNLOCK_THRESHOLD) markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+        } catch (error) {
+            console.warn('No se pudo leer la nota de la hoja; se conservan los datos locales:', error);
+        }
+    })().finally(() => { lessonPointsHydrationPromise_1 = null; });
+    return lessonPointsHydrationPromise_1;
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { void loadLessonPointsIfMissing_1(); }, { once: true });
+} else {
+    void loadLessonPointsIfMissing_1();
+}
+
 async function sendLessonPointsToSheet(percentage, puntos) {
+    saveUnlockStateScore(LESSON_COLUMN_KEY, puntos);
     const student = getStudentFromStorage();
     if (!student) {
         console.warn('No se enviaron puntos: faltan nombre/apellido en storage.');

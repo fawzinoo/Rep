@@ -3331,7 +3331,7 @@
                 : 'https://fawzinoo.github.io/Rep/reco-posesivos1.html'
         };
 
-        const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby20hep2bbC0w1_tLcTym_VYdavRzzz5lSJVKC5wkpqA2Y4SDmAsQY6eQ-xj4Itf82C/exec';
+        const PORTALB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyo7SUAWvSrARC9g2p4xkqUMcl2UyZ5_WhHNLBRxKthdJLtUFOr4BhcVSQqqF__abFy/exec';
         const TEST_SCORE_COLUMNS = [
             { buttonId: 'mode-test2-btn', pillId: 'test1-score-pill', columna: 'U1G13T1' }, // Test1
             { buttonId: 'mode-test3-btn', pillId: 'test2-score-pill', columna: 'U1G13T2' }, // Test2
@@ -3568,17 +3568,10 @@
         function getLocalPointsByColumn(columna) {
             try {
                 const fallbackScores = getStoredScoresFromUnlockState();
-                const unlockStatePoints = toLessonPointsNumber(fallbackScores[columna]);
-                if (Number.isFinite(unlockStatePoints) && unlockStatePoints >= 0 && unlockStatePoints <= 5) {
-                    return unlockStatePoints;
-                }
-
-                const topicCache = readA1BetaTopicPointsCache();
-                const topicCachePoints = toLessonPointsNumber(topicCache?.[columna]);
-                if (Number.isFinite(topicCachePoints) && topicCachePoints >= 0 && topicCachePoints <= 5) {
-                    return topicCachePoints;
-                }
-
+                const rawValue = fallbackScores[columna];
+                if (rawValue === null || typeof rawValue === 'undefined') return null;
+                const fallback = toLessonPointsNumber(rawValue);
+                if (Number.isFinite(fallback) && fallback >= 0 && fallback <= 5) return fallback;
                 return null;
             } catch (e) {
                 return null;
@@ -3597,24 +3590,22 @@
         function getLocalForcedUnlockByColumn(columna) {
             if (!columna) return false;
             try {
-                const topicCache = readA1BetaTopicPointsCache();
-                const topicCacheForced = hasForcedUnlockMarker(topicCache?.[columna]);
                 const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
-                if (!raw) return topicCacheForced;
+                if (!raw) return false;
                 const parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed !== 'object') return topicCacheForced;
+                if (!parsed || typeof parsed !== 'object') return false;
                 const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
                     ? parsed.unlocksByColumn
                     : {};
                 if (typeof unlocksByColumn[columna] === 'boolean') {
-                    return unlocksByColumn[columna] || topicCacheForced;
+                    return unlocksByColumn[columna];
                 }
                 const scoreValue = parsed?.scores?.[columna];
                 if (hasForcedUnlockMarker(scoreValue)) return true;
-                if (columna === 'U1G13T1') return parseUnlockFlag(parsed?.test2) || topicCacheForced;
-                if (columna === 'U1G13T2') return parseUnlockFlag(parsed?.test3) || topicCacheForced;
-                if (columna === 'U1G13T3') return parseUnlockFlag(parsed?.test4) || topicCacheForced;
-                return topicCacheForced;
+                if (columna === 'U1G13T1') return parseUnlockFlag(parsed?.test2);
+                if (columna === 'U1G13T2') return parseUnlockFlag(parsed?.test3);
+                if (columna === 'U1G13T3') return parseUnlockFlag(parsed?.test4);
+                return false;
             } catch (e) {
                 return false;
             }
@@ -3928,7 +3919,6 @@
         async function loadTestScoresIntoPills() {
             const pointsByColumn = { U1G13T1: 0, U1G13T2: 0, U1G13T3: 0, U1G13T4: 0 };
             const forcedUnlockByColumn = { U1G13T1: false, U1G13T2: false, U1G13T3: false, U1G13T4: false };
-            const shouldForceRemoteHydration = !hasStoredUnlockState();
             const missingColumns = [];
             TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
                 const localPoints = getLocalPointsByColumn(columna);
@@ -3966,9 +3956,7 @@
                 return;
             }
 
-            const columnsToHydrate = shouldForceRemoteHydration
-                ? TEST_SCORE_COLUMNS.map(({ columna }) => columna)
-                : missingColumns.slice();
+            const columnsToHydrate = missingColumns.slice();
 
             if (!columnsToHydrate.length) {
                 applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);

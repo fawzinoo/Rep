@@ -11343,8 +11343,7 @@ body.initial-modal-open #flashcard-container {
                     </div>
                 </div>
             </div>
-            <script src="co-u1-tu-progress-sync.js"></script>
-<script id="mas-card-data">
+            <script id="mas-card-data">
                 (() => {
                     const answers = ['Yo tengo que hacer la maleta','Tú tienes que comprar el billete','Ana tiene que llevar un sombrero','Nosotros tenemos que buscar un hotel','Ellos tienen que cambiar dinero','El guía tiene que hablar inglés','Vosotros tenéis que alquilar un coche','María y Juan tienen que comprar agua','Yo tengo que llevar el pasaporte','Tú tienes que llevar ropa cómoda','Usted tiene que pagar el taxi','Nosotros tenemos que ir al aeropuerto','Los viajeros tienen que comer algo','Mi hermano tiene que buscar la estación','Vosotras tenéis que tomar un tren','Yo tengo que comprar crema solar','Tú tienes que preguntar la dirección','El grupo tiene que esperar el autobús','Nosotras tenemos que comprar regalos','Ellos tienen que buscar las maletas','Carlos tiene que llevar una cámara','Ustedes tienen que leer la guía','Yo tengo que llevar gafas de sol','Tú tienes que tomar un taxi','Marta tiene que dormir en el hotel','Nosotros tenemos que estudiar español','Ellos tienen que comprar un mapa','Vosotros tenéis que llamar por teléfono','El turista tiene que sacar fotos','Yo tengo que escribir mensajes'];
                     const pattern = /(tengo que|tienes que|tiene que|tenemos que|tenéis que|tienen que)/i;
@@ -50112,12 +50111,17 @@ function installChatButtonHandler() {
   }
 
   function saveUnlockStateScore(columna, puntos) {
-      const state = window.CoU1TuProgress.saveScore(columna, puntos);
-      if (typeof lessonUnlockStateMemory !== 'undefined') {
-          lessonUnlockStateMemory.scores = { ...state.scores };
-          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
-      }
-      return state;
+      const numericPoints = Number(puntos);
+      if (!Number.isFinite(numericPoints) || numericPoints < 0 || numericPoints > 5) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const scores = current.scores && typeof current.scores === 'object' ? current.scores : {};
+          scores[columna] = numericPoints;
+          current.scores = scores;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function normalizeLessonPoints(value) {
@@ -50128,16 +50132,37 @@ function installChatButtonHandler() {
   }
 
   function markColumnPermanentUnlock(columna) {
-      const state = window.CoU1TuProgress.unlock(columna);
-      if (typeof lessonUnlockStateMemory !== 'undefined') {
-          lessonUnlockStateMemory.scores = { ...state.scores };
-          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
-      }
-      return state;
+      if (!columna) return;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current = parsed && typeof parsed === 'object' ? parsed : {};
+          const unlocksByColumn = current.unlocksByColumn && typeof current.unlocksByColumn === 'object'
+              ? current.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return;
+          unlocksByColumn[columna] = true;
+          current.unlocksByColumn = unlocksByColumn;
+          localStorage.setItem(TEST_UNLOCK_STATE_KEY, JSON.stringify(current));
+      } catch (e) { }
   }
 
   function hasColumnPermanentUnlock(columna) {
-      return window.CoU1TuProgress.hasUnlock(columna);
+      if (!columna) return false;
+      try {
+          const raw = localStorage.getItem(TEST_UNLOCK_STATE_KEY);
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return false;
+          const unlocksByColumn = parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object'
+              ? parsed.unlocksByColumn
+              : {};
+          if (unlocksByColumn[columna] === true) return true;
+          const score = Number(parsed?.scores?.[columna]);
+          return Number.isFinite(score) && score >= LESSON_UNLOCK_THRESHOLD;
+      } catch (_) {
+          return false;
+      }
   }
 
   function serializeLessonPointsForServer(columna, puntos) {
@@ -50266,10 +50291,10 @@ function installChatButtonHandler() {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return;
       if (parsed.scores && typeof parsed.scores === 'object') {
-        lessonUnlockStateMemory.scores = { ...lessonUnlockStateMemory.scores, ...parsed.scores };
+        lessonUnlockStateMemory.scores = { ...parsed.scores, ...lessonUnlockStateMemory.scores };
       }
       if (parsed.unlocksByColumn && typeof parsed.unlocksByColumn === 'object') {
-        lessonUnlockStateMemory.unlocksByColumn = { ...lessonUnlockStateMemory.unlocksByColumn, ...parsed.unlocksByColumn };
+        lessonUnlockStateMemory.unlocksByColumn = { ...parsed.unlocksByColumn, ...lessonUnlockStateMemory.unlocksByColumn };
       }
     } catch (error) {
       console.warn('No se pudo leer el estado de desbloqueo local:', error);
@@ -50277,16 +50302,9 @@ function installChatButtonHandler() {
   }
 
   hydrateUnlockStateFromLocalStorage();
-  window.addEventListener('co-u1-tu-progress-updated', hydrateUnlockStateFromLocalStorage);
 
   async function syncForcedUnlockFromSheetOnce() {
-      try {
-          const state = await window.CoU1TuProgress.refresh({ endpoint: PORTALB_SCRIPT_URL, student: getStudentFromStorage() });
-          lessonUnlockStateMemory.scores = { ...state.scores };
-          lessonUnlockStateMemory.unlocksByColumn = { ...state.unlocksByColumn };
-      } catch (error) {
-          console.warn('No se pudo leer la hoja; se mantienen las notas locales:', error);
-      }
+      return loadLessonPointsIfMissing();
   }
 
   function pointsFromPercentage(percentageValue) {
@@ -50326,8 +50344,46 @@ function installChatButtonHandler() {
     return { percentage, hasCards };
   }
 
+  let lessonPointsHydrationPromise = null;
+  async function loadLessonPointsIfMissing() {
+      const readLocalScore = () => {
+          try {
+              const stored = JSON.parse(localStorage.getItem(TEST_UNLOCK_STATE_KEY) || '{}');
+              return parseLessonPointsValue(stored?.scores?.[LESSON_COLUMN_KEY]).points;
+          } catch (_) { return null; }
+      };
+      if (Number.isFinite(readLocalScore())) return;
+      if (lessonPointsHydrationPromise) return lessonPointsHydrationPromise;
+      const student = getStudentFromStorage();
+      if (!student) return;
+      lessonPointsHydrationPromise = (async () => {
+          try {
+              const ranking = await fetchRankingByColumn(LESSON_COLUMN_KEY);
+              const row = Array.isArray(ranking) ? ranking.find(item =>
+                  normalizeStudentName(item?.nombre) === normalizeStudentName(student.nombre) &&
+                  normalizeStudentName(item?.apellido) === normalizeStudentName(student.apellido)
+              ) : null;
+              if (!row) return;
+              const result = parseLessonPointsValue(row);
+              if (!Number.isFinite(result.points)) return;
+              // A result earned while this read was pending is already local: keep it.
+              if (Number.isFinite(readLocalScore())) return;
+              saveUnlockStateScore(LESSON_COLUMN_KEY, result.points);
+              if (result.forced || result.points >= LESSON_UNLOCK_THRESHOLD) markColumnPermanentUnlock(LESSON_COLUMN_KEY);
+          } catch (error) {
+              console.warn('No se pudo leer la nota de la hoja; se conservan los datos locales:', error);
+          }
+      })().finally(() => { lessonPointsHydrationPromise = null; });
+      return lessonPointsHydrationPromise;
+  }
+  if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { void loadLessonPointsIfMissing(); }, { once: true });
+  } else {
+      void loadLessonPointsIfMissing();
+  }
+
   async function sendLessonPointsToSheet(percentage, puntos) {
-    window.CoU1TuProgress.saveScore(LESSON_COLUMN_KEY, puntos);
+      saveUnlockStateScore(LESSON_COLUMN_KEY, puntos);
     const now = Date.now();
     if (now - lastSentAt < SEND_THROTTLE_MS) return;
     const student = getStudentFromStorage();
@@ -50357,7 +50413,6 @@ function installChatButtonHandler() {
     } catch (error) {
       console.warn('Error al enviar puntos a Google Sheet:', error);
     }
-      void window.CoU1TuProgress.refresh().catch(() => {});
   }
 
   function ensurePointsPill() {

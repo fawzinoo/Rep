@@ -2420,8 +2420,7 @@
         }
     
 </style>
-    <script src="co-u1-tu-progress-sync.js"></script>
-<script>
+    <script>
         (function () {
             try {
                 if (localStorage.getItem('co-u1-tu-stay-in-exposure') === '1') {
@@ -4389,29 +4388,93 @@
             };
         }
 
-        function renderTuProgressScores() {
-            const state = window.CoU1TuProgress.read();
-            const pointsByColumn = {};
-            const forcedUnlockByColumn = {};
-            TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
-                const parsed = window.CoU1TuProgress.parse(state.scores[columna]);
-                const points = parsed.points === null ? 0 : parsed.points;
-                pointsByColumn[columna] = points;
-                forcedUnlockByColumn[columna] = state.unlocksByColumn[columna] === true;
-                setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
-            });
-            applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false }, forcedUnlockByColumn);
-        }
-        window.addEventListener('co-u1-tu-progress-updated', renderTuProgressScores);
-
         async function loadTestScoresIntoPills() {
-            renderTuProgressScores();
-            try {
-                await window.CoU1TuProgress.refresh({ endpoint: PORTALB_SCRIPT_URL, student: getCurrentStudentFromStorage() });
-            } catch (error) {
-                console.warn('No se pudo leer la hoja; se mantienen las notas locales:', error);
+            const pointsByColumn = { U1C1T1: 0, U1C1T2: 0, U1C1T3: 0, U1C1T4: 0 };
+            const forcedUnlockByColumn = { U1C1T1: false, U1C1T2: false, U1C1T3: false, U1C1T4: false };
+            const missingColumns = [];
+            TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                const localPoints = getLocalPointsByColumn(columna);
+                const localForcedUnlock = getLocalForcedUnlockByColumn(columna);
+                forcedUnlockByColumn[columna] = localForcedUnlock;
+
+                if (localPoints !== null) {
+                    pointsByColumn[columna] = localPoints;
+                    setTestScorePillText(pillId, `${localPoints} ${localPoints === 1 ? 'pt' : 'pts'}`);
+                }
+
+                if (localPoints === null) {
+                    // Mantener el valor visible en vez de parpadear con "..."
+                    const currentText = (document.getElementById(pillId)?.textContent || '').trim();
+                    if (!currentText || currentText === '...') {
+                        setTestScorePillText(pillId, '0 pts');
+                    }
+                    missingColumns.push(columna);
+                }
+            });
+            // Evita bloqueo/parpadeo temporal cuando no hay ningún dato local y estamos hidratando remoto.
+            if (missingColumns.length < TEST_SCORE_COLUMNS.length) {
+                applyTestUnlockFlow(pointsByColumn, { celebrate: false, persist: false }, forcedUnlockByColumn);
             }
-            renderTuProgressScores();
+            const student = getCurrentStudentFromStorage();
+            if (!student) {
+                TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                    const localPoints = getLocalPointsByColumn(columna);
+                    const points = localPoints === null ? 0 : localPoints;
+                    pointsByColumn[columna] = points;
+                    forcedUnlockByColumn[columna] = getLocalForcedUnlockByColumn(columna);
+                    setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                });
+                applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
+                return;
+            }
+
+            const columnsToHydrate = missingColumns.slice();
+
+            if (!columnsToHydrate.length) {
+                applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
+                return;
+            }
+
+            const missingColumnsSet = new Set(columnsToHydrate);
+            const hydratedColumns = {};
+            try {
+                const remotePointsByColumn = await fetchUserPointsByColumns(student, columnsToHydrate);
+                if (remotePointsByColumn && typeof remotePointsByColumn === 'object') {
+                    TEST_SCORE_COLUMNS.forEach(({ pillId, columna }) => {
+                        if (!missingColumnsSet.has(columna)) return;
+                        if (!(columna in remotePointsByColumn)) return;
+                        const parsed = parseLessonPointsPayload(remotePointsByColumn[columna]);
+                        if (!Number.isFinite(parsed.points)) return;
+                        const points = parsed.points;
+                        pointsByColumn[columna] = points;
+                        forcedUnlockByColumn[columna] = Boolean(parsed.forced);
+                        hydratedColumns[columna] = true;
+                        setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                    });
+                }
+            } catch (error) {
+                console.warn('No se pudo hidratar con user_points para columnas faltantes, se usara ranking:', error);
+            }
+
+            await Promise.all(
+                TEST_SCORE_COLUMNS.filter(({ columna }) => missingColumnsSet.has(columna) && hydratedColumns[columna] !== true)
+                    .map(async ({ pillId, columna }) => {
+                    try {
+                        const ranking = await fetchRankingByColumn(columna);
+                        const rowData = getStudentPointsFromRanking(ranking, student);
+                        const points = toLessonPointsNumber(rowData?.points) ?? 0;
+                        pointsByColumn[columna] = points;
+                        forcedUnlockByColumn[columna] = Boolean(rowData?.forcedUnlock);
+                        setTestScorePillText(pillId, `${points} ${points === 1 ? 'pt' : 'pts'}`);
+                    } catch (error) {
+                        console.warn(`No se pudo cargar puntos de ${columna}:`, error);
+                        setTestScorePillText(pillId, '--');
+                        pointsByColumn[columna] = 0;
+                        forcedUnlockByColumn[columna] = false;
+                    }
+                    })
+            );
+            applyTestUnlockFlow(pointsByColumn, {}, forcedUnlockByColumn);
         }
         const assignTestAnchors = [
             { id: 'test1-btn', linkKey: 'test1' },

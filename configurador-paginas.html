@@ -1,0 +1,3677 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurador de Preguntas para PDF</title>
+    <!-- jsPDF para generación nativa en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        // Fallback local si no hay conexión a internet
+        if (!window.jspdf) {
+            document.write('<script src="jspdf.umd.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --success: #10b981;
+            --success-hover: #059669;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 24px 16px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 880px;
+            background: var(--card-bg);
+            padding: 32px 28px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+
+        .main-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .main-header img.logo {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .main-header .title-block {
+            text-align: left;
+        }
+
+        .main-header h1 {
+            font-size: 2.1rem;
+            color: #1e3a8a;
+            font-style: italic;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1.1;
+            letter-spacing: -0.5px;
+        }
+
+        .main-header .sub-brand {
+            font-size: 0.82rem;
+            color: #64748b;
+            font-weight: 500;
+            margin-top: 4px;
+        }
+
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .save-indicator {
+            font-size: 0.85rem;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .save-indicator.saved {
+            color: #10b981;
+        }
+
+        .btn-tv-mode {
+            background: #475569;
+            color: #ffffff;
+            border: 1px solid #334155;
+            padding: 7px 16px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-tv-mode:hover {
+            background: #334155;
+            transform: translateY(-1px);
+        }
+
+        .btn-tv-mode.active {
+            background: #8b5cf6;
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 2px rgba(139,92,246,0.3);
+        }
+
+        /* MODO TELEVISIÓN 50" / 55" (DISEÑO CLARO ORIGINAL PANORÁMICO) */
+        body.tv-mode-active {
+            padding: 32px 40px;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+
+        body.tv-mode-active .container {
+            max-width: 96% !important;
+            width: 96% !important;
+            background: #ffffff;
+            border-color: var(--border);
+            padding: 36px 44px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.08);
+        }
+
+        body.tv-mode-active .main-header h1 {
+            color: #1e3a8a;
+            font-size: 3rem;
+        }
+
+        body.tv-mode-active .main-header img.logo {
+            width: 68px;
+            height: 68px;
+        }
+
+        body.tv-mode-active .main-header .sub-brand {
+            font-size: 1.15rem;
+            color: #64748b;
+        }
+
+        body.tv-mode-active .instructions {
+            background: #eff6ff;
+            color: #1e40af;
+            border-left-color: var(--primary);
+            font-size: 1.18rem;
+            line-height: 1.6;
+            padding: 16px 20px;
+        }
+
+        body.tv-mode-active #units-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 28px;
+        }
+
+        body.tv-mode-active .unit-section {
+            background: #ffffff;
+            border-color: var(--border);
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+        }
+
+        body.tv-mode-active .unit-header {
+            background: #f1f5f9;
+            color: #334155;
+            font-size: 1.55rem;
+            padding: 16px 22px;
+            border-bottom-color: var(--border);
+        }
+
+        body.tv-mode-active .item-card {
+            background: #f8fafc;
+            border-color: #e2e8f0;
+            padding: 18px 20px;
+            border-radius: 12px;
+        }
+
+        body.tv-mode-active .item-num {
+            font-size: 1.35rem;
+            color: #64748b;
+            min-width: 36px;
+        }
+
+        body.tv-mode-active .editable-title {
+            font-size: 1.45rem;
+            color: #0f172a;
+        }
+
+        body.tv-mode-active .editable-prompt {
+            font-size: 1.3rem;
+            color: #1e293b;
+            background: #ffffff;
+            border-color: #cbd5e1;
+            padding: 10px 16px;
+        }
+
+        body.tv-mode-active .btn-suggest,
+        body.tv-mode-active .btn-answer {
+            font-size: 1.25rem;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+
+        body.tv-mode-active .bullet {
+            font-size: 1.3rem;
+        }
+
+        body.tv-mode-active .answer-box {
+            font-size: 1.18rem;
+            padding: 10px 16px;
+            background: #ecfdf5;
+            color: #065f46;
+            border-left-width: 4px;
+        }
+
+        body.tv-mode-active .answer-box .ans-label {
+            color: #047857;
+            font-size: 1.1rem;
+        }
+
+        body.tv-mode-active .btn-add-prompt,
+        body.tv-mode-active .add-item-btn {
+            font-size: 1.1rem;
+            padding: 8px 16px;
+        }
+
+        body.tv-mode-active .btn-add-unit-main {
+            font-size: 1.3rem;
+            padding: 16px;
+        }
+
+        body.tv-mode-active .btn-save-manual,
+        body.tv-mode-active .btn-export-html,
+        body.tv-mode-active .btn-reset-default,
+        body.tv-mode-active .btn-clear-all,
+        body.tv-mode-active .btn-tv-mode {
+            font-size: 1.1rem;
+            padding: 10px 18px;
+        }
+
+        .btn-save-manual {
+            background: #2563eb;
+            color: #ffffff;
+            border: 1px solid #1d4ed8;
+            padding: 7px 16px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.25);
+        }
+
+        .btn-save-manual:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(37,99,235,0.35);
+        }
+
+        .btn-export-html {
+            background: #0f766e;
+            color: #ffffff;
+            border: 1px solid #0f766e;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-export-html:hover {
+            background: #115e59;
+            transform: translateY(-1px);
+        }
+
+        .btn-clear-all {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fca5a5;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-clear-all:hover {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        .btn-reset-default {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-reset-default:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .instructions {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            color: #1e40af;
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
+        .unit-section {
+            margin-bottom: 28px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .unit-header {
+            background: #f1f5f9;
+            padding: 12px 18px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .unit-header-title {
+            cursor: pointer;
+            border: 1px dashed transparent;
+            padding: 2px 6px;
+            border-radius: 6px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .unit-header-title:hover {
+            background: #ffffff;
+            border-color: #93c5fd;
+        }
+
+        .unit-header-title:focus {
+            background: #ffffff;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+
+        .btn-add-unit-main {
+            width: 100%;
+            margin-top: 8px;
+            margin-bottom: 24px;
+            padding: 12px;
+            border: 2px dashed #93c5fd;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 0.95rem;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-add-unit-main:hover {
+            background: #dbeafe;
+            border-color: #2563eb;
+            color: #1e40af;
+            transform: translateY(-1px);
+        }
+
+        .add-item-btn {
+            background: #fff;
+            border: 1px solid #cbd5e1;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: #475569;
+            transition: all 0.2s;
+        }
+
+        .add-item-btn:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .items-list {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .unit-section.dragging,
+        .item-card.dragging {
+            opacity: 0.45;
+            transform: scale(0.99);
+            box-shadow: 0 8px 20px rgba(37,99,235,0.15);
+        }
+
+        .unit-section.drag-over,
+        .item-card.drag-over {
+            border: 2px dashed #2563eb !important;
+            background: #eff6ff !important;
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: #94a3b8;
+            font-size: 1.15rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        .drag-handle:hover {
+            color: #1e293b;
+            background: #e2e8f0;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .item-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px 14px;
+            transition: all 0.2s;
+        }
+
+        .item-card:hover {
+            border-color: #cbd5e1;
+        }
+
+        .item-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .item-num {
+            font-weight: 800;
+            color: #64748b;
+            font-size: 0.95rem;
+            min-width: 28px;
+        }
+
+        .editable-title {
+            font-weight: 700;
+            font-size: 1.02rem;
+            color: #0f172a;
+            border: 1px dashed transparent;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
+            outline: none;
+            flex-grow: 1;
+            transition: all 0.2s;
+        }
+
+        .editable-title:hover {
+            background: #ffffff;
+            border-color: #93c5fd;
+        }
+
+        .editable-title:focus {
+            background: #ffffff;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+
+        .btn-remove-item {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-remove-item:hover {
+            background: #fee2e2;
+            color: var(--danger);
+        }
+
+        .questions-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-left: 34px;
+        }
+
+        .question-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-answer {
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #059669;
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 3px 6px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            user-select: none;
+            line-height: 1;
+        }
+
+        .btn-answer:hover {
+            background: #d1fae5;
+            border-color: #10b981;
+            color: #047857;
+            transform: scale(1.05);
+        }
+
+        .btn-answer.active {
+            background: #10b981;
+            border-color: #059669;
+            color: #ffffff;
+            box-shadow: 0 0 0 2px rgba(16,185,129,0.25);
+        }
+
+        .btn-suggest {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 3px 6px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            user-select: none;
+            line-height: 1;
+        }
+
+        .btn-suggest:hover {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            transform: scale(1.05);
+        }
+
+        .btn-suggest.active {
+            background: #2563eb;
+            border-color: #1d4ed8;
+            color: #ffffff;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.25);
+        }
+
+        .bullet {
+            color: #94a3b8;
+            font-weight: bold;
+        }
+
+        .editable-prompt {
+            font-size: 0.95rem;
+            color: #1e293b;
+            border: 1px dashed #cbd5e1;
+            background: #ffffff;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            outline: none;
+            flex-grow: 1;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .editable-prompt:hover {
+            border-color: #93c5fd;
+            background: #f0f7ff;
+        }
+
+        .editable-prompt:focus {
+            border-color: var(--primary);
+            background: #ffffff;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+
+        .btn-remove-prompt {
+            background: none;
+            border: none;
+            color: #cbd5e1;
+            font-size: 1rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .btn-remove-prompt:hover {
+            color: var(--danger);
+            background: #fee2e2;
+        }
+
+        .answer-box {
+            display: none;
+            margin-top: 4px;
+            margin-bottom: 6px;
+            padding: 6px 10px;
+            background: #ecfdf5;
+            border-left: 3px solid #10b981;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            color: #065f46;
+            animation: fadeInAns 0.2s ease-in-out;
+        }
+
+        .answer-box.visible {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .answer-box .ans-label {
+            font-weight: 700;
+            color: #047857;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .answer-box .ans-text {
+            font-style: italic;
+            color: #064e3b;
+            background: transparent;
+            border: 1px dashed transparent;
+            border-radius: 4px;
+            padding: 2px 6px;
+            flex-grow: 1;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .answer-box .ans-text:hover {
+            background: #d1fae5;
+            border-color: #6ee7b7;
+        }
+
+        .answer-box .ans-text:focus {
+            background: #ffffff;
+            border-color: #10b981;
+            box-shadow: 0 0 0 2px rgba(16,185,129,0.2);
+            font-style: normal;
+        }
+
+        body.tv-mode-active .answer-box .ans-text {
+            font-size: 1.15rem;
+            padding: 4px 8px;
+        }
+
+        @keyframes fadeInAns {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .btn-add-prompt {
+            align-self: flex-start;
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 3px 6px;
+            margin-top: 2px;
+            border-radius: 4px;
+        }
+
+        .btn-add-prompt:hover {
+            background: #dbeafe;
+        }
+
+        .actions-footer {
+            margin-top: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .button-group-main {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .pdf-export-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+            width: 100%;
+            max-width: 960px;
+            margin-bottom: 8px;
+        }
+
+        .btn-pdf-export {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 18px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .btn-pdf-export:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.08);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        }
+
+        .btn-pdf-export:active {
+            transform: translateY(0);
+        }
+
+        .btn-pdf-respuestas {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        }
+
+        .btn-pdf-ambos {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        }
+
+        .btn-pdf-preguntas {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+        }
+
+        .btn-pdf-apagadas {
+            background: linear-gradient(135deg, #475569 0%, #334155 100%);
+        }
+
+        .btn-download-pdf {
+            display: none;
+        }
+
+        .btn-generate {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            font-size: 1.05rem;
+            font-weight: 600;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-generate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+        }
+
+        .output-box {
+            width: 100%;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .output-box.visible {
+            display: block;
+        }
+
+        textarea {
+            width: 100%;
+            height: 240px;
+            padding: 12px;
+            border: 2px solid var(--primary);
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            color: #0f172a;
+            resize: vertical;
+            background: #fff;
+            outline: none;
+        }
+
+        /* Modal de confirmación */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            animation: modalFadeIn 0.2s ease-out;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            border: 1px solid var(--border);
+            animation: modalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .modal-icon {
+            font-size: 2.8rem;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+
+        .modal-title {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        .modal-message {
+            font-size: 0.95rem;
+            color: #64748b;
+            line-height: 1.5;
+            margin-bottom: 22px;
+        }
+
+        .modal-btn-ok {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 10px 28px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+            transition: all 0.2s;
+        }
+
+        .modal-btn-ok:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes modalPop {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .copy-notice {
+            margin-top: 6px;
+            font-size: 0.85rem;
+            color: var(--success);
+            font-weight: 600;
+            text-align: right;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="main-header">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAjkElEQVR42u19eZRcZ3Xn797vvareW14kbLwb22BZai3VMjZbS4khMEBgBlrJATKBMBBOGMghJzg4ySA1kBACOAmcJAMk8TAhzERNAiEwB0IYqZMhxnaXuiW15H3Bjm0sL5J6q65677u/+eO9WruqJdtSa3Hdc/pIXV3Lq3e/e797f/d37we0pS1taUtb2tKWtrSlLW1pS1va0pa2tKUtbWlLW9rSlra0pS1tOU5CQtp34QxUKjnsKr/vGHZtRZ8cRSgJPa7viXpFkrnwdLonciZZmQhYVrQI7Pi54yHn75y/yQFvN5MeqN+lWfwGLs9PA0D5c09F0TNJucWpTeuL+wc3iMC47fl9NxKC0WEFhtXvm/um6w0/AeqAGi7Xczp+xeYwIgJi15A7le/Naa9g7hh2IiAPDA4Fit2ZQHfHkxs+JCMw7hh+Hjd/WGXrqPd7H/wttyLzJnsyKlrRzDwjHIo9KIMAgM1j1lbwiYxYVx5MnmPcqh2B2DxjCYM/4d3r12F49DkpmdugkFHjnRteLCI34XDkIQxFoCQFgaiBDwEAdg1pW8HPw+0mEezRFW0eHTASYKRZJ7bgbnrOe+PmIRWAFukHtcf1WEwKRKtxCyUI+O3TwcPp8qYa2/RY0wsRcPqx9StFwGNU1CEIBJAAc54g3sipTefJ1lH/bFIaAiJbxmLec0WWJu9AwQhJlEvQXFbVz8QPoyDfISHYPOZf8Aomt2miqBETAZfKI8ltCkL8vsGbe0sd9/p9g6N8cKgjTYFaKooODyVJAcWMXnuCHk++loQ8q0Box7ACQLTQu9GFcqkVjQCEAGggOlRM+UcymJ/HriF3KkfQy6LgxNWO2PQ961fypy8f4P0vf5FsHfVl99vsuQ8+dEkWxl/GrPXrWZm32/Tsx0Rgu5opavMqAoCj3ovIEtsHAAoQ21tEQDy56tiVsPKgkBCF24xOBwImiVs2l1H1M9Fj4ar4K6eD9Z5wBaf5KEt7c7/azexddpCTVsRd3L/pZo7nQhGwNp1JlL5NL730J0UIphCI2TNRDMoHeX+uf8uWsXixFY8SAEpFewwLHgJxgCjmDSJ6w/R47lwMj9oxu+nNm00EFOPPIK7DCgzdKgD+u5y/d+50sN4TqmBuS8CGwp3rLnXQP9NYzmYEagkr0BN+xDr0O4+O57qwvdGSD4gIaJ5/jFAUEUx7gnP9HF63lLvNhFLyRooQAMTMYu0L+7scfvFY89UEBRsh71x3qaq80uaMAlESFNXApuNpp8GXCQh2JekRCeHOoYA7h4JTEb48cRa8fVgAoMOC1ZpV9UUfi0LMSHs6Kml3+LrzsvqNxEKGK/uryKjnjmEXbtj9TTtS/Jb2aAYxCc9fWNLdmnS6QMWsjGaJYt4oKr/J8VwXnlzFo4If+ZwTAW0huBHdYSdoHgKB0Eu3AuA3ZeC2J7BjWGUkQcpEQNkyFsuWsfhUtOgT6KJT12n+UZYIB1EQgEBEkPGHokh7gzfY3o1/KjLq6yxs/yhJyHwQfcBK/knEhDj3+vmp3MXp36rXvWtIuQ2KUK5Al4MKvQCiArWSN+0JL7FQbpatox7bh+uKBnUR/tTqjAzmI+7Z+GrN6vswE3tAXBpaC4xQ5T+QkPI+nQR+udBPDX7S7819mXe+ovdUqzidMAWX4cLMnZNTFlseXaoELU1FIILQDvlIe7MfiCc2flC2jMXcORQAgIzAsGvI9Q5MPaFmI8iIaEa7sxE/KSMw7F8dVKLqlU+qjMAs8j8P1APQIuJsOvbaFfyq35v7PZFRLzLqKxWhNJoXAWXNgRKnctda4EbhxZlRkrQLyTMiIjJ5DADw5CoinwtEYLZX/kL7M7+r52TeBxZemy46V7tVnUwXLiccRtw66rkvtxmZYKfNW0yK0+TGwUiKE0MI+IXSazIbJ/+NHHYiae66HYJ3X5Kxw+fepc5djIyIL/n3BgPjf1X3OfvWr4MGtyLSrBlFpPq9mKwn077AWSH6vgc/FV5z+a1lRQMA7x28yBf5boHepNBOK5qJJoufideJtccF8Vz89nD9+N9x51CHbBlbiCc2vtv1Z27xh3xROiSj5l8ta/M/qnzv41T0OKWrSeUv6ydy2/WszDY75COQQQpKgGamHU5JPjI/M7+p9/qpJyo3aOdQIFvGYk5uvBk9mY/YrEUSIBTYp0D+D4jOQfkKUP4E1AutZCaSKib9cpV/Ca89ziEyILYDgNxvYAzj+RBZoz1BD2Y9zGgiog2bqdcOVYtsXLHwczKw7xD3D95gkG/BS0YzEvr56HZ33+5XYD8oI7DyQp2/ffCizj68xygrtNM+K5fmH6+tfJ0R5cKyovyejV/QvuyH7HDsU8eXWgm99gQOpfhWxKXXyvq9cxzPhTi4UtFZ8Dh75l3ozdxiR3wkQCh9DjbtSxAUtFP7ERFWJEWX/j4EPSiqHSoI06d6AEWD9+YForXW37BPUztVrOgfBviYQK8TFYCMEVBg8fWydvIO7oDD5TmVwXwU5Tf8bNAV/g0y7kXod7AniiPumju2l+/Hctz7YFn8xJYxzx3DTtaNfph7cge1M/gkioSPzVRFRcTZbBxrX3A9FuQ7nBz4BVmfP1gxn8nBXGJSFELII7GpagaKjM2ZQQBRKBtWbOPvAnEUwBbMuECiDItQVEVcK+wSAohArOBNM3oxQrmY8waLLNazgsCORJ90Gybv4M6hAL2zIoP5iHsHb0Cg/wiTDjsSz2tsXQa7vbKHn2kFfwKCHUkJjntyb0HgvgpIvy14ExVN3XViyZE9AtoXILbbm7tWVD6BCEECdSXXTCbbo8oS8OWz/KJkBQerXyA1KyUJFJNkWzPqEMV3I8ZGHDzi8Yb7SiIg9+feAnH/C146fdGK7uwga9Ol77r1+TclsO2InbGMDnIoEBmLmd8wiM7gu/SyihENApWyu844h04FSgYEAswZjgZFseEL1VkvE+SylXXX7tdNbwqlrNPa10e6IghxpPT7sj7/OwDAh6/rxHR8I9RtZ0QwYkn7XMaK8QF18hpcfccz2A4p59BnLGWH47lQBvNR6Y7cta5LdyGSLIwiIsLkNlsC7YumCLWWr1UWXT6barjWGll2s8fgZtDEgtnkRhEwCUTF7CHv7U+dar85bNWu4Cqb9oQh0j6XQSm6u1DA67oG8w+fjKj6pCXkZSXHExt+x/V1fArTcUxIwMQNt7DQ1B9LkvyQyVI4VkUtYaPHpnUhROvfWDICdLnkaUWDLXgPEdO+IEQh3o2o9POyYc+j5czgBUO6K+e5R962tr/Xsvep07MtYuJJpdWtFpSzCxLQTgChVJVc63MblSllU04jq8qfWSkDN9+QUwWTgAe4UL96SBBCn6I3CtC0LwisEH9HZ/Wdct3t0ydLuSedVVnJkScHv6ndwVtt1sdCBMTSLpUEJASO3FXC/EMxxAF+zkBf1nzyyqSuJJCwituJAPQAY6bPR4KvWQ0solK10ABwnQoJgY7zHPquzEBEWtxMxuh1AQr+S7J2/APHk+F5aqdJWLr2ij08ACdvLfve+vsnDfFwav6BYP7RGA98bhaOCs2kimpy2yWNk+otu/VH1P+arjQDtJcY+MoKdJwdwKKGiJv00usCm42/6tbnP0BuU2wfwclGsk6ugtNqTDyBeVcJWFP4t+IcFytEVGDzxIvf1I3elwa49+Oz4BFAQgGs8iqi1smmXlkSn1rZx2utsW6vbgy7DWDG0vdftN5Ms+ps3t+v/U99IC07ojZaTh4bUmAVa2HSM550R0Cc05Vpjlm7OdZsxpKqXOqU7J8x9F6dxYXv60RUsHLsnbhgnyjF0sfMJ6gVLd2zvYAm6XNTd+3Lr5X0fZLHK/9nNdirX3E0dCpI+0u57CcL2DVU55ZTaq+JjMXLqdyTb8Gbx0wAes9rNWJl263PT6Wi4kWWHAh4iFixPkR4nsKeYWLFacBbDpRqbVRU6uKuo4UotLK/liaNLDXRX0w40f1Jur6KteR52TrqF/YMvjTb74bj2fiucE3+G8uFRwfL2VKyCJ+WMV/cu2FAA92EeW9pGJTeUdYoWmpUzVr3DhoQdjtkX6SYf8LgwsX7aSUiJhDPppbOpXCv6tarWYF2CGisolpN1gGcAOQKEZAPHgy5c0hExmJg1MdTuf8qTj8DdV0aG2f2vvx8kdueWA4lByeWtL5NREasjmqzeRWRf0BlcCwCgAyCzyLQwBa8F4GymaUuwpoWW7LrqmyyqXbSfbTMZDYCIdD7SofMOQ7iCA0F2ilVqy9vtxHhZwg/T8zeGaP4kEfYrZXGpybXIYhIU3k/dw59XS4bWwAATm06z4R/oB3BL9u0GRDHgN3d03HoMAlZjhwmOJHBEzDCctkMqKueeE4OdFuY/SIywetsJvZSAfu56I2OZY0nryYEWt0ny/p1gnjGcN67O3DJr/UAc+XoY3H6W1tfBIB43vDI1+Zw8OslhOeiWnmoi7PFYd6bdrlX2llzP+Kewe8beKEZ3qxd4bl2JIrVCQBRdfiQXHVfkTuGneDE78fBiWo3eepHL+05u7fnz+zAT67nvmsfNeFtatwbGwoB7BoT/SXNBlfYdGwicM0BwarCq3+V5i7VNVkItUUCATpepMA84A8z6VOQZtZYfw0uUFz2a31gPIOf7pivpFqLKlciynlP7XLXIqPXqgEoeNh0FEMF6HEBZqL/IuvzO5cT+Dj+FrxryMmWsbi4r/etek72XTgYAZ36Eg3lNTAkKIYDtGCw6dgnyq1RY7OaXzWbrdFafXlAdGn4RgQgkyBJXPLDmneVBsy68pgBOExc9t4e9K4JEPYoGLf6DBErmEfBl69aVQXodQFmo9+S9fm/TGrBo8tSCz4xCk5rnSK8m4cjiBPYnC+mVuQSGkeKNwlcrT4rgASa6Zl10XBlCysrJWi0xar7JRsQjAacuqbmu6gwUUmkI2DlqzrBQsosa1GaEsAhDeABePS6wGZKX3Lrd//hchb6T1geLFtHPbdBM2vyt9uCf6c5PqJ9LqvdLuvSBSWCQNPyoLQwOqn7nywKb+vctRASVB1ANbKqfy9peKvyr7Xb8KItuUaZNsvKupElAV8BBKZZcTYXP3h/1/Svk9CT0QlxQoCOhJMECTbmv67zfi2i+L1Wir9nyli71JGt4Ds5SqVXarTIehfdWKlv9tatA/GWmLf2SOUuiT6bChQNnQ4gvnvlVfeVUvCDZxJtltwx7GQwf0SuHv8rt3b8DTG40SL/fe1Sba7k1kV9aaI5Nlkb9ZbF+nqx1mjuaCoyQALip/88D79gz+1OGQFwlQDEyif16N2X0ONNrT2hQEe1dTPp2BMZ3XfP/7niLVdeuGK/ZN1LWDKrsY9jINpInRVKOZ5t9OKVKFeaWiWsxpRaOA09R3HoxwU8cPMszv5qBkFXCn8erRBS3R4c5rxpxr25ODmwQdbsnSjzvhub5xK+dtUlHU9aT7AcxQSk+R6nVmdwzYGSTWz8tvaGH2HJrNaLsH4HrXPBrEWlGsFLNpZ/pcqwqV03KpAeQCyJ5Ov+xhp6jxHT+xbw4M3zyHRqcoVsRvNhK/ZmQtLzoAbSmQmz/8gDuV+R1WP/1Oo+zd254cVdHZl+PPTTB0VGFo4XyhWcqAKCVHdKqSAP914sIgfoJ3BOuSpTgyKm5Xw2o8csiqRZU3FKPoV1imKNy6cBrlPw+NcXcOhHJagKtDupKYOAlQgrpEUIAtEhj/l7DVIS6DlJoWERy3IJBolUboKoXzC6rFwAuO/7PYO7FBzzxCNOIBA9HyIv88YBFHGpldiFF5/3YHTgRb8ucvt3j4cly3EFOHYNOWwe80utPB7IbQTdLsTo9p5Sz4pMm4bl2Ik09ISuENz3+Rk8/e0Swj5NKj8VY65CmBYBLLFuG5aagFukmlNrZ0oC6CLWfHEFsv0OFjchhtVatjRnY9KSlabdLuFj1+ZiBqBEICJ8DLpeJ1aIDmvWrsTL8k+n1sKTbsHJRSQ5XsPMKjm4f3X3KmYv8tA3w+tvQdBrcROiep1ypcl+zIYyfuvVKnUrIXmdZgDJ6uInN/kYsjbnSnBtaVZNkiVSPKlE30neNO996r9Z63sEEFJUFLTZONYMVhTVr+oAnmJlgzhJCq5EfQ8NZf3s/G+KyJtsL/v8ZOr+JiHnAn0GnOf6AsWsh3lSXJMtTFqzmutd9+LgRhbt4E2gz1RxUvPsao2q0c/WlAdFnqevq6N3OnWQit6svE2lvTyrQvVPLfxr9pr+e8o91ic3TRodVhHQZua+4M7NflJVX66BXq0Zd7Vm3dWa1ZdpqC8GRO1IHJsnG7B6LB3SNkuf2ACACNg0b2IViGbKz3KJCxZJc2dJi5QqFQhT3PHYvKrXx7QCpX2B06yIj23GvH/GyCOeNIKkmFnIQzZT/N8LgWxNSo0nOYpOXPGo5z1XZP08/xOejooWkSQcQKYUVxVIoA6gl4BM7Fek3grJ1m6veRmixmLZqspQDyz7eUv2UZd+8/KbpmwOIGFzAITrlAr8yRYw+bFECiSoKkAAwXz85xD+jcvo/bCFIjpcUIywImsSoEeJyD8tV00+WXHdx4EgHzxvMIPbFBgpcTL3zzg7+AU94hNWYpmqXjL4BV8Uj1kSZ7newHHGp36pIb1NFSVNolI2qexVmXSy9K1XwBeAvtcEOOdns1ARBD2JxdIDtpAEYFYwRDNA8aDH4VsjlH5iCHpbw6nN2LWNfFoIiAwN9O+Ugd07mqH3i6YMYYTHC/U6DkHWCAEgkOi9/mmdEuUrUYIq5CDIPbFjPsjaA2B2pmjRKlmIf1ky+jGJaUaoHGvptzne21hyquyrdQ5BkyL+WddmsPL1XcAzVk/BKbvq8o8C0bs87t42jdl9cUrzYatF3iSyKi9eeu0NApsp/q3bsHsHp1ZncOAaj+FRa/HNeLz7loLjEz0DwN45AJ86ytOfAXATJ3OGnvC3MRPHSR3o6ClROncDImweatVEvayDKqWiCL9A8Ahhs6wQBBZDyMlP2ONw5Y29uPfmmWcZwzaUrhTQQH64c+dQgCdhTerAPC2w6Mq0mWSanZLDjjuHAu4YdtyWYKxk8jsCuwVz3gQSkE0h5abGK8Im2liiJNXYyaTlH6n5V6qPu2S5SQiwQGR7Ha4Z6UfYpU1gymNVNAAvF27ZMhbjgk7HZW42OAF58Fg5vG7w5AC5ihgeJabWd0NF2GTIIJdQMlulr2zxZD6PaFiRAhuyGMA49ruimDMikPfNjue+LFd97/HEGMo0pjNpVmU69VUEZuY+jE4nEPi6gJnSMkliq7bO8p33x+D0Fq2OpYOzetBFlixmNkuRBFBfMkD1gs5O/Rfede0w/+26zjOG+F6ZMLMNmowvHPXx3sGPazb4FZuODaz1IEkg0yKWafF4TZrlW9z2Jp686R+XDO64pCqXui5VESsYFXoF1O2wftsXT236GJlM3TnRk3f0RB1gwW1QGYHJlrFYRmC8K/cqTm36gesMR2zekobvRkCKac2MjZwONgGv6vPcCm+5EUGRpbHMpejRrVqZeEwgB8EExIih8FZiZHM+0lhe4lZkPo19858VAZOp8qcJJytp0Rj1lfLgPbmXoKT/AcDbEMsQQoXNxL7cIiTSwHqrU0h9+3W1GNBAfGd9F//Su7ksctG178lat8xais9RcPDanL6CXsE0q4oO1QqYEltSWDDAyOsBAMOjpwfxPWmTHPX88RV96F/xNvPyDivgVdoTdCAmbM4TRR9BEGqYhGQWMxl7JK2Ae7YYstCCgdGwjyfsPmlgWDS63hbuVpayWS5R5Uhm+WiXqpX8vZiJf6AiAidXmOclqpK1udI9XvxvL8dgtOD4zYMesXjPpncjlO0I3SWqACIPOxJ7CEyAUPqDDBY8LPJPQCSrXW4FC75xotWz5Go17tFszqzjMTF1lqhNylGitwoK56VL1WL//9TNv0HWHJitMQIHDIVOks6H0yIPrih3b+6/uf7wFni5xKbj2OZin5RlSe3UkIEQC6W/RuBfra509TxKL7XIviydDgQ90woP005C1oxtYEOPUvmnnki7mFlHLAGN8RiKBBVoTJowPKUVk48IRNTwWVlzYJY7hzrSMYYqAi8ytnAiznc6QcWGRLm859rViOQTOBx7S0pfAUkvIHVFEGAuvk3hPyJrJm6te/1d1/4BIr4fSWW4glMJqqT0JYp/9dR3lfoK/tEgzyUtkktGyPVtRfXIlRGqnoBymoRidFVURq+qE3WXryn8+a2iXbsUAPyCbURW6T3idCSC1y7ntEPU5uLPo8hXy8DEreSw4w44Tq3OAIAv+HeiQwHAtBI9s64BfLGTridQlXlavsDm+2bNY36ez8EzShPFN7syVnuFMwpvskkEhssfqBt4vtzU2een4M2bLQkQ/V4ueHH9Lqs9zmmfOvN2RxxFN7i1478pg/moEmGvHBJZc6DEycG3uQ73cZvzBpCWnK9iVTot60rxi3NRVpgv8bxh4d89NEy7CFuQxOYf8HWY9dFruQ1svFbANSpjWphOm6c4+dChiXUrZDAfNWVTng4KFhkxboNmByb2em9vsZL/ni3Efw8f/+Indtx+Xbhu4odkOrJ366gnh51sGYvjiQ2/ig73DSvSwQjtDQLtENWMqOtUBRc7yKY68YCcK3j6X4ooPUJotlxfaGDGEXBdguk7Slh4LIJ24zlgy6324CQlgkA0zeyt5L1mgotWhJlRTg50l0clE6fpOOGWTd41XXSVCbITG96D3uxfYdbHRjjNipjnLRrbXyPwRTD4JDLuZ/y8mUq1IbxJuRXaDTz1rwU8dPM81EsDe6m2bCeVSTzduQBXfrwHgTpY8dl0K0iTTsfyOCeFLXivQIy+IIuCwYosaV+QQRRPII7fLwMT4zidxyjVnTA2DEBGrUKdTVGtwl0Dl3VE2QNGCQFSAymhFP1nWT/xd5X3mRy4ylz2AOLEu1QrsdVRDjRAuoAHvjSDx79aQNjtINoAVJQVUe7mJyFO4OeIzGWCl32qH10XBmCpHtxoHXwtfpyESacqY/9Dhf8QoCWv+kZHfBRZd6FN+6J2u6x5i1T5ObxsbjtwIFrOAy2XdZxwvC93o+vOfAZH4hJ6XQZz0VtlXf4fOJ4e2TrTQ5w/e4UVdUpN1BLXIPWRazrlzgFzD8eIjngwSsYySEagQdWS6RPOM4vJomDaKK6hoOfKEJk+V3HVFZ5jU36dNC1ZEYy1zwXxfPy2cO3431e+79Sm8wz4a+0ObrDD8QIgga4KA3umdIuuueO95ckHZ84QlvLZRmo/AQ3ISgaz0U2yPlFuORCRLWNxPDm41fUFzo7EMSS5Pjbp0RQP9F4eIhnKcQxNZ408vIVkcp1Ia/rr4mJzAxgjSRuMRnwzgL9POjdWmsjYT6d2rH7j1Vf3fE3PDocx64FpD3i+Az8d+JCcPzK3XENYln/a7P7cy0uQUvaa8YnyFLjKv3vWXmiuYy9MVjAmtGK9KdDIGiOTRYhI03GzbBXZaBNyH+v2hMr+zTItskoOkZpZXNQOIC7414cb8z/gzqEAm8esnOvG+zd9WCDv0UD6fcn/ebB2/LPLOf3uZM6qLCtXylMB/L5NP9BscIPN1nT+Mz1zIVSHbKqRmMCCwQAvgCMXTzliTUO5sEX5oWmHQgPbE/Cq4pKOBIAlA4UxKE4EQsI0owLh0/D+1TKQv6vmzIaaBoBcKJKPzvjTR9OTTpood/CL2h3cYLNxjHQgS3IgFUR71Zn3j/vZ6Pt+pvRtK8QTHjTtco6kibSgI9dWmZogjHUpsdRUq6TiMqi9zpmxZCV/v0X+38UB2hcE6hLlikB90QiRc83p97l/wyXlJviEdVomOiRYwAtn2iwg2Jkqd+/gZ7Q7vNGm4xgUB6HAQAQCBIwUvBFd0Vflsj2HK6+/M7fWvHxaM+6NNpNMjV80ILahWaymvmvpt9e63bWWtCf02qHOYvuiZvknKBUeQRyECLJXGuwdoH5QnXb5gjdVUZKx9gaBFeLduiJ4FS76uWIt/XU5D+I4NRScBlXR5MbPBP3ZG+1wHINw1bOKYJqBxLG9LRzIf6vCGR49IBgeTU4xBcTvyf3QdQRbbN57SRpiarnwyW1FdYgZkdZpAfiimZS7RljXl+TTY3g+5wbyH216/XdtGDAffFNVL7eCeRE4EpGeE4R2uPQ5ty7/0ZM5RvjkTnxPlVvanftYeFbm03YkPWonodKDoHf9gbOZ0u+59bt/N+0rjmotoDI1Pr9hMOwIb7MSy+qUiiIVapYQC9J9mtohYkV/LwBo1l2JEmC+ti0VpqGo9/aYOzu4Aj++qFTO6yuoZD7nZDAfFSYHLusIM/8C6gVWMkvmYAkNtrDQEV3V/dI9j5YxgBfMCeBVuDI3HPaGn7YjcUxjUA1XaZJRtZnoEV0pv88dw65RuQAgg/mIhHxr4xUTVvT3aVa1ZnoHNYR6spTulUmgloUg8r+u63pWa4xrfBT9EpwV4GA1rGpDp0LI78nFPy5g5UERGfWSDMKlCEwG89H4eC7sXL/3QUR8O5QGlzSz+thMs9qV8cFqAJUzHF8QCq6wPqbWr5YOvcUKZjCqCkQokIRBY9olQvhPywX5+eQGt9i7tkO2yqiH4nE4SVcIvfapmPmbYy0OGDkLAbRHxYr+b2Ug/wVsHzPk3uSDgYmvwdtN2l09dq+GAzy1FONisJy7r8/f5ovx+7RbnXa4wPUEgRWtFNDuSa5xlC+YI96BbSBzocXB/1R13YxJqR6fnpxO1uECfyTe59a5vyC3LT16aHtF8dkUZjTJqLPZ+CHtnP7tjnX77ga4TzNi8BQTfDkZZzSk2D4Cctg91Nf7JZuNH3EZdaytRYkc9Xxg2TIWk8Mu2DBxCxbiYaPtNov3m+Idcs3ET8htJ9U9L7MFD6vIiPkp/pr2hzk/F8dpYFINgSTp13IBPiySjzB6oKX1lqNSPnxdJyEXIbZk4HSnAuDX5Kr7iiTUgAdxYdZZ0d8bnJ25FQCxecwnB2AelMuSwaH/t1yXlspq5JpaFK51RS09o3BN/hvumjty7urxNeHa8b8rn2YOnOFHvFful4waH811wetHMWes1HGkfMoVvfYFQVzwX5G1+V3kUSPQxH3O+MtFcL6VSJAORQ8N8U9lom3g/B9ipvQt7/AeufjHhQQHrmuKEDqZKKdVBBRFA4hXc2p1JiWpy1FPWq3JcdMB4Dzjj3hHbZM4wPgpu951uAusWHbNlQZp77pc4GdKdwfnRx9JbtboUVZ/OXjh+Zp1ABBpRsWK9thjBcmX02BZO7lHLrztP2bW5n9UrmHXjTBK+CAPIImkkzCgaF673OUxOzcTEPLo3OWaxSgnOzVafgWvPJiguoF7MUI1KHylhGDwLlSF2ZxT2yrn753D8OjRqS3l1ifHAkJRECHOCpSB/PEFg/n5pP8HTBrfEvSs1SHWLOFxFD2YFh1NQKhCI3xYADa2WR1719kLRcEptce8HUBsmkypkojG2HWoswBxXIyGZWBib6qYo+9dw6MJ1DmLCT8T/RB9Mh0/VfhTt2b88yRUNLEiGYGlg8ZavqfP4rDFjCsTfygOs7Eho6/n3evXydZRzx1wOA1Flru4EO3Z+PmgO/MbFVQh8g9pzPfJwPg/P9dprCQEj+XOkQvyTz0XJgrHc+ea4h4N3Fk+JlUgRsauPwjimegr4fr8+5ezI/C0RbLKN7R0YMP1qm4jYz4RzB75J7nuvuNyOtizLcPVKDj0irtd1l1mJZoAStA0UPWRP+g6s1fI1f82c7LwZJwup65Iec6ZTNwK4NYGfrV/XoULPnu+cfV68pGfzD0OJ5dVB4WIWsnMdbpVUWlhPYB/TRrFTi8r1pNxEBZ3pN3/Zcbl8x/X99z5xuXDQoAHEGi1oTMpMxoyShW9pDZYbFvwsacUp4zQ8VYI3wVKtX6cLhnncNop9pQ5+eyky64xA4CiRd+22WhBXcq4JhJWaGQSkXcDWNaj2dtyAsZLRBMbP8/HXkHu2URObCIfeQVLk4M7l7NZ7Iw7nPKUkCSnVuxfuCl+WrJBoG83Y8DpaCwM5IMQENtOXzfdlkaLvufaPj583dktBkG05bRVLCF1RYMTcIZCW04VRbcV25a2tKUtbWlLW9rSlra0pS1taUtb2tKWtrSlLW1pS1va0pYzXv4/5FPqZWdiR9gAAAAASUVORK5CYII=" alt="Logo" class="logo">
+        <div class="title-block">
+            <h1>¡Comunícate!</h1>
+            <div class="sub-brand">Instituto Cervantes • © Pr. Faouzi ELhilali</div>
+        </div>
+    </div>
+    
+    <div class="header-bar" style="justify-content: flex-end;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-tv-mode" id="btn-tv-mode" onclick="toggleTVMode()" title="Optimizar visualización para pantalla de TV 50 / 55 pulgadas">
+                📺 Modo TV 50"-55"
+            </button>
+            <button class="btn-save-manual" onclick="manualSave()" title="Guardar cambios actuales en tu navegador">
+                💾 Guardar cambios
+            </button>
+            <button class="btn-export-html" onclick="exportHTMLForGitHub()" title="Descargar una copia HTML con los datos actuales integrados">
+                ⬇️ HTML para GitHub
+            </button>
+            <button class="btn-reset-default" onclick="restoreDefaults()" title="Restaurar la lista original completa">
+                🔄 Restaurar lista inicial
+            </button>
+            <button class="btn-clear-all" onclick="clearAllContent()" title="Vaciar todo el contenido">
+                🗑️ Borrar contenido
+            </button>
+        </div>
+    </div>
+
+    <div id="units-container"></div>
+
+    <button class="btn-add-unit-main" onclick="addNewUnit()">
+        ➕ Añadir nueva unidad
+    </button>
+
+    <div class="actions-footer">
+        <div class="pdf-export-grid">
+            <button class="btn-pdf-export btn-pdf-respuestas" onclick="generateAndDownloadPDF('solo_respuestas')" title="Exportar documento en PDF con solo las respuestas modelo">
+                💬 Solo respuestas
+            </button>
+            <button class="btn-pdf-export btn-pdf-ambos" onclick="generateAndDownloadPDF('ambos_bombillas')" title="Exportar documento con preguntas completas y respuestas de bombillas encendidas">
+                💡💬 Preguntas y respuestas (Bombillas)
+            </button>
+            <button class="btn-pdf-export btn-pdf-preguntas" onclick="generateAndDownloadPDF('solo_preguntas')" title="Exportar preguntas completas sugeridas con líneas de puntos para rellenar">
+                💡 Solo preguntas (Bombilla)
+            </button>
+            <button class="btn-pdf-export btn-pdf-apagadas" onclick="generateAndDownloadPDF('solo_apagadas')" title="Exportar el contenido en ventanilla de las fórmulas cuando la bombilla está apagada">
+                📄 Contenido ventanilla (Apagada)
+            </button>
+        </div>
+
+        <div class="button-group-main" style="margin-top: 6px;">
+            <button class="btn-generate" onclick="generateOutputText()">
+                📋 Copiar texto para el chat
+            </button>
+        </div>
+
+        <div class="output-box" id="output-box">
+            <textarea id="output-textarea" readonly></textarea>
+            <div class="copy-notice" id="copy-notice">✓ ¡Copiado al portapapeles! Pégalo en el chat.</div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmación de guardado -->
+<div class="modal-overlay" id="save-modal-overlay">
+    <div class="modal-card">
+        <span class="modal-icon">💾</span>
+        <div class="modal-title">¡Guardado con éxito!</div>
+        <div class="modal-message">
+            Todos los cambios han sido guardados correctamente en la memoria de tu navegador.
+        </div>
+        <button class="modal-btn-ok" onclick="closeSaveModal()">De acuerdo</button>
+    </div>
+</div>
+
+<script id="embedded-app-data" type="application/json">[{"title":"UNIDAD 1","items":[{"name":"Nombre","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo te llamas?"},{"formula":"¿Cuál...","proposal":"¿Cuál es tu nombre?"}]},{"name":"Apellido","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo te apellidas?"},{"formula":"¿Cuál...","proposal":"¿Cuál es tu apellido?"}]},{"name":"Edad","prompts":[{"formula":"¿Qué...","proposal":"¿Qué edad tienes?"},{"formula":"¿Cuántos...","proposal":"¿Cuántos años tienes?"}]},{"name":"Origen/Nacionalidad","prompts":[{"formula":"¿De dónde...","proposal":"¿De dónde eres?"}]},{"name":"Dónde vivir","prompts":[{"formula":"¿Dónde...","proposal":"¿Dónde vives?"}]},{"name":"Idiomas","prompts":[{"formula":"¿Qué...","proposal":"¿Qué idiomas hablas?"},{"formula":"¿Qué...","proposal":"¿Qué lenguas hablas?"}]},{"name":"Móvil","prompts":[{"formula":"¿Tienes...","proposal":"¿Tienes móvil?"}]},{"name":"Trabajo","prompts":[{"formula":"¿En qué...","proposal":"¿En qué trabajas?"},{"formula":"¿A qué...","proposal":"¿A qué te dedicas?"},{"formula":"¿Qué...","proposal":"¿Qué haces?"}]},{"name":"Lugar de trabajo","prompts":[{"formula":"¿Dónde...","proposal":"¿Dónde trabajas?"}]},{"name":"Estudios","prompts":[{"formula":"¿Qué...","proposal":"¿Qué estudias?"},{"formula":"¿Dónde...","proposal":"¿Dónde estudias?"}]},{"name":"Eres...","prompts":[{"formula":"¿Eres...","proposal":"¿Eres profesor?"},{"formula":"¿Eres...","proposal":"¿Eres Andrés?"},{"formula":"¿Eres...","proposal":"¿Eres Madrid?"}]},{"name":"Hablas","prompts":[{"formula":"¿Hablas...","proposal":"¿Hablas español?"}]},{"name":"Tienes","prompts":[{"formula":"¿Tienes...","proposal":"¿Tienes 18 años?"}]}]},{"title":"UNIDAD 2","items":[{"name":"Actividades de fin de semana","prompts":[{"formula":"¿Qué quieres...","proposal":"¿Qué quieres hacer este fin de semana?"}]},{"name":"Con quién","prompts":[{"formula":"¿Con quién...","proposal":"¿Con quién vas al cine?"}]},{"name":"Por qué","prompts":[{"formula":"¿Por qué...","proposal":"¿Por qué estudias español?"}]},{"name":"Dónde","prompts":[{"formula":"¿Dónde...","proposal":"¿Dónde quieres comer?"}]},{"name":"Adónde","prompts":[{"formula":"¿Adónde...","proposal":"¿Adónde quieres viajar?"}]},{"name":"Quieres...o....","prompts":[{"formula":"¿Quieres...","proposal":"¿Quieres estudiar o trabajar?"}]}]},{"title":"UNIDAD 3","items":[{"name":"Dónde está/n","prompts":[{"formula":"¿Dónde está...","proposal":"¿Dónde está Paris?"},{"formula":"¿Dónde están...","proposal":"¿Dónde están las islas canarias?"}]},{"name":"Qué hay en","prompts":[{"formula":"¿Qué hay en...","proposal":"¿Qué hay en el centro de tu ciudad?"}]},{"name":"Qué tiene","prompts":[{"formula":"¿Qué tiene...","proposal":"¿Qué tiene tu barrio?"}]},{"name":"El clima","prompts":[{"formula":"¿Cómo es el clima...","proposal":"¿Cómo es el clima en tu país en invierno?"}]},{"name":"El tiempo","prompts":[{"formula":"¿Qué tiempo...","proposal":"¿Qué tiempo hace hoy en tu ciudad?"}]},{"name":"Qué es","prompts":[{"formula":"¿Qué es...","proposal":"¿Qué es la paella?"},{"formula":"¿Qué son...","proposal":"¿Qué son las tapas?"}]},{"name":"Cuál / Cuáles","prompts":[{"formula":"¿Cuál es...","proposal":"¿Cuál es la capital de España?"},{"formula":"¿Cuál es...","proposal":"¿Cuál es la capital de Inglaterra?"},{"formula":"¿Cuál es...","proposal":"¿Cuál es la capital de Rusia?"},{"formula":"¿Cuáles son...","proposal":"¿Cuáles son los monumentos más famosos de Madrid?"}]},{"name":"Cómo es","prompts":[{"formula":"¿Cómo es...","proposal":"¿Cómo es tu ciudad natal?"}]},{"name":"Habitantes/población","prompts":[{"formula":"¿Cuántos...","proposal":"¿Cuántos habitantes tiene tu ciudad?"},{"formula":"¿Cuánta...","proposal":"¿Cuánta población hay en tu país?"}]}]},{"title":"UNIDAD 4","items":[{"name":"Qué llevas cuándo","prompts":[{"formula":"¿Qué llevas cuándo...","proposal":"¿Qué llevas cuando hace mucho frío?"}]},{"name":"Cuánto cuesta/n","prompts":[{"formula":"¿Cuánto cuesta...","proposal":"¿Cuánto cuesta esta camiseta blanca?"},{"formula":"¿Cuánto cuestan...","proposal":"¿Cuánto cuestan estos zapatos?"}]},{"name":"Color","prompts":[{"formula":"¿De qué color...","proposal":"¿De qué color es la chaqueta?"},{"formula":"¿Qué...","proposal":"¿Qué color prefieres?"}]},{"name":"Talla","prompts":[{"formula":"¿De qué...","proposal":"¿De qué talla necesita?"},{"formula":"¿Qué...","proposal":"¿Qué talla usa usted?"}]},{"name":"Pedir un objeto en una tienda","prompts":[{"formula":"¿Tienen...","proposal":"¿Tienen gafas?"}]},{"name":"Quedar bien/mal","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo me queda esta camisa?"},{"formula":"¿Me queda...","proposal":"¿Me queda bien este vestido?"},{"formula":"¿Me quedan...","proposal":"¿Me quedan bien estos zapatos?"}]},{"name":"Prefieres","prompts":[{"formula":"¿Cuál...","proposal":"¿Cuál prefieres la negra o la azul?"}]},{"name":"¿Dónde","prompts":[{"formula":"¿Dónde compras...","proposal":"¿Dónde compras tus chaquetas?"},{"formula":"¿Dónde están...","proposal":"¿Dónde están los probadores?"}]},{"name":"Obligación","prompts":[{"formula":"¿Qué tienes...","proposal":"¿Qué tienes que llevar en la boda?"}]},{"name":"Descripción","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo es el vestido que buscas?"},{"formula":"¿Cómo...","proposal":"¿Cómo son las zapatillas?"}]},{"name":"Precio","prompts":[{"formula":"¿Cuánto...","proposal":"¿Cuánto cuesta este bolígrafo?"},{"formula":"¿Cuánto...","proposal":"¿Cuánto cuesta esa camisa?"},{"formula":"¿Cuánto es...","proposal":"¿Cuánto es todo?"}]},{"name":"Compro","prompts":[{"formula":"¿Cuál...","proposal":"¿Cuál compro?"}]},{"name":"Cuál/Cuáles","prompts":[{"formula":"¿Cuál es más...","proposal":"¿Cuál es la más barata?"},{"formula":"¿Cuáles son más...","proposal":"¿Cuáles son los más cómodos?"}]},{"name":"Esto","prompts":[{"formula":"¿Esto qué...","proposal":"¿Esto qué es?"}]},{"name":"Llevas en","prompts":[{"formula":"¿Qué llevas en...","proposal":"¿Qué llevas en la maleta?"}]}]},{"title":"UNIDAD 5","items":[{"name":"Gustos y preferencias","prompts":[{"formula":"¿Qué te gusta...","proposal":"¿Qué te gusta hacer los fines de semana?"},{"formula":"¿Te gusta...","proposal":"¿Te gusta la comida española tradicional?"},{"formula":"¿Te gustan...","proposal":"¿Te gustan los deportes de aventura?"}]},{"name":"Qué...te gusta","prompts":[{"formula":"¿Qué....................te gusta?...","proposal":"¿Qué tipo de música te gusta?"},{"formula":"¿Qué....................te gusta?...","proposal":"¿Qué tipo de comida te gusta?"},{"formula":"¿Qué....................te gusta?...","proposal":"¿Qué género de cine te gusta?"}]},{"name":"Cuál / cuáles...favaorito/a/os/as","prompts":[{"formula":"¿Cuál es...","proposal":"¿Cuál es tu película favorita?"},{"formula":"¿Cuáles son...","proposal":"¿Cuáles son tus libros favoritos?"}]},{"name":"Intereses","prompts":[{"formula":"¿Qué te interesa...","proposal":"¿Qué te interesa de la clase?"},{"formula":"¿Te interesa...","proposal":"¿Te interesa el fútbol?"}]},{"name":"Descripción del carácter","prompts":[{"formula":"¿Cómo es...","proposal":"¿Cómo es tu hermano?"},{"formula":"¿Cómo eres...","proposal":"¿Cómo eres de carácter?"}]},{"name":"Descripción física","prompts":[{"formula":"¿Cómo es físicamente...","proposal":"¿Cómo es físicamente tu padre?"},{"formula":"¿De qué color tiene los ojos...","proposal":"¿De qué color tiene los ojos?"},{"formula":"¿Es alto o...","proposal":"¿Es alto o bajo?"}]},{"name":"Planes futuros","prompts":[{"formula":"¿Qué vas a hacer...","proposal":"¿Qué vas a hacer este verano?"},{"formula":"¿Adónde vas a ir...","proposal":"¿Adónde vas a ir el próximo sábado?"}]},{"name":"Tipo","prompts":[{"formula":"¿Qué tipo...","proposal":"¿Qué tipo de persona eres?"},{"formula":"¿Qué tipo...","proposal":"¿Qué tipo de trabajo buscas?"}]},{"name":"Quién...este/a/os/as (ese/a/os/as)","prompts":[{"formula":"¿Quién...","proposal":"¿Quién es este chico de la foto?"}]},{"name":"Tienes (familiares, amigos)","prompts":[{"formula":"¿Tienes...","proposal":"¿Tienes hermanos o primos en Madrid?"}]},{"name":"El pelo","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo tienes el pelo?"}]},{"name":"Los ojos","prompts":[{"formula":"¿Cómo...","proposal":"¿Cómo tienes los ojos?"}]}]},{"title":"UNIDAD 6","items":[{"name":"Preguntar la hora","prompts":[{"formula":"¿Qué hora es...","proposal":"¿Qué hora es, por favor?"},{"formula":"¿Tiene hora...","proposal":"¿Tiene hora?"}]},{"name":"A qué hora es","prompts":[{"formula":"¿A qué hora es...","proposal":"¿A qué hora es la clase de español?"},{"formula":"¿A qué hora es...","proposal":"¿A qué hora es la reunión?"},{"formula":"¿A qué hora es...","proposal":"¿A qué hora es el concierto?"}]},{"name":"A qué hora","prompts":[{"formula":"¿A qué hora...","proposal":"¿A qué hora te levantas el domingo?"},{"formula":"¿A qué hora empiezas...","proposal":"¿A qué hora empiezas a trabajar?"},{"formula":"¿A qué hora terminas...","proposal":"¿A qué hora terminas tus clases?"}]},{"name":"Horarios","prompts":[{"formula":"¿Qué horario tiene...","proposal":"¿Qué horario tiene la biblioteca?"},{"formula":"¿A qué hora...","proposal":"¿A qué hora abre el banco?"},{"formula":"¿A qué hora...","proposal":"¿A qué hora cierra la tienda?"}]},{"name":"Rutina diaria","prompts":[{"formula":"¿Qué haces normalmente los...","proposal":"¿Qué haces normalmente los lunes por la mañana?"},{"formula":"¿Qué haces normalmente los...","proposal":"¿Qué haces normalmente los viernes por la tarde?"},{"formula":"¿Qué haces normalmente los...","proposal":"¿Qué haces normalmente los domingos?"}]},{"name":"Frecuencia","prompts":[{"formula":"¿Con qué frecuencia...","proposal":"¿Con qué frecuencia vas al gimnasio o haces deporte?"},{"formula":"¿Cuántas veces...","proposal":"¿Cuántas veces al día te lavas los dientes?"},{"formula":"¿Cuántas veces...","proposal":"¿Cuántas veces a la semana estudias español?"},{"formula":"¿Cuántas veces...","proposal":"¿Cuántas veces al mes vas al cine?"},{"formula":"¿Cuántas veces...","proposal":"¿Cuántas veces al año viajas?"}]},{"name":"Días","prompts":[{"formula":"¿Qué días...","proposal":"¿Qué días tienes clase de español?"},{"formula":"¿Qué días...","proposal":"¿Qué días trabajas?"},{"formula":"¿Qué días...","proposal":"¿Qué días sales con amigos?"}]},{"name":"Cuándo","prompts":[{"formula":"¿Cuándo...","proposal":"¿Cuándo es tu cumpleaños?"}]},{"name":"Antes de","prompts":[{"formula":"¿Qué haces...","proposal":"¿Qué haces antes de desayunar?"},{"formula":"¿Qué haces...","proposal":"¿Qué haces antes de ir a dormir?"}]},{"name":"Después de","prompts":[{"formula":"¿Qué haces...","proposal":"¿Qué haces después de comer?"},{"formula":"¿Qué haces...","proposal":"¿Qué haces después de trabajar?"}]}]}]</script>
+<script>
+const STORAGE_KEY = 'configurador_preguntas_data_v6';
+
+const A1_PROPOSALS =  {
+    "by_concept": {
+        "Nombre": {
+            "¿Cómo...": "¿Cómo te llamas?",
+            "¿Cuál...": "¿Cuál es tu nombre?",
+            "¿Cómo te llamas?": "¿Cómo te llamas?",
+            "¿Cuál es tu nombre?": "¿Cuál es tu nombre?"
+        },
+        "Apellido": {
+            "¿Cómo...": "¿Cómo te apellidas?",
+            "¿Cuál...": "¿Cuál es tu apellido?",
+            "¿Cómo te apellidas?": "¿Cómo te apellidas?",
+            "¿Cuál es tu apellido?": "¿Cuál es tu apellido?"
+        },
+        "Edad": {
+            "¿Qué...": "¿Qué edad tienes?",
+            "¿Cuántos...": "¿Cuántos años tienes?",
+            "¿Qué edad tienes?": "¿Qué edad tienes?",
+            "¿Cuántos años tienes?": "¿Cuántos años tienes?"
+        },
+        "Origen/Nacionalidad": {
+            "¿De dónde...": "¿De dónde eres?",
+            "¿De dónde eres?": "¿De dónde eres?"
+        },
+        "Dónde vivir": {
+            "¿Dónde...": "¿Dónde vives?",
+            "¿Dónde vives?": "¿Dónde vives?"
+        },
+        "Idiomas": {
+            "¿Qué...": "¿Qué lenguas hablas?",
+            "¿Qué idiomas hablas?": "¿Qué idiomas hablas?",
+            "¿Qué lenguas hablas?": "¿Qué lenguas hablas?"
+        },
+        "Móvil": {
+            "¿Tienes...": "¿Tienes móvil?",
+            "¿Cuál...": "¿Cuál es tu número de móvil?",
+            "¿Tienes móvil?": "¿Tienes móvil?"
+        },
+        "Trabajo": {
+            "¿En qué...": "¿En qué trabajas?",
+            "¿A qué...": "¿A qué te dedicas?",
+            "¿Qué...": "¿Qué haces?",
+            "¿En qué trabajas?": "¿En qué trabajas?",
+            "¿A qué te dedicas?": "¿A qué te dedicas?",
+            "¿Qué haces?": "¿Qué haces?"
+        },
+        "Lugar de trabajo": {
+            "¿Dónde...": "¿Dónde trabajas?",
+            "¿Dónde trabajas?": "¿Dónde trabajas?"
+        },
+        "Estudios": {
+            "¿Qué...": "¿Qué estudias?",
+            "¿Dónde...": "¿Dónde estudias?",
+            "¿Qué estudias?": "¿Qué estudias?",
+            "¿Dónde estudias?": "¿Dónde estudias?"
+        },
+        "Eres...": {
+            "¿Eres...": "¿Eres Madrid?",
+            "¿Eres profesor?": "¿Eres profesor?",
+            "¿Eres Andrés?": "¿Eres Andrés?",
+            "¿Eres Madrid?": "¿Eres Madrid?"
+        },
+        "Hablas": {
+            "¿Hablas...": "¿Hablas español?",
+            "¿Hablas español?": "¿Hablas español?"
+        },
+        "Tienes": {
+            "¿Tienes...": "¿Tienes 18 años?",
+            "¿Tienes 18 años?": "¿Tienes 18 años?"
+        },
+        "Actividades de fin de semana": {
+            "¿Qué quieres...": "¿Qué quieres hacer este fin de semana?",
+            "¿Qué haces...": "¿Qué haces los fines de semana?",
+            "¿Qué quieres hacer este fin de semana?": "¿Qué quieres hacer este fin de semana?"
+        },
+        "Con quién": {
+            "¿Con quién...": "¿Con quién vas al cine?",
+            "¿Con quién vas al cine?": "¿Con quién vas al cine?"
+        },
+        "Por qué": {
+            "¿Por qué...": "¿Por qué estudias español?",
+            "¿Por qué estudias español?": "¿Por qué estudias español?"
+        },
+        "Dónde": {
+            "¿Dónde...": "¿Dónde quieres comer?",
+            "¿Dónde quieres comer?": "¿Dónde quieres comer?"
+        },
+        "Adónde": {
+            "¿Adónde...": "¿Adónde quieres viajar?",
+            "¿Adónde quieres viajar?": "¿Adónde quieres viajar?"
+        },
+        "Quieres...o....": {
+            "¿Quieres...": "¿Quieres estudiar o trabajar?",
+            "¿Quieres estudiar o trabajar?": "¿Quieres estudiar o trabajar?"
+        },
+        "Dónde está/n": {
+            "¿Dónde está...": "¿Dónde está Paris?",
+            "¿Dónde están...": "¿Dónde están las islas canarias?",
+            "¿Dónde está Paris?": "¿Dónde está Paris?",
+            "¿Dónde están las islas canarias?": "¿Dónde están las islas canarias?"
+        },
+        "Qué hay en": {
+            "¿Qué hay en...": "¿Qué hay en el centro de tu ciudad?",
+            "¿Qué hay en el centro de tu ciudad?": "¿Qué hay en el centro de tu ciudad?"
+        },
+        "Qué tiene": {
+            "¿Qué tiene...": "¿Qué tiene tu barrio?",
+            "¿Qué tiene tu barrio?": "¿Qué tiene tu barrio?"
+        },
+        "El clima": {
+            "¿Cómo es el clima...": "¿Cómo es el clima en tu país en invierno?",
+            "¿Cómo es el clima en tu país en invierno?": "¿Cómo es el clima en tu país en invierno?"
+        },
+        "El tiempo": {
+            "¿Qué tiempo...": "¿Qué tiempo hace hoy en tu ciudad?",
+            "¿Qué tiempo hace hoy en tu ciudad?": "¿Qué tiempo hace hoy en tu ciudad?"
+        },
+        "Qué es": {
+            "¿Qué es...": "¿Qué es la paella?",
+            "¿Qué son...": "¿Qué son las tapas?",
+            "¿Qué es la paella?": "¿Qué es la paella?",
+            "¿Qué son las tapas?": "¿Qué son las tapas?"
+        },
+        "Cuál / Cuáles": {
+            "¿Cuál es...": "¿Cuál es la capital de Rusia?",
+            "¿Cuáles son...": "¿Cuáles son los monumentos más famosos de Madrid?",
+            "¿Cuál es la capital de España?": "¿Cuál es la capital de España?",
+            "¿Cuál es la capital de Inglaterra?": "¿Cuál es la capital de Inglaterra?",
+            "¿Cuál es la capital de Rusia?": "¿Cuál es la capital de Rusia?",
+            "¿Cuáles son los monumentos más famosos de Madrid?": "¿Cuáles son los monumentos más famosos de Madrid?"
+        },
+        "Cómo es": {
+            "¿Cómo es...": "¿Cómo es tu ciudad natal?",
+            "¿Cómo es tu ciudad natal?": "¿Cómo es tu ciudad natal?"
+        },
+        "Habitantes/población": {
+            "¿Cuántos...": "¿Cuántos habitantes tiene tu ciudad?",
+            "¿Cuánta...": "¿Cuánta población hay en tu país?",
+            "¿Cuántos habitantes tiene tu ciudad?": "¿Cuántos habitantes tiene tu ciudad?",
+            "¿Cuánta población hay en tu país?": "¿Cuánta población hay en tu país?"
+        },
+        "Qué llevas cuándo": {
+            "¿Qué llevas cuándo...": "¿Qué llevas cuando hace mucho frío?",
+            "¿Qué llevas cuando hace mucho frío?": "¿Qué llevas cuando hace mucho frío?"
+        },
+        "Cuánto cuesta/n": {
+            "¿Cuánto cuesta...": "¿Cuánto cuesta esta camiseta blanca?",
+            "¿Cuánto cuestan...": "¿Cuánto cuestan estos zapatos?",
+            "¿Cuánto cuesta esta camiseta blanca?": "¿Cuánto cuesta esta camiseta blanca?",
+            "¿Cuánto cuestan estos zapatos?": "¿Cuánto cuestan estos zapatos?"
+        },
+        "Color": {
+            "¿De qué color...": "¿De qué color es la chaqueta?",
+            "¿Qué...": "¿Qué color prefieres?",
+            "¿De qué color es la chaqueta?": "¿De qué color es la chaqueta?",
+            "¿Qué color prefieres?": "¿Qué color prefieres?"
+        },
+        "Talla": {
+            "¿De qué...": "¿De qué talla necesita?",
+            "¿Qué...": "¿Qué talla usa usted?",
+            "¿De qué talla necesita?": "¿De qué talla necesita?",
+            "¿Qué talla usa usted?": "¿Qué talla usa usted?"
+        },
+        "Pedir un objeto en una tienda": {
+            "¿Tienen...": "¿Tienen gafas?",
+            "¿Tienen gafas?": "¿Tienen gafas?"
+        },
+        "Quedar bien/mal": {
+            "¿Cómo...": "¿Cómo me queda esta camisa?",
+            "¿Me queda...": "¿Me queda bien este vestido?",
+            "¿Me quedan...": "¿Me quedan bien estos zapatos?",
+            "¿Cómo me queda esta camisa?": "¿Cómo me queda esta camisa?",
+            "¿Me queda bien este vestido?": "¿Me queda bien este vestido?",
+            "¿Me quedan bien estos zapatos?": "¿Me quedan bien estos zapatos?"
+        },
+        "Prefieres": {
+            "¿Cuál...": "¿Cuál prefieres la negra o la azul?",
+            "¿Cuál prefieres la negra o la azul?": "¿Cuál prefieres la negra o la azul?"
+        },
+        "¿Dónde": {
+            "¿Dónde compras...": "¿Dónde compras tus chaquetas?",
+            "¿Dónde están...": "¿Dónde están los probadores?",
+            "¿Dónde compras tus chaquetas?": "¿Dónde compras tus chaquetas?",
+            "¿Dónde están los probadores?": "¿Dónde están los probadores?"
+        },
+        "Obligación": {
+            "¿Qué tienes...": "¿Qué tienes que llevar en la boda?",
+            "¿Qué tienes que llevar en la boda?": "¿Qué tienes que llevar en la boda?"
+        },
+        "Descripción": {
+            "¿Cómo...": "¿Cómo son las zapatillas?",
+            "¿Cómo es el vestido que buscas?": "¿Cómo es el vestido que buscas?",
+            "¿Cómo son las zapatillas?": "¿Cómo son las zapatillas?"
+        },
+        "Precio": {
+            "¿Cuánto...": "¿Cuánto cuesta esa camisa?",
+            "¿Cuánto......": "¿Cuánto vale esta falda?",
+            "¿Cuánto es...": "¿Cuánto es todo?",
+            "¿Cuánto cuesta este bolígrafo?": "¿Cuánto cuesta este bolígrafo?",
+            "¿Cuánto cuesta esa camisa?": "¿Cuánto cuesta esa camisa?",
+            "¿Cuánto es todo?": "¿Cuánto es todo?"
+        },
+        "Compro": {
+            "¿Cuál...": "¿Cuál compro?",
+            "¿Cuál compro?": "¿Cuál compro?"
+        },
+        "Cuál/Cuáles": {
+            "¿Cuál es más...": "¿Cuál es la más barata?",
+            "¿Cuáles son más...": "¿Cuáles son los más cómodos?",
+            "¿Cuál es la más barata?": "¿Cuál es la más barata?",
+            "¿Cuáles son los más cómodos?": "¿Cuáles son los más cómodos?"
+        },
+        "Esto": {
+            "¿Esto qué...": "¿Esto qué es?",
+            "¿Esto qué es?": "¿Esto qué es?"
+        },
+        "Llevas en": {
+            "¿Qué llevas en...": "¿Qué llevas en la maleta?",
+            "¿Qué llevas en la maleta?": "¿Qué llevas en la maleta?"
+        },
+        "Gustos y preferencias": {
+            "¿Qué te gusta...": "¿Qué te gusta hacer los fines de semana?",
+            "¿Te gusta...": "¿Te gusta la comida española tradicional?",
+            "¿Te gustan...": "¿Te gustan los deportes de aventura?",
+            "¿Qué te gusta hacer los fines de semana?": "¿Qué te gusta hacer los fines de semana?",
+            "¿Te gusta la comida española tradicional?": "¿Te gusta la comida española tradicional?",
+            "¿Te gustan los deportes de aventura?": "¿Te gustan los deportes de aventura?"
+        },
+        "Intereses": {
+            "¿Qué te interesa...": "¿Qué te interesa de la clase?",
+            "¿Te interesa...": "¿Te interesa el fútbol?",
+            "¿Qué te interesa de la clase?": "¿Qué te interesa de la clase?",
+            "¿Te interesa el fútbol?": "¿Te interesa el fútbol?"
+        },
+        "Descripción del carácter": {
+            "¿Cómo es...": "¿Cómo es tu hermano?",
+            "¿Cómo eres...": "¿Cómo eres de carácter?",
+            "¿Cómo es tu hermano?": "¿Cómo es tu hermano?",
+            "¿Cómo eres de carácter?": "¿Cómo eres de carácter?"
+        },
+        "Descripción física": {
+            "¿Cómo es físicamente...": "¿Cómo es físicamente tu padre?",
+            "¿De qué color tiene los ojos...": "¿De qué color tiene los ojos?",
+            "¿Es alto o...": "¿Es alto o bajo?",
+            "¿Cómo es...": "¿Cómo es tu padre de físico?",
+            "¿Cómo es físicamente tu padre?": "¿Cómo es físicamente tu padre?",
+            "¿De qué color tiene los ojos?": "¿De qué color tiene los ojos?",
+            "¿Es alto o bajo?": "¿Es alto o bajo?"
+        },
+        "Planes futuros": {
+            "¿Qué vas a hacer...": "¿Qué vas a hacer este verano?",
+            "¿Adónde vas a ir...": "¿Adónde vas a ir el próximo sábado?",
+            "¿Qué vas a hacer este verano?": "¿Qué vas a hacer este verano?",
+            "¿Adónde vas a ir el próximo sábado?": "¿Adónde vas a ir el próximo sábado?"
+        },
+        "Preguntar la hora": {
+            "¿Qué hora es...": "¿Qué hora es, por favor?",
+            "¿Tiene hora...": "¿Tiene hora?",
+            "¿Qué hora es, por favor?": "¿Qué hora es, por favor?",
+            "¿Tiene hora?": "¿Tiene hora?"
+        },
+        "A qué hora": {
+            "¿A qué hora...": "¿A qué hora te levantas el domingo?",
+            "¿A qué hora empieza...": "¿A qué hora empieza el partido?",
+            "¿A qué hora te levantas el domingo?": "¿A qué hora te levantas el domingo?",
+            "¿A qué hora empiezas...": "¿A qué hora empiezas a trabajar?",
+            "¿A qué hora empiezas a trabajar?": "¿A qué hora empiezas a trabajar?",
+            "¿A qué hora terminas...": "¿A qué hora terminas tus clases?",
+            "¿A qué hora terminas tus clases?": "¿A qué hora terminas tus clases?"
+        },
+        "Horarios": {
+            "¿Qué horario tiene...": "¿Qué horario tiene la biblioteca?",
+            "¿De qué hora a qué hora...": "¿De qué hora a qué hora está abierto el banco?",
+            "¿A qué hora abre...": "¿A qué hora tiene la biblioteca hoy?",
+            "¿Qué horario tiene la biblioteca?": "¿Qué horario tiene la biblioteca?",
+            "¿A qué hora...": "¿A qué hora cierra la tienda?",
+            "¿A qué hora abre el banco?": "¿A qué hora abre el banco?",
+            "¿A qué hora cierra la tienda?": "¿A qué hora cierra la tienda?"
+        },
+        "Rutina diaria": {
+            "¿A qué hora te levantas...": "¿A qué hora te levantas por la mañana?",
+            "¿A qué hora te acuestas...": "¿A qué hora te acuestas por la noche?",
+            "¿Qué haces normalmente los...": "¿Qué haces normalmente los domingos?",
+            "¿Qué haces normalmente los lunes por la mañana?": "¿Qué haces normalmente los lunes por la mañana?",
+            "¿Qué haces normalmente los viernes por la tarde?": "¿Qué haces normalmente los viernes por la tarde?",
+            "¿Qué haces normalmente los domingos?": "¿Qué haces normalmente los domingos?"
+        },
+        "Frecuencia": {
+            "¿Con qué frecuencia...": "¿Con qué frecuencia vas al gimnasio o haces deporte?",
+            "¿Cuántas veces al día/semana...": "¿Cuántas veces a la semana estudias español?",
+            "¿Con qué frecuencia vas al gimnasio o haces deporte?": "¿Con qué frecuencia vas al gimnasio o haces deporte?",
+            "¿Cuántas veces...": "¿Cuántas veces al año viajas?",
+            "¿Cuántas veces al día te lavas los dientes?": "¿Cuántas veces al día te lavas los dientes?",
+            "¿Cuántas veces a la semana estudias español?": "¿Cuántas veces a la semana estudias español?",
+            "¿Cuántas veces al mes vas al cine?": "¿Cuántas veces al mes vas al cine?",
+            "¿Cuántas veces al año viajas?": "¿Cuántas veces al año viajas?"
+        },
+        "Qué...te gusta": {
+            "¿Qué....................te gusta?...": "¿Qué género de cine te gusta?",
+            "¿Qué tipo de música te gusta?": "¿Qué tipo de música te gusta?",
+            "¿Qué tipo de comida te gusta?": "¿Qué tipo de comida te gusta?",
+            "¿Qué género de cine te gusta?": "¿Qué género de cine te gusta?"
+        },
+        "Cuál / cuáles...favaorito/a/os/as": {
+            "¿Cuál es...": "¿Cuál es tu película favorita?",
+            "¿Cuál es tu película favorita?": "¿Cuál es tu película favorita?",
+            "¿Cuáles son...": "¿Cuáles son tus libros favoritos?",
+            "¿Cuáles son tus libros favoritos?": "¿Cuáles son tus libros favoritos?"
+        },
+        "Tipo": {
+            "¿Qué tipo...": "¿Qué tipo de trabajo buscas?",
+            "¿Qué tipo de persona eres?": "¿Qué tipo de persona eres?",
+            "¿Qué tipo de trabajo buscas?": "¿Qué tipo de trabajo buscas?"
+        },
+        "Quién...este/a/os/as (ese/a/os/as)": {
+            "¿Quién...": "¿Quién es este chico de la foto?",
+            "¿Quién es este chico de la foto?": "¿Quién es este chico de la foto?"
+        },
+        "Tienes (familiares, amigos)": {
+            "¿Tienes...": "¿Tienes hermanos o primos en Madrid?",
+            "¿Tienes hermanos o primos en Madrid?": "¿Tienes hermanos o primos en Madrid?"
+        },
+        "El pelo": {
+            "¿Cómo...": "¿Cómo tienes el pelo?",
+            "¿Cómo tienes el pelo?": "¿Cómo tienes el pelo?"
+        },
+        "Los ojos": {
+            "¿Cómo...": "¿Cómo tienes los ojos?",
+            "¿Cómo tienes los ojos?": "¿Cómo tienes los ojos?"
+        },
+        "A qué hora es": {
+            "¿A qué hora es...": "¿A qué hora es el concierto?",
+            "¿A qué hora es la clase de español?": "¿A qué hora es la clase de español?",
+            "¿A qué hora es la reunión?": "¿A qué hora es la reunión?",
+            "¿A qué hora es el concierto?": "¿A qué hora es el concierto?"
+        },
+        "Días": {
+            "¿Qué días...": "¿Qué días sales con amigos?",
+            "¿Qué días tienes clase de español?": "¿Qué días tienes clase de español?",
+            "¿Qué días trabajas?": "¿Qué días trabajas?",
+            "¿Qué días sales con amigos?": "¿Qué días sales con amigos?"
+        },
+        "Cuándo": {
+            "¿Cuándo...": "¿Cuándo es tu cumpleaños?",
+            "¿Cuándo es tu cumpleaños?": "¿Cuándo es tu cumpleaños?"
+        },
+        "Antes de": {
+            "¿Qué haces...": "¿Qué haces antes de ir a dormir?",
+            "¿Qué haces antes de desayunar?": "¿Qué haces antes de desayunar?",
+            "¿Qué haces antes de ir a dormir?": "¿Qué haces antes de ir a dormir?"
+        },
+        "Después de": {
+            "¿Qué haces...": "¿Qué haces después de trabajar?",
+            "¿Qué haces después de comer?": "¿Qué haces después de comer?",
+            "¿Qué haces después de trabajar?": "¿Qué haces después de trabajar?"
+        }
+    },
+    "by_starter": {
+        "¿Cómo": "¿Cómo te llamas?",
+        "¿Cuál": "¿Cuál es tu nombre?",
+        "¿Qué": "¿Qué edad tienes?",
+        "¿Cuántos": "¿Cuántos años tienes?",
+        "¿Cuánta": "¿Cuánta población tiene?",
+        "¿Dónde": "¿Dónde vives?",
+        "¿Adónde": "¿Adónde vas este fin de semana?",
+        "¿De dónde": "¿De dónde eres?",
+        "¿Por qué": "¿Por qué estudias español?",
+        "¿Con quién": "¿Con quién vas a salir?",
+        "¿Tienes": "¿Tienes teléfono móvil?",
+        "¿En qué": "¿En qué trabajas?",
+        "¿A qué": "¿A qué te dedicas?",
+        "¿Eres": "¿Eres estudiante?",
+        "¿Hablas": "¿Hablas español?",
+        "¿Quieres": "¿Quieres tomar algo?",
+        "¿Te gusta": "¿Te gusta la comida española?",
+        "¿Te gustan": "¿Te gustan los deportes?",
+        "¿Cuánto": "¿Cuánto cuesta?"
+    }
+};
+
+const A1_ANSWERS = {
+    "by_concept": {
+        "Nombre": {
+            "¿Cómo te llamas?": "Me llamo Faouzi.",
+            "¿Cuál es tu nombre?": "Mi nombre es Faouzi.",
+            "¿Cómo...": "Me llamo Faouzi.",
+            "¿Cuál...": "Mi nombre es Faouzi."
+        },
+        "Apellido": {
+            "¿Cómo te apellidas?": "Me apellido ELhilali.",
+            "¿Cuál es tu apellido?": "Mi apellido es ELhilali.",
+            "¿Cómo...": "Me apellido ELhilali.",
+            "¿Cuál...": "Mi apellido es ELhilali."
+        },
+        "Edad": {
+            "¿Qué edad tienes?": "Tengo 30 años.",
+            "¿Cuántos años tienes?": "Tengo 30 años.",
+            "¿Qué...": "Tengo 30 años.",
+            "¿Cuántos...": "Tengo 30 años."
+        },
+        "Origen/Nacionalidad": {
+            "¿De dónde eres?": "Soy de Marruecos.",
+            "¿De dónde...": "Soy de Marruecos."
+        },
+        "Dónde vivir": {
+            "¿Dónde vives?": "Vivo en Madrid.",
+            "¿Dónde...": "Vivo en Madrid."
+        },
+        "Idiomas": {
+            "¿Qué idiomas hablas?": "Hablo árabe, español y francés.",
+            "¿Qué lenguas hablas?": "Hablo tres lenguas con fluidez.",
+            "¿Qué...": "Hablo árabe, español y francés."
+        },
+        "Móvil": {
+            "¿Tienes móvil?": "Sí, mi número es el 612 345 678.",
+            "¿Tienes...": "Sí, mi número es el 612 345 678."
+        },
+        "Trabajo": {
+            "¿En qué trabajas?": "Trabajo en una escuela de idiomas.",
+            "¿A qué te dedicas?": "Me dedico a la enseñanza.",
+            "¿Qué haces?": "Soy profesor de español.",
+            "¿En qué...": "Trabajo en una escuela de idiomas.",
+            "¿A qué...": "Me dedico a la enseñanza.",
+            "¿Qué...": "Soy profesor de español."
+        },
+        "Lugar de trabajo": {
+            "¿Dónde trabajas?": "Trabajo en el Instituto Cervantes.",
+            "¿Dónde...": "Trabajo en el Instituto Cervantes."
+        },
+        "Estudios": {
+            "¿Qué estudias?": "Estudio filología española.",
+            "¿Dónde estudias?": "Estudio en la universidad.",
+            "¿Qué...": "Estudio filología española.",
+            "¿Dónde...": "Estudio en la universidad."
+        },
+        "Eres...": {
+            "¿Eres profesor?": "Sí, soy profesor.",
+            "¿Eres Andrés?": "No, no soy Andrés.",
+            "¿Eres Madrid?": "No, soy de Madrid.",
+            "¿Eres...": "Sí, soy profesor."
+        },
+        "Hablas": {
+            "¿Hablas español?": "Sí, hablo español muy bien.",
+            "¿Hablas...": "Sí, hablo español muy bien."
+        },
+        "Tienes": {
+            "¿Tienes 18 años?": "Sí, tengo 18 años.",
+            "¿Tienes...": "Sí, tengo 18 años."
+        },
+        "Actividades de fin de semana": {
+            "¿Qué quieres hacer este fin de semana?": "Quiero ir al cine y pasear.",
+            "¿Qué quieres...": "Quiero ir al cine y pasear."
+        },
+        "Con quién": {
+            "¿Con quién vas al cine?": "Voy al cine con mis amigos.",
+            "¿Con quién...": "Voy al cine con mis amigos."
+        },
+        "Por qué": {
+            "¿Por qué estudias español?": "Porque me gusta el idioma y viajo mucho.",
+            "¿Por qué...": "Porque me gusta el idioma y viajo mucho."
+        },
+        "Dónde": {
+            "¿Dónde quieres comer?": "Quiero comer en un restaurante típico.",
+            "¿Dónde...": "Quiero comer en un restaurante típico."
+        },
+        "Adónde": {
+            "¿Adónde quieres viajar?": "Quiero viajar a España.",
+            "¿Adónde...": "Quiero viajar a España."
+        },
+        "Quieres...o....": {
+            "¿Quieres estudiar o trabajar?": "Prefiero estudiar.",
+            "¿Quieres...": "Prefiero estudiar."
+        },
+        "Dónde está/n": {
+            "¿Dónde está Paris?": "París está en Francia.",
+            "¿Dónde están las islas canarias?": "Están en el océano Atlántico.",
+            "¿Dónde está...": "París está en Francia.",
+            "¿Dónde están...": "Están en el océano Atlántico."
+        },
+        "Qué hay en": {
+            "¿Qué hay en el centro de tu ciudad?": "Hay muchos museos, tiendas y plazas históricas.",
+            "¿Qué hay en...": "Hay muchos museos, tiendas y plazas históricas."
+        },
+        "Qué tiene": {
+            "¿Qué tiene tu barrio?": "Tiene un parque grande y muchas cafeterías.",
+            "¿Qué tiene...": "Tiene un parque grande y muchas cafeterías."
+        },
+        "El clima": {
+            "¿Cómo es el clima en tu país en invierno?": "Es bastante frío y con frecuencia llueve.",
+            "¿Cómo es el clima...": "Es bastante frío y con frecuencia llueve."
+        },
+        "El tiempo": {
+            "¿Qué tiempo hace hoy en tu ciudad?": "Hoy hace muy buen tiempo y bastante sol.",
+            "¿Qué tiempo...": "Hoy hace muy buen tiempo y bastante sol."
+        },
+        "Qué es": {
+            "¿Qué es la paella?": "Es un plato típico español a base de arroz y marisco.",
+            "¿Qué son las tapas?": "Son pequeñas porciones de comida para compartir.",
+            "¿Qué es...": "Es un plato típico español a base de arroz y marisco.",
+            "¿Qué son...": "Son pequeñas porciones de comida para compartir."
+        },
+        "Cuál / Cuáles": {
+            "¿Cuál es la capital de España?": "La capital de España es Madrid.",
+            "¿Cuál es la capital de Inglaterra?": "La capital de Inglaterra es Londres.",
+            "¿Cuál es la capital de Rusia?": "La capital de Rusia es Moscú.",
+            "¿Cuáles son los monumentos más famosos de Madrid?": "Son la Puerta de Alcalá, el Palacio Real y la Cibeles.",
+            "¿Cuál es...": "La capital de España es Madrid.",
+            "¿Cuáles son...": "Son la Puerta de Alcalá, el Palacio Real y la Cibeles."
+        },
+        "Cómo es": {
+            "¿Cómo es tu ciudad natal?": "Es una ciudad hermosa, luminosa y tranquila.",
+            "¿Cómo es...": "Es una ciudad hermosa, luminosa y tranquila."
+        },
+        "Habitantes/población": {
+            "¿Cuántos habitantes tiene tu ciudad?": "Tiene unos tres millones de habitantes.",
+            "¿Cuánta población hay en tu país?": "Hay unos 47 millones de personas.",
+            "¿Cuántos...": "Tiene unos tres millones de habitantes.",
+            "¿Cuánta...": "Hay unos 47 millones de personas."
+        },
+        "Qué llevas cuándo": {
+            "¿Qué llevas cuando hace mucho frío?": "Llevo un abrigo grueso, bufanda y guantes.",
+            "¿Qué llevas cuándo...": "Llevo un abrigo grueso, bufanda y guantes."
+        },
+        "Cuánto cuesta/n": {
+            "¿Cuánto cuesta esta camiseta blanca?": "Cuesta 15 euros.",
+            "¿Cuánto cuestan estos zapatos?": "Cuestan 45 euros.",
+            "¿Cuánto cuesta...": "Cuesta 15 euros.",
+            "¿Cuánto cuestan...": "Cuestan 45 euros."
+        },
+        "Color": {
+            "¿De qué color es la chaqueta?": "Es de color azul marino.",
+            "¿Qué color prefieres?": "Prefiero el color verde.",
+            "¿De qué color...": "Es de color azul marino.",
+            "¿Qué...": "Prefiero el color verde."
+        },
+        "Talla": {
+            "¿De qué talla necesita?": "Necesito la talla mediana (M).",
+            "¿Qué talla usa usted?": "Uso la talla 40.",
+            "¿De qué...": "Necesito la talla mediana (M).",
+            "¿Qué...": "Uso la talla 40."
+        },
+        "Pedir un objeto en una tienda": {
+            "¿Tienen gafas?": "Sí, tenemos varios modelos en el mostrador.",
+            "¿Tienen...": "Sí, tenemos varios modelos en el mostrador."
+        },
+        "Quedar bien/mal": {
+            "¿Cómo me queda esta camisa?": "Te queda muy bien, es tu talla exacta.",
+            "¿Me queda bien este vestido?": "Sí, te queda genial y muy elegante.",
+            "¿Me quedan bien estos zapatos?": "Te quedan muy cómodos y combinan bien.",
+            "¿Cómo...": "Te queda muy bien, es tu talla exacta.",
+            "¿Me queda...": "Sí, te queda genial y muy elegante.",
+            "¿Me quedan...": "Te quedan muy cómodos y combinan bien."
+        },
+        "Prefieres": {
+            "¿Cuál prefieres la negra o la azul?": "Prefiero la azul.",
+            "¿Cuál...": "Prefiero la azul."
+        },
+        "¿Dónde": {
+            "¿Dónde compras tus chaquetas?": "Las compro en tiendas del centro comercial.",
+            "¿Dónde están los probadores?": "Están al fondo a la derecha.",
+            "¿Dónde compras...": "Las compro en tiendas del centro comercial.",
+            "¿Dónde están...": "Están al fondo a la derecha."
+        },
+        "Obligación": {
+            "¿Qué tienes que llevar en la boda?": "Tengo que llevar traje formal y corbata.",
+            "¿Qué tienes...": "Tengo que llevar traje formal y corbata."
+        },
+        "Descripción": {
+            "¿Cómo es el vestido que buscas?": "Busco un vestido largo y de color azul.",
+            "¿Cómo son las zapatillas?": "Son zapatillas deportivas, cómodas y blancas.",
+            "¿Cómo...": "Busco un vestido largo y de color azul."
+        },
+        "Precio": {
+            "¿Cuánto cuesta este bolígrafo?": "Cuesta un euro con cincuenta.",
+            "¿Cuánto cuesta esa camisa?": "Cuesta veinticinco euros.",
+            "¿Cuánto es todo?": "Son veintiséis euros con cincuenta en total.",
+            "¿Cuánto...": "Cuesta un euro con cincuenta.",
+            "¿Cuánto es...": "Son veintiséis euros con cincuenta en total."
+        },
+        "Compro": {
+            "¿Cuál compro?": "Compra la que más te guste y te resulte cómoda.",
+            "¿Cuál...": "Compra la que más te guste y te resulte cómoda."
+        },
+        "Cuál/Cuáles": {
+            "¿Cuál es la más barata?": "La camiseta roja es la más barata.",
+            "¿Cuáles son los más cómodos?": "Los mocasines negros son los más cómodos.",
+            "¿Cuál es más...": "La camiseta roja es la más barata.",
+            "¿Cuáles son más...": "Los mocasines negros son los más cómodos."
+        },
+        "Esto": {
+            "¿Esto qué es?": "Es un estuche para guardar bolígrafos.",
+            "¿Esto qué...": "Es un estuche para guardar bolígrafos."
+        },
+        "Llevas en": {
+            "¿Qué llevas en la maleta?": "Llevo ropa ligera, gafas de sol y artículos de aseo.",
+            "¿Qué llevas en...": "Llevo ropa ligera, gafas de sol y artículos de aseo."
+        },
+        "Gustos y preferencias": {
+            "¿Qué te gusta hacer los fines de semana?": "Me gusta leer, pasear y cocinar para mi familia.",
+            "¿Te gusta la comida española tradicional?": "Sí, me encanta la gastronomía española, sobre todo la tortilla.",
+            "¿Qué te gusta...": "Me gusta leer, pasear y cocinar para mi familia.",
+            "¿Te gusta...": "Sí, me encanta la gastronomía española, sobre todo la tortilla.",
+            "¿Te gustan...": "Sí, me encantan las tapas y los platos tradicionales."
+        },
+        "Intereses": {
+            "¿Qué te interesa de la clase?": "Me interesa aprender a comunicarme con naturalidad.",
+            "¿Te interesa el fútbol?": "Sí, me gusta mucho ver los partidos.",
+            "¿Qué te interesa...": "Me interesa aprender a comunicarme con naturalidad.",
+            "¿Te interesa...": "Sí, me gusta mucho ver los partidos."
+        },
+        "Descripción del carácter": {
+            "¿Cómo es tu hermano?": "Es un chico muy simpático, alegre y trabajador.",
+            "¿Cómo eres de carácter?": "Soy una persona tranquila, reflexiva y sociable.",
+            "¿Cómo es...": "Es un chico muy simpático, alegre y trabajador.",
+            "¿Cómo eres...": "Soy una persona tranquila, reflexiva y sociable."
+        },
+        "Descripción física": {
+            "¿Cómo es tu padre de físico?": "Es alto, delgado, tiene pelo canoso y lleva gafas.",
+            "¿De qué color tiene los ojos?": "Tiene los ojos de color castaño oscuro.",
+            "¿Es alto o bajo?": "Es bastante alto, mide un metro ochenta.",
+            "¿Cómo es...": "Es alto, delgado, tiene pelo canoso y lleva gafas.",
+            "¿De qué color tiene los ojos...": "Tiene los ojos de color castaño oscuro.",
+            "¿Es alto o...": "Es bastante alto, mide un metro ochenta."
+        },
+        "Planes futuros": {
+            "¿Qué vas a hacer este verano?": "Voy a viajar por el norte de España y descansar.",
+            "¿Adónde vas a ir el próximo sábado?": "Voy a ir al Museo Reina Sofía.",
+            "¿Qué vas a hacer...": "Voy a viajar por el norte de España y descansar.",
+            "¿Adónde vas a ir...": "Voy a ir al Museo Reina Sofía."
+        },
+        "Preguntar la hora": {
+            "¿Qué hora es, por favor?": "Son las diez y cuarto de la mañana.",
+            "¿Tiene hora?": "Sí, son las diez y media.",
+            "¿Qué hora es...": "Son las diez y cuarto de la mañana.",
+            "¿Tiene hora...": "Sí, son las diez y media."
+        },
+        "A qué hora": {
+            "¿A qué hora te levantas el domingo?": "El domingo me levanto a las nueve y media.",
+            "¿A qué hora empieza el partido?": "El partido empieza a las ocho de la tarde.",
+            "¿A qué hora...": "El domingo me levanto a las nueve y media.",
+            "¿A qué hora empieza...": "El partido empieza a las ocho de la tarde."
+        },
+        "Horarios": {
+            "¿Qué horario tiene la biblioteca?": "Abre de nueve de la mañana a ocho de la tarde.",
+            "¿Qué horario tiene la biblioteca hoy?": "Hoy abre de diez a dos de la tarde.",
+            "¿Qué horario tiene...": "Abre de nueve de la mañana a ocho de la tarde.",
+            "¿A qué hora abre...": "Hoy abre de diez a dos de la tarde."
+        },
+        "Rutina diaria": {
+            "¿A qué hora te levantas por la mañana?": "Me levanto habitualmente a las siete de la mañana.",
+            "¿A qué hora te acuestas por la noche?": "Me acuesto hacia las once y media de la noche.",
+            "¿A qué hora te levantas...": "Me levanto habitualmente a las siete de la mañana.",
+            "¿A qué hora te acuestas...": "Me acuesto hacia las once y media de la noche."
+        },
+        "Frecuencia": {
+            "¿Con qué frecuencia vas al gimnasio o haces deporte?": "Hago deporte tres veces a la semana.",
+            "¿Cuántas veces a la semana estudias español?": "Estudio español cuatro días por semana.",
+            "¿Con qué frecuencia...": "Hago deporte tres veces a la semana.",
+            "¿Cuántas veces al día/semana...": "Estudio español cuatro días por semana."
+        },
+        "Qué...te gusta": {
+            "¿Qué tipo de música te gusta?": "Me gusta la música clásica y el flamenco.",
+            "¿Qué tipo de comida te gusta?": "Me gusta la comida mediterránea.",
+            "¿Qué género de cine te gusta?": "Me gustan las películas de misterio.",
+            "¿Qué....................te gusta?...": "Me gusta la música española."
+        },
+        "Cuál / cuáles...favaorito/a/os/as": {
+            "¿Cuál es tu película favorita?": "Mi película favorita es El Laberinto del Fauno.",
+            "¿Cuáles son tus libros favoritos?": "Mis libros favoritos son Cien años de soledad y Don Quijote.",
+            "¿Cuál es...": "Mi película favorita es El Laberinto del Fauno.",
+            "¿Cuáles son...": "Mis libros favoritos son novelas históricas."
+        },
+        "Tipo": {
+            "¿Qué tipo de persona eres?": "Soy una persona optimista, amable y paciente.",
+            "¿Qué tipo de trabajo buscas?": "Busco un trabajo en el ámbito educativo.",
+            "¿Qué tipo...": "Soy una persona sociable y creativa."
+        },
+        "Quién...este/a/os/as (ese/a/os/as)": {
+            "¿Quién es este chico de la foto?": "Es mi primo Alejandro.",
+            "¿Quién...": "Es mi amigo Carlos."
+        },
+        "Tienes (familiares, amigos)": {
+            "¿Tienes hermanos o primos en Madrid?": "Sí, tengo dos hermanos y un primo aquí.",
+            "¿Tienes...": "Sí, tengo dos hermanos."
+        },
+        "El pelo": {
+            "¿Cómo tienes el pelo?": "Tengo el pelo corto, liso y castaño.",
+            "¿Cómo...": "Tengo el pelo castaño."
+        },
+        "Los ojos": {
+            "¿Cómo tienes los ojos?": "Tengo los ojos grandes y de color miel.",
+            "¿Cómo...": "Tengo los ojos oscuros."
+        },
+        "A qué hora es": {
+            "¿A qué hora es la clase de español?": "La clase es a las nueve de la mañana.",
+            "¿A qué hora es la reunión?": "La reunión es a las doce y media.",
+            "¿A qué hora es el concierto?": "El concierto es a las nueve de la noche.",
+            "¿A qué hora es...": "Es a las nueve de la mañana."
+        },
+        "Días": {
+            "¿Qué días tienes clase de español?": "Tengo clase los martes y los jueves.",
+            "¿Qué días trabajas?": "Trabajo de lunes a viernes.",
+            "¿Qué días sales con amigos?": "Salgo los viernes y sábados.",
+            "¿Qué días...": "De lunes a viernes."
+        },
+        "Cuándo": {
+            "¿Cuándo es tu cumpleaños?": "Mi cumpleaños es el 15 de mayo.",
+            "¿Cuándo...": "Es el mes que viene."
+        },
+        "Antes de": {
+            "¿Qué haces antes de desayunar?": "Antes de desayunar me ducho y me visto.",
+            "¿Qué haces antes de ir a dormir?": "Leo un libro y reviso la agenda del día siguiente.",
+            "¿Qué haces...": "Me ducho y me visto."
+        },
+        "Después de": {
+            "¿Qué haces después de comer?": "Después de comer descanso un poco y tomo un café.",
+            "¿Qué haces después de trabajar?": "Voy al gimnasio o doy un paseo.",
+            "¿Qué haces...": "Descanso y tomo un café."
+        }
+    },
+    "by_starter": {
+        "¿Cómo": "Me llamo Faouzi / Muy bien.",
+        "¿Cuál": "Madrid / Mi nombre.",
+        "¿Dónde": "En Madrid / En el centro.",
+        "¿De dónde": "Soy de España / Soy de Marruecos.",
+        "¿Qué": "Estudio español / Hago deporte.",
+        "¿Cuántos": "Tengo 30 años.",
+        "¿Cuántas": "Tres veces a la semana.",
+        "¿Tiene": "Sí, tengo.",
+        "¿Eres": "Sí, soy profesor.",
+        "¿Por qué": "Porque me gusta el español.",
+        "¿Adónde": "Voy a viajar a Sevilla.",
+        "¿Cuándo": "Este fin de semana."
+    }
+};
+
+const defaultUnitsData = [
+    {
+        "title": "UNIDAD 1",
+        "items": [
+            {
+                "name": "Nombre",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo te llamas?"
+                    },
+                    {
+                        "formula": "¿Cuál...",
+                        "proposal": "¿Cuál es tu nombre?"
+                    }
+                ]
+            },
+            {
+                "name": "Apellido",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo te apellidas?"
+                    },
+                    {
+                        "formula": "¿Cuál...",
+                        "proposal": "¿Cuál es tu apellido?"
+                    }
+                ]
+            },
+            {
+                "name": "Edad",
+                "prompts": [
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué edad tienes?"
+                    },
+                    {
+                        "formula": "¿Cuántos...",
+                        "proposal": "¿Cuántos años tienes?"
+                    }
+                ]
+            },
+            {
+                "name": "Origen/Nacionalidad",
+                "prompts": [
+                    {
+                        "formula": "¿De dónde...",
+                        "proposal": "¿De dónde eres?"
+                    }
+                ]
+            },
+            {
+                "name": "Dónde vivir",
+                "prompts": [
+                    {
+                        "formula": "¿Dónde...",
+                        "proposal": "¿Dónde vives?"
+                    }
+                ]
+            },
+            {
+                "name": "Idiomas",
+                "prompts": [
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué idiomas hablas?"
+                    },
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué lenguas hablas?"
+                    }
+                ]
+            },
+            {
+                "name": "Móvil",
+                "prompts": [
+                    {
+                        "formula": "¿Tienes...",
+                        "proposal": "¿Tienes móvil?"
+                    }
+                ]
+            },
+            {
+                "name": "Trabajo",
+                "prompts": [
+                    {
+                        "formula": "¿En qué...",
+                        "proposal": "¿En qué trabajas?"
+                    },
+                    {
+                        "formula": "¿A qué...",
+                        "proposal": "¿A qué te dedicas?"
+                    },
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué haces?"
+                    }
+                ]
+            },
+            {
+                "name": "Lugar de trabajo",
+                "prompts": [
+                    {
+                        "formula": "¿Dónde...",
+                        "proposal": "¿Dónde trabajas?"
+                    }
+                ]
+            },
+            {
+                "name": "Estudios",
+                "prompts": [
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué estudias?"
+                    },
+                    {
+                        "formula": "¿Dónde...",
+                        "proposal": "¿Dónde estudias?"
+                    }
+                ]
+            },
+            {
+                "name": "Eres...",
+                "prompts": [
+                    {
+                        "formula": "¿Eres...",
+                        "proposal": "¿Eres profesor?"
+                    },
+                    {
+                        "formula": "¿Eres...",
+                        "proposal": "¿Eres Andrés?"
+                    },
+                    {
+                        "formula": "¿Eres...",
+                        "proposal": "¿Eres Madrid?"
+                    }
+                ]
+            },
+            {
+                "name": "Hablas",
+                "prompts": [
+                    {
+                        "formula": "¿Hablas...",
+                        "proposal": "¿Hablas español?"
+                    }
+                ]
+            },
+            {
+                "name": "Tienes",
+                "prompts": [
+                    {
+                        "formula": "¿Tienes...",
+                        "proposal": "¿Tienes 18 años?"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "UNIDAD 2",
+        "items": [
+            {
+                "name": "Actividades de fin de semana",
+                "prompts": [
+                    {
+                        "formula": "¿Qué quieres...",
+                        "proposal": "¿Qué quieres hacer este fin de semana?"
+                    }
+                ]
+            },
+            {
+                "name": "Con quién",
+                "prompts": [
+                    {
+                        "formula": "¿Con quién...",
+                        "proposal": "¿Con quién vas al cine?"
+                    }
+                ]
+            },
+            {
+                "name": "Por qué",
+                "prompts": [
+                    {
+                        "formula": "¿Por qué...",
+                        "proposal": "¿Por qué estudias español?"
+                    }
+                ]
+            },
+            {
+                "name": "Dónde",
+                "prompts": [
+                    {
+                        "formula": "¿Dónde...",
+                        "proposal": "¿Dónde quieres comer?"
+                    }
+                ]
+            },
+            {
+                "name": "Adónde",
+                "prompts": [
+                    {
+                        "formula": "¿Adónde...",
+                        "proposal": "¿Adónde quieres viajar?"
+                    }
+                ]
+            },
+            {
+                "name": "Quieres...o....",
+                "prompts": [
+                    {
+                        "formula": "¿Quieres...",
+                        "proposal": "¿Quieres estudiar o trabajar?"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "UNIDAD 3",
+        "items": [
+            {
+                "name": "Dónde está/n",
+                "prompts": [
+                    {
+                        "formula": "¿Dónde está...",
+                        "proposal": "¿Dónde está Paris?"
+                    },
+                    {
+                        "formula": "¿Dónde están...",
+                        "proposal": "¿Dónde están las islas canarias?"
+                    }
+                ]
+            },
+            {
+                "name": "Qué hay en",
+                "prompts": [
+                    {
+                        "formula": "¿Qué hay en...",
+                        "proposal": "¿Qué hay en el centro de tu ciudad?"
+                    }
+                ]
+            },
+            {
+                "name": "Qué tiene",
+                "prompts": [
+                    {
+                        "formula": "¿Qué tiene...",
+                        "proposal": "¿Qué tiene tu barrio?"
+                    }
+                ]
+            },
+            {
+                "name": "El clima",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo es el clima...",
+                        "proposal": "¿Cómo es el clima en tu país en invierno?"
+                    }
+                ]
+            },
+            {
+                "name": "El tiempo",
+                "prompts": [
+                    {
+                        "formula": "¿Qué tiempo...",
+                        "proposal": "¿Qué tiempo hace hoy en tu ciudad?"
+                    }
+                ]
+            },
+            {
+                "name": "Qué es",
+                "prompts": [
+                    {
+                        "formula": "¿Qué es...",
+                        "proposal": "¿Qué es la paella?"
+                    },
+                    {
+                        "formula": "¿Qué son...",
+                        "proposal": "¿Qué son las tapas?"
+                    }
+                ]
+            },
+            {
+                "name": "Cuál / Cuáles",
+                "prompts": [
+                    {
+                        "formula": "¿Cuál es...",
+                        "proposal": "¿Cuál es la capital de España?"
+                    },
+                    {
+                        "formula": "¿Cuál es...",
+                        "proposal": "¿Cuál es la capital de Inglaterra?"
+                    },
+                    {
+                        "formula": "¿Cuál es...",
+                        "proposal": "¿Cuál es la capital de Rusia?"
+                    },
+                    {
+                        "formula": "¿Cuáles son...",
+                        "proposal": "¿Cuáles son los monumentos más famosos de Madrid?"
+                    }
+                ]
+            },
+            {
+                "name": "Cómo es",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo es...",
+                        "proposal": "¿Cómo es tu ciudad natal?"
+                    }
+                ]
+            },
+            {
+                "name": "Habitantes/población",
+                "prompts": [
+                    {
+                        "formula": "¿Cuántos...",
+                        "proposal": "¿Cuántos habitantes tiene tu ciudad?"
+                    },
+                    {
+                        "formula": "¿Cuánta...",
+                        "proposal": "¿Cuánta población hay en tu país?"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "UNIDAD 4",
+        "items": [
+            {
+                "name": "Qué llevas cuándo",
+                "prompts": [
+                    {
+                        "formula": "¿Qué llevas cuándo...",
+                        "proposal": "¿Qué llevas cuando hace mucho frío?"
+                    }
+                ]
+            },
+            {
+                "name": "Cuánto cuesta/n",
+                "prompts": [
+                    {
+                        "formula": "¿Cuánto cuesta...",
+                        "proposal": "¿Cuánto cuesta esta camiseta blanca?"
+                    },
+                    {
+                        "formula": "¿Cuánto cuestan...",
+                        "proposal": "¿Cuánto cuestan estos zapatos?"
+                    }
+                ]
+            },
+            {
+                "name": "Color",
+                "prompts": [
+                    {
+                        "formula": "¿De qué color...",
+                        "proposal": "¿De qué color es la chaqueta?"
+                    },
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué color prefieres?"
+                    }
+                ]
+            },
+            {
+                "name": "Talla",
+                "prompts": [
+                    {
+                        "formula": "¿De qué...",
+                        "proposal": "¿De qué talla necesita?"
+                    },
+                    {
+                        "formula": "¿Qué...",
+                        "proposal": "¿Qué talla usa usted?"
+                    }
+                ]
+            },
+            {
+                "name": "Pedir un objeto en una tienda",
+                "prompts": [
+                    {
+                        "formula": "¿Tienen...",
+                        "proposal": "¿Tienen gafas?"
+                    }
+                ]
+            },
+            {
+                "name": "Quedar bien/mal",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo me queda esta camisa?"
+                    },
+                    {
+                        "formula": "¿Me queda...",
+                        "proposal": "¿Me queda bien este vestido?"
+                    },
+                    {
+                        "formula": "¿Me quedan...",
+                        "proposal": "¿Me quedan bien estos zapatos?"
+                    }
+                ]
+            },
+            {
+                "name": "Prefieres",
+                "prompts": [
+                    {
+                        "formula": "¿Cuál...",
+                        "proposal": "¿Cuál prefieres la negra o la azul?"
+                    }
+                ]
+            },
+            {
+                "name": "¿Dónde",
+                "prompts": [
+                    {
+                        "formula": "¿Dónde compras...",
+                        "proposal": "¿Dónde compras tus chaquetas?"
+                    },
+                    {
+                        "formula": "¿Dónde están...",
+                        "proposal": "¿Dónde están los probadores?"
+                    }
+                ]
+            },
+            {
+                "name": "Obligación",
+                "prompts": [
+                    {
+                        "formula": "¿Qué tienes...",
+                        "proposal": "¿Qué tienes que llevar en la boda?"
+                    }
+                ]
+            },
+            {
+                "name": "Descripción",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo es el vestido que buscas?"
+                    },
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo son las zapatillas?"
+                    }
+                ]
+            },
+            {
+                "name": "Precio",
+                "prompts": [
+                    {
+                        "formula": "¿Cuánto...",
+                        "proposal": "¿Cuánto cuesta este bolígrafo?"
+                    },
+                    {
+                        "formula": "¿Cuánto...",
+                        "proposal": "¿Cuánto cuesta esa camisa?"
+                    },
+                    {
+                        "formula": "¿Cuánto es...",
+                        "proposal": "¿Cuánto es todo?"
+                    }
+                ]
+            },
+            {
+                "name": "Compro",
+                "prompts": [
+                    {
+                        "formula": "¿Cuál...",
+                        "proposal": "¿Cuál compro?"
+                    }
+                ]
+            },
+            {
+                "name": "Cuál/Cuáles",
+                "prompts": [
+                    {
+                        "formula": "¿Cuál es más...",
+                        "proposal": "¿Cuál es la más barata?"
+                    },
+                    {
+                        "formula": "¿Cuáles son más...",
+                        "proposal": "¿Cuáles son los más cómodos?"
+                    }
+                ]
+            },
+            {
+                "name": "Esto",
+                "prompts": [
+                    {
+                        "formula": "¿Esto qué...",
+                        "proposal": "¿Esto qué es?"
+                    }
+                ]
+            },
+            {
+                "name": "Llevas en",
+                "prompts": [
+                    {
+                        "formula": "¿Qué llevas en...",
+                        "proposal": "¿Qué llevas en la maleta?"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "UNIDAD 5",
+        "items": [
+            {
+                "name": "Gustos y preferencias",
+                "prompts": [
+                    {
+                        "formula": "¿Qué te gusta...",
+                        "proposal": "¿Qué te gusta hacer los fines de semana?"
+                    },
+                    {
+                        "formula": "¿Te gusta...",
+                        "proposal": "¿Te gusta la comida española tradicional?"
+                    },
+                    {
+                        "formula": "¿Te gustan...",
+                        "proposal": "¿Te gustan los deportes de aventura?"
+                    }
+                ]
+            },
+            {
+                "name": "Qué...te gusta",
+                "prompts": [
+                    {
+                        "formula": "¿Qué....................te gusta?...",
+                        "proposal": "¿Qué tipo de música te gusta?"
+                    },
+                    {
+                        "formula": "¿Qué....................te gusta?...",
+                        "proposal": "¿Qué tipo de comida te gusta?"
+                    },
+                    {
+                        "formula": "¿Qué....................te gusta?...",
+                        "proposal": "¿Qué género de cine te gusta?"
+                    }
+                ]
+            },
+            {
+                "name": "Cuál / cuáles...favaorito/a/os/as",
+                "prompts": [
+                    {
+                        "formula": "¿Cuál es...",
+                        "proposal": "¿Cuál es tu película favorita?"
+                    },
+                    {
+                        "formula": "¿Cuáles son...",
+                        "proposal": "¿Cuáles son tus libros favoritos?"
+                    }
+                ]
+            },
+            {
+                "name": "Intereses",
+                "prompts": [
+                    {
+                        "formula": "¿Qué te interesa...",
+                        "proposal": "¿Qué te interesa de la clase?"
+                    },
+                    {
+                        "formula": "¿Te interesa...",
+                        "proposal": "¿Te interesa el fútbol?"
+                    }
+                ]
+            },
+            {
+                "name": "Descripción del carácter",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo es...",
+                        "proposal": "¿Cómo es tu hermano?"
+                    },
+                    {
+                        "formula": "¿Cómo eres...",
+                        "proposal": "¿Cómo eres de carácter?"
+                    }
+                ]
+            },
+            {
+                "name": "Descripción física",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo es físicamente...",
+                        "proposal": "¿Cómo es físicamente tu padre?"
+                    },
+                    {
+                        "formula": "¿De qué color tiene los ojos...",
+                        "proposal": "¿De qué color tiene los ojos?"
+                    },
+                    {
+                        "formula": "¿Es alto o...",
+                        "proposal": "¿Es alto o bajo?"
+                    }
+                ]
+            },
+            {
+                "name": "Planes futuros",
+                "prompts": [
+                    {
+                        "formula": "¿Qué vas a hacer...",
+                        "proposal": "¿Qué vas a hacer este verano?"
+                    },
+                    {
+                        "formula": "¿Adónde vas a ir...",
+                        "proposal": "¿Adónde vas a ir el próximo sábado?"
+                    }
+                ]
+            },
+            {
+                "name": "Tipo",
+                "prompts": [
+                    {
+                        "formula": "¿Qué tipo...",
+                        "proposal": "¿Qué tipo de persona eres?"
+                    },
+                    {
+                        "formula": "¿Qué tipo...",
+                        "proposal": "¿Qué tipo de trabajo buscas?"
+                    }
+                ]
+            },
+            {
+                "name": "Quién...este/a/os/as (ese/a/os/as)",
+                "prompts": [
+                    {
+                        "formula": "¿Quién...",
+                        "proposal": "¿Quién es este chico de la foto?"
+                    }
+                ]
+            },
+            {
+                "name": "Tienes (familiares, amigos)",
+                "prompts": [
+                    {
+                        "formula": "¿Tienes...",
+                        "proposal": "¿Tienes hermanos o primos en Madrid?"
+                    }
+                ]
+            },
+            {
+                "name": "El pelo",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo tienes el pelo?"
+                    }
+                ]
+            },
+            {
+                "name": "Los ojos",
+                "prompts": [
+                    {
+                        "formula": "¿Cómo...",
+                        "proposal": "¿Cómo tienes los ojos?"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "UNIDAD 6",
+        "items": [
+            {
+                "name": "Preguntar la hora",
+                "prompts": [
+                    {
+                        "formula": "¿Qué hora es...",
+                        "proposal": "¿Qué hora es, por favor?"
+                    },
+                    {
+                        "formula": "¿Tiene hora...",
+                        "proposal": "¿Tiene hora?"
+                    }
+                ]
+            },
+            {
+                "name": "A qué hora es",
+                "prompts": [
+                    {
+                        "formula": "¿A qué hora es...",
+                        "proposal": "¿A qué hora es la clase de español?"
+                    },
+                    {
+                        "formula": "¿A qué hora es...",
+                        "proposal": "¿A qué hora es la reunión?"
+                    },
+                    {
+                        "formula": "¿A qué hora es...",
+                        "proposal": "¿A qué hora es el concierto?"
+                    }
+                ]
+            },
+            {
+                "name": "A qué hora",
+                "prompts": [
+                    {
+                        "formula": "¿A qué hora...",
+                        "proposal": "¿A qué hora te levantas el domingo?"
+                    },
+                    {
+                        "formula": "¿A qué hora empiezas...",
+                        "proposal": "¿A qué hora empiezas a trabajar?"
+                    },
+                    {
+                        "formula": "¿A qué hora terminas...",
+                        "proposal": "¿A qué hora terminas tus clases?"
+                    }
+                ]
+            },
+            {
+                "name": "Horarios",
+                "prompts": [
+                    {
+                        "formula": "¿Qué horario tiene...",
+                        "proposal": "¿Qué horario tiene la biblioteca?"
+                    },
+                    {
+                        "formula": "¿A qué hora...",
+                        "proposal": "¿A qué hora abre el banco?"
+                    },
+                    {
+                        "formula": "¿A qué hora...",
+                        "proposal": "¿A qué hora cierra la tienda?"
+                    }
+                ]
+            },
+            {
+                "name": "Rutina diaria",
+                "prompts": [
+                    {
+                        "formula": "¿Qué haces normalmente los...",
+                        "proposal": "¿Qué haces normalmente los lunes por la mañana?"
+                    },
+                    {
+                        "formula": "¿Qué haces normalmente los...",
+                        "proposal": "¿Qué haces normalmente los viernes por la tarde?"
+                    },
+                    {
+                        "formula": "¿Qué haces normalmente los...",
+                        "proposal": "¿Qué haces normalmente los domingos?"
+                    }
+                ]
+            },
+            {
+                "name": "Frecuencia",
+                "prompts": [
+                    {
+                        "formula": "¿Con qué frecuencia...",
+                        "proposal": "¿Con qué frecuencia vas al gimnasio o haces deporte?"
+                    },
+                    {
+                        "formula": "¿Cuántas veces...",
+                        "proposal": "¿Cuántas veces al día te lavas los dientes?"
+                    },
+                    {
+                        "formula": "¿Cuántas veces...",
+                        "proposal": "¿Cuántas veces a la semana estudias español?"
+                    },
+                    {
+                        "formula": "¿Cuántas veces...",
+                        "proposal": "¿Cuántas veces al mes vas al cine?"
+                    },
+                    {
+                        "formula": "¿Cuántas veces...",
+                        "proposal": "¿Cuántas veces al año viajas?"
+                    }
+                ]
+            },
+            {
+                "name": "Días",
+                "prompts": [
+                    {
+                        "formula": "¿Qué días...",
+                        "proposal": "¿Qué días tienes clase de español?"
+                    },
+                    {
+                        "formula": "¿Qué días...",
+                        "proposal": "¿Qué días trabajas?"
+                    },
+                    {
+                        "formula": "¿Qué días...",
+                        "proposal": "¿Qué días sales con amigos?"
+                    }
+                ]
+            },
+            {
+                "name": "Cuándo",
+                "prompts": [
+                    {
+                        "formula": "¿Cuándo...",
+                        "proposal": "¿Cuándo es tu cumpleaños?"
+                    }
+                ]
+            },
+            {
+                "name": "Antes de",
+                "prompts": [
+                    {
+                        "formula": "¿Qué haces...",
+                        "proposal": "¿Qué haces antes de desayunar?"
+                    },
+                    {
+                        "formula": "¿Qué haces...",
+                        "proposal": "¿Qué haces antes de ir a dormir?"
+                    }
+                ]
+            },
+            {
+                "name": "Después de",
+                "prompts": [
+                    {
+                        "formula": "¿Qué haces...",
+                        "proposal": "¿Qué haces después de comer?"
+                    },
+                    {
+                        "formula": "¿Qué haces...",
+                        "proposal": "¿Qué haces después de trabajar?"
+                    }
+                ]
+            }
+        ]
+    }
+];
+
+let appData = [];
+
+function toggleTVMode() {
+    const body = document.body;
+    const btn = document.getElementById('btn-tv-mode');
+    const isTV = body.classList.toggle('tv-mode-active');
+
+    if (btn) {
+        if (isTV) {
+            btn.classList.add('active');
+            btn.textContent = "📺 Modo TV Activado (50\"-55\")";
+        } else {
+            btn.classList.remove('active');
+            btn.textContent = "📺 Modo TV 50\"-55\"";
+        }
+    }
+}
+
+function loadData() {
+    const savedSnapshot = localStorage.getItem(STORAGE_KEY);
+    if (savedSnapshot !== null) {
+        try {
+            const parsed = JSON.parse(savedSnapshot);
+            if (Array.isArray(parsed)) {
+                appData = parsed;
+                return;
+            }
+        } catch (error) {
+            console.error('No se pudieron leer los datos guardados localmente.', error);
+        }
+    }
+
+    const embeddedData = document.getElementById('embedded-app-data')?.textContent;
+    if (embeddedData && embeddedData.trim() !== 'null') {
+        try {
+            const parsed = JSON.parse(embeddedData);
+            if (Array.isArray(parsed)) {
+                appData = parsed;
+                return;
+            }
+            console.error('Los datos integrados en este HTML no tienen el formato esperado.');
+        } catch (error) {
+            console.error('No se pudieron leer los datos integrados en este HTML.', error);
+        }
+    }
+
+    // 1. Recorrer todas las posibles claves en localStorage para recopilar todas las ediciones previas
+    const candidateKeys = [
+        'configurador_preguntas_data_v4',
+        'configurador_preguntas_data_v3',
+        'configurador_preguntas_data_v2',
+        'configurador_preguntas_data_v1',
+        'configurador_preguntas_data'
+    ];
+
+    // Mapa de ediciones guardadas por concepto y fórmula
+    // customMap[conceptName.toLowerCase()][index] = { formula, proposal, customAnswer, showingProposal, showingAnswer }
+    const savedCustomizations = new Map();
+
+    for (const key of candidateKeys) {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(u => {
+                        (u.items || []).forEach(item => {
+                            const cName = (item.name || '').trim().toLowerCase();
+                            if (!savedCustomizations.has(cName)) {
+                                savedCustomizations.set(cName, []);
+                            }
+                            const arr = savedCustomizations.get(cName);
+                            (item.prompts || []).forEach((p, idx) => {
+                                if (typeof p === 'object' && p !== null) {
+                                    if (!arr[idx] || (p.proposal && !arr[idx].proposal) || (p.customAnswer && !arr[idx].customAnswer)) {
+                                        arr[idx] = Object.assign({}, arr[idx] || {}, p);
+                                    }
+                                } else if (typeof p === 'string' && p.trim()) {
+                                    if (!arr[idx]) {
+                                        arr[idx] = { text: p, formula: p };
+                                    }
+                                }
+                            });
+                        });
+                    });
+                }
+            } catch (e) {}
+        }
+    }
+
+    // 2. Tomar la estructura íntegra de los 65 conceptos del PDF
+    const base = JSON.parse(JSON.stringify(defaultUnitsData));
+
+    // 3. Fusionar las personalizaciones (propuestas editadas, respuestas editadas, estado bombilla)
+    base.forEach(u => {
+        (u.items || []).forEach(item => {
+            const cName = (item.name || '').trim().toLowerCase();
+            const savedList = savedCustomizations.get(cName);
+            if (savedList && savedList.length > 0) {
+                item.prompts = item.prompts.map((p, idx) => {
+                    const savedItem = savedList[idx];
+                    if (!savedItem) return p;
+                    const defFormula = (typeof p === 'object' ? p.formula : p);
+                    const defProposal = (typeof p === 'object' ? p.proposal : '');
+                    return {
+                        text: (typeof p === 'object' ? (p.text || p.formula) : p),
+                        formula: savedItem.formula || defFormula,
+                        proposal: savedItem.proposal || defProposal,
+                        customAnswer: savedItem.customAnswer || (typeof p === 'object' ? (p.customAnswer || '') : ''),
+                        showingProposal: (savedItem.showingProposal !== undefined) ? savedItem.showingProposal : false,
+                        showingAnswer: (savedItem.showingAnswer !== undefined) ? savedItem.showingAnswer : false
+                    };
+                });
+            }
+        });
+    });
+
+    appData = base;
+}
+function manualSave() {
+    saveData();
+    openSaveModal();
+}
+
+function openSaveModal() {
+    const modal = document.getElementById('save-modal-overlay');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function closeSaveModal() {
+    const modal = document.getElementById('save-modal-overlay');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+function saveData() {
+    const current = [];
+    document.querySelectorAll('.unit-section').forEach(unitSection => {
+        const titleEl = unitSection.querySelector('.unit-header-title');
+        const title = titleEl ? titleEl.textContent.trim() : 'UNIDAD';
+        const items = [];
+
+        unitSection.querySelectorAll('.item-card').forEach(itemCard => {
+            const titleInput = itemCard.querySelector('.editable-title');
+            const name = titleInput ? titleInput.value.trim() : '';
+
+            const prompts = [];
+            itemCard.querySelectorAll('.prompt-item-block').forEach(block => {
+                const pInput = block.querySelector('.editable-prompt');
+                const sBtn = block.querySelector('.btn-suggest');
+                const val = pInput ? pInput.value.trim() : '';
+                if (val) {
+                    const isShowing = sBtn ? sBtn.classList.contains('active') : false;
+                    const formula = sBtn ? (sBtn.dataset.formula || (isShowing ? '' : val)) : val;
+                    const proposal = sBtn ? (sBtn.dataset.proposal || (isShowing ? val : '')) : '';
+                    const ansInput = block.querySelector('.ans-text');
+                    const ansBtn = block.querySelector('.btn-answer');
+                    const isShowingAnswer = ansBtn ? ansBtn.classList.contains('active') : false;
+                    const customAnswer = (ansInput && ansInput.value.trim()) ? ansInput.value.trim() : (ansBtn ? (ansBtn.dataset.customAnswer || '') : '');
+
+                    prompts.push({
+                        text: val,
+                        formula: formula,
+                        proposal: proposal,
+                        showingProposal: isShowing,
+                        customAnswer: customAnswer,
+                        showingAnswer: isShowingAnswer
+                    });
+                }
+            });
+
+            items.push({ name, prompts });
+        });
+
+        current.push({ title, items });
+    });
+
+    appData = current;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    const embeddedData = document.getElementById('embedded-app-data');
+    if (embeddedData) embeddedData.textContent = JSON.stringify(appData);
+}
+
+function exportHTMLForGitHub() {
+    saveData();
+    const embeddedData = document.getElementById('embedded-app-data');
+    embeddedData.textContent = JSON.stringify(appData)
+        .replace(/</g, '\\u003c')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+
+    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = (location.pathname.split('/').pop() || 'configurador-preguntas.html');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+}
+
+function notifyUnsaved() {
+    // Modo silencioso: no muestra texto flotante invasivo
+}
+
+function renderEditor() {
+    const container = document.getElementById('units-container');
+    container.innerHTML = '';
+
+    if (!appData || appData.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding: 40px; color: #64748b; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
+                <p style="font-size: 1.1rem; margin-bottom: 12px;">El contenido está vacío.</p>
+                <button class="btn-reset-default" onclick="restoreDefaults()">🔄 Restaurar lista inicial con Unidades 1 a 6</button>
+            </div>
+        `;
+        return;
+    }
+
+    appData.forEach((unit, uIdx) => {
+        const unitEl = document.createElement('div');
+        unitEl.className = 'unit-section';
+        unitEl.dataset.unitIndex = uIdx;
+        unitEl.innerHTML = `
+            <div class="unit-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="drag-handle unit-drag" title="Arrastra para reordenar esta unidad">⠿</span>
+                    <span class="unit-header-title" contenteditable="true" spellcheck="false" title="Clic para editar el título de la unidad">${escapeHtml(unit.title)}</span>
+                </div>
+                <div class="unit-header-actions">
+                    <button class="add-item-btn" onclick="addNewConcept(${uIdx})">+ Añadir concepto</button>
+                    <button class="btn-remove-item" onclick="removeUnit(this)" title="Eliminar esta unidad entera">✖</button>
+                </div>
+            </div>
+            <div class="items-list" id="unit-items-${uIdx}"></div>
+        `;
+        const titleSpan = unitEl.querySelector('.unit-header-title');
+        titleSpan.addEventListener('input', notifyUnsaved);
+        setupUnitDragAndDrop(unitEl);
+        container.appendChild(unitEl);
+
+        const itemsContainer = unitEl.querySelector(`#unit-items-${uIdx}`);
+        (unit.items || []).forEach((item, iIdx) => {
+            const card = createItemCard(item, uIdx, iIdx);
+            itemsContainer.appendChild(card);
+        });
+    });
+
+    renumberItems();
+}
+
+function getProposalForPrompt(conceptName, promptText) {
+    if (typeof A1_PROPOSALS === 'undefined') return null;
+
+    const norm = (str) => (str || '')
+        .replace(/[:\.\?¿]/g, '')
+        .trim()
+        .toLowerCase();
+
+    const cClean = norm(conceptName);
+    const pClean = norm(promptText);
+
+    function findInMap(map) {
+        // 1. Coincidencia exacta de clave
+        for (const pKey in map) {
+            if (pClean === norm(pKey)) return map[pKey];
+        }
+        // 2. Prefijo más largo
+        const sortedKeys = Object.keys(map).sort((a, b) => b.length - a.length);
+        for (const pKey of sortedKeys) {
+            const pKeyClean = norm(pKey);
+            if (pClean.startsWith(pKeyClean) || pKeyClean.startsWith(pClean)) {
+                return map[pKey];
+            }
+        }
+        return Object.values(map)[0];
+    }
+
+    // 1. Prioridad: Coincidencia EXACTA de concepto
+    if (A1_PROPOSALS.by_concept) {
+        for (const cKey in A1_PROPOSALS.by_concept) {
+            if (cClean === norm(cKey)) {
+                return findInMap(A1_PROPOSALS.by_concept[cKey]);
+            }
+        }
+
+        // 2. Coincidencia parcial si no hubo exacta
+        for (const cKey in A1_PROPOSALS.by_concept) {
+            const cKeyClean = norm(cKey);
+            if (cClean.includes(cKeyClean) || cKeyClean.includes(cClean)) {
+                return findInMap(A1_PROPOSALS.by_concept[cKey]);
+            }
+        }
+    }
+
+    // 3. Fallback general por palabra interrogativa
+    if (A1_PROPOSALS.by_starter) {
+        for (const starter in A1_PROPOSALS.by_starter) {
+            const sClean = norm(starter);
+            if (pClean.startsWith(sClean) || sClean.startsWith(pClean)) {
+                return A1_PROPOSALS.by_starter[starter];
+            }
+        }
+    }
+
+    return null;
+}
+
+function createItemCard(item, uIdx, iIdx) {
+    const card = document.createElement('div');
+    card.className = 'item-card';
+
+    const header = document.createElement('div');
+    header.className = 'item-header';
+    header.innerHTML = `
+        <span class="drag-handle item-drag" title="Arrastra para reordenar este concepto">⠿</span>
+        <span class="item-num"></span>
+        <input type="text" class="editable-title" value="${escapeHtml(item.name)}" title="Clic para editar el nombre">
+        <button class="btn-remove-item" onclick="removeItem(this)" title="Eliminar este concepto">✖</button>
+    `;
+
+    const titleInput = header.querySelector('.editable-title');
+    titleInput.addEventListener('input', notifyUnsaved);
+
+    const qContainer = document.createElement('div');
+    qContainer.className = 'questions-container';
+
+    (item.prompts || []).forEach((p) => {
+        qContainer.appendChild(createPromptRow(p, item.name));
+    });
+
+    const addPBtn = document.createElement('button');
+    addPBtn.className = 'btn-add-prompt';
+    addPBtn.textContent = '+ Añadir fórmula/pregunta';
+    addPBtn.onclick = () => {
+        const newRow = createPromptRow('¿...', titleInput.value);
+        qContainer.insertBefore(newRow, addPBtn);
+        notifyUnsaved();
+        newRow.querySelector('input').focus();
+    };
+    qContainer.appendChild(addPBtn);
+
+    card.appendChild(header);
+    card.appendChild(qContainer);
+    setupItemDragAndDrop(card);
+    return card;
+}
+
+function getAnswerForPrompt(conceptName, promptText) {
+    if (typeof A1_ANSWERS === 'undefined') return null;
+
+    const norm = (str) => (str || '')
+        .replace(/[:\.\?¿]/g, '')
+        .trim()
+        .toLowerCase();
+
+    const cClean = norm(conceptName);
+    const pClean = norm(promptText);
+
+    function findInMap(map) {
+        // 1. Coincidencia exacta de clave
+        for (const pKey in map) {
+            if (pClean === norm(pKey)) return map[pKey];
+        }
+        // 2. Prefijo más largo
+        const sortedKeys = Object.keys(map).sort((a, b) => b.length - a.length);
+        for (const pKey of sortedKeys) {
+            const pKeyClean = norm(pKey);
+            if (pClean.startsWith(pKeyClean) || pKeyClean.startsWith(pClean)) {
+                return map[pKey];
+            }
+        }
+        return Object.values(map)[0];
+    }
+
+    if (A1_ANSWERS.by_concept) {
+        // 1. Coincidencia exacta de concepto
+        for (const cKey in A1_ANSWERS.by_concept) {
+            if (cClean === norm(cKey)) {
+                return findInMap(A1_ANSWERS.by_concept[cKey]);
+            }
+        }
+
+        // 2. Coincidencia parcial si no hubo exacta
+        for (const cKey in A1_ANSWERS.by_concept) {
+            const cKeyClean = norm(cKey);
+            if (cClean.includes(cKeyClean) || cKeyClean.includes(cClean)) {
+                return findInMap(A1_ANSWERS.by_concept[cKey]);
+            }
+        }
+    }
+
+    if (A1_ANSWERS.by_starter) {
+        for (const starter in A1_ANSWERS.by_starter) {
+            const sClean = norm(starter);
+            if (pClean.startsWith(sClean) || sClean.startsWith(pClean)) {
+                return A1_ANSWERS.by_starter[starter];
+            }
+        }
+    }
+
+    return "Sí / No / Muy bien.";
+}
+
+function createPromptRow(promptData, conceptName) {
+    const isObj = (typeof promptData === 'object' && promptData !== null);
+    const formulaVal = isObj ? (promptData.formula || promptData.text || '') : (promptData || '');
+    const proposalVal = isObj ? (promptData.proposal || '') : '';
+    const isShowingProposal = isObj ? (!!promptData.showingProposal) : false;
+    const customAns = isObj ? (promptData.customAnswer || '') : '';
+    const isShowingAnswer = isObj ? (!!promptData.showingAnswer) : false;
+
+    const displayVal = (isShowingProposal && proposalVal) ? proposalVal : (formulaVal || (isObj ? promptData.text : ''));
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'prompt-item-block';
+
+    const row = document.createElement('div');
+    row.className = 'question-row';
+    row.innerHTML = `
+        <button class="btn-answer ${isShowingAnswer ? 'active' : ''}" type="button" data-custom-answer="${escapeHtml(customAns)}" title="Mostrar/ocultar respuesta modelo para A1" onclick="toggleAnswer(this)">💬</button>
+        <button class="btn-suggest ${isShowingProposal ? 'active' : ''}" type="button" data-formula="${escapeHtml(formulaVal)}" data-proposal="${escapeHtml(proposalVal)}" title="Mostrar/ocultar propuesta A1 para esta pregunta" onclick="toggleProposal(this)">💡</button>
+        <span class="bullet">•</span>
+        <input type="text" class="editable-prompt" value="${escapeHtml(displayVal)}" title="Clic para editar el inicio de la pregunta">
+        <button class="btn-remove-prompt" onclick="removePrompt(this)" title="Quitar esta línea">✖</button>
+    `;
+
+    const ansBox = document.createElement('div');
+    ansBox.className = `answer-box ${isShowingAnswer ? 'visible' : ''}`;
+    ansBox.innerHTML = `
+        <span class="ans-label">R:</span>
+        <input type="text" class="ans-text" value="${escapeHtml(customAns)}" title="Clic para editar la respuesta modelo para A1">
+    `;
+
+    const input = row.querySelector('.editable-prompt');
+    const suggestBtn = row.querySelector('.btn-suggest');
+    const ansInput = ansBox.querySelector('.ans-text');
+    const ansBtn = row.querySelector('.btn-answer');
+
+    // Si se cargó visible y no tiene respuesta personalizada, calcular la sugerida inicial
+    if (isShowingAnswer && !customAns) {
+        ansInput.value = getAnswerForPrompt(conceptName, displayVal);
+    }
+
+    // Permitir editar la respuesta directamente
+    ansInput.addEventListener('input', () => {
+        ansBtn.dataset.customAnswer = ansInput.value;
+        ansBtn.dataset.userEditedAnswer = 'true';
+        notifyUnsaved();
+    });
+
+    // Edición de la pregunta/fórmula
+    input.addEventListener('input', () => {
+        if (suggestBtn.classList.contains('active')) {
+            suggestBtn.dataset.proposal = input.value;
+        } else {
+            suggestBtn.dataset.formula = input.value;
+        }
+
+        if (ansBtn && ansBtn.classList.contains('active')) {
+            updateAnswerText(ansBtn);
+        }
+        notifyUnsaved();
+    });
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(ansBox);
+    return wrapper;
+}
+
+function toggleAnswer(btn) {
+    const block = btn.closest('.prompt-item-block');
+    if (!block) return;
+    const ansBox = block.querySelector('.answer-box');
+    const ansInput = ansBox.querySelector('.ans-text');
+    const input = block.querySelector('.editable-prompt');
+    const card = block.closest('.item-card');
+    const conceptInput = card ? card.querySelector('.editable-title') : null;
+    const conceptName = conceptInput ? conceptInput.value.trim() : '';
+
+    if (btn.classList.contains('active')) {
+        // Guardar cualquier edición hecha antes de cerrar
+        btn.dataset.customAnswer = ansInput.value;
+        ansBox.classList.remove('visible');
+        btn.classList.remove('active');
+    } else {
+        // Al encender, actualizar siempre a la respuesta modelo según la pregunta actual
+        // (salvo que el usuario haya editado manualmente la respuesta)
+        let answer = btn.dataset.customAnswer;
+        if (!answer || !btn.dataset.userEditedAnswer) {
+            answer = getAnswerForPrompt(conceptName, input.value);
+            btn.dataset.customAnswer = answer;
+        }
+        ansInput.value = answer;
+        ansBox.classList.add('visible');
+        btn.classList.add('active');
+    }
+    notifyUnsaved();
+}
+
+function updateAnswerText(btn) {
+    const block = btn.closest('.prompt-item-block');
+    if (!block) return;
+    const ansBox = block.querySelector('.answer-box');
+    if (!ansBox) return;
+    const ansInput = ansBox.querySelector('.ans-text');
+    const input = block.querySelector('.editable-prompt');
+    const card = block.closest('.item-card');
+    const conceptInput = card ? card.querySelector('.editable-title') : null;
+    const conceptName = conceptInput ? conceptInput.value.trim() : '';
+
+    // Si el usuario no ha editado manualmente la respuesta, sincronizar con la pregunta
+    if (!btn.dataset.userEditedAnswer) {
+        const answer = getAnswerForPrompt(conceptName, input.value);
+        ansInput.value = answer;
+        btn.dataset.customAnswer = answer;
+    }
+}
+
+function toggleProposal(btn) {
+    const row = btn.closest('.question-row');
+    const input = row.querySelector('.editable-prompt');
+    const card = row.closest('.item-card');
+    const conceptInput = card ? card.querySelector('.editable-title') : null;
+    const conceptName = conceptInput ? conceptInput.value.trim() : '';
+
+    if (btn.classList.contains('active')) {
+        // La bombilla estaba encendida: guardar la edición hecha a la propuesta
+        btn.dataset.proposal = input.value;
+        // Restaurar a la frase inicial/fórmula
+        input.value = btn.dataset.formula || '¿...';
+        btn.classList.remove('active');
+    } else {
+        // La bombilla estaba apagada: guardar la edición hecha a la frase inicial/fórmula
+        btn.dataset.formula = input.value;
+
+        // Si ya hay una propuesta modificada previamente, usarla; si no, buscarla
+        let prop = btn.dataset.proposal;
+        if (!prop) {
+            prop = getProposalForPrompt(conceptName, btn.dataset.formula) || (btn.dataset.formula.replace(/\.+$/, '').trim() + ' ...?');
+            btn.dataset.proposal = prop;
+        }
+
+        input.value = prop;
+        btn.classList.add('active');
+    }
+
+    const ansBtn = row.querySelector('.btn-answer');
+    if (ansBtn && ansBtn.classList.contains('active')) {
+        updateAnswerText(ansBtn);
+    }
+    notifyUnsaved();
+}
+/* ========================================================
+   SOPORTE PARA ARRASTRAR Y REORDENAR (DRAG & DROP)
+   ======================================================== */
+let draggedUnit = null;
+let draggedItem = null;
+
+function setupUnitDragAndDrop(unitEl) {
+    const handle = unitEl.querySelector('.unit-drag');
+    if (!handle) return;
+
+    handle.addEventListener('mousedown', () => {
+        unitEl.setAttribute('draggable', 'true');
+    });
+
+    unitEl.addEventListener('dragstart', (e) => {
+        if (!unitEl.getAttribute('draggable')) {
+            e.preventDefault();
+            return;
+        }
+        draggedUnit = unitEl;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => unitEl.classList.add('dragging'), 0);
+    });
+
+    unitEl.addEventListener('dragend', () => {
+        unitEl.removeAttribute('draggable');
+        unitEl.classList.remove('dragging');
+        document.querySelectorAll('.unit-section').forEach(u => u.classList.remove('drag-over'));
+        draggedUnit = null;
+        renumberItems();
+        saveData();
+    });
+
+    unitEl.addEventListener('dragover', (e) => {
+        if (!draggedUnit || draggedUnit === unitEl) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        unitEl.classList.add('drag-over');
+    });
+
+    unitEl.addEventListener('dragleave', () => {
+        unitEl.classList.remove('drag-over');
+    });
+
+    unitEl.addEventListener('drop', (e) => {
+        if (!draggedUnit || draggedUnit === unitEl) return;
+        e.preventDefault();
+        unitEl.classList.remove('drag-over');
+
+        const container = document.getElementById('units-container');
+        const units = Array.from(container.children);
+        const fromIdx = units.indexOf(draggedUnit);
+        const toIdx = units.indexOf(unitEl);
+
+        if (fromIdx < toIdx) {
+            container.insertBefore(draggedUnit, unitEl.nextSibling);
+        } else {
+            container.insertBefore(draggedUnit, unitEl);
+        }
+        renumberItems();
+        saveData();
+    });
+}
+
+function setupItemDragAndDrop(itemCard) {
+    const handle = itemCard.querySelector('.item-drag');
+    if (!handle) return;
+
+    handle.addEventListener('mousedown', () => {
+        itemCard.setAttribute('draggable', 'true');
+    });
+
+    itemCard.addEventListener('dragstart', (e) => {
+        if (!itemCard.getAttribute('draggable')) {
+            e.preventDefault();
+            return;
+        }
+        draggedItem = itemCard;
+        e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+        setTimeout(() => itemCard.classList.add('dragging'), 0);
+    });
+
+    itemCard.addEventListener('dragend', () => {
+        itemCard.removeAttribute('draggable');
+        itemCard.classList.remove('dragging');
+        document.querySelectorAll('.item-card').forEach(it => it.classList.remove('drag-over'));
+        draggedItem = null;
+        renumberItems();
+        saveData();
+    });
+
+    itemCard.addEventListener('dragover', (e) => {
+        if (!draggedItem || draggedItem === itemCard) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        itemCard.classList.add('drag-over');
+    });
+
+    itemCard.addEventListener('dragleave', (e) => {
+        e.stopPropagation();
+        itemCard.classList.remove('drag-over');
+    });
+
+    itemCard.addEventListener('drop', (e) => {
+        if (!draggedItem || draggedItem === itemCard) return;
+        e.preventDefault();
+        e.stopPropagation();
+        itemCard.classList.remove('drag-over');
+
+        const parentList = itemCard.parentNode;
+        const items = Array.from(parentList.children);
+        const fromIdx = items.indexOf(draggedItem);
+        const toIdx = items.indexOf(itemCard);
+
+        if (fromIdx !== -1 && fromIdx < toIdx) {
+            parentList.insertBefore(draggedItem, itemCard.nextSibling);
+        } else {
+            parentList.insertBefore(draggedItem, itemCard);
+        }
+        renumberItems();
+        saveData();
+    });
+}
+
+function removePrompt(btn) {
+    const block = btn.closest('.prompt-item-block');
+    if (block) {
+        block.remove();
+    } else {
+        const row = btn.closest('.question-row');
+        if (row) row.remove();
+    }
+    notifyUnsaved();
+}
+
+function removeItem(btn) {
+    const card = btn.closest('.item-card');
+    card.remove();
+    renumberItems();
+    notifyUnsaved();
+}
+
+function removeUnit(btn) {
+    if (confirm("¿Seguro que deseas eliminar esta unidad completa?")) {
+        const unitEl = btn.closest('.unit-section');
+        if (unitEl) unitEl.remove();
+        renumberItems();
+        saveData();
+    }
+}
+
+function addNewUnit() {
+    saveData();
+    const nextNum = appData.length + 1;
+    const newUnit = {
+        title: `UNIDAD ${nextNum}`,
+        items: [
+            { name: "Nuevo concepto", prompts: ["¿..."] }
+        ]
+    };
+    appData.push(newUnit);
+    saveData();
+    renderEditor();
+    
+    // Enfocar el título de la nueva unidad
+    setTimeout(() => {
+        const unitEls = document.querySelectorAll('.unit-section');
+        if (unitEls.length > 0) {
+            const lastUnit = unitEls[unitEls.length - 1];
+            const titleEl = lastUnit.querySelector('.unit-header-title');
+            if (titleEl) {
+                titleEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                titleEl.focus();
+            }
+        }
+    }, 100);
+}
+
+function addNewConcept(uIdx) {
+    const list = document.getElementById(`unit-items-${uIdx}`);
+    const card = createItemCard({ name: "Nuevo concepto", prompts: ["¿..."] }, uIdx, 0);
+    list.appendChild(card);
+    renumberItems();
+    notifyUnsaved();
+    card.querySelector('.editable-title').focus();
+}
+
+function renumberItems() {
+    let count = 1;
+    document.querySelectorAll('.item-num').forEach(span => {
+        span.textContent = `${count}.`;
+        count++;
+    });
+}
+
+function clearAllContent() {
+    if (confirm("¿Estás seguro de que deseas borrar todo el contenido? Se guardará el estado vacío.")) {
+        appData = [];
+        renderEditor();
+        saveData();
+        notifyUnsaved();
+    }
+}
+
+function restoreDefaults() {
+    if (confirm("¿Deseas restaurar todas las unidades (1 a 6) a su contenido original?")) {
+        appData = JSON.parse(JSON.stringify(defaultUnitsData));
+        renderEditor();
+        saveData();
+    }
+}
+
+function escapeHtml(str) {
+    return (str || '').replace(/"/g, '&quot;');
+}
+
+function generateOutputText() {
+    let result = '';
+    let globalIndex = 1;
+
+    document.querySelectorAll('.unit-section').forEach(unitSection => {
+        const titleEl = unitSection.querySelector('.unit-header-title');
+        const unitTitle = titleEl ? titleEl.textContent.trim() : 'UNIDAD';
+        result += `### ${unitTitle}\n`;
+
+        unitSection.querySelectorAll('.item-card').forEach(itemCard => {
+            const titleInput = itemCard.querySelector('.editable-title');
+            const itemName = titleInput ? titleInput.value.trim() : '';
+
+            const prompts = [];
+            itemCard.querySelectorAll('.editable-prompt').forEach(pInput => {
+                const val = pInput.value.trim();
+                if (val) prompts.push(val);
+            });
+
+            if (itemName || prompts.length > 0) {
+                result += `${globalIndex}. ${itemName}:\n`;
+                prompts.forEach(p => {
+                    result += `   * ${p}\n`;
+                });
+                globalIndex++;
+            }
+        });
+        result += '\n';
+    });
+
+    const box = document.getElementById('output-box');
+    const textarea = document.getElementById('output-textarea');
+    const notice = document.getElementById('copy-notice');
+
+    textarea.value = result.trim();
+    box.classList.add('visible');
+    textarea.select();
+
+    try {
+        navigator.clipboard.writeText(result.trim());
+        notice.style.display = 'block';
+        setTimeout(() => { notice.style.display = 'none'; }, 4000);
+    } catch(e) {}
+}
+
+/* ========================================================
+   GENERACIÓN DE PDF EXACTO (A4, 2 COLUMNAS, ESTILO REPORTLAB)
+   ======================================================== */
+function generateAndDownloadPDF(exportMode) {
+    saveData(); // Asegurar datos frescos
+    if (!window.jspdf) {
+        alert("Cargando la librería de PDF. Por favor reintenta en unos instantes.");
+        return;
+    }
+
+    // exportMode: 'solo_respuestas' | 'ambos_bombillas' | 'solo_preguntas' | 'solo_apagadas'
+    if (!exportMode) exportMode = 'solo_preguntas';
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'p',
+        unit: 'pt',
+        format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const marginX = 16;
+    const marginTop = 50;
+    const marginBottom = 24;
+    const colGap = 12;
+    const totalAvailW = pageWidth - (marginX * 2);
+    const colW = (totalAvailW - colGap) / 2;
+    const colHeight = pageHeight - marginTop - marginBottom;
+
+    const unitStyles = {
+        "UNIDAD 1": { bg: [224, 231, 255], bar: [79, 70, 229] },
+        "UNIDAD 2": { bg: [220, 252, 231], bar: [22, 163, 74] },
+        "UNIDAD 3": { bg: [254, 243, 199], bar: [217, 119, 6] },
+        "UNIDAD 4": { bg: [252, 231, 243], bar: [219, 39, 119] },
+        "UNIDAD 5": { bg: [243, 232, 255], bar: [147, 51, 234] },
+        "UNIDAD 6": { bg: [207, 250, 254], bar: [8, 145, 178] },
+    };
+
+    let currentPage = 1;
+    let currentCol = 0;
+    let cursorY = marginTop;
+
+    function getColX() {
+        return marginX + (currentCol * (colW + colGap));
+    }
+
+    const LOGO_BASE64 = "data:image/png;base64,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";
+
+    function drawPageTemplate(pageNum) {
+        doc.saveGraphicsState();
+        
+        const logoSize = 25;
+        try {
+            doc.addImage(LOGO_BASE64, 'PNG', marginX, 15, logoSize, logoSize);
+        } catch(e) {}
+
+        const titleX = marginX + logoSize + 8;
+        doc.setFont('Helvetica', 'bolditalic');
+        doc.setFontSize(16);
+        doc.setTextColor(30, 58, 138);
+        doc.text("¡Comunícate!", titleX, 27);
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Instituto Cervantes • © Pr. Faouzi ELhilali", titleX, 38);
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text("Nombre y apellidos: ___________________________  Fecha: _______________", pageWidth - marginX - 12, 32, { align: 'right' });
+
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.8);
+        doc.line(marginX, 42, pageWidth - marginX, 42);
+
+        const dividerX = marginX + colW + (colGap / 2);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.8);
+        doc.line(dividerX, marginTop - 4, dividerX, pageHeight - marginBottom + 4);
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Español A1 • Instituto Cervantes • © Pr. Faouzi ELhilali", marginX, pageHeight - 18);
+        doc.text("Página " + pageNum, pageWidth - marginX, pageHeight - 18, { align: 'right' });
+
+        doc.restoreGraphicsState();
+    }
+
+    function advanceColumn() {
+        if (currentCol === 0) {
+            currentCol = 1;
+            cursorY = marginTop;
+        } else {
+            doc.addPage();
+            currentPage++;
+            currentCol = 0;
+            cursorY = marginTop;
+            drawPageTemplate(currentPage);
+        }
+    }
+
+    function checkFit(neededHeight) {
+        if (cursorY + neededHeight > pageHeight - marginBottom) {
+            advanceColumn();
+        }
+    }
+
+    drawPageTemplate(1);
+
+    let globalIndex = 1;
+
+    appData.forEach(unit => {
+        const items = unit.items || [];
+        if (items.length === 0) return;
+
+        let cleanTitle = (unit.title || '').replace(/^[\s﻿ \?\(⠿]+/, '').trim();
+        if (!cleanTitle) cleanTitle = 'UNIDAD';
+
+        const uStyle = unitStyles[cleanTitle.toUpperCase()] || { bg: [241, 245, 249], bar: [51, 65, 85] };
+        const unitHeaderH = 22;
+        checkFit(unitHeaderH + 20);
+
+        const colX = getColX();
+
+        doc.setFillColor(uStyle.bg[0], uStyle.bg[1], uStyle.bg[2]);
+        doc.rect(colX, cursorY, colW, unitHeaderH, 'F');
+
+        doc.setFillColor(uStyle.bar[0], uStyle.bar[1], uStyle.bar[2]);
+        doc.rect(colX, cursorY, 3.5, unitHeaderH, 'F');
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(cleanTitle.toUpperCase(), colX + 8, cursorY + 14);
+
+        cursorY += unitHeaderH + 4;
+
+        items.forEach(item => {
+            const prompts = item.prompts || [];
+            const headerRowH = 14;
+
+            const processedLines = [];
+            prompts.forEach(pItem => {
+                const isObj = (typeof pItem === 'object' && pItem !== null);
+                const formula = isObj ? (pItem.formula || pItem.text || '') : (pItem || '');
+                let proposal = isObj ? (pItem.proposal || '') : '';
+                if (!proposal) {
+                    proposal = getProposalForPrompt(item.name, formula) || formula;
+                }
+
+                let answer = isObj ? (pItem.customAnswer || '') : '';
+                if (!answer) {
+                    answer = getAnswerForPrompt(item.name, proposal || formula) || 'Sí / No.';
+                }
+
+                if (exportMode === 'solo_respuestas') {
+                    processedLines.push({ type: 'answer', text: answer });
+                } else if (exportMode === 'ambos_bombillas') {
+                    processedLines.push({ type: 'question', text: proposal, withDots: false });
+                    processedLines.push({ type: 'answer', text: answer });
+                } else if (exportMode === 'solo_preguntas') {
+                    processedLines.push({ type: 'question', text: proposal, withDots: true });
+                } else if (exportMode === 'solo_apagadas') {
+                    processedLines.push({ type: 'question', text: formula, withDots: true });
+                }
+            });
+
+            const promptRowH = (exportMode === 'ambos_bombillas') ? 12.5 : 12.5;
+            const itemH = headerRowH + (processedLines.length * promptRowH) + 3;
+
+            checkFit(itemH);
+
+            const x = getColX();
+            const y = cursorY;
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.6);
+            doc.rect(x, y, colW, itemH, 'FD');
+
+            doc.line(x, y + headerRowH, x + colW, y + headerRowH);
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(30, 58, 138);
+            const fullTitle = `${globalIndex}. ${item.name}:`;
+            doc.text(fullTitle, x + 5, y + 10);
+            globalIndex++;
+
+            let pY = y + headerRowH;
+            processedLines.forEach(line => {
+                if (line.type === 'question') {
+                    const cleanPrompt = line.text.replace(/\.+$/, '').trim();
+                    doc.setFont('Helvetica', 'bold');
+                    doc.setFontSize(8);
+                    doc.setTextColor(37, 99, 235);
+                    doc.text(cleanPrompt, x + 6, pY + 9);
+
+                    if (line.withDots) {
+                        const promptWidth = doc.getTextWidth(cleanPrompt);
+                        const dotsStartX = x + 6 + promptWidth;
+                        const dotsEndX = x + colW - 6;
+
+                        doc.setFont('Helvetica', 'normal');
+                        doc.setFontSize(7.5);
+                        doc.setTextColor(148, 163, 184);
+
+                        let dots = "";
+                        while (doc.getTextWidth(dots + ".") < (dotsEndX - dotsStartX)) {
+                            dots += ".";
+                        }
+                        doc.text(dots, dotsStartX, pY + 8.5);
+                    }
+                } else if (line.type === 'answer') {
+                    doc.setFont('Helvetica', 'bold');
+                    doc.setFontSize(8);
+                    doc.setTextColor(5, 150, 105);
+                    doc.text("R:", x + (exportMode === 'ambos_bombillas' ? 12 : 6), pY + 9);
+
+                    doc.setFont('Helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.setTextColor(6, 78, 59);
+                    const ansX = x + (exportMode === 'ambos_bombillas' ? 24 : 18);
+                    doc.text(line.text, ansX, pY + 9);
+                }
+
+                pY += promptRowH;
+            });
+
+            cursorY += itemH + 3.5;
+        });
+
+        cursorY += 4;
+    });
+
+    const fileNames = {
+        'solo_respuestas': "respuestas-unidades-1-6.pdf",
+        'ambos_bombillas': "preguntas-y-respuestas-unidades-1-6.pdf",
+        'solo_preguntas': "preguntas-propuestas-unidades-1-6.pdf",
+        'solo_apagadas': "formulas-ventanilla-unidades-1-6.pdf"
+    };
+
+    doc.save(fileNames[exportMode] || "preguntas-unidades-1-6.pdf");
+}
+
+// Inicialización
+loadData();
+renderEditor();
+</script>
+</body>
+</html>

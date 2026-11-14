@@ -1027,11 +1027,93 @@
         }
 
         .projection-content {
+            position: relative;
             flex: 1;
             min-height: 0;
             display: grid;
             place-items: center;
             overflow: auto;
+        }
+
+        .projection-navigation-button {
+            position: absolute;
+            top: 50%;
+            z-index: 3;
+            display: grid;
+            place-items: center;
+            width: clamp(42px, 5vw, 64px);
+            height: clamp(42px, 5vw, 64px);
+            padding: 0;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            background: #1e3a8a;
+            color: #ffffff;
+            font-size: clamp(1.6rem, 3vw, 2.4rem);
+            line-height: 1;
+            cursor: pointer;
+            transform: translateY(-50%);
+            box-shadow: 0 4px 14px rgba(30, 58, 138, 0.3);
+        }
+
+        .projection-navigation-button:hover {
+            background: #172554;
+        }
+
+        .projection-navigation-button[hidden] {
+            display: none;
+        }
+
+        .projection-navigation-prev {
+            left: clamp(4px, 1.5vw, 20px);
+        }
+
+        .projection-navigation-next {
+            right: clamp(4px, 1.5vw, 20px);
+        }
+
+        .projection-sequence-counter {
+            color: #475569;
+            font-size: clamp(0.85rem, 1.8vw, 1.15rem);
+            font-weight: 800;
+        }
+
+        .projection-selection-list {
+            display: grid;
+            gap: 7px;
+            max-height: min(45vh, 360px);
+            overflow-y: auto;
+            padding: 2px;
+        }
+
+        .projection-selection-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 9px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+            cursor: pointer;
+        }
+
+        .projection-selection-option input {
+            margin-top: 3px;
+            accent-color: var(--primary);
+        }
+
+        .projection-selection-info {
+            display: grid;
+            gap: 2px;
+        }
+
+        .projection-selection-name {
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .projection-selection-category {
+            color: #64748b;
+            font-size: 0.82rem;
         }
 
         .projection-table-card {
@@ -1217,6 +1299,7 @@
             <div class="verb-entry-actions" style="display:flex; gap:8px; align-items:center;">
                 <button class="btn-sec search-hide-during-search" onclick="selectAllInView()">✓ Marcar visibles</button>
                 <button class="btn-sec search-hide-during-search" onclick="clearSelection()">✕ Desmarcar todos</button>
+                <button class="btn-sec" type="button" onclick="openProjectionSelectionModal()" title="Elegir varias tablas de una misma unidad para presentarlas con flechas">🎞️ Presentar varias</button>
                 <button class="btn-add-verb" onclick="openAddVerbModal()">
                     ✨ + Añadir verbo personalizado
                 </button>
@@ -5538,10 +5621,22 @@ function confirmRestoreDefaults() {
 function init() {
     loadEmbeddedDefaultsIfStorageIsEmpty();
     document.addEventListener('keydown', event => {
+        const projection = document.getElementById('projection-modal');
+        if (projection.classList.contains('active') && event.key === 'ArrowLeft') {
+            event.preventDefault();
+            navigateProjectionSequence(-1);
+            return;
+        }
+        if (projection.classList.contains('active') && event.key === 'ArrowRight') {
+            event.preventDefault();
+            navigateProjectionSequence(1);
+            return;
+        }
         if (event.key === 'Escape') {
-            const projection = document.getElementById('projection-modal');
             if (document.getElementById('restore-defaults-modal').classList.contains('active')) {
                 closeRestoreDefaultsModal();
+            } else if (document.getElementById('projection-selection-modal').classList.contains('active')) {
+                closeProjectionSelectionModal();
             } else if (projection.classList.contains('active')) {
                 closeProjectionMode();
             } else if (document.getElementById('message-modal').classList.contains('active')) {
@@ -5555,6 +5650,7 @@ function init() {
         const projection = document.getElementById('projection-modal');
         if (!document.fullscreenElement && projection.classList.contains('active')) {
             projection.classList.remove('active');
+            resetProjectionSequence();
         }
     });
     loadCustomUnits();
@@ -5923,12 +6019,152 @@ const PROJECTION_MODES = [
     { label: '📺 TV 66″', width: '1880px', title: 'clamp(2.3rem, 3.8vw, 4rem)', cell: 'clamp(2.1rem, 3.7vw, 4.4rem)', padding: 'clamp(18px, 2.6vh, 32px) clamp(28px, 3.4vw, 52px)' }
 ];
 let projectionModeIndex = 0;
+let projectionSequenceKeys = [];
+let projectionSequenceIndex = 0;
+const selectedProjectionKeys = new Set();
 
-async function openVerbProjection(key) {
+function openProjectionSelectionModal() {
+    const unitSelect = document.getElementById('projection-selection-unit');
+    const availableUnits = UNITS_INFO.filter(unit =>
+        unit.num > 0 && VERBS.some(verb => verb.unit === unit.num)
+    );
+    if (availableUnits.length === 0) {
+        showMessageModal('No hay elementos en ninguna unidad para presentar.', {
+            title: 'Sin elementos'
+        });
+        return;
+    }
+
+    unitSelect.replaceChildren(...availableUnits.map(unit =>
+        new Option(unit.title, String(unit.num))
+    ));
+    const firstSelectedVerb = VERBS.find(verb => selectedVerbs.has(getVerbKey(verb)));
+    const preferredUnit = currentUnitFilter > 0
+        ? currentUnitFilter
+        : firstSelectedVerb?.unit;
+    unitSelect.value = String(
+        availableUnits.find(unit => unit.num === preferredUnit)?.num ?? availableUnits[0].num
+    );
+    selectedProjectionKeys.clear();
+    renderProjectionSelectionOptions();
+    document.getElementById('projection-selection-modal').classList.add('active');
+}
+
+function closeProjectionSelectionModal() {
+    document.getElementById('projection-selection-modal').classList.remove('active');
+}
+
+function changeProjectionSelectionUnit() {
+    selectedProjectionKeys.clear();
+    renderProjectionSelectionOptions();
+}
+
+function renderProjectionSelectionOptions() {
+    const unitNum = Number(document.getElementById('projection-selection-unit').value);
+    const list = document.getElementById('projection-selection-options');
+    list.replaceChildren();
+    const verbs = VERBS.filter(verb => verb.unit === unitNum);
+
+    if (verbs.length === 0) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Esta unidad no tiene elementos.';
+        list.appendChild(empty);
+    }
+
+    verbs.forEach(verb => {
+        const key = getVerbKey(verb);
+        const label = document.createElement('label');
+        label.className = 'projection-selection-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedProjectionKeys.has(key);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) selectedProjectionKeys.add(key);
+            else selectedProjectionKeys.delete(key);
+            updateProjectionSelectionCount();
+        });
+
+        const info = document.createElement('span');
+        info.className = 'projection-selection-info';
+        const name = document.createElement('span');
+        name.className = 'projection-selection-name';
+        name.textContent = verb.infinitive;
+        const category = document.createElement('span');
+        category.className = 'projection-selection-category';
+        category.textContent = verb.category;
+        info.append(name, category);
+        label.append(checkbox, info);
+        list.appendChild(label);
+    });
+
+    updateProjectionSelectionCount();
+}
+
+function updateProjectionSelectionCount() {
+    const count = selectedProjectionKeys.size;
+    document.getElementById('projection-selection-count').textContent =
+        `${count} ${count === 1 ? 'elemento seleccionado' : 'elementos seleccionados'}`;
+    document.getElementById('projection-selection-start').disabled = count === 0;
+}
+
+function setAllProjectionSelection(checked) {
+    const unitNum = Number(document.getElementById('projection-selection-unit').value);
+    selectedProjectionKeys.clear();
+    if (checked) {
+        VERBS.filter(verb => verb.unit === unitNum)
+            .forEach(verb => selectedProjectionKeys.add(getVerbKey(verb)));
+    }
+    renderProjectionSelectionOptions();
+}
+
+function startProjectionSequence() {
+    const unitNum = Number(document.getElementById('projection-selection-unit').value);
+    const keys = VERBS
+        .filter(verb => verb.unit === unitNum && selectedProjectionKeys.has(getVerbKey(verb)))
+        .map(getVerbKey);
+    if (keys.length === 0) return;
+
+    closeProjectionSelectionModal();
+    openVerbProjection(keys[0], keys, 0);
+}
+
+function updateProjectionSequenceNavigation() {
+    const hasSequence = projectionSequenceKeys.length > 1;
+    document.getElementById('projection-previous').hidden = !hasSequence;
+    document.getElementById('projection-next').hidden = !hasSequence;
+    const counter = document.getElementById('projection-sequence-counter');
+    counter.hidden = !hasSequence;
+    counter.textContent = hasSequence
+        ? `${projectionSequenceIndex + 1} / ${projectionSequenceKeys.length}`
+        : '';
+}
+
+function navigateProjectionSequence(direction) {
+    if (projectionSequenceKeys.length < 2) return;
+    projectionSequenceIndex = (
+        projectionSequenceIndex + direction + projectionSequenceKeys.length
+    ) % projectionSequenceKeys.length;
+    openVerbProjection(
+        projectionSequenceKeys[projectionSequenceIndex],
+        projectionSequenceKeys,
+        projectionSequenceIndex,
+        false
+    );
+}
+
+function resetProjectionSequence() {
+    projectionSequenceKeys = [];
+    projectionSequenceIndex = 0;
+    updateProjectionSequenceNavigation();
+}
+
+async function openVerbProjection(key, sequence = [key], index = 0, requestFullscreen = true) {
     const verb = VERBS.find(item => getVerbKey(item) === key);
     if (!verb) return;
 
-    projectionModeIndex = 0;
+    projectionSequenceKeys = sequence;
+    projectionSequenceIndex = index;
+    if (requestFullscreen) projectionModeIndex = 0;
     const projection = document.getElementById('projection-modal');
     const unit = UNITS_INFO.find(item => item.num === verb.unit);
     const accent = '#6b7280';
@@ -5958,18 +6194,21 @@ async function openVerbProjection(key) {
         </div>
         <table class="projection-table"><tbody>${rows}</tbody></table>
     `;
-    document.getElementById('projection-status').textContent = 'Pulsa Escape o × para salir.';
+    document.getElementById('projection-status').textContent = projectionSequenceKeys.length > 1
+        ? 'Usa las flechas o las teclas ← y → para cambiar de elemento. Pulsa Escape o × para salir.'
+        : 'Pulsa Escape o × para salir.';
+    updateProjectionSequenceNavigation();
     updateProjectionMode();
     projection.classList.add('active');
 
-    if (typeof projection.requestFullscreen === 'function') {
+    if (requestFullscreen && typeof projection.requestFullscreen === 'function') {
         try {
             await projection.requestFullscreen();
         } catch (error) {
             document.getElementById('projection-status').textContent =
                 'El navegador no permitió activar la pantalla completa. Usa F11 para ampliarla.';
         }
-    } else {
+    } else if (requestFullscreen) {
         document.getElementById('projection-status').textContent =
             'El navegador no admite pantalla completa; el modo de exposición ocupa la ventana disponible.';
     }
@@ -6011,6 +6250,7 @@ async function closeProjectionMode() {
         }
     }
     projection.classList.remove('active');
+    resetProjectionSequence();
 }
 
 function selectAllInView() {
@@ -6775,15 +7015,43 @@ ellos/ellas/ustedes: comen</pre>
     </div>
 </div>
 
+<div class="modal-overlay" id="projection-selection-modal" role="dialog" aria-modal="true" aria-labelledby="projection-selection-title" onclick="if(event.target===this)closeProjectionSelectionModal()">
+    <div class="modal-card" style="max-width: 560px;">
+        <div class="modal-header">
+            <h3 id="projection-selection-title">🎞️ Presentar varios elementos</h3>
+            <button class="modal-close" type="button" onclick="closeProjectionSelectionModal()" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom: 12px;">Elige una unidad y marca los elementos que quieres ver uno por uno en pantalla grande.</p>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label for="projection-selection-unit">Unidad</label>
+                <select id="projection-selection-unit" onchange="changeProjectionSelectionUnit()"></select>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                <button class="btn-sec" type="button" onclick="setAllProjectionSelection(true)">✓ Marcar todos</button>
+                <button class="btn-sec" type="button" onclick="setAllProjectionSelection(false)">✕ Desmarcar</button>
+                <span id="projection-selection-count" style="margin-left:auto; color:#64748b; font-size:0.85rem;">0 elementos seleccionados</span>
+            </div>
+            <div class="projection-selection-list" id="projection-selection-options"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-sec" type="button" onclick="closeProjectionSelectionModal()">Cancelar</button>
+            <button class="btn-main" type="button" id="projection-selection-start" onclick="startProjectionSequence()" disabled>🖥️ Ver en pantalla grande</button>
+        </div>
+    </div>
+</div>
+
 <div class="projection-overlay" id="projection-modal" role="dialog" aria-modal="true" aria-label="Modo de exposición" style="--projection-max-width: 390px; --projection-title-size: clamp(1.15rem, 4.2vw, 1.6rem); --projection-cell-size: clamp(1rem, 3.8vw, 1.3rem); --projection-cell-padding: clamp(8px, 1.5vh, 12px) clamp(10px, 3vw, 16px);">
     <div class="projection-topbar">
         <div class="projection-title">Modo de exposición</div>
+        <span class="projection-sequence-counter" id="projection-sequence-counter" hidden></span>
         <div class="projection-actions">
             <button class="projection-screen-switch" id="projection-screen-switch" type="button" onclick="switchProjectionMode()" title="Cambiar entre móvil, tablet, PC y pantallas de TV" aria-label="Pantalla objetivo: Móvil. Pulsa para cambiar.">📱 Móvil</button>
             <button class="projection-close" type="button" onclick="closeProjectionMode()" aria-label="Salir del modo de exposición" title="Salir">×</button>
         </div>
     </div>
     <div class="projection-content">
+        <button class="projection-navigation-button projection-navigation-prev" type="button" id="projection-previous" onclick="navigateProjectionSequence(-1)" aria-label="Elemento anterior" title="Elemento anterior" hidden>‹</button>
         <div class="projection-table-card" id="projection-table-card" style="--projection-accent: #6b7280;">
         <div class="projection-table-heading">
             <div class="projection-table-title">PREOCUPAR</div>
@@ -6791,6 +7059,7 @@ ellos/ellas/ustedes: comen</pre>
         </div>
         <table class="projection-table"><tbody><tr><td><span class="projection-pronoun">A mí</span></td><td><span class="projection-form" data-blank="false">me preocupa/n</span></td></tr><tr><td><span class="projection-pronoun">A ti</span></td><td><span class="projection-form" data-blank="false">te preocupa/n</span></td></tr><tr><td><span class="projection-pronoun">A él / ella / usted</span></td><td><span class="projection-form" data-blank="false">le preocupa/n</span></td></tr><tr><td><span class="projection-pronoun">A nosotros / nosotras</span></td><td><span class="projection-form" data-blank="false">nos preocupa/n</span></td></tr><tr><td><span class="projection-pronoun">A vosotros / vosotras</span></td><td><span class="projection-form" data-blank="false">os preocupa/n</span></td></tr><tr><td><span class="projection-pronoun">A ellos / ellas / ustedes</span></td><td><span class="projection-form" data-blank="false">les preocupa/n</span></td></tr></tbody></table>
     </div>
+        <button class="projection-navigation-button projection-navigation-next" type="button" id="projection-next" onclick="navigateProjectionSequence(1)" aria-label="Elemento siguiente" title="Elemento siguiente" hidden>›</button>
     </div>
     <div class="projection-status" id="projection-status" role="status">Pulsa Escape o × para salir.</div>
 </div>

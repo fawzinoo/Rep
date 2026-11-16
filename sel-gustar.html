@@ -11294,6 +11294,38 @@ body.chat-typing .chat-footer {
 .top-title {
     box-sizing: border-box !important;
 }
+
+/* Asegura que la cara oculta no intercepte los toques sobre las opciones. */
+#flashcard-container {
+    -webkit-perspective: 1000px !important;
+    perspective: 1000px !important;
+}
+
+.flashcard, .results-card, .front, .back {
+    -webkit-transform-style: preserve-3d !important;
+    transform-style: preserve-3d !important;
+}
+
+.front, .back {
+    -webkit-backface-visibility: hidden !important;
+    backface-visibility: hidden !important;
+}
+
+.flashcard.flipped {
+    -webkit-transform: rotateY(180deg) !important;
+    transform: rotateY(180deg) !important;
+}
+
+.back {
+    -webkit-transform: rotateY(180deg) !important;
+    transform: rotateY(180deg) !important;
+}
+
+.flashcard.flipped .front,
+.flashcard:not(.flipped) .back {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
 </style></head>
 <body>
 
@@ -33593,7 +33625,8 @@ function showMultipleChoice(backElement, correctAnswer) {
         }, { passive: true });
 
         // Event listener para manejo de clics
-        optionButton.addEventListener('click', () => {
+        optionButton.addEventListener('click', event => {
+            event.stopPropagation();
             handleMultipleChoiceSelection(optionButton, correctAnswer, backElement);
         });
         
@@ -34876,6 +34909,10 @@ function attachFlashcardHandlers() {
 
         card.addEventListener('click', (e) => {
             console.log(`Click en tarjeta. canFlip: ${canFlip}, voiceAttempts: ${voiceAttempts}, flipped: ${card.classList.contains('flipped')}`);
+            const clickedOption = e.target instanceof Element
+                ? e.target.closest('.multiple-choice-option')
+                : null;
+            if (clickedOption) return;
             if (!canFlip) {
                 console.log('Volteo bloqueado por canFlip');
                 // Mantener totalmente inmóvil sin feedback
@@ -34886,12 +34923,6 @@ function attachFlashcardHandlers() {
             
             const backElement = card.querySelector('.back');
             if (card.classList.contains('flipped')) {
-                // Si el clic fue SOBRE una opción, no gestionar flip aquí
-                const clickedOption = e.target.closest('.multiple-choice-option');
-                if (clickedOption) {
-                    // Dejar que el manejador de opciones procese el clic
-                    return;
-                }
                 // Permitir volver a front al clicar fuera del área de opciones,
                 // incluso después del primer intento.
                 console.log('Volteando a front desde back (clic fuera de opciones)');

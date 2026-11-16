@@ -931,6 +931,33 @@
             box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
         }
 
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .modal-btn-cancel {
+            background: #e2e8f0;
+            color: #1e293b;
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 10px 24px;
+            border: 1px solid #cbd5e1;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal-btn-cancel:hover {
+            background: #cbd5e1;
+        }
+
+        .modal-btn-cancel[hidden] {
+            display: none;
+        }
+
         @keyframes modalFadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -973,8 +1000,8 @@
             <button class="btn-export-html" onclick="exportHTMLForGitHub()" title="Descargar una copia HTML con los datos actuales integrados">
                 ⬇️ HTML para GitHub
             </button>
-            <button class="btn-reset-default" onclick="restoreDefaults()" title="Restaurar la lista original completa">
-                🔄 Restaurar lista inicial
+            <button class="btn-reset-default" onclick="restoreDefaults()" title="Restaurar las preguntas y respuestas por defecto">
+                🔄 Restaurar por defecto
             </button>
             <button class="btn-clear-all" onclick="clearAllContent()" title="Vaciar todo el contenido">
                 🗑️ Borrar contenido
@@ -1026,6 +1053,18 @@
             Todos los cambios han sido guardados correctamente en la memoria de tu navegador.
         </div>
         <button class="modal-btn-ok" onclick="closeSaveModal()">De acuerdo</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="app-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="app-modal-title" aria-describedby="app-modal-message" onclick="if(event.target===this)closeAppModal(false)">
+    <div class="modal-card">
+        <span class="modal-icon" id="app-modal-icon">ℹ️</span>
+        <div class="modal-title" id="app-modal-title">Aviso</div>
+        <div class="modal-message" id="app-modal-message"></div>
+        <div class="modal-actions">
+            <button class="modal-btn-cancel" id="app-modal-cancel" onclick="closeAppModal(false)">Cancelar</button>
+            <button class="modal-btn-ok" id="app-modal-confirm" onclick="closeAppModal(true)">Aceptar</button>
+        </div>
     </div>
 </div>
 
@@ -2737,6 +2776,43 @@ function closeSaveModal() {
     }
 }
 
+let appModalAction = null;
+let appModalPreviousFocus = null;
+
+function openAppModal({ title, message, icon = 'ℹ️', confirmText = 'Aceptar', cancelText = 'Cancelar', onConfirm = null }) {
+    const overlay = document.getElementById('app-modal-overlay');
+    const cancelButton = document.getElementById('app-modal-cancel');
+    document.getElementById('app-modal-icon').textContent = icon;
+    document.getElementById('app-modal-title').textContent = title;
+    document.getElementById('app-modal-message').textContent = message;
+    document.getElementById('app-modal-confirm').textContent = confirmText;
+    cancelButton.textContent = cancelText;
+    cancelButton.hidden = !onConfirm;
+    appModalAction = onConfirm;
+    appModalPreviousFocus = document.activeElement;
+    overlay.classList.add('active');
+    (onConfirm ? cancelButton : document.getElementById('app-modal-confirm')).focus();
+}
+
+function closeAppModal(confirmed = false) {
+    const overlay = document.getElementById('app-modal-overlay');
+    if (!overlay?.classList.contains('active')) return;
+    overlay.classList.remove('active');
+    const action = appModalAction;
+    const previousFocus = appModalPreviousFocus;
+    appModalAction = null;
+    appModalPreviousFocus = null;
+    if (previousFocus?.isConnected) previousFocus.focus();
+    if (confirmed && action) action();
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('app-modal-overlay').classList.contains('active')) {
+        event.preventDefault();
+        closeAppModal(false);
+    }
+});
+
 function saveData() {
     const current = [];
     document.querySelectorAll('.unit-section').forEach(unitSection => {
@@ -2817,7 +2893,7 @@ function renderEditor() {
         container.innerHTML = `
             <div style="text-align:center; padding: 40px; color: #64748b; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
                 <p style="font-size: 1.1rem; margin-bottom: 12px;">El contenido está vacío.</p>
-                <button class="btn-reset-default" onclick="restoreDefaults()">🔄 Restaurar lista inicial con Unidades 1 a 6</button>
+                <button class="btn-reset-default" onclick="restoreDefaults()">🔄 Restaurar por defecto</button>
             </div>
         `;
         return;
@@ -3302,12 +3378,19 @@ function removeItem(btn) {
 }
 
 function removeUnit(btn) {
-    if (confirm("¿Seguro que deseas eliminar esta unidad completa?")) {
-        const unitEl = btn.closest('.unit-section');
-        if (unitEl) unitEl.remove();
-        renumberItems();
-        saveData();
-    }
+    const unitEl = btn.closest('.unit-section');
+    if (!unitEl) return;
+    openAppModal({
+        title: 'Eliminar unidad',
+        message: '¿Seguro que deseas eliminar esta unidad completa?',
+        icon: '⚠️',
+        confirmText: 'Eliminar',
+        onConfirm: () => {
+            if (unitEl.isConnected) unitEl.remove();
+            renumberItems();
+            saveData();
+        }
+    });
 }
 
 function addNewUnit() {
@@ -3355,20 +3438,32 @@ function renumberItems() {
 }
 
 function clearAllContent() {
-    if (confirm("¿Estás seguro de que deseas borrar todo el contenido? Se guardará el estado vacío.")) {
-        appData = [];
-        renderEditor();
-        saveData();
-        notifyUnsaved();
-    }
+    openAppModal({
+        title: 'Borrar contenido',
+        message: '¿Estás seguro de que deseas borrar todo el contenido? Se guardará el estado vacío.',
+        icon: '⚠️',
+        confirmText: 'Borrar',
+        onConfirm: () => {
+            appData = [];
+            renderEditor();
+            saveData();
+            notifyUnsaved();
+        }
+    });
 }
 
 function restoreDefaults() {
-    if (confirm("¿Deseas restaurar todas las unidades (1 a 6) a su contenido original?")) {
-        appData = JSON.parse(JSON.stringify(defaultUnitsData));
-        renderEditor();
-        saveData();
-    }
+    openAppModal({
+        title: 'Restaurar por defecto',
+        message: '¿Deseas restaurar las preguntas y respuestas por defecto?',
+        icon: '🔄',
+        confirmText: 'Restaurar',
+        onConfirm: () => {
+            appData = JSON.parse(JSON.stringify(defaultUnitsData));
+            renderEditor();
+            saveData();
+        }
+    });
 }
 
 function escapeHtml(str) {
@@ -3426,7 +3521,11 @@ function generateOutputText() {
 function generateAndDownloadPDF(exportMode) {
     saveData(); // Asegurar datos frescos
     if (!window.jspdf) {
-        alert("Cargando la librería de PDF. Por favor reintenta en unos instantes.");
+        openAppModal({
+            title: 'PDF no disponible',
+            message: 'La librería de PDF todavía se está cargando. Por favor, inténtalo de nuevo en unos instantes.',
+            icon: 'ℹ️'
+        });
         return;
     }
 

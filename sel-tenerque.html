@@ -295,7 +295,7 @@ html.startup-modal-pending { overflow: hidden; }
         /* Estilo de la parte trasera */
         .back {
     width: 100%;
-    background: linear-gradient(to bottom, rgba(73, 115, 189, 0.95), rgba(14, 40, 92, 0.9)); /* Fondo azul oscuro */
+    background: linear-gradient(135deg, #e0b108 0%, #efdc9a 100%) !important;
     color: #ffffff; /* Color del texto */
     transform: rotateY(180deg); /* Rotación para el efecto */
     padding: 20px; /* Margen interno */
@@ -11346,6 +11346,11 @@ body.initial-modal-open #flashcard-container {
                 })();
             </script>
             <style id="tenerque-card-layout">
+                .back {
+                    background: linear-gradient(135deg, #e0b108 0%, #efdc9a 100%) !important;
+                    color: #ffffff !important;
+                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important;
+                }
                 .front-pronoun{max-width:92%!important;white-space:normal!important;text-align:center!important;font-size:clamp(1.55rem,5vw,3rem)!important;line-height:1.14!important}
                 .back-verb-main{max-width:94%!important;white-space:normal!important;text-align:center!important;font-size:clamp(1.45rem,4.4vw,2.7rem)!important;line-height:1.22!important}
                 .tenerque-revealed-answer{width:100%!important;margin:0!important;animation:respuestaGlow 1.5s infinite}
@@ -11354,6 +11359,19 @@ body.initial-modal-open #flashcard-container {
                 .tenerque-revealed-answer .answer-line:first-child{margin-bottom:.28em}
                 .tenerque-revealed-answer .back-reflexive{margin-bottom:.2em;display:inline-flex;flex-direction:column;align-items:center;color:#facc15!important;text-shadow:0 2px 4px rgba(0,0,0,.78),0 0 16px rgba(250,204,21,.25)!important}
                 .tenerque-revealed-answer .back-reflexive::after{content:"";display:block;width:clamp(58px,8vw,92px);height:3px;margin-top:.22em;border-radius:999px;background:linear-gradient(90deg,rgba(250,204,21,.18),#facc15,rgba(250,204,21,.18));box-shadow:0 2px 5px rgba(0,0,0,.4)}
+
+                /* Reducción a la mitad del tamaño de respuestas en reverso para PC */
+                @media (min-width: 769px) {
+                    .respuesta-correcta {
+                        font-size: clamp(1.2rem, 2.75vw, 2.05rem) !important;
+                    }
+                    .back-verb-main {
+                        font-size: clamp(1.1rem, 2.2vw, 1.7rem) !important;
+                    }
+                    .tenerque-revealed-answer .back-verb-main.stacked-answer {
+                        font-size: clamp(1.0rem, 2.0vw, 1.45rem) !important;
+                    }
+                }
             </style>
             
 
@@ -13171,14 +13189,22 @@ function playSuccessSound() {
 }
 
 function showCountdown(card) {
-    // Elimina cualquier timer previo
+    // REPRODUCIR SONIDO DE NAIPE al cambiar de tarjeta
+    const shuffleSound = document.getElementById('shuffleSound');
+    if (shuffleSound) shuffleSound.play().catch(() => {});
+    
     const back = card.querySelector('.back');
+    
+    // Elimina cualquier timer previo
     back.querySelectorAll('.countdown-inline').forEach(el => el.remove());
 
     // Verificar si es la última tarjeta (tras marcar la actual como completada, remaining debe ser 0 si era la última)
     const flashcards = Array.from(document.querySelectorAll('.flashcard'));
     const remainingCards = flashcards.filter((_, index) => !completedCards.has(index)).length;
     const isLastCard = remainingCards <= 0;
+
+    // Buscar el contenedor de opciones múltiples para agregar el countdown debajo
+    const multipleChoiceContainer = back.querySelector('.multiple-choice-container');
 
     // Crea el contenedor del timer
     const timerDiv = document.createElement('div');
@@ -13190,7 +13216,15 @@ function showCountdown(card) {
         </div>
         <div class="countdown-inline-text">${messageText}</div>
     `;
-    back.appendChild(timerDiv);
+
+    // Si existe el contenedor de opciones múltiples, agregar debajo; si no, agregar al back
+    if (multipleChoiceContainer) {
+        // Marcar que hay countdown para poder ajustar el layout en desktop
+        multipleChoiceContainer.classList.add('has-countdown');
+        multipleChoiceContainer.appendChild(timerDiv);
+    } else {
+        back.appendChild(timerDiv);
+    }
 
     let count = 3;
     const numberSpan = timerDiv.querySelector('.countdown-inline-number');
@@ -14978,20 +15012,7 @@ function closeFlagModal() {
 
 
 const baseUrl = 'https://fawzinoo.github.io/audios/';
-const audioFiles = [
-    'tener-1.wav',
-    'tener-2.wav',
-    'tener-3.wav',
-    'tener-3.wav',
-    'tener-3.wav',
-    'tener-4.wav',
-    'tener-4.wav',
-    'tener-5.wav',
-    'tener-5.wav',
-    'tener-6.wav',
-    'tener-6.wav',
-    'tener-6.wav'
-];
+const audioFiles = Array.from({ length: 30 }, (_, i) => "tenerque-" + (i + 1) + ".wav");
 
 const audios = Array.from({ length: 50 }, (_, index) => {
     const audio = new Audio();
@@ -15001,47 +15022,71 @@ const audios = Array.from({ length: 50 }, (_, index) => {
     return audio;
 });
 
-// Normalizador y mapa para resolver el audio correcto según el nombre del país
-function stripLeadingArticle(str) {
-    return (str || '')
-        .replace(/^\s*(el|la|los|las|un|una|unos|unas)\s+/i, '')
-        .trim();
-}
+// Respuestas oficiales de tener que para asociar a cada tarjeta su audio exacto tenerque-1.wav a tenerque-30.wav
+const tenerqueAudioAnswers = [
+    'Yo tengo que hacer la maleta',
+    'Tú tienes que comprar el billete',
+    'Ana tiene que llevar un sombrero',
+    'Nosotros tenemos que buscar un hotel',
+    'Ellos tienen que cambiar dinero',
+    'El guía tiene que hablar inglés',
+    'Vosotros tenéis que alquilar un coche',
+    'María y Juan tienen que comprar agua',
+    'Yo tengo que llevar el pasaporte',
+    'Tú tienes que llevar ropa cómoda',
+    'Usted tiene que pagar el taxi',
+    'Nosotros tenemos que ir al aeropuerto',
+    'Los viajeros tienen que comer algo',
+    'Mi hermano tiene que buscar la estación',
+    'Vosotras tenéis que tomar un tren',
+    'Yo tengo que comprar crema solar',
+    'Tú tienes que preguntar la dirección',
+    'El grupo tiene que esperar el autobús',
+    'Nosotras tenemos que comprar regalos',
+    'Ellos tienen que buscar las maletas',
+    'Carlos tiene que llevar una cámara',
+    'Ustedes tienen que leer la guía',
+    'Yo tengo que llevar gafas de sol',
+    'Tú tienes que tomar un taxi',
+    'Marta tiene que dormir en el hotel',
+    'Nosotros tenemos que estudiar español',
+    'Ellos tienen que comprar un mapa',
+    'Vosotros tenéis que llamar por teléfono',
+    'El turista tiene que sacar fotos',
+    'Yo tengo que escribir mensajes'
+];
 
-function normalizeAudioKey(str) {
-    return stripLeadingArticle(str || '')
+function normalizeTextForAudio(str) {
+    return (str || '')
         .toLowerCase()
         .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // quitar acentos
-        .replace(/[^a-z]/g, '');          // solo letras (sin espacios/guiones)
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
 }
 
-const audioFilenameByKey = {};
-audioFiles.forEach(file => {
-    const base = file.replace(/\.(mp3|wav)$/i, '');
-    const key = normalizeAudioKey(base);
-    audioFilenameByKey[key] = file; // guarda el nombre de archivo original
+const audioFileByNormalizedAnswer = {};
+tenerqueAudioAnswers.forEach((ans, i) => {
+    const norm = normalizeTextForAudio(ans);
+    audioFileByNormalizedAnswer[norm] = "tenerque-" + (i + 1) + ".wav";
 });
 
 function getAudioSrcForCountryName(textoBack) {
-    const key = normalizeAudioKey(textoBack);
-    if (!key) return null;
-    const mapping = {
-        tengo: 'tener-1.wav',
-        tienes: 'tener-2.wav',
-        tiene: 'tener-3.wav',
-        tenemos: 'tener-4.wav',
-        teneis: 'tener-5.wav',
-        tienen: 'tener-6.wav'
-    };
-    const file = mapping[key] || audioFilenameByKey[key];
-    return file ? baseUrl + file : null;
-}
-
-// Alias para discrepancias de nombres entre el texto mostrado y el archivo de audio
-// Evita que tarjetas como "Brasil" (archivo brazil.mp3) queden sin src y bloqueen el flujo
-if (audioFilenameByKey['brazil'] && !audioFilenameByKey['brasil']) {
-    audioFilenameByKey['brasil'] = audioFilenameByKey['brazil'];
+    if (!textoBack) return null;
+    const clean = String(textoBack).trim();
+    
+    // 1. Si coincide con tenerque-X
+    const matchId = clean.match(/^tenerque-(\d+)$/i);
+    if (matchId) {
+        return baseUrl + "tenerque-" + matchId[1] + ".wav";
+    }
+    
+    // 2. Por texto normalizado de la frase
+    const norm = normalizeTextForAudio(clean);
+    if (audioFileByNormalizedAnswer[norm]) {
+        return baseUrl + audioFileByNormalizedAnswer[norm];
+    }
+    
+    return null;
 }
 
 // Helper robusto para saber si un índice de audio tiene realmente una fuente válida
@@ -15239,37 +15284,219 @@ function getCountryText(backElement) {
 const cardOptionsCache = new Map(); // key: índice de tarjeta, value: array de opciones en orden
 
 // === SISTEMA DE OPCIONES MÚLTIPLES ===
-// Función para generar opciones de selección múltiple
-function generateMultipleChoiceOptions(correctAnswer) {
-    // Obtener todas las respuestas posibles de las tarjetas
-    const allAnswers = flashcards.map(card => {
-        return getBackTextFromCard(card);
-    }).filter(answer => answer && answer !== correctAnswer);
+// Mapa de distractores con errores gramaticales, sintácticos y morfológicos para cada frase
+const customDistractors = {
+    'Yo tengo que hacer la maleta': [
+        'Yo tiene que hacer la maleta',
+        'Yo tengo de hacer la maleta',
+        'Yo tengo que hago la maleta'
+    ],
+    'Tú tienes que comprar el billete': [
+        'Tú tiene que comprar el billete',
+        'Tú tienes a comprar el billete',
+        'Tú tienes que compras el billete'
+    ],
+    'Ana tiene que llevar un sombrero': [
+        'Ana tienen que llevar un sombrero',
+        'Ana tiene de llevar un sombrero',
+        'Ana tiene que lleva un sombrero'
+    ],
+    'Nosotros tenemos que buscar un hotel': [
+        'Nosotros tienen que buscar un hotel',
+        'Nosotros tenemos a buscar un hotel',
+        'Nosotros tenemos que buscamos un hotel'
+    ],
+    'Ellos tienen que cambiar dinero': [
+        'Ellos tiene que cambiar dinero',
+        'Ellos tienen de cambiar dinero',
+        'Ellos tienen que cambian dinero'
+    ],
+    'El guía tiene que hablar inglés': [
+        'El guía tienes que hablar inglés',
+        'El guía tiene hablar inglés',
+        'El guía tiene que habla inglés'
+    ],
+    'Vosotros tenéis que alquilar un coche': [
+        'Vosotros tienen que alquilar un coche',
+        'Vosotros tenéis de alquilar un coche',
+        'Vosotros tenéis que alquiláis un coche'
+    ],
+    'María y Juan tienen que comprar agua': [
+        'María y Juan tiene que comprar agua',
+        'María y Juan tienen a comprar agua',
+        'María y Juan tienen que compran agua'
+    ],
+    'Yo tengo que llevar el pasaporte': [
+        'Yo tienes que llevar el pasaporte',
+        'Yo tengo de llevar el pasaporte',
+        'Yo tengo que llevo el pasaporte'
+    ],
+    'Tú tienes que llevar ropa cómoda': [
+        'Tú tengo que llevar ropa cómoda',
+        'Tú tienes por llevar ropa cómoda',
+        'Tú tienes que llevas ropa cómoda'
+    ],
+    'Usted tiene que pagar el taxi': [
+        'Usted tienes que pagar el taxi',
+        'Usted tiene pagar el taxi',
+        'Usted tiene que paga el taxi'
+    ],
+    'Nosotros tenemos que ir al aeropuerto': [
+        'Nosotros tenéis que ir al aeropuerto',
+        'Nosotros tenemos de ir al aeropuerto',
+        'Nosotros tenemos que vamos al aeropuerto'
+    ],
+    'Los viajeros tienen que comer algo': [
+        'Los viajeros tiene que comer algo',
+        'Los viajeros tienen a comer algo',
+        'Los viajeros tienen que comen algo'
+    ],
+    'Mi hermano tiene que buscar la estación': [
+        'Mi hermano tienen que buscar la estación',
+        'Mi hermano tiene de buscar la estación',
+        'Mi hermano tiene que busca la estación'
+    ],
+    'Vosotras tenéis que tomar un tren': [
+        'Vosotras tenemos que tomar un tren',
+        'Vosotras tenéis tomar un tren',
+        'Vosotras tenéis que tomáis un tren'
+    ],
+    'Yo tengo que comprar crema solar': [
+        'Yo tiene que comprar crema solar',
+        'Yo tengo a comprar crema solar',
+        'Yo tengo que compro crema solar'
+    ],
+    'Tú tienes que preguntar la dirección': [
+        'Tú tiene que preguntar la dirección',
+        'Tú tienes de preguntar la dirección',
+        'Tú tienes que preguntas la dirección'
+    ],
+    'El grupo tiene que esperar el autobús': [
+        'El grupo tienen que esperar el autobús',
+        'El grupo tiene a esperar el autobús',
+        'El grupo tiene que espera el autobús'
+    ],
+    'Nosotras tenemos que comprar regalos': [
+        'Nosotras tienen que comprar regalos',
+        'Nosotras tenemos de comprar regalos',
+        'Nosotras tenemos que compramos regalos'
+    ],
+    'Ellos tienen que buscar las maletas': [
+        'Ellos tiene que buscar las maletas',
+        'Ellos tienen a buscar las maletas',
+        'Ellos tienen que buscan las maletas'
+    ],
+    'Carlos tiene que llevar una cámara': [
+        'Carlos tienes que llevar una cámara',
+        'Carlos tiene de llevar una cámara',
+        'Carlos tiene que lleva una cámara'
+    ],
+    'Ustedes tienen que leer la guía': [
+        'Ustedes tiene que leer la guía',
+        'Ustedes tienen leer la guía',
+        'Ustedes tienen que leen la guía'
+    ],
+    'Yo tengo que llevar gafas de sol': [
+        'Yo tienen que llevar gafas de sol',
+        'Yo tengo por llevar gafas de sol',
+        'Yo tengo que llevo gafas de sol'
+    ],
+    'Tú tienes que tomar un taxi': [
+        'Tú tengo que tomar un taxi',
+        'Tú tienes a tomar un taxi',
+        'Tú tienes que tomas un taxi'
+    ],
+    'Marta tiene que dormir en el hotel': [
+        'Marta tienen que dormir en el hotel',
+        'Marta tiene de dormir en el hotel',
+        'Marta tiene que duerme en el hotel'
+    ],
+    'Nosotros tenemos que estudiar español': [
+        'Nosotros tienen que estudiar español',
+        'Nosotros tenemos a estudiar español',
+        'Nosotros tenemos que estudiamos español'
+    ],
+    'Ellos tienen que comprar un mapa': [
+        'Ellos tiene que comprar un mapa',
+        'Ellos tienen de comprar un mapa',
+        'Ellos tienen que compran un mapa'
+    ],
+    'Vosotros tenéis que llamar por teléfono': [
+        'Vosotros tienen que llamar por teléfono',
+        'Vosotros tenéis llamar por teléfono',
+        'Vosotros tenéis que llamáis por teléfono'
+    ],
+    'El turista tiene que sacar fotos': [
+        'El turista tienes que sacar fotos',
+        'El turista tiene de sacar fotos',
+        'El turista tiene que saca fotos'
+    ],
+    'Yo tengo que escribir mensajes': [
+        'Yo tiene que escribir mensajes',
+        'Yo tengo a escribir mensajes',
+        'Yo tengo que escribo mensajes'
+    ]
+};
 
-    const availableOptions = [...new Set(allAnswers)];
+// Función auxiliar para generar errores morfosintácticos dinámicos como respaldo
+function generateGrammarErrorVariants(sentence) {
+    const pattern = /(tengo que|tienes que|tiene que|tenemos que|tenéis que|tienen que)/i;
+    const match = sentence.match(pattern);
+    if (!match) return [];
     
-    // Seleccionar 3 opciones incorrectas aleatorias
-    const incorrectOptions = [];
-    const shuffledOptions = [...availableOptions].sort(() => Math.random() - 0.5);
+    const form = match[0];
+    const parts = sentence.split(pattern);
+    const subject = parts[0];
+    const task = parts[2] ? parts[2].trim() : '';
+    const taskWords = task.split(' ');
+    const verb = taskWords[0] || '';
+    const rest = taskWords.slice(1).join(' ');
+
+    const forms = ['tengo que', 'tienes que', 'tiene que', 'tenemos que', 'tenéis que', 'tienen que'];
+    const otherForms = forms.filter(f => f.toLowerCase() !== form.toLowerCase());
+    const wrongConjugation = otherForms[Math.floor(Math.random() * otherForms.length)];
+
+    const vLower = verb.toLowerCase();
+    let wrongVerbForm = verb;
+    if (vLower.endsWith('ar')) wrongVerbForm = verb.slice(0, -2) + 'a';
+    else if (vLower.endsWith('er')) wrongVerbForm = verb.slice(0, -2) + 'e';
+    else if (vLower.endsWith('ir')) wrongVerbForm = verb.slice(0, -2) + 'e';
+
+    const cleanSubject = subject.trim();
+    const cleanRest = rest ? ' ' + rest : '';
+
+    return [
+        (cleanSubject + ' ' + wrongConjugation + ' ' + verb + cleanRest).trim(),
+        (cleanSubject + ' ' + form.replace(/\s+que$/i, ' de') + ' ' + verb + cleanRest).trim(),
+        (cleanSubject + ' ' + form + ' ' + wrongVerbForm + cleanRest).trim()
+    ];
+}
+
+// Función para generar opciones de selección múltiple con errores sobre la misma respuesta
+function generateMultipleChoiceOptions(correctAnswer) {
+    const trimmedCorrect = (correctAnswer || '').trim();
+    let incorrectOptions = [];
     
-    for (let i = 0; i < shuffledOptions.length && incorrectOptions.length < 3; i++) {
-        if (shuffledOptions[i] !== correctAnswer) {
-            incorrectOptions.push(shuffledOptions[i]);
+    if (customDistractors[trimmedCorrect]) {
+        incorrectOptions = [...customDistractors[trimmedCorrect]];
+    } else {
+        incorrectOptions = generateGrammarErrorVariants(trimmedCorrect);
+    }
+    
+    // Si hicieran falta opciones adicionales, completar
+    if (incorrectOptions.length < 3) {
+        const allAnswers = flashcards.map(card => getBackTextFromCard(card)).filter(ans => ans && ans.trim() !== trimmedCorrect);
+        const shuffled = [...new Set(allAnswers)].sort(() => Math.random() - 0.5);
+        for (let opt of shuffled) {
+            if (incorrectOptions.length >= 3) break;
+            if (!incorrectOptions.includes(opt)) incorrectOptions.push(opt);
         }
     }
     
-    // Si no alcanzan 3 opciones, reutilizar algunas del conjunto disponible
-    for (let i = 0; i < availableOptions.length && incorrectOptions.length < 3; i++) {
-        const option = availableOptions[i];
-        if (!incorrectOptions.includes(option) && option !== correctAnswer) {
-            incorrectOptions.push(option);
-        }
-    }
-    
-    // Crear array con todas las opciones y mezclarlo
-    const allOptions = [correctAnswer, ...incorrectOptions.slice(0, 3)];
+    const allOptions = [trimmedCorrect, ...incorrectOptions.slice(0, 3)];
     return allOptions.sort(() => Math.random() - 0.5);
 }
+
 
 // Función para mostrar las opciones de selección múltiple
 function showMultipleChoice(backElement, correctAnswer) {
@@ -15464,9 +15691,10 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
                 // Limpiar y mostrar respuesta correcta
                 backElement.innerHTML = '';
                 const respuestaCorrecta = document.createElement('div');
+                respuestaCorrecta.className = 'respuesta-correcta';
                 respuestaCorrecta.textContent = correctAnswer;
                 respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
-                respuestaCorrecta.style.fontSize = 'clamp(2.4rem, 5.5vw, 4.1rem)';
+                respuestaCorrecta.style.fontSize = 'clamp(1.2rem, 2.75vw, 2.05rem)';
                 respuestaCorrecta.style.fontWeight = 'bold';
                 respuestaCorrecta.style.color = '#1a202c'; /* Color oscuro elegante que contrasta con fondo beis */
                 respuestaCorrecta.style.textAlign = 'center';
@@ -15579,10 +15807,11 @@ function attachFlashcardHandlers() {
                         saveGameProgress();
                     }
                     const respuestaCorrecta = document.createElement('div');
+                    respuestaCorrecta.className = 'respuesta-correcta';
                     respuestaCorrecta.textContent = correctWord;
                     respuestaCorrecta.style.animation = 'respuestaGlow 1.5s infinite';
                     respuestaCorrecta.style.marginTop = '40px';
-                    respuestaCorrecta.style.fontSize = 'clamp(2.4rem, 5.5vw, 4.1rem)';
+                    respuestaCorrecta.style.fontSize = 'clamp(1.2rem, 2.75vw, 2.05rem)';
                     respuestaCorrecta.style.fontWeight = 'bold';
                     respuestaCorrecta.style.color = '#1a202c';
                     respuestaCorrecta.style.textAlign = 'center';

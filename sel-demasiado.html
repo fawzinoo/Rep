@@ -15394,35 +15394,148 @@ function getCountryText(backElement) {
 const cardOptionsCache = new Map(); // key: índice de tarjeta, value: array de opciones en orden
 
 // === SISTEMA DE OPCIONES MÚLTIPLES ===
+// Distractores basados en errores comunes de alumnos (sintaxis, morfología y ortografía)
+// generados a partir de la misma respuesta correcta.
+const DEMASIADO_DISTRACTORS_MAP = {
+    "me gusta demasiado viajar": [
+        "me demasiado gusta viajar",
+        "yo gusta demasiado viajar",
+        "me gusta demasiada viajar"
+    ],
+    "¿te encanta bastante la música?": [
+        "te encanta bastante la música?",
+        "¿te bastante encanta la música?",
+        "¿tú encanta bastante la música?"
+    ],
+    "le interesa mucho aprender idiomas": [
+        "le mucho interesa aprender idiomas",
+        "él interesa mucho aprender idiomas",
+        "le interesa mucha aprender idiomas"
+    ],
+    "nos gusta poco el cine": [
+        "nos poco gusta el cine",
+        "nosotros gusta poco el cine",
+        "nos gusta poca el cine"
+    ],
+    "no os encanta nada bailar": [
+        "os encanta nada bailar",
+        "no os nada encanta bailar",
+        "no vosotros encanta nada bailar"
+    ],
+    "les interesa demasiado la tecnología": [
+        "les interesa demasiado la tecnologia",
+        "les demasiado interesa la tecnología",
+        "les interesa demasiada la tecnología"
+    ],
+    "me encanta mucho cocinar": [
+        "me mucho encanta cocinar",
+        "yo encanta mucho cocinar",
+        "me encanta mucha cocinar"
+    ],
+    "¿te interesa poco la historia?": [
+        "te interesa poco la historia?",
+        "¿te poco interesa la historia?",
+        "¿te interesa poca la historia?"
+    ],
+    "le gusta bastante el fútbol": [
+        "le gusta bastante el futbol",
+        "le bastante gusta el fútbol",
+        "le gusta bastantes el fútbol"
+    ],
+    "no nos interesa nada leer": [
+        "nos interesa nada leer",
+        "no nos nada interesa leer",
+        "no nosotros interesa nada leer"
+    ],
+    "¿os gusta demasiado la moda?": [
+        "os gusta demasiado la moda?",
+        "¿os demasiado gusta la moda?",
+        "¿os gusta demasiada la moda?"
+    ],
+    "les encanta mucho cantar": [
+        "les mucho encanta cantar",
+        "ellos encanta mucho cantar",
+        "les encanta mucha cantar"
+    ],
+    "me interesa bastante la ciencia": [
+        "me bastante interesa la ciencia",
+        "yo interesa bastante la ciencia",
+        "me interesa bastantes la ciencia"
+    ],
+    "no te gusta nada madrugar": [
+        "te gusta nada madrugar",
+        "no te nada gusta madrugar",
+        "no tú gusta nada madrugar"
+    ],
+    "le encanta poco el arte": [
+        "le poco encanta el arte",
+        "él encanta poco el arte",
+        "le encanta poca el arte"
+    ],
+    "nos encanta demasiado salir con amigos": [
+        "nos demasiado encanta salir con amigos",
+        "nosotros encanta demasiado salir con amigos",
+        "nos encanta demasiada salir con amigos"
+    ],
+    "¿os interesa bastante conocer culturas?": [
+        "os interesa bastante conocer culturas?",
+        "¿os bastante interesa conocer culturas?",
+        "¿os interesa bastantes conocer culturas?"
+    ],
+    "les gusta poco el deporte": [
+        "les poco gusta el deporte",
+        "ellos gusta poco el deporte",
+        "les gusta poca el deporte"
+    ],
+    "me gusta mucho descansar": [
+        "me mucho gusta descansar",
+        "yo gusta mucho descansar",
+        "me gusta mucha descansar"
+    ],
+    "no les interesa nada la política": [
+        "no les interesa nada la politica",
+        "les interesa nada la política",
+        "no les nada interesa la política"
+    ]
+};
+
 // Función para generar opciones de selección múltiple
 function generateMultipleChoiceOptions(correctAnswer) {
-    // Obtener todas las respuestas posibles de las tarjetas
+    const norm = String(correctAnswer || "").trim();
+    let distractors = DEMASIADO_DISTRACTORS_MAP[norm];
+
+    // Fallback si no está en el mapa: buscar por coincidencia normalizada
+    if (!distractors) {
+        const foundKey = Object.keys(DEMASIADO_DISTRACTORS_MAP).find(k => 
+            k.toLowerCase().trim() === norm.toLowerCase()
+        );
+        if (foundKey) {
+            distractors = DEMASIADO_DISTRACTORS_MAP[foundKey];
+        }
+    }
+
+    if (distractors && distractors.length >= 3) {
+        // Mezclar las opciones correctas e incorrectas
+        const allOptions = [norm, ...distractors.slice(0, 3)];
+        for (let i = allOptions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allOptions[i], allOptions[j]] = [allOptions[j], allOptions[i]];
+        }
+        return allOptions;
+    }
+
+    // Fallback secundario de seguridad con respuestas de otras tarjetas
     const allAnswers = flashcards.map(card => {
         return getBackTextFromCard(card);
     }).filter(answer => answer && answer !== correctAnswer);
 
     const availableOptions = [...new Set(allAnswers)];
-    
-    // Seleccionar 3 opciones incorrectas aleatorias
-    const incorrectOptions = [];
+    const fallbackIncorrect = [];
     const shuffledOptions = [...availableOptions].sort(() => Math.random() - 0.5);
-    
-    for (let i = 0; i < shuffledOptions.length && incorrectOptions.length < 3; i++) {
-        if (shuffledOptions[i] !== correctAnswer) {
-            incorrectOptions.push(shuffledOptions[i]);
-        }
+    for (let i = 0; i < shuffledOptions.length && fallbackIncorrect.length < 3; i++) {
+        if (shuffledOptions[i] !== correctAnswer) fallbackIncorrect.push(shuffledOptions[i]);
     }
-    
-    // Si no alcanzan 3 opciones, reutilizar algunas del conjunto disponible
-    for (let i = 0; i < availableOptions.length && incorrectOptions.length < 3; i++) {
-        const option = availableOptions[i];
-        if (!incorrectOptions.includes(option) && option !== correctAnswer) {
-            incorrectOptions.push(option);
-        }
-    }
-    
-    // Crear array con todas las opciones y mezclarlo
-    const allOptions = [correctAnswer, ...incorrectOptions.slice(0, 3)];
+    const allOptions = [correctAnswer, ...fallbackIncorrect.slice(0, 3)];
     return allOptions.sort(() => Math.random() - 0.5);
 }
 

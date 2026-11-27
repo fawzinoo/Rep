@@ -11958,7 +11958,9 @@ body.initial-modal-open #flashcard-container {
                 .calendar-x{position:absolute;color:#dc2626;font-size:1.02rem;font-weight:1000;text-shadow:1px 1px 0 #fff}
                 .calendar-activity{max-width:100%;color:#fff;font-family:'Poppins',sans-serif;font-size:clamp(1.05rem,3.2vw,1.55rem);font-weight:850;line-height:1.16;text-align:center;text-wrap:balance;text-shadow:0 4px 14px rgba(0,0,0,.46)}
                 .frequency-answer-card{width:min(92%,570px);padding:24px}
-                .frequency-answer-main{display:block!important;max-width:96%!important;font-size:clamp(1.15rem,2.6vw,1.65rem)!important;line-height:1.18!important;text-align:center;color:#1f2937!important;text-shadow:2px 2px 0 #fff,0 7px 18px rgba(31,41,55,.16)!important}
+                .frequency-answer-main{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:0.22em!important;width:100%!important;max-width:96%!important;font-size:clamp(1.15rem,2.5vw,1.6rem)!important;line-height:1.18!important;text-align:center;color:#1f2937!important;text-shadow:2px 2px 0 #fff,0 7px 18px rgba(31,41,55,.16)!important}
+                .frequency-answer-main .answer-line{display:block!important;width:100%!important;max-width:100%!important;text-align:center!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;color:#1f2937!important;text-shadow:2px 2px 0 #fff,0 7px 18px rgba(31,41,55,.16)!important}
+                .mas-revealed-answer .frequency-answer-main .answer-line{display:block!important;width:100%!important;max-width:100%!important;text-align:center!important;white-space:normal!important;color:#1f2937!important;text-shadow:2px 2px 0 #fff,0 7px 18px rgba(31,41,55,.16)!important}
                 .frequency-adverb{color:#2563eb;font-weight:900;text-shadow:2px 2px 0 #fff,0 5px 15px rgba(37,99,235,.22)}
                 .reflexive-verb-unit{display:inline-block;white-space:nowrap}
                 @media(max-width:420px){.calendar-front-card{width:95%;padding:10px}.month-calendar{padding:7px}.calendar-grid{gap:2px}.calendar-day{height:27px}.frequency-answer-main{font-size:clamp(1.0rem,4.2vw,1.35rem)!important}}
@@ -12013,10 +12015,39 @@ body.initial-modal-open #flashcard-container {
                         }).join('');
                         return `<div class="month-calendar" aria-label="Calendario de marzo: ${item.adverb}"><div class="calendar-month">MARZO</div><div class="calendar-grid">${weekdayCells}${emptyCells}${dayCells}</div></div>`;
                     };
+                    const splitFrequencySentenceIntoTwo = (sentence) => {
+                        const clean = String(sentence || "").replace(/\s+/g, " ").trim();
+                        const words = clean.split(" ").filter(Boolean);
+                        if (words.length <= 2) {
+                            return [clean, ""];
+                        }
+                        let bestIndex = 1;
+                        let bestDifference = Infinity;
+                        for (let i = 1; i < words.length; i++) {
+                            const left = words.slice(0, i).join(" ");
+                            const right = words.slice(i).join(" ");
+                            const diff = Math.abs(left.length - right.length);
+                            if (diff < bestDifference) {
+                                bestDifference = diff;
+                                bestIndex = i;
+                            }
+                        }
+                        return [words.slice(0, bestIndex).join(" "), words.slice(bestIndex).join(" ")];
+                    };
                     const highlightAdverb = (sentence,adverb) => {
                         const withReflexiveUnit = sentence.replace(/\b(me|te|se|nos|os)\s+([a-záéíóúüñ]+)/gi,(match,pronoun,verb)=>`<span class="reflexive-verb-unit">${pronoun} ${verb}</span>`);
-                        return withReflexiveUnit.replace(new RegExp(adverb,'i'),match=>`<span class="frequency-adverb">${match}</span>`);
+                        return withReflexiveUnit.replace(new RegExp(adverb,"i"),match=>`<span class="frequency-adverb">${match}</span>`);
                     };
+                    const renderSegmentedFrequencySentence = (sentence, adverb) => {
+                        const parts = splitFrequencySentenceIntoTwo(sentence);
+                        const p1 = highlightAdverb(parts[0], adverb);
+                        const p2 = parts[1] ? highlightAdverb(parts[1], adverb) : "";
+                        if (!p2) {
+                            return `<span class="answer-line">${p1}</span>`;
+                        }
+                        return `<span class="answer-line">${p1}</span><span class="answer-line">${p2}</span>`;
+                    };
+                    window.renderSegmentedFrequencySentence = renderSegmentedFrequencySentence;
                     window.FRECUENCIA_CARD_DATA = cardData.map(item => ({...item}));
                     window.FRECUENCIA_ADVERBS = ['siempre','casi siempre','a menudo','de vez en cuando','casi nunca','nunca'];
                     const container = document.getElementById('flashcard-container');
@@ -12027,7 +12058,7 @@ body.initial-modal-open #flashcard-container {
                         card.dataset.answer=item.sentence;
                         card.dataset.cardId=`frecuencia-${index+1}`;
                         card.dataset.frequencyAdverb=item.adverb;
-                        card.innerHTML=`<div class="front"><div class="calendar-front-card"><div class="calendar-subject">${item.subject}</div>${buildCalendar(item)}<div class="calendar-activity">${item.activity}</div></div><span class="front-verb-tag frequency-front-title">(casi)siempre. a menudo. de vez en cuando. (casi)nunca. nunca</span></div><div class="back" data-original-text="${item.sentence}"><div class="back-conjugation article-answer-card frequency-answer-card"><span class="back-verb-main frequency-answer-main">${highlightAdverb(item.sentence,item.adverb)}</span></div></div>`;
+                        card.innerHTML=`<div class="front"><div class="calendar-front-card"><div class="calendar-subject">${item.subject}</div>${buildCalendar(item)}<div class="calendar-activity">${item.activity}</div></div><span class="front-verb-tag frequency-front-title">(casi)siempre. a menudo. de vez en cuando. (casi)nunca. nunca</span></div><div class="back" data-original-text="${item.sentence}"><div class="back-conjugation article-answer-card frequency-answer-card"><span class="back-verb-main frequency-answer-main">${renderSegmentedFrequencySentence(item.sentence,item.adverb)}</span></div></div>`;
                         container.appendChild(card);
                     });
                 })();
@@ -13333,11 +13364,15 @@ function buildMasMenosRevealedAnswer(value, cardContext = null) {
         const subject = text.slice(0, match.index).trim();
         const task = text.slice(match.index + match[0].length).trim();
         answer.innerHTML = `<span class="answer-line">${subject}</span><span class="back-reflexive">${match[0]}</span><span class="answer-line">${task}</span>`;
+    } else if (typeof window.renderSegmentedFrequencySentence === "function") {
+        const freqAdverb = cardContext?.dataset?.frequencyAdverb || "";
+        answer.classList.add("frequency-answer-main");
+        answer.innerHTML = window.renderSegmentedFrequencySentence(text, freqAdverb);
     } else {
         const personalVerb = window.TU_VERB_FORMS
-            ? (window.TU_VERB_FORMS[text] || '')
-            : '';
-        answer.innerHTML = typeof window.renderSegmentedPersonalBack === 'function'
+            ? (window.TU_VERB_FORMS[text] || "")
+            : "";
+        answer.innerHTML = typeof window.renderSegmentedPersonalBack === "function"
             ? window.renderSegmentedPersonalBack(text, personalVerb)
             : `<span class="answer-line">${text}</span>`;
     }
@@ -16340,8 +16375,8 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         scheduleStatsBoxUpdate();
         
     } else {
-        // Respuesta incorrecta
-        voiceAttempts++;
+        // Respuesta incorrecta: solo se da un intento de error y luego se muestra la respuesta
+        voiceAttempts = 0;
         saveGameProgress();
         
         // Marcar visualmente la opción incorrecta y deshabilitarla
@@ -16363,6 +16398,34 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
             option.disabled = true;
         });
 
+        // Suma 1 en el marcador rojo de errores de inmediato
+        incorrectCount++;
+        updateCounters();
+        
+        // Agregar la palabra a la lista de incorrectas
+        incorrectWords.push(correctAnswer);
+        if (card) incorrectWordDetails.push({ front: getFrontTextFromCard(card), back: correctAnswer });
+        
+        canFlipBack = false;
+        canFlip = false;
+        lockedAfterSecondIncorrect = true;
+        
+        // Marcar la tarjeta como completada inmediatamente
+        if (!completedCards.has(currentCardIndex)) {
+            completedCards.add(currentCardIndex);
+            updateCardCounter();
+            saveGameProgress();
+        }
+        
+        try {
+            const remainingAfter = flashcards.length - completedCards.size;
+            if (remainingAfter === 0) {
+                saveLastGamePercentage(false);
+            }
+        } catch (e) { /* noop */ }
+        
+        scheduleStatsBoxUpdate();
+
         // Mostrar mensaje de error centrado y elegante
         backElement.querySelectorAll('.mensaje-error').forEach(el => el.remove());
         const errorMessage = document.createElement('div');
@@ -16373,81 +16436,33 @@ function handleMultipleChoiceSelection(selectedOption, correctAnswer, backElemen
         showingErrorMessage = true;
         updateSkipButtonState();
 
-        if (voiceAttempts < 2) {
-            // PRIMER FALLO:
-            // No suma al marcador rojo de errores.
-            // Tras 1.8 segundos, se quita el mensaje y se reactivan las demás opciones para el 2.º intento.
-            setTimeout(() => {
-                errorMessage.remove();
-                showingErrorMessage = false;
-                updateSkipButtonState();
-                allOptions.forEach(option => {
-                    if (!option.classList.contains('incorrect-answer')) {
-                        option.classList.remove('temp-disabled');
-                        option.disabled = false;
-                    }
-                });
-            }, 1800);
-            
-        } else {
-            // SEGUNDO FALLO (Fallo definitivo):
-            // Suma 1 en el marcador rojo de errores
-            incorrectCount++;
-            updateCounters();
-            
-            // Agregar la palabra a la lista de incorrectas
-            incorrectWords.push(correctAnswer);
-            if (card) incorrectWordDetails.push({ front: getFrontTextFromCard(card), back: correctAnswer });
-            
-            voiceAttempts = 0;
-            canFlipBack = false;
+        // Tras un intento de error (1.4s), mostrar la respuesta correcta y reproducir audio
+        setTimeout(() => {
+            errorMessage.remove();
+            betweenAttempts = false;
+            showingErrorMessage = false;
             canFlip = false;
-            lockedAfterSecondIncorrect = true;
             
-            // Marcar la tarjeta como completada inmediatamente
-            if (!completedCards.has(currentCardIndex)) {
-                completedCards.add(currentCardIndex);
-                updateCardCounter();
-                saveGameProgress();
+            // Limpiar y mostrar respuesta correcta formateada en dos segmentos
+            backElement.innerHTML = '';
+            showMasMenosRevealedAnswer(backElement, correctAnswer);
+            
+            // Reproducir audio si existe y después mostrar countdown
+            const card = backElement.closest('.flashcard');
+            const audioIndex = flashcards.indexOf(card);
+            if (hasValidAudio(audioIndex)) {
+                stopAllAudios();
+                const proceed = () => showCountdown(card);
+                const safetyTimeout = setTimeout(proceed, 5000);
+                audios[audioIndex].play()
+                    .then(() => {
+                        audios[audioIndex].addEventListener('ended', () => { clearTimeout(safetyTimeout); proceed(); }, { once: true });
+                    })
+                    .catch(() => { clearTimeout(safetyTimeout); proceed(); });
+            } else {
+                showCountdown(card);
             }
-            
-            try {
-                const remainingAfter = flashcards.length - completedCards.size;
-                if (remainingAfter === 0) {
-                    saveLastGamePercentage(false);
-                }
-            } catch (e) { /* noop */ }
-            
-            scheduleStatsBoxUpdate();
-
-            // Tras 2 segundos mostrando el error, mostrar la respuesta correcta y reproducir audio
-            setTimeout(() => {
-                errorMessage.remove();
-                betweenAttempts = false;
-                showingErrorMessage = false;
-                canFlip = false;
-                
-                // Limpiar y mostrar respuesta correcta formateada
-                backElement.innerHTML = '';
-                showMasMenosRevealedAnswer(backElement, correctAnswer);
-                
-                // Reproducir audio si existe y después mostrar countdown
-                const card = backElement.closest('.flashcard');
-                const audioIndex = flashcards.indexOf(card);
-                if (hasValidAudio(audioIndex)) {
-                    stopAllAudios();
-                    const proceed = () => showCountdown(card);
-                    const safetyTimeout = setTimeout(proceed, 5000);
-                    audios[audioIndex].play()
-                        .then(() => {
-                            audios[audioIndex].addEventListener('ended', () => { clearTimeout(safetyTimeout); proceed(); }, { once: true });
-                        })
-                        .catch(() => { clearTimeout(safetyTimeout); proceed(); });
-                } else {
-                    showCountdown(card);
-                }
-            }, 2000);
-        }
+        }, 1400);
     }
 }
 
